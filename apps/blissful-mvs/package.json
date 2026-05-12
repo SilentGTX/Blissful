@@ -1,0 +1,47 @@
+{
+  "name": "blissful-mvs",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently 'cd ../blissful-storage && npm start' 'vite' --names 'STORAGE,VITE' --prefix-colors 'cyan,magenta'",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
+    "@heroui/react": "^3.0.0-beta.7",
+    "@heroui/styles": "^3.0.0-beta.7",
+    "@stremio/stremio-video": "^0.0.70",
+    "@types/three": "^0.183.1",
+    "eventemitter3": "^5.0.1",
+    "framer-motion": "^12.29.0",
+    "hls.js": "^1.6.15",
+    "react": "^19.2.0",
+    "react-color": "^2.19.3",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.12.0",
+    "three": "^0.183.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@tailwindcss/vite": "^4.1.18",
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.5",
+    "@types/react-color": "^3.0.13",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "concurrently": "^9.2.1",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.24",
+    "globals": "^16.5.0",
+    "tailwindcss": "^4.1.18",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.46.4",
+    "vite": "^7.2.4",
+    "vite-plugin-pwa": "^1.2.0"
+  }
+}

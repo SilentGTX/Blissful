@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en" style="background: transparent">
+<head>
+  <meta charset="UTF-8">
+  <title>Phase 0a Spike</title>
+  <style>
+    html, body, #root {
+      background: transparent !important;
+      margin: 0;
+      padding: 0;
+      height: 100vh;
+      width: 100vw;
+      color: white;
+      font-family: system-ui, -apple-system, sans-serif;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    .strip {
+      position: fixed;
+      left: 0;
+      right: 0;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 16px;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .strip.top { top: 0; height: 60px; }
+    .strip.bottom { bottom: 0; height: 80px; }
+
+    button {
+      background: rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      color: white;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font: inherit;
+    }
+    button:hover { background: rgba(255, 255, 255, 0.25); }
+
+    .label { font-size: 13px; opacity: 0.9; }
+    .marker {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      padding: 8px 14px;
+      background: rgba(0, 0, 0, 0.35);
+      border-radius: 4px;
+      font-size: 12px;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="root">
+    <div class="strip top">
+      <span class="label">← Back (Phase 0a — translucent top strip; you should see video bleed through)</span>
+    </div>
+
+    <div class="marker">
+      Middle region — fully transparent. Video must be fully visible here.
+    </div>
+
+    <div class="strip bottom">
+      <button id="play">Play</button>
+      <button id="pause">Pause</button>
+      <span class="label">Translucent bottom strip — video must bleed through at 40%</span>
+    </div>
+  </div>
+
+  <script>
+    function send(cmd) {
+      window.chrome.webview.postMessage(JSON.stringify(cmd));
+    }
+    document.getElementById('play').addEventListener('click', () => send('play'));
+    document.getElementById('pause').addEventListener('click', () => send('pause'));
+    console.log('Phase 0a spike HTML loaded');
+  </script>
+</body>
+</html>

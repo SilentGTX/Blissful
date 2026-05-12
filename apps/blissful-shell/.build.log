@@ -1,0 +1,29 @@
+﻿cargo.exe :    Compiling blissful-shell v0.4.0-alpha.0 (D:\JS\OpenCode\apps\blissful-shell)
+At line:4 char:1
++ & "$env:USERPROFILE\.cargo\bin\cargo.exe" build --manifest-path "D:\J ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling bl...blissful-shell):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+warning: unused import: `warn`
+  --> src\updater.rs:34:35
+   |
+34 | use tracing::{debug, error, info, warn};
+   |                                   ^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `icon` is never read
+  --> src\tray.rs:17:9
+   |
+14 | pub struct Tray {
+   |            ---- field in this struct
+...
+17 |     pub icon: nwg::Icon,
+   |         ^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `blissful-shell` (bin "blissful-shell") generated 2 warnings (run `cargo fix --bin "blissful-shell" -p 
+blissful-shell` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.25s

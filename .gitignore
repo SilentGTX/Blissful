@@ -1,0 +1,35 @@
+# Node
+node_modules/
+npm-debug.log*
+.npm/
+
+# Build outputs
+apps/blissful-mvs/dist/
+apps/blissful-mvs/dev-dist/
+apps/blissful-shell/target/
+
+# Bundled runtime binaries (downloaded by setup script, not committed)
+apps/blissful-shell/resources/mpv-x64/
+apps/blissful-shell/resources/ffmpeg-dlls/
+apps/blissful-shell/resources/test-media/
+apps/blissful-shell/resources/stremio-service.zip
+apps/blissful-shell/resources/stremio-service/
+
+# Installer output
+apps/blissful-shell/installer/build/
+apps/blissful-shell/installer/*.msi
+apps/blissful-shell/installer/*.exe
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+Thumbs.db
+desktop.ini
+
+# Local env
+.env
+.env.local
+*.local

@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  WiX 3.x installer definition for the Blissful native shell. Produces a
+  per-machine MSI that drops everything Blissful needs into
+  %ProgramFiles%\Blissful, registers Add/Remove Programs, and creates a
+  Start Menu shortcut. WebView2 is a Windows component, so we ship the
+  evergreen bootstrapper alongside — it noop's when WebView2 is already
+  present.
+
+  Build flow (see build.ps1 in this directory):
+
+    1. cargo build --release  ->  target/release/blissful-shell.exe
+    2. npm run build          ->  apps/blissful-mvs/dist/
+    3. sync dist + resources  ->  installer/staging/
+    4. heat.exe (WiX harvest) ->  installer/staging-files.wxs
+    5. candle.exe + light.exe ->  dist/Blissful-Setup-<version>.msi
+    6. sign.ps1 (signtool)    ->  signs the MSI with our Authenticode cert
+
+  Per Phase 7 of apps/blissful-shell/plan.md.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
+     xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
+
+  <Product Id="*"
+           Name="Blissful"
+           Language="1033"
+           Version="$(var.ProductVersion)"
+           Manufacturer="Smart Code OOD"
+           UpgradeCode="B7E5C9D2-3F4A-4D6B-A1B2-C3D4E5F6A7B8">
+
+    <Package InstallerVersion="500"
+             Compressed="yes"
+             InstallScope="perMachine"
+             Description="Blissful — Stremio-quality desktop client"
+             Comments="Bundles libmpv + WebView2 + stremio-service"
+             Manufacturer="Smart Code OOD" />
+
+    <!-- Upgrade across versions: replace if older, refuse if newer. -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Blissful is already installed." />
+
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <!-- Application icon for Add/Remove Programs + shortcuts. -->
+    <Icon Id="blissful.ico" SourceFile="$(var.ResourcesDir)\icon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="blissful.ico" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/SilentGTX/OpenCode" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/SilentGTX/OpenCode" />
+
+    <!-- Install location. Per-machine MSI -> ProgramFiles64Folder. -->
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLDIR" Name="Blissful" />
+      </Directory>
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="ApplicationProgramsFolder" Name="Blissful" />
+      </Directory>
+      <Directory Id="DesktopFolder" Name="Desktop" />
+    </Directory>
+
+    <!-- Start Menu + Desktop shortcuts -->
+    <DirectoryRef Id="ApplicationProgramsFolder">
+      <Component Id="StartMenuShortcut" Guid="*">
+        <Shortcut Id="StartMenuShortcut"
+                  Name="Blissful"
+                  Description="Stremio-quality desktop client"
+                  Target="[INSTALLDIR]blissful-shell.exe"
+                  WorkingDirectory="INSTALLDIR"
+                  Icon="blissful.ico" />
+        <RemoveFolder Id="RemoveProgramMenuFolder"
+                      Directory="ApplicationProgramsFolder"
+                      On="uninstall" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\SmartCodeOOD\Blissful"
+                       Name="installed"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <DirectoryRef Id="DesktopFolder">
+      <Component Id="DesktopShortcut" Guid="*">
+        <Condition>INSTALLDESKTOPSHORTCUT</Condition>
+        <Shortcut Id="DesktopShortcut"
+                  Name="Blissful"
+                  Description="Stremio-quality desktop client"
+                  Target="[INSTALLDIR]blissful-shell.exe"
+                  WorkingDirectory="INSTALLDIR"
+                  Icon="blissful.ico" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\SmartCodeOOD\Blissful"
+                       Name="desktop-shortcut"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <Property Id="INSTALLDESKTOPSHORTCUT" Value="1" />
+
+    <!-- The component tree under INSTALLDIR is harvested at build time
+         from installer/staging/ via heat.exe (see build.ps1). The
+         generated .wxs file is included here. ALL component IDs in
+         that file go into ComponentGroup MainFiles. -->
+    <Feature Id="MainFeature" Title="Blissful" Level="1">
+      <ComponentGroupRef Id="MainFiles" />
+      <ComponentRef Id="StartMenuShortcut" />
+      <ComponentRef Id="DesktopShortcut" />
+    </Feature>
+
+    <UI>
+      <UIRef Id="WixUI_InstallDir" />
+      <!-- Skip the license dialog — we don't have a single license
+           agreement (libmpv = LGPL, FFmpeg = LGPL, app = closed source
+           for now). Licenses ship as separate text files in INSTALLDIR. -->
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog"
+               Value="InstallDirDlg" Order="2">1</Publish>
+      <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog"
+               Value="WelcomeDlg" Order="2">1</Publish>
+    </UI>
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR" />
+    <WixVariable Id="WixUIBannerBmp" Value="$(var.ResourcesDir)\installer-banner.bmp"
+                 Overridable="yes" />
+    <WixVariable Id="WixUIDialogBmp" Value="$(var.ResourcesDir)\installer-dialog.bmp"
+                 Overridable="yes" />
+
+    <!-- WebView2 evergreen bootstrapper. Runs at install time. The
+         bootstrapper itself is a tiny stub (~150KB) that no-op's if
+         WebView2 is already installed; otherwise it downloads the
+         runtime from Microsoft. -->
+    <CustomAction Id="InstallWebView2"
+                  FileKey="WebView2BootstrapperFile"
+                  ExeCommand="/silent /install"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+    <InstallExecuteSequence>
+      <Custom Action="InstallWebView2" After="InstallFiles">NOT REMOVE</Custom>
+    </InstallExecuteSequence>
+
+  </Product>
+</Wix>

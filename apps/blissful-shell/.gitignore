@@ -1,0 +1,31 @@
+/target
+**/*.rs.bk
+Cargo.lock
+
+# Vendored libmpv DLL (sourced per-developer per PREREQUISITES.md, not checked in)
+resources/mpv-x64/*.dll
+resources/mpv-x64/*.pdb
+resources/mpv-x64/*.def
+resources/mpv-x64/*.exp
+
+# Test media samples for Phase 0a — downloaded locally, not committed
+resources/test-media/
+
+# Bundled stremio streaming service binary + ffmpeg DLLs. Copied from
+# apps/blissful-desktop/resources/ during dev setup. Production builds
+# will pull from a CI-fetched location in resources/.
+resources/stremio-service.zip
+resources/ffmpeg-dlls/
+
+# Build artifacts
+*.exe
+*.msi
+*.pdb
+*.ilk
+*.exp
+*.lib
+
+# Local dev-only files
+.env
+.env.local
+*.local

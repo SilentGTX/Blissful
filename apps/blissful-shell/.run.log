@@ -1,0 +1,661 @@
+﻿cargo.exe :    Compiling blissful-shell v0.4.0-alpha.0 (D:\JS\OpenCode\apps\blissful-shell)
+At line:5 char:1
++ & "$env:USERPROFILE\.cargo\bin\cargo.exe" run --manifest-path "D:\JS\ ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling bl...blissful-shell):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+warning: unused import: `warn`
+  --> src\updater.rs:34:35
+   |
+34 | use tracing::{debug, error, info, warn};
+   |                                   ^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `icon` is never read
+  --> src\tray.rs:17:9
+   |
+14 | pub struct Tray {
+   |            ---- field in this struct
+...
+17 |     pub icon: nwg::Icon,
+   |         ^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `blissful-shell` (bin "blissful-shell") generated 2 warnings (run `cargo fix --bin "blissful-shell" -p 
+blissful-shell` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.91s
+     Running `apps\blissful-shell\target\debug\blissful-shell.exe`
+[2m2026-05-11T14:13:20.253397Z[0m [32m INFO[0m ThreadId(01) [2mblissful_shell[0m[2m:[0m Blissful Shell v0.4.0-alpha.0 starting
+[2m2026-05-11T14:13:20.253664Z[0m [32m INFO[0m ThreadId(01) [2mblissful_shell[0m[2m:[0m loading libmpv [3mlibmpv[0m[2m=[0mD:\JS\OpenCode\apps\blissful-shell\target\debug\..\..\resources\mpv-x64
+[2m2026-05-11T14:13:20.253705Z[0m [32m INFO[0m ThreadId(01) [2mblissful_shell[0m[2m:[0m running Phase 0a spike
+[2m2026-05-11T14:13:20.253784Z[0m [32m INFO[0m ThreadId(01) [2mblissful_shell::ui_server[0m[2m:[0m UI server: proxying static paths to Vite dev server [3mtarget[0m[2m=[0mhttp://localhost:5173
+[2m2026-05-11T14:13:20.255639Z[0m [32m INFO[0m ThreadId(02) [2mblissful_shell::ui_server[0m[2m:[0m UI server listening [3maddr[0m[2m=[0m127.0.0.1:5174
+[2m2026-05-11T14:13:20.288726Z[0m [32m INFO[0m ThreadId(01) [2mblissful_shell::main_window[0m[2m:[0m spike parent window created [3mparent_hwnd[0m[2m=[0m0x7807fa
+[2m2026-05-11T14:13:20.288998Z[0m [32m INFO[0m ThreadId(01) [2mblissful_shell::main_window[0m[2m:[0m renderer log file open [3mpath[0m[2m=[0mC:\Users\origi\AppData\Roaming\Blissful\player.log
+[cplayer] mpv v0.41.0-524-g5921fe50b Copyright © 2000-2026 mpv/MPlayer/mplayer2 projects
+[cplayer]  built on Apr 21 2026 00:10:23
+[cplayer] libplacebo version: v7.362.0 (v7.360.0-16-g409c9a8-dirty)
+[cplayer] FFmpeg version: N-124056-gc92304f8c
+[cplayer] FFmpeg library versions:
+[cplayer]    libavcodec      62.30.100
+[cplayer]    libavdevice     62.4.100
+[cplayer]    libavfilter     11.16.100
+[cplayer]    libavformat     62.13.102
+[cplayer]    libavutil       60.30.100
+[cplayer]    libswresample   6.4.100
+[cplayer]    libswscale      9.7.100
+[cplayer] Configuration: -Ddebug=true -Db_ndebug=true -Doptimization=3 -Db_lto=true -Db_lto_mode=thin -Dlibmpv=true -Dpdf-build=enabled -Dlua=enabled -Djavascript=enabled -Dsdl2-gamepad=enabled -Dlibarchive=enabled -Dlibbluray=enabled -Ddvdnav=enabled -Duchardet=enabled -Drubberband=enabled -Dlcms2=enabled -Dopenal=enabled -Dspirv-cross=enabled -Dvulkan=enabled -Dvapoursynth=enabled -Dsubrandr=enabled -Dsixel=enabled -Dgl=enabled -Degl-angle=enabled -Dc_args=-Wno-error=int-conversion -Dprefix=/__w/mpv-winbuild-cmake/mpv-winbuild-cmake/build_x86_64/x86_64-w64-mingw32 -Dlibdir=/__w/mpv-winbuild-cmake/mpv-winbuild-cmake/build_x86_64/x86_64-w64-mingw32/lib -Ddefault_library=shared -Dprefer_static=True --cross-file=/__w/mpv-winbuild-cmake/mpv-winbuild-cmake/build_x86_64/meson_cross.txt
+[cplayer] List of enabled features: amf build-date cplugins cuda-hwaccel cuda-interop d3d-hwaccel d3d11 d3d9-hwaccel debug direct3d dos-paths dvdnav dxgi-debug-d3d11 egl-angle egl-angle-win32 ffmpeg ffnvcodec gl gl-dxinterop gl-dxinterop-d3d9 gl-win32 glob glob-win32 gpl iconv javascript jpeg lcms2 libarchive libass libavdevice libbluray libplacebo luajit openal rubberband rubberband-3 sdl2-gamepad shaderc sixel spirv-cross subrandr uchardet vaapi vaapi-win32 vapoursynth vector vulkan wasapi win32 win32-desktop win32-executable win32-smtc win32-threads zimg zimg-st428 zlib
+[cplayer] Built with NDEBUG.
+[cplayer] Waiting for scripts...
+[2m2026-05-11T14:13:20.291773Z[0m [32m INFO[0m ThreadId(01) [2mblissful_shell::player::mpv[0m[2m:[0m libmpv initialized with wid=parent_hwnd
+[2m2026-05-11T14:13:20.292022Z[0m [32m INFO[0m ThreadId(01) [2mblissful_shell::main_window[0m[2m:[0m libmpv initialized
+[2m2026-05-11T14:13:20.292091Z[0m [32m INFO[0m ThreadId(01) [2mblissful_shell::main_window[0m[2m:[0m webview navigation target [3mnav[0m[2m=[0mUrl("http://127.0.0.1:5174/")
+[2m2026-05-11T14:13:20.292107Z[0m [32m INFO[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv event loop started
+[2m2026-05-11T14:13:20.292136Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[2m2026-05-11T14:13:20.292146Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[2m2026-05-11T14:13:20.292255Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[2m2026-05-11T14:13:20.292308Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[2m2026-05-11T14:13:20.292320Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[2m2026-05-11T14:13:20.292328Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[cplayer] Run command: define-section, flags=64, args=[name="input_positioning", contents="", flags="default"]
+[cplayer] Run command: enable-section, flags=64, args=[name="input_positioning", flags="allow-hide-cursor+allow-vo-dragging"]
+[cplayer] Run command: define-section, flags=64, args=[name="input_forced_positioning", contents="", flags="force"]
+[cplayer] Run command: enable-section, flags=64, args=[name="input_forced_positioning", flags="allow-hide-cursor+allow-vo-dragging"]
+[cplayer] Run command: define-section, flags=64, args=[name="input_select", contents="", flags="default"]
+[cplayer] Run command: enable-section, flags=64, args=[name="input_select", flags="allow-hide-cursor+allow-vo-dragging"]
+[cplayer] Run command: define-section, flags=64, args=[name="input_forced_select", contents="", flags="force"]
+[cplayer] Run command: define-section, flags=64, args=[name="input_commands", contents="", flags="default"]
+[cplayer] Run command: enable-section, flags=64, args=[name="input_commands", flags="allow-hide-cursor+allow-vo-dragging"]
+[cplayer] Run command: define-section, flags=64, args=[name="input_forced_commands", contents="", flags="force"]
+[cplayer] Run command: enable-section, flags=64, args=[name="input_forced_commands", flags="allow-hide-cursor+allow-vo-dragging"]
+[cplayer] Run command: enable-section, flags=64, args=[name="input_forced_select", flags="allow-hide-cursor+allow-vo-dragging"]
+[cplayer] Run command: define-section, flags=64, args=[name="input_stats", contents="", flags="default"]
+[cplayer] Run command: enable-section, flags=64, args=[name="input_stats", flags="allow-hide-cursor+allow-vo-dragging"]
+[cplayer] Run command: define-section, flags=64, args=[name="input_forced_stats", contents="", flags="force"]
+[cplayer] Run command: enable-section, flags=64, args=[name="input_forced_stats", flags="allow-hide-cursor+allow-vo-dragging"]
+[cplayer] Done loading scripts.
+[cplayer] Run command: define-section, flags=64, args=[name="input_console", contents="", flags="default"]
+[cplayer] Run command: enable-section, flags=64, args=[name="input_console", flags="allow-hide-cursor+allow-vo-dragging"]
+[cplayer] Run command: define-section, flags=64, args=[name="input_forced_console", contents="", flags="force"]
+[cplayer] Run command: enable-section, flags=64, args=[name="input_forced_console", flags="allow-hide-cursor+allow-vo-dragging"]
+[2m2026-05-11T14:13:20.296634Z[0m [32m INFO[0m ThreadId(01) [2mblissful_shell::main_window[0m[2m:[0m webview2 host created
+[2m2026-05-11T14:13:20.301882Z[0m [32m INFO[0m ThreadId(01) [2mblissful_shell::main_window[0m[2m:[0m entering message loop
+[2m2026-05-11T14:13:20.496953Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::webview[0m[2m:[0m WebView2 controller created
+[2m2026-05-11T14:13:20.496996Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::webview[0m[2m:[0m DefaultBackgroundColor set transparent
+[2m2026-05-11T14:13:20.497299Z[0m [32m INFO[0m ThreadId(01) [2mblissful_shell::webview[0m[2m:[0m navigating WebView to URL [3murl[0m[2m=[0mhttp://127.0.0.1:5174/
+[2m2026-05-11T14:13:20.497394Z[0m [32m INFO[0m ThreadId(01) [2mblissful_shell::webview[0m[2m:[0m WebView2 controller ready
+[2m2026-05-11T14:13:20.704083Z[0m [32m INFO[0m ThreadId(01) [2mblissful_shell::main_window[0m[2m:[0m main window shown after WebView2 NavigationCompleted
+[2m2026-05-11T14:13:20.743669Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mb486683b-208e-49e0-9034-b4810ed1f3a5 [3mcommand[0m[2m=[0misFullscreen
+[2m2026-05-11T14:13:29.509851Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mf98e99fa-9940-4f07-84d8-3126bcd3a227 [3mcommand[0m[2m=[0mensureStreamingServer
+[2m2026-05-11T14:13:29.520877Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::streaming_server[0m[2m:[0m streaming server already alive on 127.0.0.1:11470 — reusing
+[2m2026-05-11T14:13:29.521106Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mff52be69-0e86-442a-b394-d77f21ad6f1c [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: sub-font-size=28.000000 -> 1
+[2m2026-05-11T14:13:29.521322Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m19671e0b-efb0-486b-9dd2-d4d9fdf0536c [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: sub-color="#ffffffff" -> 1
+[2m2026-05-11T14:13:29.521376Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m60283c81-132c-497c-b18f-6635b788ffef [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: sub-back-color="#00000000" -> 1
+[2m2026-05-11T14:13:29.521437Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mbea36347-ee19-45d2-beb6-a8b73e472237 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: sub-outline-color="#000000bf" -> 1
+[cplayer] Set property: sub-border-color="#000000bf" -> 1
+[2m2026-05-11T14:13:29.521508Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m542d825c-572d-405e-840e-447e05c1c33c [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: alang="" -> 1
+[2m2026-05-11T14:13:29.521550Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m03ab781e-7761-4520-b5ed-f634c1a7ac46 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: slang="" -> 1
+[2m2026-05-11T14:13:29.530251Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m7703a020-2258-46ce-bf90-73569a782bed [3mcommand[0m[2m=[0mmpv.command
+[cplayer] Run command: loadfile, flags=64, args=[url="https://torrentio.strem.fun/resolve/realdebrid/4FSMMQETHFRDDJ75BMW2MPHRAJTSQPEOMIQKEKAOXYDQKJWM2XAQ/604461f80b48e0c2957eca9dbdc4eafcf48be6c0/null/0/Pirates%20of%20the%20Caribbean%20Dead%20Men%20Tell%20No%20Tales%202017%201080p%20BluRay%20HEVC%20x265%205.1%20BONE.mkv", flags="replace", index="-1", options=""]
+[cplayer] Running hook: auto_profiles/on_before_start_file
+[cplayer] Failed sending hook command auto_profiles/on_before_start_file. Removing hook.
+[cplayer] Running hook: auto_profiles/on_load
+[cplayer] Failed sending hook command auto_profiles/on_load. Removing hook.
+[cplayer] Running hook: ytdl_hook/on_load
+[cplayer] Running hook: ytdl_hook/on_load
+[2m2026-05-11T14:13:29.530758Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mb9ba0b38-38b9-4c16-85bb-ab7093dcd7c5 [3mcommand[0m[2m=[0mplay
+[cplayer] Set property: pause=false -> 1
+[cplayer] Opening done: https://torrentio.strem.fun/resolve/realdebrid/4FSMMQETHFRDDJ75BMW2MPHRAJTSQPEOMIQKEKAOXYDQKJWM2XAQ/604461f80b48e0c2957eca9dbdc4eafcf48be6c0/null/0/Pirates%20of%20the%20Caribbean%20Dead%20Men%20Tell%20No%20Tales%202017%201080p%20BluRay%20HEVC%20x265%205.1%20BONE.mkv
+[cplayer] Running hook: auto_profiles/on_preloaded
+[cplayer] Failed sending hook command auto_profiles/on_preloaded. Removing hook.
+[cplayer] Running hook: ytdl_hook/on_preloaded
+[cplayer] Running hook: auto_profiles/on_loaded
+[cplayer] Failed sending hook command auto_profiles/on_loaded. Removing hook.
+● Video  --vid=1               (hevc 1920x800 23.976 fps) [default]
+● Audio  --aid=1  --alang=eng  'Surround AC3 5.1' (aac 6ch 48000 Hz) [default]
+○ Subs   --sid=1  --slang=eng  (subrip)
+[cplayer] Starting playback...
+[2m2026-05-11T14:13:30.131101Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m3ef46e12-f976-4143-ac10-a10ec026b8dd [3mcommand[0m[2m=[0mseek
+[cplayer] Run command: seek, flags=64, args=[target="4302.600000", flags="absolute", legacy="unused"]
+AO: [wasapi] 44100Hz 5.1 6ch float
+[cplayer] AO: Description: Windows WASAPI audio output (event mode)
+[cplayer] hr-seek, skipping to 4302.600000
+VO: [gpu-next] 1920x800 d3d11[nv12]
+[cplayer] VO: Description: Video output based on libplacebo
+[cplayer] first video frame after restart shown
+[cplayer] audio ready
+[cplayer] starting video playback
+[cplayer] starting audio playback
+[cplayer] playback restart complete @ 4302.632000, audio=playing, video=playing
+[2m2026-05-11T14:13:33.321897Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m35379ecb-5429-45a4-a349-691ffd823a04 [3mcommand[0m[2m=[0mmpv.command
+[cplayer] Run command: stop, flags=64, args=[flags=""]
+[cplayer] EOF code: 4  
+[cplayer] Terminating demuxers...
+[2m2026-05-11T14:13:33.324659Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[2m2026-05-11T14:13:33.324688Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[cplayer] Done terminating demuxers.
+[cplayer] finished playback, success (reason 2)
+[cplayer] Running hook: ytdl_hook/on_after_end_file
+[cplayer] Run command: del, flags=64, args=[name="user-data/mpv/ytdl/json-subprocess-result"]
+[2m2026-05-11T14:13:33.325411Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[2m2026-05-11T14:13:33.325429Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[2m2026-05-11T14:13:33.325444Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[2m2026-05-11T14:13:33.326881Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m5a486bdd-598f-4479-a59b-e6462a82334f [3mcommand[0m[2m=[0misFullscreen
+[2m2026-05-11T14:13:35.537153Z[0m [34mDEBUG[0m ThreadId(03) [2mblissful_shell::updater[0m[2m:[0m auto-updater: already on latest
+[2m2026-05-11T14:19:37.101241Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m7c7a9e24-1447-44be-8bf4-7605e51799a2 [3mcommand[0m[2m=[0misFullscreen
+[2m2026-05-11T14:19:41.632644Z[0m [34mDEBUG[0m ThreadId(05) [2mblissful_shell::ui_server[0m[2m:[0m UI server connection closed with error [3merror[0m[2m=[0mhyper::Error(IncompleteMessage)
+[2m2026-05-11T14:19:41.633432Z[0m [34mDEBUG[0m ThreadId(04) [2mblissful_shell::ui_server[0m[2m:[0m UI server connection closed with error [3merror[0m[2m=[0mhyper::Error(IncompleteMessage)
+[2m2026-05-11T14:19:41.633971Z[0m [34mDEBUG[0m ThreadId(04) [2mblissful_shell::ui_server[0m[2m:[0m UI server connection closed with error [3merror[0m[2m=[0mhyper::Error(IncompleteMessage)
+[2m2026-05-11T14:19:41.634351Z[0m [34mDEBUG[0m ThreadId(04) [2mblissful_shell::ui_server[0m[2m:[0m UI server connection closed with error [3merror[0m[2m=[0mhyper::Error(IncompleteMessage)
+[2m2026-05-11T14:19:41.634676Z[0m [34mDEBUG[0m ThreadId(05) [2mblissful_shell::ui_server[0m[2m:[0m UI server connection closed with error [3merror[0m[2m=[0mhyper::Error(IncompleteMessage)
+[2m2026-05-11T14:19:41.635203Z[0m [34mDEBUG[0m ThreadId(05) [2mblissful_shell::ui_server[0m[2m:[0m UI server connection closed with error [3merror[0m[2m=[0mhyper::Error(IncompleteMessage)
+[2m2026-05-11T14:19:41.635290Z[0m [34mDEBUG[0m ThreadId(04) [2mblissful_shell::ui_server[0m[2m:[0m UI server connection closed with error [3merror[0m[2m=[0mhyper::Error(IncompleteMessage)
+[2m2026-05-11T14:19:41.635489Z[0m [34mDEBUG[0m ThreadId(04) [2mblissful_shell::ui_server[0m[2m:[0m UI server connection closed with error [3merror[0m[2m=[0mhyper::Error(IncompleteMessage)
+[2m2026-05-11T14:20:03.356567Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m9720a79d-77f0-437c-a977-54a837ae8182 [3mcommand[0m[2m=[0misFullscreen
+[2m2026-05-11T14:20:57.195368Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m4828515d-6c45-4439-a720-ec5b157b7eee [3mcommand[0m[2m=[0misFullscreen
+[2m2026-05-11T14:28:27.192166Z[0m [34mDEBUG[0m ThreadId(05) [2mblissful_shell::ui_server[0m[2m:[0m UI server connection closed with error [3merror[0m[2m=[0mhyper::Error(IncompleteMessage)
+[2m2026-05-11T14:28:27.192820Z[0m [34mDEBUG[0m ThreadId(04) [2mblissful_shell::ui_server[0m[2m:[0m UI server connection closed with error [3merror[0m[2m=[0mhyper::Error(IncompleteMessage)
+[2m2026-05-11T14:28:27.193256Z[0m [34mDEBUG[0m ThreadId(04) [2mblissful_shell::ui_server[0m[2m:[0m UI server connection closed with error [3merror[0m[2m=[0mhyper::Error(IncompleteMessage)
+[2m2026-05-11T14:28:27.193493Z[0m [34mDEBUG[0m ThreadId(05) [2mblissful_shell::ui_server[0m[2m:[0m UI server connection closed with error [3merror[0m[2m=[0mhyper::Error(IncompleteMessage)
+[2m2026-05-11T14:28:27.193802Z[0m [34mDEBUG[0m ThreadId(04) [2mblissful_shell::ui_server[0m[2m:[0m UI server connection closed with error [3merror[0m[2m=[0mhyper::Error(IncompleteMessage)
+[2m2026-05-11T14:28:27.194038Z[0m [34mDEBUG[0m ThreadId(05) [2mblissful_shell::ui_server[0m[2m:[0m UI server connection closed with error [3merror[0m[2m=[0mhyper::Error(IncompleteMessage)
+[2m2026-05-11T14:28:27.194131Z[0m [34mDEBUG[0m ThreadId(04) [2mblissful_shell::ui_server[0m[2m:[0m UI server connection closed with error [3merror[0m[2m=[0mhyper::Error(IncompleteMessage)
+[2m2026-05-11T14:28:31.431108Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m60126a75-bcf8-45a3-8d25-062a0eab1a61 [3mcommand[0m[2m=[0misFullscreen
+[2m2026-05-11T14:28:33.700257Z[0m [34mDEBUG[0m ThreadId(05) [2mblissful_shell::ui_server[0m[2m:[0m UI server connection closed with error [3merror[0m[2m=[0mhyper::Error(IncompleteMessage)
+[2m2026-05-11T14:28:39.087509Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m0e486bfc-3810-45bd-8824-05d94af4a78a [3mcommand[0m[2m=[0misFullscreen
+[2m2026-05-11T14:28:40.334319Z[0m [34mDEBUG[0m ThreadId(04) [2mblissful_shell::ui_server[0m[2m:[0m UI server connection closed with error [3merror[0m[2m=[0mhyper::Error(IncompleteMessage)
+[2m2026-05-11T14:28:51.531959Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mcc965edf-6661-4409-a7de-1da9df3c65b4 [3mcommand[0m[2m=[0misFullscreen
+[2m2026-05-11T14:28:52.578287Z[0m [34mDEBUG[0m ThreadId(05) [2mblissful_shell::ui_server[0m[2m:[0m UI server connection closed with error [3merror[0m[2m=[0mhyper::Error(IncompleteMessage)
+[2m2026-05-11T14:39:19.642970Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mecf373fe-7315-4f61-9fe6-7b730d1652fb [3mcommand[0m[2m=[0misFullscreen
+[2m2026-05-11T14:39:20.646675Z[0m [34mDEBUG[0m ThreadId(05) [2mblissful_shell::ui_server[0m[2m:[0m UI server connection closed with error [3merror[0m[2m=[0mhyper::Error(IncompleteMessage)
+[2m2026-05-11T14:39:20.857203Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m83a08ac6-9ab6-4d6d-87f1-be29f6f1e5aa [3mcommand[0m[2m=[0misFullscreen
+[2m2026-05-11T14:39:24.086437Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m5840a9c1-b003-4c4c-bf45-85445e2c9dff [3mcommand[0m[2m=[0mensureStreamingServer
+[2m2026-05-11T14:39:24.086836Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::streaming_server[0m[2m:[0m streaming server already alive on 127.0.0.1:11470 — reusing
+[2m2026-05-11T14:39:24.086936Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mb30f2bcc-f6f8-4b2a-b567-7e5d62354790 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: sub-font-size=28.000000 -> 1
+[2m2026-05-11T14:39:24.087042Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m0fc83a43-6040-4cf8-be6c-9e40148b4593 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: sub-color="#ffffffff" -> 1
+[2m2026-05-11T14:39:24.087089Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mc4c98e9e-6d60-4744-b528-e1dddfc8e2b2 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: sub-back-color="#00000000" -> 1
+[2m2026-05-11T14:39:24.087129Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m9278e6b1-5e5c-4e51-880a-5fd425d61878 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: sub-outline-color="#000000bf" -> 1
+[cplayer] Set property: sub-border-color="#000000bf" -> 1
+[2m2026-05-11T14:39:24.087182Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mb5a0b900-77b3-4c8e-85c9-d27ebf455c22 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: alang="" -> 1
+[2m2026-05-11T14:39:24.087215Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0ma1adf90d-21e2-404d-9621-5d8d319dd3e2 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: slang="" -> 1
+[2m2026-05-11T14:39:24.087245Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m84d7a045-bff6-4ba9-b67a-3c40aeb01015 [3mcommand[0m[2m=[0misFullscreen
+[2m2026-05-11T14:39:24.087618Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mf42237f9-1c67-444a-b5be-ce98f714ebf8 [3mcommand[0m[2m=[0mmpv.command
+[cplayer] Run command: loadfile, flags=64, args=[url="https://torrentio.strem.fun/resolve/realdebrid/4FSMMQETHFRDDJ75BMW2MPHRAJTSQPEOMIQKEKAOXYDQKJWM2XAQ/604461f80b48e0c2957eca9dbdc4eafcf48be6c0/null/0/Pirates%20of%20the%20Caribbean%20Dead%20Men%20Tell%20No%20Tales%202017%201080p%20BluRay%20HEVC%20x265%205.1%20BONE.mkv", flags="replace", index="-1", options=""]
+[cplayer] Running hook: ytdl_hook/on_load
+[cplayer] Running hook: ytdl_hook/on_load
+[2m2026-05-11T14:39:24.088623Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mabc32f80-fb1f-4dfb-ace6-8dfc8c814885 [3mcommand[0m[2m=[0mplay
+[cplayer] Set property: pause=false -> 1
+[2m2026-05-11T14:39:24.689415Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0md408820e-8399-4313-8277-6e2942bf1582 [3mcommand[0m[2m=[0mseek
+[cplayer] Run command: seek, flags=64, args=[target="4302.600000", flags="absolute", legacy="unused"]
+[cplayer] Opening done: https://torrentio.strem.fun/resolve/realdebrid/4FSMMQETHFRDDJ75BMW2MPHRAJTSQPEOMIQKEKAOXYDQKJWM2XAQ/604461f80b48e0c2957eca9dbdc4eafcf48be6c0/null/0/Pirates%20of%20the%20Caribbean%20Dead%20Men%20Tell%20No%20Tales%202017%201080p%20BluRay%20HEVC%20x265%205.1%20BONE.mkv
+[cplayer] Running hook: ytdl_hook/on_preloaded
+● Video  --vid=1               (hevc 1920x800 23.976 fps) [default]
+● Audio  --aid=1  --alang=eng  'Surround AC3 5.1' (aac 6ch 48000 Hz) [default]
+○ Subs   --sid=1  --slang=eng  (subrip)
+[cplayer] Starting playback...
+AO: [wasapi] 44100Hz 5.1 6ch float
+[cplayer] AO: Description: Windows WASAPI audio output (event mode)
+VO: [gpu-next] 1920x800 d3d11[nv12]
+[cplayer] VO: Description: Video output based on libplacebo
+[cplayer] first video frame after restart shown
+[cplayer] audio ready
+[cplayer] starting video playback
+[cplayer] starting audio playback
+[cplayer] playback restart complete @ 0.000000, audio=playing, video=playing
+[2m2026-05-11T14:39:25.463349Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0ma8bad55d-a118-475f-91bf-ab0713a23be1 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=52.000000 -> 1
+[2m2026-05-11T14:39:25.463469Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m09b2e583-b7b4-4382-9e23-636e603c4e4e [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:39:25.482108Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mafb77108-30f9-4265-813a-836bcf69dc4b [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=50.000000 -> 1
+[2m2026-05-11T14:39:25.482208Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m917ed1b4-ea72-4880-8342-e3df37166d30 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:39:25.498708Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m62cffe39-9a9c-4ba7-8999-877f720bed86 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=49.000000 -> 1
+[2m2026-05-11T14:39:25.498808Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m897c00b9-f763-4164-9a63-bbf74259bc98 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:39:25.515394Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mf7994b39-975e-4dc6-b073-beb2d484fdef [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=46.000000 -> 1
+[2m2026-05-11T14:39:25.515647Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0me0ef9a3e-fe87-42e9-8961-f261ef5326cf [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:39:25.532033Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0md8643538-dfa4-48b1-b826-8b3700088c21 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=43.000000 -> 1
+[2m2026-05-11T14:39:25.532201Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0me8cf417c-9034-4c14-aee5-fe6c86ccf1cb [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:39:25.548758Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m97b5d215-eb65-4fba-822b-8932b04ae04a [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=39.000000 -> 1
+[2m2026-05-11T14:39:25.548858Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m612d20db-5445-4072-97e3-88b2e05bd3a3 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:39:25.565440Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0md61bc0eb-dfbb-46e8-ace0-5819c464b663 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=36.000000 -> 1
+[2m2026-05-11T14:39:25.565543Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mcd97d536-9e4e-4a3c-8146-543469eb9c77 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:39:25.582093Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m14251e05-1621-4633-bd68-5c00d85290ab [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=35.000000 -> 1
+[2m2026-05-11T14:39:25.582184Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mb122bbc1-e3aa-41c2-bbbb-6188ee822686 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:39:25.598747Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m971f0f6d-441d-4e13-a32d-6903384d982b [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=32.000000 -> 1
+[2m2026-05-11T14:39:25.598838Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mdee8aeb7-2381-4759-a5a8-17554a68dd75 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:39:25.615429Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mcb4d4b60-39ac-4c85-9540-c48ef4492a2f [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=30.000000 -> 1
+[2m2026-05-11T14:39:25.615527Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0me4bb5ab6-ae87-48de-9acd-487aea8047b8 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:39:25.632118Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m66f8889d-64e6-427d-9731-19f4a93795ac [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=28.000000 -> 1
+[2m2026-05-11T14:39:25.632215Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m408039c5-4e38-4304-8d1a-e3af4f527d06 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:39:25.648902Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m724e6370-1179-4c1d-8686-07bb321d6176 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=27.000000 -> 1
+[2m2026-05-11T14:39:25.648998Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m72840900-85c5-4973-a907-462bb64b9929 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:39:29.700079Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m7bc57d00-b6ab-41e9-ba7d-06a97804ef2e [3mcommand[0m[2m=[0mseek
+[cplayer] Run command: seek, flags=64, args=[target="5426.000000", flags="absolute", legacy="unused"]
+[cplayer] hr-seek, skipping to 5426.000000
+[cplayer] first video frame after restart shown
+[cplayer] audio ready
+[cplayer] starting video playback
+[cplayer] starting audio playback
+[cplayer] playback restart complete @ 5426.004000, audio=playing, video=playing
+[2m2026-05-11T14:39:33.410550Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mbd6b8b90-16ab-49bf-ab5a-c8c8095ba6c2 [3mcommand[0m[2m=[0mpause
+[cplayer] Set property: pause=true -> 1
+[2m2026-05-11T14:39:33.995430Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m7f7f65cc-f51b-44d3-b87a-64e39cd907c3 [3mcommand[0m[2m=[0mplay
+[cplayer] Set property: pause=false -> 1
+[2m2026-05-11T14:39:34.604480Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m3dd30580-afb1-49c5-8f37-d994478a762a [3mcommand[0m[2m=[0mpause
+[cplayer] Set property: pause=true -> 1
+[2m2026-05-11T14:39:35.083002Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mb2293830-ce8c-426f-8825-9758fd8a944f [3mcommand[0m[2m=[0mplay
+[cplayer] Set property: pause=false -> 1
+[2m2026-05-11T14:39:36.101753Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m867c4c80-6952-4725-b3f6-26ed8f98addc [3mcommand[0m[2m=[0mpause
+[cplayer] Set property: pause=true -> 1
+[2m2026-05-11T14:39:38.302030Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mcc3cd35b-406a-49e2-8775-aa1ad0bafbb0 [3mcommand[0m[2m=[0mmpv.command
+[cplayer] Run command: cycle, flags=64, args=[name="sub", value="1.000000"]
+Track switched:
+ ● Video  --vid=1               (hevc [Main] 1920x800 23.976 fps) [default]
+ ● Audio  --aid=1  --alang=eng  'Surround AC3 5.1' (aac [LC] 6ch 48000 Hz) [default]
+ ● Subs   --sid=1  --slang=eng  (subrip [Advanced Sub Station Alpha])
+[cplayer] Set property: sid -> 1
+[cplayer] Set property: sub -> 1
+[2m2026-05-11T14:39:39.016339Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m41dc31a5-1753-404a-a8c4-d231d4c529b3 [3mcommand[0m[2m=[0mmpv.command
+[cplayer] Run command: cycle, flags=64, args=[name="sub", value="1.000000"]
+Track switched:
+ ● Video  --vid=1               (hevc [Main] 1920x800 23.976 fps) [default]
+ ● Audio  --aid=1  --alang=eng  'Surround AC3 5.1' (aac [LC] 6ch 48000 Hz) [default]
+ ○ Subs   --sid=1  --slang=eng  (subrip [Advanced Sub Station Alpha])
+[cplayer] Set property: sid -> 1
+[cplayer] Set property: sub -> 1
+[2m2026-05-11T14:39:39.016733Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[2m2026-05-11T14:39:39.952823Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mabfe1977-8ce5-4d17-9d4d-4ea9a826ab09 [3mcommand[0m[2m=[0mmpv.command
+[cplayer] Run command: cycle, flags=64, args=[name="sub", value="1.000000"]
+Track switched:
+ ● Video  --vid=1               (hevc [Main] 1920x800 23.976 fps) [default]
+ ● Audio  --aid=1  --alang=eng  'Surround AC3 5.1' (aac [LC] 6ch 48000 Hz) [default]
+ ● Subs   --sid=1  --slang=eng  (subrip [Advanced Sub Station Alpha])
+[cplayer] Set property: sid -> 1
+[cplayer] Set property: sub -> 1
+[2m2026-05-11T14:39:40.006761Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m129815d3-17f1-40ef-b59e-1ce679b2aa89 [3mcommand[0m[2m=[0mmpv.command
+[cplayer] Run command: cycle, flags=64, args=[name="sub", value="1.000000"]
+Track switched:
+ ● Video  --vid=1               (hevc [Main] 1920x800 23.976 fps) [default]
+ ● Audio  --aid=1  --alang=eng  'Surround AC3 5.1' (aac [LC] 6ch 48000 Hz) [default]
+ ○ Subs   --sid=1  --slang=eng  (subrip [Advanced Sub Station Alpha])
+[cplayer] Set property: sid -> 1
+[cplayer] Set property: sub -> 1
+[2m2026-05-11T14:39:40.007025Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[2m2026-05-11T14:39:40.336430Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m996644d2-2ffb-462f-85cd-5cccfb51164a [3mcommand[0m[2m=[0mmpv.command
+[cplayer] Run command: cycle, flags=64, args=[name="audio", value="1.000000"]
+Track switched:
+ ● Video  --vid=1               (hevc [Main] 1920x800 23.976 fps) [default]
+ ○ Audio  --aid=1  --alang=eng  'Surround AC3 5.1' (aac [LC] 6ch 48000 Hz) [default]
+ ○ Subs   --sid=1  --slang=eng  (subrip [Advanced Sub Station Alpha])
+[cplayer] Set property: aid -> 1
+[cplayer] Set property: audio -> 1
+[2m2026-05-11T14:39:40.337390Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[2m2026-05-11T14:39:40.896556Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m8bab72d7-980f-4f5e-928b-eb409a575f20 [3mcommand[0m[2m=[0mmpv.command
+[cplayer] Run command: cycle, flags=64, args=[name="sub", value="1.000000"]
+Track switched:
+ ● Video  --vid=1               (hevc [Main] 1920x800 23.976 fps) [default]
+ ○ Audio  --aid=1  --alang=eng  'Surround AC3 5.1' (aac [LC] 6ch 48000 Hz) [default]
+ ● Subs   --sid=1  --slang=eng  (subrip [Advanced Sub Station Alpha])
+[cplayer] Set property: sid -> 1
+[cplayer] Set property: sub -> 1
+[2m2026-05-11T14:39:41.029804Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mfbbe856d-449f-4d32-9f32-1c9746a637a2 [3mcommand[0m[2m=[0mmpv.command
+[cplayer] Run command: cycle, flags=64, args=[name="sub", value="1.000000"]
+Track switched:
+ ● Video  --vid=1               (hevc [Main] 1920x800 23.976 fps) [default]
+ ○ Audio  --aid=1  --alang=eng  'Surround AC3 5.1' (aac [LC] 6ch 48000 Hz) [default]
+ ○ Subs   --sid=1  --slang=eng  (subrip [Advanced Sub Station Alpha])
+[cplayer] Set property: sid -> 1
+[cplayer] Set property: sub -> 1
+[2m2026-05-11T14:39:41.030091Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[2m2026-05-11T14:39:41.159449Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mf75df532-d183-44a3-9bd9-a18e15811a9c [3mcommand[0m[2m=[0mmpv.command
+[cplayer] Run command: cycle, flags=64, args=[name="sub", value="1.000000"]
+Track switched:
+ ● Video  --vid=1               (hevc [Main] 1920x800 23.976 fps) [default]
+ ○ Audio  --aid=1  --alang=eng  'Surround AC3 5.1' (aac [LC] 6ch 48000 Hz) [default]
+ ● Subs   --sid=1  --slang=eng  (subrip [Advanced Sub Station Alpha])
+[cplayer] Set property: sid -> 1
+[cplayer] Set property: sub -> 1
+[2m2026-05-11T14:39:43.858139Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m7b8a190c-d318-49f6-958f-6d81e72ba046 [3mcommand[0m[2m=[0mmpv.command
+[cplayer] Run command: cycle, flags=64, args=[name="sub", value="1.000000"]
+Track switched:
+ ● Video  --vid=1               (hevc [Main] 1920x800 23.976 fps) [default]
+ ○ Audio  --aid=1  --alang=eng  'Surround AC3 5.1' (aac [LC] 6ch 48000 Hz) [default]
+ ○ Subs   --sid=1  --slang=eng  (subrip [Advanced Sub Station Alpha])
+[cplayer] Set property: sid -> 1
+[cplayer] Set property: sub -> 1
+[2m2026-05-11T14:39:43.858492Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[2m2026-05-11T14:39:44.020569Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m4d2d0756-df33-464b-ab76-fed841d1c184 [3mcommand[0m[2m=[0mmpv.command
+[cplayer] Run command: cycle, flags=64, args=[name="sub", value="1.000000"]
+Track switched:
+ ● Video  --vid=1               (hevc [Main] 1920x800 23.976 fps) [default]
+ ○ Audio  --aid=1  --alang=eng  'Surround AC3 5.1' (aac [LC] 6ch 48000 Hz) [default]
+ ● Subs   --sid=1  --slang=eng  (subrip [Advanced Sub Station Alpha])
+[cplayer] Set property: sid -> 1
+[cplayer] Set property: sub -> 1
+[2m2026-05-11T14:39:44.160289Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mcc747d4c-5e55-4bc1-9390-d6fd23b4d56a [3mcommand[0m[2m=[0mmpv.command
+[cplayer] Run command: cycle, flags=64, args=[name="sub", value="1.000000"]
+Track switched:
+ ● Video  --vid=1               (hevc [Main] 1920x800 23.976 fps) [default]
+ ○ Audio  --aid=1  --alang=eng  'Surround AC3 5.1' (aac [LC] 6ch 48000 Hz) [default]
+ ○ Subs   --sid=1  --slang=eng  (subrip [Advanced Sub Station Alpha])
+[cplayer] Set property: sid -> 1
+[cplayer] Set property: sub -> 1
+[2m2026-05-11T14:39:44.160583Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[2m2026-05-11T14:39:44.285492Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0md3d40ebd-a25e-42c4-b055-a9611b8a1713 [3mcommand[0m[2m=[0mmpv.command
+[cplayer] Run command: cycle, flags=64, args=[name="sub", value="1.000000"]
+Track switched:
+ ● Video  --vid=1               (hevc [Main] 1920x800 23.976 fps) [default]
+ ○ Audio  --aid=1  --alang=eng  'Surround AC3 5.1' (aac [LC] 6ch 48000 Hz) [default]
+ ● Subs   --sid=1  --slang=eng  (subrip [Advanced Sub Station Alpha])
+[cplayer] Set property: sid -> 1
+[cplayer] Set property: sub -> 1
+[2m2026-05-11T14:40:01.978973Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m016e0138-e0e1-4ae6-a972-3e704af97952 [3mcommand[0m[2m=[0mplay
+[cplayer] Set property: pause=false -> 1
+[2m2026-05-11T14:40:03.538566Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m0057bb29-040c-40f6-9230-af652fe0bfba [3mcommand[0m[2m=[0mpause
+[cplayer] Set property: pause=true -> 1
+[2m2026-05-11T14:40:06.993957Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mcb799acb-a2b9-4950-aecc-bee403e44cca [3mcommand[0m[2m=[0mplay
+[cplayer] Set property: pause=false -> 1
+[2m2026-05-11T14:40:14.139953Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m5b6d516c-1ab5-43e0-91f7-b28eb86d5af5 [3mcommand[0m[2m=[0mtoggleFullscreen
+[2m2026-05-11T14:40:18.210674Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0meefcf040-17d0-4328-bdd2-167bd1bfc8f2 [3mcommand[0m[2m=[0mtoggleFullscreen
+[2m2026-05-11T14:40:18.743723Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m6e5b2afe-a6da-499d-a398-b7ca613f60ee [3mcommand[0m[2m=[0mmpv.command
+[cplayer] Run command: stop, flags=64, args=[flags=""]
+[cplayer] EOF code: 4  
+[cplayer] Terminating demuxers...
+[2m2026-05-11T14:40:18.746383Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[2m2026-05-11T14:40:18.746433Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[2m2026-05-11T14:40:18.748459Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m89084ff1-7f7b-4325-83a7-ad2dbc913280 [3mcommand[0m[2m=[0misFullscreen
+[cplayer] Done terminating demuxers.
+[cplayer] finished playback, success (reason 2)
+[cplayer] Running hook: ytdl_hook/on_after_end_file
+[cplayer] Run command: del, flags=64, args=[name="user-data/mpv/ytdl/json-subprocess-result"]
+[2m2026-05-11T14:40:18.777429Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[2m2026-05-11T14:40:18.777453Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[2m2026-05-11T14:41:10.578353Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m89d79040-a285-457f-b555-34c4b86d1c20 [3mcommand[0m[2m=[0mensureStreamingServer
+[2m2026-05-11T14:41:10.578778Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::streaming_server[0m[2m:[0m streaming server already alive on 127.0.0.1:11470 — reusing
+[2m2026-05-11T14:41:10.578872Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m81357158-ca82-4bc6-8ee9-e60456ff5e38 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: sub-font-size=28.000000 -> 1
+[2m2026-05-11T14:41:10.578965Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mbb13313b-7757-4332-8c03-542dbe567de3 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: sub-color="#ffffffff" -> 1
+[2m2026-05-11T14:41:10.579023Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m54ebedb7-89db-4bc1-867c-7bfb191ee94e [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: sub-back-color="#00000000" -> 1
+[2m2026-05-11T14:41:10.579063Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m5c9e35b5-dbba-418a-8807-7380e8130704 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: sub-outline-color="#000000bf" -> 1
+[cplayer] Set property: sub-border-color="#000000bf" -> 1
+[2m2026-05-11T14:41:10.579116Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0ma91de604-4271-40b7-8ba7-79d6c030165a [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: alang="" -> 1
+[2m2026-05-11T14:41:10.579162Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m9364a86b-cbb7-4486-835f-fe6cc0fff4ce [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: slang="" -> 1
+[2m2026-05-11T14:41:10.579209Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m1235afe7-0823-4a61-a543-621b29c659c1 [3mcommand[0m[2m=[0misFullscreen
+[2m2026-05-11T14:41:10.579660Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m63fa6abb-604e-49ae-a279-8b446e5a0327 [3mcommand[0m[2m=[0mmpv.command
+[cplayer] Run command: loadfile, flags=64, args=[url="https://torrentio.strem.fun/resolve/realdebrid/4FSMMQETHFRDDJ75BMW2MPHRAJTSQPEOMIQKEKAOXYDQKJWM2XAQ/604461f80b48e0c2957eca9dbdc4eafcf48be6c0/null/0/Pirates%20of%20the%20Caribbean%20Dead%20Men%20Tell%20No%20Tales%202017%201080p%20BluRay%20HEVC%20x265%205.1%20BONE.mkv", flags="replace", index="-1", options=""]
+[cplayer] Running hook: ytdl_hook/on_load
+[cplayer] Running hook: ytdl_hook/on_load
+[2m2026-05-11T14:41:10.580545Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mdbf9008d-f86d-4c4e-b83d-655984393f1a [3mcommand[0m[2m=[0mplay
+[cplayer] Set property: pause=false -> 1
+[cplayer] Opening done: https://torrentio.strem.fun/resolve/realdebrid/4FSMMQETHFRDDJ75BMW2MPHRAJTSQPEOMIQKEKAOXYDQKJWM2XAQ/604461f80b48e0c2957eca9dbdc4eafcf48be6c0/null/0/Pirates%20of%20the%20Caribbean%20Dead%20Men%20Tell%20No%20Tales%202017%201080p%20BluRay%20HEVC%20x265%205.1%20BONE.mkv
+[cplayer] Running hook: ytdl_hook/on_preloaded
+● Video  --vid=1               (hevc 1920x800 23.976 fps) [default]
+○ Audio  --aid=1  --alang=eng  'Surround AC3 5.1' (aac 6ch 48000 Hz) [default]
+● Subs   --sid=1  --slang=eng  (subrip)
+[cplayer] Starting playback...
+[2m2026-05-11T14:41:11.180917Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m24f683e9-f264-4c58-8470-224acbea1e33 [3mcommand[0m[2m=[0mseek
+[cplayer] Run command: seek, flags=64, args=[target="5426.000000", flags="absolute", legacy="unused"]
+VO: [gpu-next] 1920x800 d3d11[nv12]
+[cplayer] VO: Description: Video output based on libplacebo
+[cplayer] first video frame after restart shown
+[cplayer] starting video playback
+[cplayer] playback restart complete @ 0.000000, audio=eof, video=playing
+[cplayer] hr-seek, skipping to 5426.000000
+[cplayer] first video frame after restart shown
+[cplayer] starting video playback
+[cplayer] playback restart complete @ 5426.004000, audio=eof, video=playing
+[2m2026-05-11T14:41:13.668264Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m513862c6-29c2-4c54-b71d-fa9e60e68e19 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=73.000000 -> 1
+[2m2026-05-11T14:41:13.668401Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0meb7c84a3-fd72-4ed2-8540-354c251c2d94 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:41:13.705559Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m6769b666-2368-455f-bef3-a3ef0313b948 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=72.000000 -> 1
+[2m2026-05-11T14:41:13.705823Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m0b08c9db-9115-40ee-82bd-f03509757127 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:41:13.722278Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m0add696c-0fdb-45f3-82de-1bfa076bd453 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=71.000000 -> 1
+[2m2026-05-11T14:41:13.722463Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mf9b116c9-7c8e-45be-accd-08f27b1f3723 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:41:13.738897Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0me7baccaa-28ae-4e50-b262-d327bfdb4579 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=68.000000 -> 1
+[2m2026-05-11T14:41:13.739024Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mf6db0707-1cc7-4e2a-8258-90f7d1b9bc40 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:41:13.755705Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m963a1d24-dc04-4010-a926-293402440b6e [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=65.000000 -> 1
+[2m2026-05-11T14:41:13.755812Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m98e44cfe-a2ec-4e41-a163-1a2825453e29 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:41:13.772251Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m19afe4a0-4a68-4954-9e9b-0d6c0f55c5bd [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=62.000000 -> 1
+[2m2026-05-11T14:41:13.772353Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m53880e67-5b03-484a-83ff-f4bcb928a505 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:41:13.788980Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m4f423acf-e4d3-4119-871f-a437c7f9f7cd [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=59.000000 -> 1
+[2m2026-05-11T14:41:13.789178Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m9304a502-5f63-45df-996d-da28992b8331 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:41:13.805560Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m03a19b27-6000-4021-8dfe-19d8ba89b6f6 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=55.000000 -> 1
+[2m2026-05-11T14:41:13.805662Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m74708585-f61d-434e-b37b-2a78865cfd5a [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:41:13.822224Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m52aef20b-dfc8-4382-a6cf-83ed67ac09a5 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=54.000000 -> 1
+[2m2026-05-11T14:41:13.822324Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mbfdda7cd-e973-4dbf-9425-8949e6a59ccf [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:41:13.838912Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mb9697ac6-a926-4363-8e2d-13614372d77d [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=51.000000 -> 1
+[2m2026-05-11T14:41:13.839007Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m2ba5fe1c-24e1-4468-8fea-1e2602035405 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:41:13.855644Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m6cbf89b4-02ce-47c9-86af-5f00a88cb533 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=49.000000 -> 1
+[2m2026-05-11T14:41:13.855900Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m23426dd2-7e90-44a5-bd7c-45f1140b02d1 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:41:13.872296Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m36e13fb7-2c78-4a8d-8f31-9403a6d27133 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=47.000000 -> 1
+[2m2026-05-11T14:41:13.872389Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m6a16a8db-5330-44b9-8d8d-eefbc67f44e4 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:41:13.889040Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m0a48bff6-d023-40f6-800a-02d47e35fa9e [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=44.000000 -> 1
+[2m2026-05-11T14:41:13.889357Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0ma09954ac-430b-434d-aa6c-5f086e439851 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:41:13.905959Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mde41ebb5-fe78-4d60-90e7-ef742e9a0b0a [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=41.000000 -> 1
+[2m2026-05-11T14:41:13.906277Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m23848c94-03fc-4004-b94f-bb5e8f4c504c [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:41:13.939185Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m10d21471-2df2-452a-922d-a69512a32ae3 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=39.000000 -> 1
+[2m2026-05-11T14:41:13.939367Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0meb55a476-34cd-4b1d-b92d-f24d6ddfab29 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:41:13.955818Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m6cd36a70-1400-4ede-8f02-1a15645e5ce9 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=38.000000 -> 1
+[2m2026-05-11T14:41:13.955951Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m4c41d3c8-e56a-4ef2-93a8-71b55de65f6b [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:41:13.972499Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mf26eb8c7-47c8-4b70-8f87-cb2af6d0b173 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=36.000000 -> 1
+[2m2026-05-11T14:41:13.972602Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m4db846f3-742f-449a-9a79-e358077d94e8 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:41:13.989051Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m6c6d0958-5f63-4d52-a7c6-a4b5fc7ea7b5 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=35.000000 -> 1
+[2m2026-05-11T14:41:13.989152Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m8c76f975-4ce2-48c2-8687-9872b8e4b387 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:41:14.872889Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0maa9f03c7-123e-47d6-9fdb-a265c9bbd4f3 [3mcommand[0m[2m=[0mmpv.command
+[cplayer] Run command: cycle, flags=64, args=[name="sub", value="1.000000"]
+Track switched:
+ ● Video  --vid=1               (hevc [Main] 1920x800 23.976 fps) [default]
+ ○ Audio  --aid=1  --alang=eng  'Surround AC3 5.1' (aac 6ch 48000 Hz) [default]
+ ○ Subs   --sid=1  --slang=eng  (subrip [Advanced Sub Station Alpha])
+[cplayer] Set property: sid -> 1
+[cplayer] Set property: sub -> 1
+[2m2026-05-11T14:41:14.873639Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[2m2026-05-11T14:41:16.374383Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mc5200bd8-81c3-4e36-8b2a-12646e9d9782 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=34.000000 -> 1
+[2m2026-05-11T14:41:16.374613Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m6b545204-66ff-4f9b-85fb-87c7e292246a [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:41:16.391054Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mfe579609-40db-4a8f-b253-73d34bf2de1d [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=33.000000 -> 1
+[2m2026-05-11T14:41:16.391161Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mf9371633-c9b6-4a51-9448-78da26c7ab45 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:41:16.407857Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0me8f186cc-9b57-4af3-9139-2667e23ff2fe [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=31.000000 -> 1
+[2m2026-05-11T14:41:16.407960Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m7415cd33-2911-42f1-a4ef-7ce973ef2b7f [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:41:16.424497Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m2de77e62-9ec2-48a3-91c5-8700a933296b [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=29.000000 -> 1
+[2m2026-05-11T14:41:16.424843Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0md95d063e-7d67-41a9-85ae-d94d61a91a83 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:41:16.441196Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m736dd0fb-7e3c-4b00-8087-f84ff6db8bed [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=26.000000 -> 1
+[2m2026-05-11T14:41:16.441302Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m16b955ef-7405-413b-a3c6-9eb29f034d92 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:41:16.457771Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m221a6501-c02f-4cc3-bda6-40651fdf9750 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=23.000000 -> 1
+[2m2026-05-11T14:41:16.457921Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mdcce960f-b972-4bf7-998c-31afadc458c6 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:41:16.474436Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m2487c05c-7593-43bb-b720-ee579cce8b57 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=21.000000 -> 1
+[2m2026-05-11T14:41:16.474535Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m4432b0a4-d0ed-44cd-874c-3d56cec4a006 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:41:16.491153Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m5d9a9868-c680-4b60-8263-c53b2d7986ca [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=20.000000 -> 1
+[2m2026-05-11T14:41:16.491253Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m4f78aef1-89f8-4a73-bf57-3ff4253f5cc1 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:41:16.574532Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mae0e3109-1b02-41af-8418-1dff692ea002 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=17.000000 -> 1
+[2m2026-05-11T14:41:16.574637Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0ma4bcbf50-72d6-45a7-bb29-9f3e167d7f14 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:41:19.874242Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0meb2952f8-0d64-4379-8e3e-5deb39129b63 [3mcommand[0m[2m=[0mmpv.command
+[cplayer] Run command: stop, flags=64, args=[flags=""]
+[cplayer] EOF code: 4  
+[cplayer] Terminating demuxers...
+[2m2026-05-11T14:41:19.876302Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[2m2026-05-11T14:41:19.876327Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[2m2026-05-11T14:41:19.878784Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m871c7bdd-1dda-4d0f-b53f-ab03f5fb77a7 [3mcommand[0m[2m=[0misFullscreen
+[cplayer] Done terminating demuxers.
+[cplayer] finished playback, success (reason 2)
+[cplayer] Running hook: ytdl_hook/on_after_end_file
+[cplayer] Run command: del, flags=64, args=[name="user-data/mpv/ytdl/json-subprocess-result"]
+[2m2026-05-11T14:41:19.904218Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[2m2026-05-11T14:41:19.904239Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[2m2026-05-11T14:42:24.242053Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m1aa85915-f6fc-45ae-8c61-c78d841c53da [3mcommand[0m[2m=[0misFullscreen
+[2m2026-05-11T14:42:32.132945Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mbd0d515a-d1c1-47aa-8dd0-53fba04fa0d0 [3mcommand[0m[2m=[0misFullscreen
+[2m2026-05-11T14:43:35.889499Z[0m [34mDEBUG[0m ThreadId(03) [2mblissful_shell::updater[0m[2m:[0m auto-updater: already on latest
+[2m2026-05-11T14:46:06.393102Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0md82f7a6a-1f50-46ae-b789-ff637950a09e [3mcommand[0m[2m=[0mensureStreamingServer
+[2m2026-05-11T14:46:06.393524Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::streaming_server[0m[2m:[0m streaming server already alive on 127.0.0.1:11470 — reusing
+[2m2026-05-11T14:46:06.393621Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m76339d94-de08-4668-93be-236ea92b100a [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: sub-font-size=28.000000 -> 1
+[2m2026-05-11T14:46:06.393729Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m94faf667-7c07-45e3-bd9a-0d8ca5835d4f [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: sub-color="#ffffffff" -> 1
+[2m2026-05-11T14:46:06.393778Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m0ef9be28-3c93-446f-a898-f98ab5b4e2fe [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: sub-back-color="#00000000" -> 1
+[2m2026-05-11T14:46:06.393818Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mefd9c3d5-4f42-483a-b352-ab1a8a848e5e [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: sub-outline-color="#000000bf" -> 1
+[cplayer] Set property: sub-border-color="#000000bf" -> 1
+[2m2026-05-11T14:46:06.393870Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mc942a73c-b383-4857-b487-c9f5d0e41b6c [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: alang="" -> 1
+[2m2026-05-11T14:46:06.393906Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mab7b0177-925c-46ce-b373-c73db9680ed6 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: slang="" -> 1
+[2m2026-05-11T14:46:06.393993Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mfc5af802-a77f-4eaa-ac04-1c9936d36b8f [3mcommand[0m[2m=[0misFullscreen
+[2m2026-05-11T14:46:06.394434Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m47bc7b97-b2c1-42e3-9aa4-4a15aea00bbc [3mcommand[0m[2m=[0mmpv.command
+[cplayer] Run command: loadfile, flags=64, args=[url="https://torrentio.strem.fun/resolve/realdebrid/4FSMMQETHFRDDJ75BMW2MPHRAJTSQPEOMIQKEKAOXYDQKJWM2XAQ/604461f80b48e0c2957eca9dbdc4eafcf48be6c0/null/0/Pirates%20of%20the%20Caribbean%20Dead%20Men%20Tell%20No%20Tales%202017%201080p%20BluRay%20HEVC%20x265%205.1%20BONE.mkv", flags="replace", index="-1", options=""]
+[cplayer] Running hook: ytdl_hook/on_load
+[cplayer] Running hook: ytdl_hook/on_load
+[2m2026-05-11T14:46:06.395232Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m44f4325c-5a5a-42ee-8849-afa5ecf38315 [3mcommand[0m[2m=[0mplay
+[cplayer] Set property: pause=false -> 1
+[cplayer] Opening done: https://torrentio.strem.fun/resolve/realdebrid/4FSMMQETHFRDDJ75BMW2MPHRAJTSQPEOMIQKEKAOXYDQKJWM2XAQ/604461f80b48e0c2957eca9dbdc4eafcf48be6c0/null/0/Pirates%20of%20the%20Caribbean%20Dead%20Men%20Tell%20No%20Tales%202017%201080p%20BluRay%20HEVC%20x265%205.1%20BONE.mkv
+[cplayer] Running hook: ytdl_hook/on_preloaded
+● Video  --vid=1               (hevc 1920x800 23.976 fps) [default]
+○ Audio  --aid=1  --alang=eng  'Surround AC3 5.1' (aac 6ch 48000 Hz) [default]
+○ Subs   --sid=1  --slang=eng  (subrip)
+[2m2026-05-11T14:46:06.995820Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m2f3f3764-012a-4350-92e1-e75f702dad2b [3mcommand[0m[2m=[0mseek
+[cplayer] Starting playback...
+[cplayer] Run command: seek, flags=64, args=[target="5426.000000", flags="absolute", legacy="unused"]
+[cplayer] hr-seek, skipping to 5426.000000
+[2m2026-05-11T14:46:07.269712Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mbf67e812-39de-4254-9dbf-6e78b325b955 [3mcommand[0m[2m=[0mmpv.getTracks
+VO: [gpu-next] 1920x800 d3d11[nv12]
+[cplayer] VO: Description: Video output based on libplacebo
+[cplayer] first video frame after restart shown
+[cplayer] starting video playback
+[cplayer] playback restart complete @ 5426.004000, audio=eof, video=playing
+[2m2026-05-11T14:46:08.559530Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0me27c2326-01de-43f4-9908-bfa9dd1a3f36 [3mcommand[0m[2m=[0mmpv.getTracks
+[2m2026-05-11T14:46:09.471427Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m3443eb87-20d4-406d-8b3d-6d2b08b0c519 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=12.000000 -> 1
+[2m2026-05-11T14:46:09.471591Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m4e9ea0d8-b8cf-41f6-9f0e-6fcde2eacb83 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:46:09.566102Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m5a34b46f-d601-4e98-a95e-9f3c99644570 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=10.000000 -> 1
+[2m2026-05-11T14:46:09.566216Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m9ca460e4-8f8a-4940-b0d5-f3cb4a640224 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:46:09.583791Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m535b4ac1-e800-4469-aa46-e12c77c1d1cb [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=9.000000 -> 1
+[2m2026-05-11T14:46:09.584321Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m34e00f77-56d9-4cd1-9a79-92764b5d0d7d [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=false -> 1
+[2m2026-05-11T14:46:09.732568Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m2fb238a7-1ec5-4daf-a9b1-9f8d553bf310 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: volume=0.000000 -> 1
+[2m2026-05-11T14:46:09.732689Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mea115ba3-dc55-4dab-a3b3-45e682b46774 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: mute=true -> 1
+[2m2026-05-11T14:46:10.601487Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m75ace966-b91b-44b0-bcf7-2d839d790c6a [3mcommand[0m[2m=[0mmpv.getTracks
+[2m2026-05-11T14:46:12.096232Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0me2ae6aa8-9721-432c-aa5d-497728cc9561 [3mcommand[0m[2m=[0mmpv.getTracks
+[2m2026-05-11T14:46:13.009049Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mc689d305-e5b4-48f4-8f2f-1cb444d1e4f0 [3mcommand[0m[2m=[0mmpv.getTracks
+[2m2026-05-11T14:46:14.113327Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mc853c02f-769e-43ce-b932-45bb06979129 [3mcommand[0m[2m=[0mmpv.getTracks
+[2m2026-05-11T14:46:15.780299Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m48f7b2f5-93c9-4da3-b8dc-6572ea51dc7f [3mcommand[0m[2m=[0mmpv.getTracks
+[2m2026-05-11T14:46:22.126594Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m09e94559-2fb9-42de-8b78-2d24edd592d2 [3mcommand[0m[2m=[0mmpv.setProperty
+[cplayer] Set property: sid="no" -> 1
+[2m2026-05-11T14:46:22.129071Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m38d46d91-173f-4658-a59e-ab16c83aef67 [3mcommand[0m[2m=[0mmpv.getTracks
+[2m2026-05-11T14:46:23.469969Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mb80a9d35-adde-41e1-bc9b-0a4ea44a9fdc [3mcommand[0m[2m=[0mmpv.getTracks
+[2m2026-05-11T14:46:24.797058Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m27db98e3-743f-47c6-9dc0-8b9d1d13481b [3mcommand[0m[2m=[0mmpv.getTracks
+[2m2026-05-11T14:46:25.864558Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mc0f33692-4c63-4728-8b95-e993900f2930 [3mcommand[0m[2m=[0mmpv.getTracks
+[2m2026-05-11T14:46:26.844865Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0mdc73cc48-ccd6-475e-934d-b8da3f63acf4 [3mcommand[0m[2m=[0mmpv.getTracks
+[2m2026-05-11T14:46:28.526879Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m3c7de587-614c-4701-9972-99ce9e913450 [3mcommand[0m[2m=[0mmpv.command
+[cplayer] Run command: stop, flags=64, args=[flags=""]
+[cplayer] EOF code: 4  
+[cplayer] Terminating demuxers...
+[2m2026-05-11T14:46:28.528915Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[2m2026-05-11T14:46:28.528944Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[2m2026-05-11T14:46:28.531609Z[0m [34mDEBUG[0m ThreadId(01) [2mblissful_shell::ipc[0m[2m:[0m ipc: dispatching [3mid[0m[2m=[0m29115647-c4b7-4dac-9c75-1226d3633373 [3mcommand[0m[2m=[0misFullscreen
+[cplayer] Done terminating demuxers.
+[cplayer] finished playback, success (reason 2)
+[cplayer] Running hook: ytdl_hook/on_after_end_file
+[cplayer] Run command: del, flags=64, args=[name="user-data/mpv/ytdl/json-subprocess-result"]
+[2m2026-05-11T14:46:28.545629Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+[2m2026-05-11T14:46:28.545658Z[0m [34mDEBUG[0m ThreadId(06) [2mblissful_shell::player::mpv[0m[2m:[0m mpv: spurious wake (no event)
+error: process didn't exit successfully: `apps\blissful-shell\target\debug\blissful-shell.exe` (exit code: 0xffffffff)

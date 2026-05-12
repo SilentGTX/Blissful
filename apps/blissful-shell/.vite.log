@@ -1,0 +1,10 @@
+
+> blissful-mvs@0.0.0 dev
+> concurrently 'cd ../blissful-storage && npm start' 'vite' --names 'STORAGE,VITE' --prefix-colors 'cyan,magenta'
+
+[0] ''cd' is not recognized as an internal or external command,
+[0] operable program or batch file.
+[0] 'cd exited with code 1
+[1] '..' is not recognized as an internal or external command,
+[1] operable program or batch file.
+[1] ../blissful-storage exited with code 1

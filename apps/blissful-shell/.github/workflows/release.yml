@@ -1,0 +1,84 @@
+# Release workflow for the native Rust shell — built + signed + uploaded
+# to a GitHub Release on tag push.
+#
+# Trigger: push a tag like `shell-v0.4.0` (the prefix avoids stomping on
+# the Electron build's `v*` tags during the transition window).
+#
+# Secrets you need in the repo settings:
+#   BLISSFUL_CERT_PFX_BASE64   - the .pfx as base64
+#   BLISSFUL_CERT_PASSWORD     - .pfx password
+#
+# After this lands a Phase 7 spike, switch the tag prefix to plain `v*`
+# and retire .github/workflows for the Electron build (Phase 8 cutover).
+
+name: shell-release
+
+on:
+  push:
+    tags:
+      - 'shell-v*'
+
+permissions:
+  contents: write     # for gh release create / upload
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable, MSVC)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/blissful-mvs/package-lock.json
+
+      - name: Install WiX Toolset 3.14
+        shell: pwsh
+        run: |
+          $tmp = Join-Path $env:RUNNER_TEMP 'wix314.exe'
+          Invoke-WebRequest -Uri 'https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314.exe' -OutFile $tmp
+          Start-Process -FilePath $tmp -ArgumentList '/quiet' -Wait
+          echo "${env:ProgramFiles(x86)}\WiX Toolset v3.14\bin" >> $env:GITHUB_PATH
+
+      # libmpv + ffmpeg DLLs + stremio-service.zip are not in the repo
+      # (license + size reasons). They have to come from somewhere. Two
+      # options:
+      #   1. A separate "vendored-binaries" private GitHub release we
+      #      download here.
+      #   2. A separate workflow that builds libmpv from source via meson
+      #      + caches the artifact.
+      # For now this expects the binaries to be uploaded to an OCI
+      # registry or stored as workflow inputs — TODO fill in with the
+      # actual source once Phase 7 spike picks one.
+      - name: Sync vendored binaries
+        run: echo 'TODO Phase 7 spike — wire libmpv-2.dll + stremio-service.zip into resources/'
+
+      - name: Decode signing cert
+        shell: pwsh
+        env:
+          PFX_B64: ${{ secrets.BLISSFUL_CERT_PFX_BASE64 }}
+        run: |
+          if (-not $env:PFX_B64) { exit 0 }
+          $pfxPath = Join-Path $env:RUNNER_TEMP 'blissful-signing.pfx'
+          [System.IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:PFX_B64))
+          echo "BLISSFUL_CERT_PATH=$pfxPath" >> $env:GITHUB_ENV
+
+      - name: Build MSI
+        env:
+          BLISSFUL_CERT_PASSWORD: ${{ secrets.BLISSFUL_CERT_PASSWORD }}
+        shell: pwsh
+        working-directory: apps/blissful-shell/installer
+        run: ./build.ps1
+
+      - name: Upload MSI to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: apps/blissful-shell/installer/dist/*.msi
+          generate_release_notes: true

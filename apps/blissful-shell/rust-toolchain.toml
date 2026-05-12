@@ -1,0 +1,5 @@
+[toolchain]
+channel = "stable"
+profile = "default"
+components = ["rustfmt", "clippy"]
+targets = ["x86_64-pc-windows-msvc"]
