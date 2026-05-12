@@ -201,12 +201,17 @@ jobs:
       #     $exe = Get-ChildItem 'signed/BlissfulSetup-*.exe' | Select-Object -First 1
       #     "path=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      - name: Create draft GitHub release
+      - name: Publish GitHub release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           # When signing is enabled, switch this to steps.signed-installer.outputs.path
           files: ${{ steps.installer.outputs.path }}
-          draft: true
+          # Tags with a hyphen (v0.1.0-beta.1, v0.2.0-rc.3) are flagged as
+          # prereleases so the /releases/latest endpoint — and therefore
+          # the in-app updater — only picks up clean vX.Y.Z tags as
+          # stable updates. Push a vN.N.N (no suffix) when you actually
+          # want users on the new version.
+          prerelease: ${{ contains(github.ref, '-') }}
           generate_release_notes: true
           fail_on_unmatched_files: true
