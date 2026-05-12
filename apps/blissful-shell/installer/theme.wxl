@@ -6,10 +6,15 @@
   SuccessUninstallHeader are picked at runtime via EnableCondition.
 -->
 <WixLocalization xmlns="http://wixtoolset.org/schemas/v4/wxl" Culture="en-us">
-  <String Id="Caption">Blissful Setup</String>
+  <String Id="Caption">Blissful Installer</String>
 
   <String Id="HelpText">Pass /install, /modify, /repair, /uninstall on the command line.</String>
   <String Id="HelpCloseButton">&amp;Close</String>
+
+  <!-- Message shown when the user closes/cancels mid-install. WixStdBA
+       looks up this exact key by name — it wasn't in our wxl before, so
+       Burn rendered the literal "#(loc.ConfirmCancelMessage)" placeholder. -->
+  <String Id="ConfirmCancelMessage">Are you sure you want to cancel?</String>
 
   <String Id="InstallHeader">Click Install to install Blissful.</String>
   <String Id="InstallButton">&amp;Install</String>

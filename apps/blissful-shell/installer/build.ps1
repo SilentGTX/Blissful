@@ -177,7 +177,7 @@ $bundleObj = Join-Path $installerDir 'obj\bundle.wixobj'
   -out (Join-Path $installerDir 'obj\') `
   $bundleWxs
 if ($LASTEXITCODE -ne 0) { throw 'candle.exe (bundle) failed' }
-$exePath = Join-Path $distDir "Blissful-Setup-$rawVersion.exe"
+$exePath = Join-Path $distDir "Blissful-Installer-$rawVersion.exe"
 & light.exe -nologo `
   -ext WixBalExtension `
   -out $exePath `

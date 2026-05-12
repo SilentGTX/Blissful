@@ -38,6 +38,7 @@
       <bal:WixStandardBootstrapperApplication
         LicenseUrl="https://github.com/SilentGTX/Blissful"
         LaunchTarget="[ProgramFiles64Folder]Blissful\blissful-shell.exe"
+        LaunchWorkingFolder="[ProgramFiles64Folder]Blissful"
         SuppressOptionsUI="yes"
         ThemeFile="$(var.ResourcesDir)\theme.xml"
         LocalizationFile="$(var.ResourcesDir)\theme.wxl" />
