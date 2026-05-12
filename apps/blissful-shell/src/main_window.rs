@@ -80,10 +80,15 @@ pub fn run_spike(test_file: &str) -> Result<()> {
     // for the half-second before WebView2 paints. The webview's
     // NavigationCompleted handler un-hides via on_ready.
     use nwg::WindowFlags;
+    // Title shows the version alongside the brand so users (and bug
+    // reports) can tell at a glance which build they're running. The
+    // CARGO_PKG_VERSION env var is baked in at compile time from
+    // Cargo.toml so this never drifts from the actual binary version.
+    let window_title = format!("Blissful v{}", env!("CARGO_PKG_VERSION"));
     nwg::Window::builder()
         .size((1280, 720))
         .position((100, 100))
-        .title("Blissful")
+        .title(&window_title)
         .icon(Some(&window_icon))
         .flags(WindowFlags::MAIN_WINDOW | WindowFlags::WINDOW)
         .build(&mut window)

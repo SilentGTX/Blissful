@@ -8,6 +8,7 @@ import { ContinueWatchingDrawer } from './ContinueWatchingDrawer';
 import { ContinueWatchingItem } from './ContinueWatchingItem';
 import { CollapseIcon } from '../../icons/CollapseIcon';
 import { ContinueIcon } from '../../icons/ContinueIcon';
+import { desktop, isNativeShell } from '../../lib/desktop';
 
 export type DesktopNavProps = Pick<
   SideNavProps,
@@ -28,6 +29,27 @@ export function DesktopNav(props: DesktopNavProps) {
   const [isContinueOpen, setIsContinueOpen] = useState(false);
   const [isContinueTooltipOpen, setIsContinueTooltipOpen] = useState(false);
   const [continueExpanded, setContinueExpanded] = useState<boolean>(true);
+  // App version shown next to the "Blissful" wordmark in the sidebar
+  // header. Fetched once on mount via the shell IPC, which surfaces
+  // CARGO_PKG_VERSION from blissful-shell's Cargo.toml. Empty string
+  // outside the native shell (e.g. browser/dev) so the wordmark
+  // renders cleanly.
+  const [appVersion, setAppVersion] = useState<string>('');
+  useEffect(() => {
+    if (!isNativeShell()) return;
+    let cancelled = false;
+    desktop
+      .getAppVersion()
+      .then((v) => {
+        if (!cancelled) setAppVersion(v);
+      })
+      .catch(() => {
+        /* ignore — non-fatal */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleNavChange = (view: SideNavView) => {
     props.onChange(view);
@@ -75,7 +97,16 @@ export function DesktopNav(props: DesktopNavProps) {
           </div>
 
           {!collapsed ? (
-            <div className="truncate font-[Fraunces] text-lg font-semibold tracking-tight text-white">Blissful</div>
+            <div className="flex min-w-0 items-baseline gap-1.5 truncate">
+              <span className="font-[Fraunces] text-lg font-semibold tracking-tight text-white">
+                Blissful
+              </span>
+              {appVersion ? (
+                <span className="font-mono text-[10px] uppercase tracking-wider text-white/40">
+                  v{appVersion}
+                </span>
+              ) : null}
+            </div>
           ) : null}
         </div>
 
