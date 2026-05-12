@@ -27,11 +27,11 @@
 
 use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 use crate::ipc::protocol::{Event as IpcEvent, Outgoing};
 use crate::state::post_outgoing;
@@ -44,7 +44,8 @@ const FIRST_CHECK_DELAY: Duration = Duration::from_secs(15);
 /// Cadence after the first check. Matches the Electron auto-updater.
 const CHECK_INTERVAL: Duration = Duration::from_secs(30 * 60);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateInfo {
     /// The release's tag, with the leading "v" stripped — e.g. "0.5.1".
     pub version: String,
@@ -95,11 +96,26 @@ async fn check_loop() {
                     data: serde_json::json!(info.version),
                 }));
             }
-            Ok(None) => debug!("auto-updater: already on latest"),
-            Err(e) => debug!(error = ?e, "auto-updater: check failed (non-fatal)"),
+            Ok(None) => info!("auto-updater: already on latest"),
+            // Bumped to warn! (was debug!) so silent failures actually land
+            // in the player.log file the shell writes. With windows_subsystem
+            // = "windows" closing stderr in release builds, debug-level
+            // tracing is invisible — a check that consistently fails (DNS,
+            // TLS, parse) leaves no trail for diagnosis.
+            Err(e) => warn!(error = ?e, "auto-updater: check failed (non-fatal)"),
         }
         tokio::time::sleep(CHECK_INTERVAL).await;
     }
+}
+
+/// Pull-style accessor — returns the last update the background poller
+/// found, or None if either no check has run yet or the running version
+/// is already latest. The renderer polls this on mount + on a timer to
+/// work around the event-only firing of `update-available`, which is
+/// lossy if the React app hasn't finished mounting by the 15-second
+/// initial-check mark (next poll is 30 minutes out otherwise).
+pub fn get_available() -> Option<UpdateInfo> {
+    AVAILABLE.lock().unwrap().clone()
 }
 
 /// One-shot check. Returns Some(info) only if a newer tag exists with a
