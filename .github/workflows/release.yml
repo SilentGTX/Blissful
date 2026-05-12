@@ -1,0 +1,212 @@
+# Release pipeline for Blissful.
+#
+# Triggered by pushing a v* tag (e.g. `git tag v0.1.0-beta.1 && git push --tags`)
+# or manually via the Actions tab (workflow_dispatch).
+#
+# Produces a `BlissfulSetup-<version>.exe` Burn-bundled WiX installer and
+# attaches it to a *draft* GitHub release. The release is left in draft so
+# you can sanity-check before publishing — when you publish, the in-app
+# updater (apps/blissful-shell/src/updater.rs) starts notifying users.
+#
+# -----------------------------------------------------------------------------
+# REQUIRED ONE-TIME SETUP (before the first run)
+# -----------------------------------------------------------------------------
+#
+# The shell bundles non-redistributable runtime DLLs (LGPL libmpv + ffmpeg)
+# and the Stremio streaming server. These are gitignored — too large for
+# git, and the libmpv build needs to be LGPL-compliant (see
+# apps/blissful-shell/PREREQUISITES.md section 2). The workflow fetches
+# them at build time from URLs you configure as **repository variables**
+# under Settings -> Secrets and variables -> Actions -> Variables tab:
+#
+#   LIBMPV_ZIP_URL          — zip containing libmpv-2.dll + mpv.lib (LGPL build)
+#   FFMPEG_ZIP_URL          — zip with av*.dll + sw*.dll + postproc-55.dll
+#   STREMIO_SERVICE_ZIP_URL — direct URL to stremio-service.zip
+#   VCRUNTIME_ZIP_URL       — zip with msvcp140 + vcruntime140(_1).dll
+#
+# Recommended hosting: create a separate "vendor-binaries-v1" tag on this
+# repo, upload all four zips as release assets, and reference them by their
+# public download URL. The vendor blob then versions independently of the
+# app code.
+#
+# -----------------------------------------------------------------------------
+# SIGNPATH SIGNING (enable once SignPath Foundation approves the project)
+# -----------------------------------------------------------------------------
+#
+# The SignPath step at the bottom is commented out. To enable:
+#   1. Apply at https://signpath.org/apply (requires the LICENSE file at
+#      repo root — already added).
+#   2. After approval, generate a CI Submit token in SignPath.
+#   3. Add it as repository secret SIGNPATH_API_TOKEN.
+#   4. Add your SignPath organization ID as repository variable
+#      SIGNPATH_ORGANIZATION_ID.
+#   5. Uncomment the "Submit to SignPath" step below and adjust the
+#      project/policy/artifact slugs to match what you configured in
+#      SignPath's UI.
+#
+# Until then, releases ship unsigned and users will see the SmartScreen
+# "Windows protected your PC" prompt on first install. Document this in
+# the release notes so users know to click "More info -> Run anyway".
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build installer
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version from Cargo.toml
+        id: version
+        shell: pwsh
+        run: |
+          $line = Select-String -Path 'apps/blissful-shell/Cargo.toml' `
+            -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1
+          if (-not $line) { throw 'Could not parse version from Cargo.toml' }
+          $ver = $line.Matches.Groups[1].Value
+          "version=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Building Blissful v$ver"
+
+      - name: Set up Rust (stable, MSVC)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/blissful-shell
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: apps/blissful-mvs/package-lock.json
+
+      - name: Verify WiX 3.x is on PATH
+        shell: pwsh
+        run: |
+          # windows-latest runners pre-install WiX 3.11 at
+          # C:\Program Files (x86)\WiX Toolset v3.11\bin and add it to PATH.
+          $wix = Get-Command heat.exe -ErrorAction SilentlyContinue
+          if (-not $wix) {
+            throw 'heat.exe not on PATH — WiX 3.x missing from runner image'
+          }
+          heat.exe -? | Select-Object -First 1
+
+      - name: Fetch vendored runtime binaries
+        shell: pwsh
+        env:
+          LIBMPV_ZIP_URL: ${{ vars.LIBMPV_ZIP_URL }}
+          FFMPEG_ZIP_URL: ${{ vars.FFMPEG_ZIP_URL }}
+          STREMIO_SERVICE_ZIP_URL: ${{ vars.STREMIO_SERVICE_ZIP_URL }}
+          VCRUNTIME_ZIP_URL: ${{ vars.VCRUNTIME_ZIP_URL }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $required = @{
+            LIBMPV_ZIP_URL          = $env:LIBMPV_ZIP_URL
+            FFMPEG_ZIP_URL          = $env:FFMPEG_ZIP_URL
+            STREMIO_SERVICE_ZIP_URL = $env:STREMIO_SERVICE_ZIP_URL
+            VCRUNTIME_ZIP_URL       = $env:VCRUNTIME_ZIP_URL
+          }
+          $missing = $required.GetEnumerator() | Where-Object { -not $_.Value } | ForEach-Object { $_.Key }
+          if ($missing) {
+            throw "Repository variables not configured: $($missing -join ', '). See workflow header for instructions."
+          }
+
+          $resources = 'apps/blissful-shell/resources'
+          New-Item -ItemType Directory -Force -Path "$resources/mpv-x64" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$resources/ffmpeg-dlls" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$resources/vcruntime" | Out-Null
+
+          Write-Host '--> Fetching libmpv (LGPL build)...'
+          Invoke-WebRequest -Uri $env:LIBMPV_ZIP_URL -OutFile libmpv.zip
+          Expand-Archive -Path libmpv.zip -DestinationPath "$resources/mpv-x64" -Force
+          if (-not (Test-Path "$resources/mpv-x64/libmpv-2.dll")) {
+            throw 'libmpv-2.dll missing after extraction — wrong zip layout?'
+          }
+
+          Write-Host '--> Fetching ffmpeg DLLs...'
+          Invoke-WebRequest -Uri $env:FFMPEG_ZIP_URL -OutFile ffmpeg.zip
+          Expand-Archive -Path ffmpeg.zip -DestinationPath "$resources/ffmpeg-dlls" -Force
+
+          Write-Host '--> Fetching stremio-service...'
+          Invoke-WebRequest -Uri $env:STREMIO_SERVICE_ZIP_URL `
+            -OutFile "$resources/stremio-service.zip"
+
+          Write-Host '--> Fetching VC++ runtime DLLs...'
+          Invoke-WebRequest -Uri $env:VCRUNTIME_ZIP_URL -OutFile vcruntime.zip
+          Expand-Archive -Path vcruntime.zip -DestinationPath "$resources/vcruntime" -Force
+
+          Remove-Item libmpv.zip, ffmpeg.zip, vcruntime.zip
+
+      - name: Build installer
+        shell: pwsh
+        working-directory: apps/blissful-shell
+        run: ./installer/build.ps1 -SkipSign
+
+      - name: Locate built installer
+        id: installer
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem 'apps/blissful-shell/installer/dist/BlissfulSetup-*.exe' |
+                 Select-Object -First 1
+          if (-not $exe) { throw 'No installer found in installer/dist/' }
+          "path=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "name=$($exe.Name)"     | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Built: $($exe.FullName) ($([math]::Round($exe.Length/1MB,1)) MB)"
+
+      - name: Upload unsigned installer artifact
+        id: upload-unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlissfulSetup-${{ steps.version.outputs.version }}-unsigned
+          path: ${{ steps.installer.outputs.path }}
+          if-no-files-found: error
+          retention-days: 30
+
+      # ----------------------------------------------------------------------
+      # ENABLE AFTER SIGNPATH APPROVAL — see workflow header for setup steps.
+      # ----------------------------------------------------------------------
+      # - name: Submit to SignPath for signing
+      #   id: signing
+      #   uses: signpath/github-action-submit-signing-request@v1
+      #   with:
+      #     api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+      #     organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+      #     project-slug: blissful
+      #     signing-policy-slug: release-signing
+      #     artifact-configuration-slug: installer
+      #     github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+      #     wait-for-completion: true
+      #     output-artifact-directory: signed
+      #
+      # - name: Locate signed installer
+      #   id: signed-installer
+      #   shell: pwsh
+      #   run: |
+      #     $exe = Get-ChildItem 'signed/BlissfulSetup-*.exe' | Select-Object -First 1
+      #     "path=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Create draft GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          # When signing is enabled, switch this to steps.signed-installer.outputs.path
+          files: ${{ steps.installer.outputs.path }}
+          draft: true
+          generate_release_notes: true
+          fail_on_unmatched_files: true
