@@ -83,10 +83,15 @@ fn main() -> Result<()> {
 /// containing it (which we add to the DLL search path).
 fn locate_libmpv_dir(exe_dir: &std::path::Path) -> Option<PathBuf> {
     // In dev: apps/blissful-shell/resources/mpv-x64/
-    // In release: <install_dir>/mpv/
+    // In release: <install_dir>/mpv/ (legacy) or <install_dir>/ (flat MSI)
     let candidates = [
+        // Flat install layout: WiX MSI stages libmpv-2.dll directly next
+        // to blissful-shell.exe. Without this, main() bails on the
+        // .context(...)? on locate_libmpv_dir and the process exits with
+        // code 1 before any window can be drawn.
+        exe_dir.to_path_buf(),
         exe_dir.join("resources").join("mpv-x64"),
-        exe_dir.join("..").join("..").join("resources").join("mpv-x64"), // target/debug → up to crate root
+        exe_dir.join("..").join("..").join("resources").join("mpv-x64"),
         exe_dir.join("..").join("..").join("..").join("resources").join("mpv-x64"),
         exe_dir.join("mpv"),
     ];
