@@ -20,6 +20,9 @@ apps/blissful-shell/installer/build/
 apps/blissful-shell/installer/*.msi
 apps/blissful-shell/installer/*.exe
 
+# Local-only zips packaged for vendor-binaries-* GitHub release uploads
+vendor-binaries/
+
 # Editor / OS
 .DS_Store
 .idea/
