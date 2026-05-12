@@ -35,4 +35,21 @@ Runtime DLLs (libmpv, ffmpeg) and the bundled `stremio-service.zip` are NOT comm
 
 ## License
 
-TBD.
+The Blissful source code in this repository is licensed under the **MIT
+License** — see [LICENSE](LICENSE). You are free to use, modify, and
+redistribute the source under MIT terms.
+
+The **distributed installer** (`BlissfulSetup-*.exe`) bundles a copy of
+`libmpv-2.dll` built from the upstream [mpv](https://github.com/mpv-player/mpv)
+project's GPL configuration (currently the [shinchiro/mpv-winbuild-cmake](https://github.com/shinchiro/mpv-winbuild-cmake)
+prebuilt). As a result the **combined installer binary is governed by GPL
+terms on redistribution**, even though the Blissful source itself remains
+MIT. If you redistribute the installer you inherit the GPL obligations
+(make the corresponding source available, license the redistribution
+under GPL-compatible terms, etc.). The source of libmpv is publicly
+available at the link above; Blissful's own source is on this repository.
+
+This dual situation is normal for OSS projects that link against
+GPL-licensed media libraries (libmpv, GPL FFmpeg builds, etc.) and does
+not affect your ability to fork, modify, or self-build the Blissful
+source under MIT.
