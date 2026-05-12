@@ -22,13 +22,22 @@ export function useDesktopUpdater() {
   useEffect(() => {
     if (!isNativeShell()) return;
 
-    const kickOffDownload = () => {
-      if (downloadKickedOffRef.current) return;
+    // All log lines route to player.log via the shell's `log` IPC, so
+    // they survive `windows_subsystem = "windows"` in release builds.
+    const log = (line: string) => {
+      desktop.log(`[updater] ${line}`).catch(() => {});
+    };
+    log('hook mounted');
+
+    const kickOffDownload = (source: string) => {
+      if (downloadKickedOffRef.current) {
+        log(`download already kicked off, ignoring (source=${source})`);
+        return;
+      }
       downloadKickedOffRef.current = true;
-      desktop.downloadUpdate().catch(() => {
-        // Allow retry on next poll tick if this somehow failed at the
-        // IPC boundary (the actual download runs background-style in
-        // the shell and reports completion via `update-downloaded`).
+      log(`kicking off downloadUpdate (source=${source})`);
+      desktop.downloadUpdate().catch((e: unknown) => {
+        log(`downloadUpdate IPC threw: ${String(e)}`);
         downloadKickedOffRef.current = false;
       });
     };
@@ -37,35 +46,27 @@ export function useDesktopUpdater() {
       desktop
         .getUpdateStatus()
         .then((info) => {
-          if (info) kickOffDownload();
+          log(`getUpdateStatus -> ${info ? info.version : 'null'}`);
+          if (info) kickOffDownload('poll');
         })
-        .catch(() => {});
+        .catch((e: unknown) => {
+          log(`getUpdateStatus IPC threw: ${String(e)}`);
+        });
     };
 
-    // Immediate query on mount in case the backend already found an
-    // update before this hook subscribed (the event-firing path is
-    // one-shot per poll and isn't replayed to late subscribers).
     pollOnce();
-
-    // Safety-net polling. The backend's 30-minute cadence means a
-    // single missed event = 30 minutes of dead time; 30s polling
-    // closes that window without thrashing.
     const pollTimer = window.setInterval(pollOnce, 30 * 1000);
 
-    // Event-based fast path stays connected for the case where the
-    // renderer happens to be mounted in time for the firing.
-    const unsubAvail = desktop.onUpdateAvailable(() => {
-      kickOffDownload();
+    const unsubAvail = desktop.onUpdateAvailable((version: string) => {
+      log(`update-available event: ${version}`);
+      kickOffDownload('event');
     });
     const unsubDone = desktop.onUpdateDownloaded(() => {
+      log('update-downloaded event — toast firing');
       setUpdateReady(true);
     });
-    // If the download stalled or errored, unlock the kickoff ref so
-    // the next 30-second poll tick attempts a fresh download. Without
-    // this, a transient failure (network hiccup, CDN drop) strands the
-    // renderer waiting for an `update-downloaded` event that will
-    // never fire.
-    const unsubFail = desktop.onUpdateDownloadFailed(() => {
+    const unsubFail = desktop.onUpdateDownloadFailed((reason: string) => {
+      log(`update-download-failed event: ${reason}`);
       downloadKickedOffRef.current = false;
     });
 

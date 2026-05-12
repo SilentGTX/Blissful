@@ -36,14 +36,73 @@ mod webview;
 const PHASE_0A_TEST_FILE: &str = r"D:\JS\OpenCode\apps\blissful-shell\resources\test-media\bbb_full.mp4";
 
 fn main() -> Result<()> {
-    // Tracing — env-filter via RUST_LOG; defaults to info-level for our crate.
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("blissful_shell=debug,info")))
-        .with_target(true)
-        .with_thread_ids(true)
-        .init();
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("blissful_shell=debug,info"));
+
+    // In release builds, `windows_subsystem = "windows"` closes stderr,
+    // so the default tracing_subscriber writer drops every log line
+    // into the void — meaning a user-reported issue like "updater
+    // isn't firing" has zero diagnostic surface to work from. Write
+    // to %APPDATA%/Blissful/shell.log instead. Truncated per launch
+    // so the file reflects "what happened this session" rather than
+    // growing unbounded.
+    //
+    // Debug builds keep stderr — `cargo run` is more useful with live
+    // terminal output, and the file would just add noise.
+    let log_path = std::env::var_os("APPDATA")
+        .map(|appdata| PathBuf::from(appdata).join("Blissful").join("shell.log"));
+
+    #[cfg(debug_assertions)]
+    {
+        let _ = &log_path; // unused in debug; suppress warning
+        tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_target(true)
+            .with_thread_ids(true)
+            .init();
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        if let Some(p) = &log_path {
+            if let Some(parent) = p.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if let Ok(file) = std::fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(p)
+            {
+                tracing_subscriber::fmt()
+                    .with_env_filter(filter)
+                    .with_target(true)
+                    .with_thread_ids(true)
+                    .with_ansi(false)
+                    .with_writer(std::sync::Mutex::new(file))
+                    .init();
+            } else {
+                // Fall back to default (stderr, which is closed). Better
+                // than nothing — and if we ever flip windows_subsystem
+                // off for a release diagnostic build, output reappears.
+                tracing_subscriber::fmt()
+                    .with_env_filter(filter)
+                    .with_target(true)
+                    .with_thread_ids(true)
+                    .init();
+            }
+        } else {
+            tracing_subscriber::fmt()
+                .with_env_filter(filter)
+                .with_target(true)
+                .with_thread_ids(true)
+                .init();
+        }
+    }
 
     info!("Blissful Shell v{} starting", env!("CARGO_PKG_VERSION"));
+    if let Some(p) = &log_path {
+        info!(path = %p.display(), "shell tracing log file");
+    }
 
     // libmpv-2.dll lookup: must be in resources/mpv-x64/ next to the exe in
     // dev, or in the install dir in release builds.
