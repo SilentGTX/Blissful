@@ -1,25 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Localization strings for the Blissful Setup bundle theme. Strings
-  referenced as #(loc.Name) inside theme.xml. Keep short - the dialog
-  is intentionally minimal. ASCII-only on purpose: build.ps1's text
-  patching pipeline corrupts non-ASCII (an earlier '...' ellipsis
-  character got mangled to garbage after a round-trip).
+  Localization strings for the Blissful Setup bundle theme. String keys
+  match the WiX 3.x stock HyperlinkTheme.wxl naming so WixStdBA's
+  auto-toggle of named Success/Failure controls works as designed.
+
+  ASCII-only - build.ps1's PowerShell text patching round-trip mojibakes
+  non-ASCII characters.
 -->
-<WixLocalization xmlns="http://wixtoolset.org/schemas/v4/wxl" Culture="en-us">
-  <!-- Title bar text. Format copied from Stremio's installer:
-       "Setup - Blissful version X.Y.Z". The version is patched in at
-       build time by build.ps1 (replaces @VERSION@ with $rawVersion
-       from Cargo.toml). DON'T hand-edit the version part - it's
-       auto-substituted. -->
+<WixLocalization xmlns="http://schemas.microsoft.com/wix/2006/localization" Culture="en-us">
+  <!-- Title bar. @VERSION@ is patched at build time by build.ps1
+       (replaced with $rawVersion from Cargo.toml, then restored to
+       the placeholder after the build to keep the working tree clean). -->
   <String Id="Caption">Setup - Blissful version @VERSION@</String>
 
+  <String Id="HelpHeader">Help</String>
   <String Id="HelpText">Pass /install, /modify, /repair, /uninstall on the command line.</String>
   <String Id="HelpCloseButton">&amp;Close</String>
 
-  <!-- WixStdBA looks up ConfirmCancelMessage by name when the user
-       cancels mid-install. Without it, the literal placeholder leaks
-       into the prompt. -->
   <String Id="ConfirmCancelMessage">Are you sure you want to cancel?</String>
 
   <String Id="InstallHeader">Click Install to install Blissful.</String>
@@ -30,23 +27,28 @@
   <String Id="OptionsOkButton">&amp;OK</String>
   <String Id="OptionsCancelButton">&amp;Cancel</String>
 
-  <String Id="ProgressHeader">Installing Blissful...</String>
+  <String Id="ProgressHeader">Installing Blissful</String>
+  <String Id="ProgressLabel">Status:</String>
+  <String Id="OverallProgressPackageText">Initializing</String>
   <String Id="ProgressCancelButton">&amp;Cancel</String>
-  <String Id="OverallProgressPackageText">Initializing...</String>
 
   <String Id="ModifyHeader">Modify, repair, or uninstall Blissful.</String>
-  <String Id="RepairButton">&amp;Repair</String>
-  <String Id="UninstallButton">&amp;Uninstall</String>
-  <String Id="ModifyCancelButton">&amp;Cancel</String>
+  <String Id="ModifyRepairButton">&amp;Repair</String>
+  <String Id="ModifyUninstallButton">&amp;Uninstall</String>
+  <String Id="ModifyCloseButton">&amp;Cancel</String>
 
-  <!-- Single success header for install/uninstall/repair. WiX 3.x
-       theme conditions can't differentiate WixBundleAction reliably,
-       so we use one neutral string that fits all flows. -->
+  <!-- WixStdBA picks one of these by name based on the bundle action. -->
   <String Id="SuccessHeader">Setup complete.</String>
-  <String Id="LaunchButton">&amp;Launch</String>
+  <String Id="SuccessInstallHeader">Blissful installed.</String>
+  <String Id="SuccessRepairHeader">Blissful repaired.</String>
+  <String Id="SuccessUninstallHeader">Blissful uninstalled.</String>
+  <String Id="SuccessLaunchButton">&amp;Launch</String>
   <String Id="SuccessCloseButton">&amp;Close</String>
 
-  <String Id="FailureHeader">Setup failed. The log has details on what went wrong.</String>
-  <String Id="FailureHyperlinkLogText">View &lt;a href="#"&gt;log&lt;/a&gt;</String>
+  <String Id="FailureHeader">Setup failed.</String>
+  <String Id="FailureInstallHeader">Installation failed.</String>
+  <String Id="FailureUninstallHeader">Uninstall failed.</String>
+  <String Id="FailureRepairHeader">Repair failed.</String>
+  <String Id="FailureHyperlinkLogText">For more details see the &lt;a href="#"&gt;log&lt;/a&gt;.</String>
   <String Id="FailureCloseButton">&amp;Close</String>
 </WixLocalization>
