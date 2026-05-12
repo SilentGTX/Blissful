@@ -162,6 +162,29 @@ $msiPath = Join-Path $distDir "Blissful-Setup-$rawVersion.msi"
 if ($LASTEXITCODE -ne 0) { throw 'light.exe failed' }
 Write-Host "MSI produced: $msiPath" -ForegroundColor Green
 
+# --- 4.5. WiX Burn bundle: wrap MSI into Setup.exe ---
+# Produces a self-contained Setup.exe with the Blissful icon. The MSI
+# is embedded as a payload; running the exe shows the Burn wizard and
+# then chains the MSI install.
+Write-Host '== WiX Burn: wrapping MSI into Setup.exe ==' -ForegroundColor Yellow
+$bundleWxs = Join-Path $installerDir 'bundle.wxs'
+$bundleObj = Join-Path $installerDir 'obj\bundle.wixobj'
+& candle.exe -nologo `
+  "-dProductVersion=$msiVersion" `
+  "-dResourcesDir=$resourcesDir" `
+  "-dMsiPath=$msiPath" `
+  -ext WixBalExtension `
+  -out (Join-Path $installerDir 'obj\') `
+  $bundleWxs
+if ($LASTEXITCODE -ne 0) { throw 'candle.exe (bundle) failed' }
+$exePath = Join-Path $distDir "Blissful-Setup-$rawVersion.exe"
+& light.exe -nologo `
+  -ext WixBalExtension `
+  -out $exePath `
+  $bundleObj
+if ($LASTEXITCODE -ne 0) { throw 'light.exe (bundle) failed' }
+Write-Host "Bundle EXE produced: $exePath" -ForegroundColor Green
+
 # --- 5. Sign the MSI ---
 if (-not $SkipSign -and $CertPath -and (Test-Path $CertPath)) {
   Write-Host '== signing MSI ==' -ForegroundColor Yellow

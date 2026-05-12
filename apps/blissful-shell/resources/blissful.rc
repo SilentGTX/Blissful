@@ -1,0 +1,10 @@
+// Win32 resource script for blissful-shell.exe.
+//
+// Compiled by `embed_resource` (build.rs) and linked into the EXE so that
+// Windows Explorer / taskbar / Alt+Tab show the Blissful brand icon
+// instead of the default executable icon. The same `icon.ico` is shipped
+// alongside the EXE for the MSI installer's Add/Remove Programs entry.
+
+#include <winresrc.h>
+
+IDI_ICON1  ICON  "icon.ico"

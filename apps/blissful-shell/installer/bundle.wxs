@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  WiX Burn bundle that wraps Blissful-Setup-<ver>.msi into a single
+  Setup.exe. Users get the more-familiar "double-click Setup.exe"
+  experience and Windows shows the Blissful icon on the file.
+
+  The exe is a bootstrapper: it doesn't do the install itself, it just
+  presents a UI, then chains to the embedded MSI. WiX provides the
+  WixStandardBootstrapperApplication (theme = HyperlinkLicense) which
+  is a built-in Aero-style wizard. No license file needed when we use
+  the HyperlinkLicense variant and set LicenseUrl to a hosted page.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
+     xmlns:bal="http://schemas.microsoft.com/wix/BalExtension">
+
+  <Bundle Name="Blissful"
+          Version="$(var.ProductVersion)"
+          Manufacturer="Blissful"
+          UpgradeCode="C8F4E7B3-5A92-4D11-9F8D-2E1A6B3C4D7E"
+          IconSourceFile="$(var.ResourcesDir)\icon.ico"
+          Compressed="yes">
+
+    <!-- Built-in standard bootstrapper UI with a "View license" link.
+         No RTF file required; LicenseUrl points to the repo so users
+         can read terms there. -->
+    <BootstrapperApplicationRef Id="WixStandardBootstrapperApplication.HyperlinkLicense">
+      <bal:WixStandardBootstrapperApplication
+        LicenseUrl="https://github.com/SilentGTX/Blissful"
+        SuppressOptionsUI="yes"
+        LogoFile="$(var.ResourcesDir)\icon.ico" />
+    </BootstrapperApplicationRef>
+
+    <Chain>
+      <MsiPackage SourceFile="$(var.MsiPath)"
+                  Vital="yes"
+                  Visible="no"
+                  Compressed="yes" />
+    </Chain>
+  </Bundle>
+</Wix>

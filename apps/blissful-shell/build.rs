@@ -33,4 +33,14 @@ fn main() {
     // accepts the directive — the linker just won't find mpv.lib and will
     // produce LNK1181, which is the clearer error of the two.
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
+
+    // Embed the Win32 resource script that ships icon.ico into the EXE.
+    // Without this, Windows Explorer/taskbar/Alt+Tab show the default
+    // executable icon instead of the Blissful brand mark. Only runs on
+    // Windows targets — embed_resource is a no-op elsewhere.
+    let rc = crate_dir.join("resources").join("blissful.rc");
+    let ico = crate_dir.join("resources").join("icon.ico");
+    println!("cargo:rerun-if-changed={}", rc.display());
+    println!("cargo:rerun-if-changed={}", ico.display());
+    embed_resource::compile(&rc, embed_resource::NONE);
 }
