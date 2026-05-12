@@ -122,17 +122,25 @@ if ($LASTEXITCODE -ne 0) { throw 'heat.exe failed' }
 
 # Also surface the WebView2 bootstrapper under a stable FileKey so the
 # WiX <CustomAction FileKey="WebView2BootstrapperFile"> resolves. The
-# auto-generated component IDs aren't stable, so we patch via a sed-
-# style replace.
+# auto-generated component IDs aren't stable, so we REPLACE heat's
+# generated File Id with our well-known one (NOT append — appending
+# leaves two Id= attributes on the same element, which candle rejects
+# with CNDL0104 "duplicate attribute name").
 $wxsText = Get-Content $generatedWxs -Raw
-$wxsText = $wxsText -replace 'Source="\$\(var.StagingDir\)\\MicrosoftEdgeWebview2Setup\.exe"', `
-  'Source="$(var.StagingDir)\MicrosoftEdgeWebview2Setup.exe" Id="WebView2BootstrapperFile"'
+$wxsText = $wxsText -replace `
+  '<File Id="fil[A-Fa-f0-9]+"([^/]*Source="\$\(var\.StagingDir\)\\MicrosoftEdgeWebview2Setup\.exe"[^/]*)/>', `
+  '<File Id="WebView2BootstrapperFile"$1/>'
 Set-Content $generatedWxs $wxsText -Encoding UTF8
 
 Write-Host '== WiX candle: compiling ==' -ForegroundColor Yellow
 $resourcesDir = Join-Path $shellDir 'installer'
 $wxsMain = Join-Path $installerDir 'blissful.wxs'
+# -arch x64: emit 64-bit components so they install into the 64-bit
+# Program Files tree without ICE80 ("32BitComponent uses 64BitDirectory")
+# light validation errors. Blissful is x64-only; libmpv-2.dll, the
+# ffmpeg DLLs, and the Rust shell are all built for x86_64-pc-windows-msvc.
 & candle.exe -nologo `
+  -arch x64 `
   "-dProductVersion=$msiVersion" `
   "-dResourcesDir=$resourcesDir" `
   "-dStagingDir=$stagingDir" `

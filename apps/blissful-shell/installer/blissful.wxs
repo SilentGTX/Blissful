@@ -9,12 +9,12 @@
 
   Build flow (see build.ps1 in this directory):
 
-    1. cargo build --release  ->  target/release/blissful-shell.exe
-    2. npm run build          ->  apps/blissful-mvs/dist/
-    3. sync dist + resources  ->  installer/staging/
-    4. heat.exe (WiX harvest) ->  installer/staging-files.wxs
-    5. candle.exe + light.exe ->  dist/Blissful-Setup-<version>.msi
-    6. sign.ps1 (signtool)    ->  signs the MSI with our Authenticode cert
+    1. cargo build (release)   to target/release/blissful-shell.exe
+    2. npm run build           to apps/blissful-mvs/dist/
+    3. sync dist + resources   to installer/staging/
+    4. heat.exe (WiX harvest)  to installer/staging-files.wxs
+    5. candle.exe + light.exe  to dist/Blissful-Setup-VERSION.msi
+    6. sign.ps1 (signtool)     signs the MSI with our Authenticode cert
 
   Per Phase 7 of apps/blissful-shell/plan.md.
 -->
