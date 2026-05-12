@@ -433,6 +433,9 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   // HDR. Used to render the HDR badge top-right of the player —
   // matches Stremio's HDRLabel behavior 1:1.
   const [videoGamma, setVideoGamma] = useState<string | null>(null);
+  // Display dimensions of the active video (post aspect-ratio correction).
+  // Drives the "4K" badge top-right when dwidth >= 3840.
+  const [videoDwidth, setVideoDwidth] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Phase 4 iter 2 state.
   const [volume, setVolume] = useState(100);
@@ -878,6 +881,15 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
             setVideoGamma(null);
           }
           break;
+        case 'dwidth':
+          // Post-aspect-correction width of the active video track.
+          // Drives the 4K badge top-right (>= 3840 = UHD/4K).
+          if (typeof value === 'number') {
+            setVideoDwidth(value);
+          } else {
+            setVideoDwidth(null);
+          }
+          break;
       }
     });
     const unsubEvt = desktop.onMpvEvent((e) => {
@@ -1079,6 +1091,13 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     // respecting the ASS style. We push it from the renderer (not just
     // mpv init) so the change takes effect without a shell rebuild.
     desktop.mpv.command('set', 'sub-ass-override', 'force').catch(() => {});
+    // ASS scripts carry their own positioning (\an alignment + MarginV
+    // pixels per dialogue line). `sub-ass-override=force` overrides
+    // styling but NOT positioning — we need this flag to make mpv's
+    // `sub-margin-y` / `sub-pos` actually apply to embedded ASS subs.
+    // Without it, BluRay rips' subs ignore the vertical-position slider
+    // entirely while SRT/VTT addon subs move fine.
+    desktop.mpv.command('set', 'sub-ass-force-margins', 'yes').catch(() => {});
     // sub-scale wins over sub-font-size for ASS subs. 28 px = 1.0x.
     const sizeScale = settings.subtitlesSizePx / 28;
     desktop.mpv.command('set', 'sub-scale', String(sizeScale)).catch(() => {});
@@ -1377,6 +1396,9 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     // playback's gamma value lingers on top of an SDR follow-up until
     // mpv reports a fresh `video-params/gamma`.
     setVideoGamma(null);
+    // Same reasoning for the 4K badge: a previous file's dwidth must
+    // not leak onto a lower-resolution follow-up.
+    setVideoDwidth(null);
     // Reset the playback-time latch so the next file starts with the
     // time-pos fallback active until playback-time begins ticking.
     hasPlaybackTimeRef.current = false;
@@ -1566,22 +1588,53 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       .catch((e: unknown) => console.error('[player] sub-delay failed', e));
   }, [subtitleDelay]);
 
-  // Push vertical position. mpv sub-pos: 0=top..100=bottom. Slider is
-  // centered at 0 (default), positive lifts subs up, negative pushes
-  // them down (clamped at the bottom edge of the screen).
-  //
-  // Also bump sub-margin-y (distance from bottom edge in pixels) so
-  // embedded subs sit ABOVE the controls bar by default, matching
-  // Stremio. Default mpv margin is 22; we use 120 so subs clear the
-  // ~120px bottom controls card.
+  // Push vertical position. Two-axis mapping so the whole -50..+50 range
+  // is usable:
+  //   - Positive offset moves subs UP via mpv `sub-pos` (0=top..100=bottom).
+  //     sub-margin-y stays at 120 so subs still clear the controls card.
+  //   - Negative offset moves subs DOWN by shrinking `sub-margin-y` —
+  //     sub-pos can't go above 100 (mpv clamps), so the only way past
+  //     the controls-clearance margin is to reduce that margin. At
+  //     offset = -50 the margin reaches 0, putting subs flush with the
+  //     window's bottom edge (i.e. into the letterbox bar on
+  //     cinemascope content).
+  // Default mpv margin is 22; we use 120 as the offset=0 baseline so
+  // embedded subs clear the ~120px bottom controls card by default.
   useEffect(() => {
-    const subPos = Math.max(0, Math.min(100, 100 - subtitleVerticalPercent));
+    // Baseline shifted DOWN from mpv's 100 default: at slider=0 subs
+    // sit at the screen edge / into the letterbox bar on widescreen.
+    //   slider=+50 → sub-pos=50,  sub-margin-y=+120 (mid-screen, clear of controls)
+    //   slider=  0 → sub-pos=120, sub-margin-y=0    (baseline — into letterbox)
+    //   slider=-50 → sub-pos=120, sub-margin-y=-200 (deeper into letterbox)
+    //
+    // sub-pos alone clamps at the screen edge for ASS subs even at the
+    // 150 max — libass keeps the text inside its render surface. To
+    // push past that we drop sub-margin-y NEGATIVE on the down half;
+    // mpv interprets that as "below the bottom edge" and libass renders
+    // accordingly. Unlike sub-ass-force-style this is applied at render
+    // time with no track reload, so dragging the slider doesn't
+    // re-buffer.
+    const subPos =
+      subtitleVerticalPercent >= 0
+        ? Math.max(0, 120 - subtitleVerticalPercent * 1.4)
+        : 120;
+    // Asymmetric ramp: positive slope 2.4/unit gives +50 → +120 (clears
+    // controls when subs are pulled up via sub-pos), negative slope
+    // 4/unit gives -50 → -200 (subs ~200px below screen edge).
+    const subMarginY =
+      subtitleVerticalPercent >= 0
+        ? Math.round(subtitleVerticalPercent * 2.4)
+        : Math.round(subtitleVerticalPercent * 4);
     desktop.mpv
       .command('set', 'sub-pos', String(subPos))
       .catch((e: unknown) => console.error('[player] sub-pos failed', e));
     desktop.mpv
-      .command('set', 'sub-margin-y', '120')
+      .command('set', 'sub-margin-y', String(subMarginY))
       .catch((e: unknown) => console.error('[player] sub-margin-y failed', e));
+    // Force libass to re-render with the new margins. Without this, ASS
+    // subs that were parsed before sub-ass-force-margins=yes was set
+    // keep their original positions even after sub-margin-y changes.
+    desktop.mpv.command('sub-reload').catch(() => {});
   }, [subtitleVerticalPercent]);
 
   // When the user picks a color in the modal we update local state and
@@ -2121,11 +2174,25 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
           <div className="flex items-center gap-2">
             {(() => {
               const isHdr = videoGamma === 'pq' || videoGamma === 'hlg';
+              // 4K detection: stream title parsing gives an instant
+              // badge before the decoder has reported dimensions, but
+              // uploaders mislabel constantly (1080p reencodes tagged
+              // "4K", upscales sold as UHD). Once mpv reports `dwidth`
+              // we trust that as ground truth and let it override the
+              // title's claim either direction.
+              const titleSays4K = /\b(?:2160p|4k|uhd)\b/i.test(props.title ?? '');
+              const is4K =
+                videoDwidth !== null ? videoDwidth >= 3840 : titleSays4K;
               const isRealDebrid = /\/resolve\/realdebrid\//i.test(props.url ?? '');
               const badgeClass =
                 'rounded-md border border-white/15 bg-black/45 px-2 py-1 text-[10px] font-bold tracking-wider text-white/80 backdrop-blur';
               return (
                 <>
+                  {is4K ? (
+                    <div className={badgeClass} title="Ultra High Definition">
+                      4K
+                    </div>
+                  ) : null}
                   {isHdr ? (
                     <div className={badgeClass} title={videoGamma === 'pq' ? 'HDR10' : 'HLG'}>
                       HDR

@@ -97,6 +97,13 @@ impl Player {
             // style. Most BluRay rips ship ASS subs; this is the only
             // way the user's settings actually show up.
             init.set_property("sub-ass-override", "force")?;
+            // Make ASS subs respect mpv's sub-margin-y / sub-pos values
+            // (otherwise the script's baked-in \an + MarginV win and the
+            // renderer's vertical-position slider does nothing for
+            // embedded BluRay-rip subs). Pair with sub-use-margins=yes so
+            // subs can render in letterbox bars when margin-y is small.
+            init.set_property("sub-ass-force-margins", "yes")?;
+            init.set_property("sub-use-margins", "yes")?;
             // Single playback tuning: wait for 5 seconds of buffer before
             // resuming from underrun instead of mpv's 1s default. Same
             // total throughput either way (peer-limited), but groups the

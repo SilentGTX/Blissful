@@ -71,6 +71,10 @@ pub const OBSERVED_PROPERTIES: &[(&str, libmpv2::Format)] = &[
     // HDR badge whenever this is "pq" or "hlg" — we observe it as a
     // string and dispatch the same UI cue in the renderer.
     ("video-params/gamma", libmpv2::Format::String),
+    // Post-aspect-correction display dimensions of the active video.
+    // The renderer surfaces a "4K" badge top-right when dwidth >= 3840.
+    ("dwidth", libmpv2::Format::Int64),
+    ("dheight", libmpv2::Format::Int64),
     // `seeking` flips true while mpv is processing a seek (before the
     // new position has actually rendered). Stremio's player OR's this
     // with `paused-for-cache` into a single `buffering` boolean —
