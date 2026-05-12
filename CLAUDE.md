@@ -4,21 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Overview
 
-**Blissful** — a native Windows Stremio client. Two apps:
+**Blissful** — a native Windows Stremio client. Two apps under one repo:
 
 - `apps/blissful-shell/` — Rust native shell. Hosts a same-origin local HTTP server (`/addon-proxy`, `/storage/*`, `/stremio/*`, `/subtitles.vtt`, `/opensubHash`), spawns + supervises the bundled `stremio-service`, drives playback via in-process `libmpv2`, ships the GitHub-Releases auto-updater.
-- `apps/blissful-mvs/` — React UI. Built into `dist/` and served by the shell. Also runs in a browser against `https://blissful.budinoff.com` (the same app — see "Mirror relationship" below).
+- `apps/blissful-mvs/` — React UI. Built into `dist/` and served by the shell.
 
 The shell auto-detects whether a Vite dev server is up on `:5173` and proxies UI requests to it; otherwise it serves the prebuilt `apps/blissful-mvs/dist/`.
 
-## Mirror relationship
-
-This repo is a mirror of the same two apps in `SilentGTX/OpenCode` (private). The two repos diverge on intent:
-
-- **This repo (`SilentGTX/Blissful`, public)** — source of truth for the **Windows desktop app**. Releases live on this repo's GitHub Releases tab; the in-app updater polls here.
-- **OpenCode monorepo (private)** — source of truth for the **deployed web app at `blissful.budinoff.com`**. Has Docker compose, Mac-mini infra, MongoDB-backed storage server, Traefik routing, etc. Receives the same `apps/blissful-mvs/` source.
-
-`apps/blissful-mvs/` content should stay byte-identical between the two repos (modulo line endings). When you change UI code, mirror the change to the other repo. There's no automation for this yet — manual `cp` is fine.
+**Scope of this repo:** Windows desktop client only. The React UI also runs in a browser context (`SimplePlayer` instead of `NativeMpvPlayer`, `isNativeShell()` gating, etc.) — those code paths exist but the web deployment is not maintained from this repo and is not the focus of work here.
 
 ## Build & Dev Commands
 
@@ -30,7 +23,7 @@ This repo is a mirror of the same two apps in `SilentGTX/OpenCode` (private). Th
 cd apps\blissful-shell
 cargo run --features spike0a
 
-# Release build (used by installer/build.ps1, no need to run directly):
+# Release build (driven by installer/build.ps1, no need to run directly):
 cargo build --release --features spike0a
 ```
 
@@ -53,8 +46,10 @@ npm --prefix apps\blissful-mvs run build
 
 ### Installer (WiX 3.x + Burn bundle)
 
+The canonical release path is the CI workflow (see [Releases](#releases) below). For local installer builds:
+
 ```powershell
-# End-to-end pipeline: builds UI + Rust shell + MSI + bundle EXE.
+# End-to-end pipeline: builds UI + Rust shell + WiX MSI + Burn bundle EXE.
 # Output: apps/blissful-shell/installer/dist/BlissfulSetup-<ver>.exe
 $env:Path = "C:\path\to\wix314;C:\Users\<you>\.cargo\bin;" + $env:Path
 apps\blissful-shell\installer\build.ps1 -SkipSign
@@ -64,7 +59,7 @@ Prereqs (one-time):
 - Rust toolchain (rustup + MSVC build tools)
 - Node + npm
 - WiX 3.x binaries on PATH (`heat.exe`, `candle.exe`, `light.exe`) — download from https://github.com/wixtoolset/wix3/releases
-- Vendored binaries staged under `apps/blissful-shell/resources/` — `mpv-x64/libmpv-2.dll` + `mpv.lib`, `ffmpeg-dlls/*.dll`, `stremio-service.zip`, `vcruntime/*.dll`. For CI the release workflow fetches these from the `vendor-binaries-v1` GitHub release
+- Vendored binaries staged under `apps/blissful-shell/resources/` — `mpv-x64/libmpv-2.dll` + `mpv.lib`, `ffmpeg-dlls/*.dll`, `stremio-service.zip`, `vcruntime/*.dll`. For CI the release workflow fetches these from the `vendor-binaries-v1` GitHub release.
 
 ## Blissful Shell Architecture (apps/blissful-shell/)
 
@@ -80,8 +75,9 @@ The shell ships 1:1 with Stremio Desktop playback quality: in-process libmpv wit
 - `src/ui_server.rs` — same-origin local HTTP server on `:5175` (port-scan fallback 5175..5190). Serves the React app + proxies `/addon-proxy`, `/storage/*`, `/stremio/*`. The renderer thinks it's on a single origin so CORS never trips. Forwards `x-stremio-auth` etc. to the storage upstream.
 - `src/streaming_server.rs` — extracts `stremio-service.zip` to `%APPDATA%\Blissful\stremio-service\` on first run, copies bundled ffmpeg DLLs alongside, spawns `stremio-runtime.exe` detached, supervises by PID. Writes an aggressive `server-settings.json` (cacheSize, BT caps) so 4K HEVC streams aren't throttled. Reuses an existing Stremio-Desktop streaming server if port 11470 is already bound.
 - `src/player/mpv.rs` — `libmpv2` wrapper. The renderer's `NativeMpvPlayer` issues `loadfile`, `set_property`, etc. via IPC; this module dispatches them on the libmpv handle.
+- `src/player/mpv_events.rs` — list of mpv properties the shell observes and forwards to the renderer (time-pos, pause, video-params/gamma for HDR, dwidth/dheight for 4K, etc.). Add a property here when the renderer needs to react to a new mpv state.
 - `src/ipc/` — typed protocol between WebView2 renderer and shell main. JSON over `postMessage` + `addScriptToExecuteOnDocumentCreated`. Responses correlated by UUID.
-- `src/updater.rs` — polls `GITHUB_REPO = "SilentGTX/Blissful"` every 30 min, surfaces "update available" / "update downloaded" events to the renderer over IPC, spawns the new installer on user confirmation, quits.
+- `src/updater.rs` — polls `GITHUB_REPO = "SilentGTX/Blissful"` every 30 min, surfaces "update available" / "update downloaded" events to the renderer over IPC, spawns the new installer on user confirmation, quits. Drafts are invisible (the API returns `/releases/latest` only for published, non-draft, non-prerelease entries).
 - `src/tray.rs` — system tray icon + show/hide/quit menu.
 - `src/state.rs` — `ShellState` (main HWND, Player handle) accessed from IPC handlers via `thread_local!`.
 
@@ -104,14 +100,6 @@ If any of these fall through to None, the shell exits before any window can be d
 - `bundle-logo.png` (350x200), `installer-banner.bmp`, `installer-dialog.bmp` — branded artwork.
 - `build.ps1` — end-to-end pipeline. Reads version from `Cargo.toml`, templates `@VERSION@` into `theme.wxl`, runs `npm run build` + `cargo build --release --features spike0a`, stages payload, runs `heat -> candle -> light` twice (MSI, then bundle EXE). Restores the templated `theme.wxl` in a `finally` block so the working tree stays template-shaped. **ASCII-only** — same CP1252 mojibake hazard.
 
-### Release process
-
-1. Bump `version` in `apps/blissful-shell/Cargo.toml`.
-2. Run `apps\blissful-shell\installer\build.ps1 -SkipSign` from a shell with WiX + cargo on PATH.
-3. Create a GitHub Release with tag `v<version>` on `SilentGTX/Blissful`.
-4. Upload `apps/blissful-shell/installer/dist/BlissfulSetup-<version>.exe` to the release.
-5. The auto-updater (`src/updater.rs`) detects the new release within 30 min and prompts users to install.
-
 ### Stremio cache (gotcha)
 
 The shell writes `server-settings.json` to `%APPDATA%\stremio\stremio-server\` with `cacheSize: 107374182400` (100 GB). The runtime fills this cache as users stream. On long-running installs this can grow to tens of GB. Safe to wipe at `%APPDATA%\stremio\stremio-server\stremio-cache\` while Blissful + Stremio are both closed.
@@ -124,7 +112,7 @@ The shell writes `server-settings.json` to `%APPDATA%\stremio\stremio-server\` w
 
 1. **Stremio Core API** (`lib/stremioApi.ts`) — auth, library sync, addon management. Endpoint `https://api.strem.io/api/*`.
 2. **Addon protocol** (`lib/stremioAddon.ts`) — fetches manifest/catalog/meta/stream/subtitles from addon URLs. All requests go through `/addon-proxy` for CORS. 5-minute in-memory cache per resource type.
-3. **Storage server** (`lib/storageApi.ts`) — persists user prefs (player settings, home row order, theme, etc.) to MongoDB-backed `blissful-storage`.
+3. **Storage server** (`lib/storageApi.ts`) — persists user prefs (player settings, home row order, theme, etc.) to a remote MongoDB-backed `blissful-storage` server. The shell proxies these calls through `/storage/*` so the renderer treats them as same-origin. The storage service is hosted separately and out of scope for this repo.
 4. **Local state** — watch progress (`progressStore.ts`), stream history (`streamHistory.ts`), library bookmarks (`libraryStore.ts`) all use `localStorage` under `bliss*` key prefixes.
 
 ### Key patterns
@@ -133,7 +121,7 @@ The shell writes `server-settings.json` to `%APPDATA%\stremio\stremio-server\` w
 - **Feature modules** live in `features/{home,detail,discover}/` with their own `components/`, `hooks/`, and `utils.ts`.
 - **Cancellation:** async effects use `let cancelled = false` + cleanup `() => { cancelled = true }` to prevent state updates after unmount.
 - **Stream routing:** stream clicks build a player URL from `deepLinks.ts` and navigate to `/player?url={encoded}`. Local stremio-server URLs (`http://127.0.0.1:11470/...`) are passed through; the shell's UI server allow-lists them at `/addon-proxy`.
-- **Native vs SimplePlayer:** the player page renders `NativeMpvPlayer` inside the desktop shell (detected via `isNativeShell()` in `lib/desktop.ts`) and `SimplePlayer` (`<video>` element) on the web.
+- **Native vs SimplePlayer:** the player page renders `NativeMpvPlayer` inside the desktop shell (detected via `isNativeShell()` in `lib/desktop.ts`). A `SimplePlayer` (`<video>` element) fallback exists for browser context but is not the primary focus.
 - **Two UI modes:** `classic` (sidebar + glass) and `netflix` (top bar + hero). Toggled by `uiStyle` in AppContext.
 
 ### Desktop bridge (`lib/desktop.ts`)
@@ -145,16 +133,40 @@ The shell writes `server-settings.json` to `%APPDATA%\stremio\stremio-server\` w
 - `desktop.updater.check()`, `desktop.updater.download()`, `desktop.updater.install_and_quit()`.
 - `desktop.getAppVersion()` — surfaces `CARGO_PKG_VERSION` for the sidebar header.
 
-Use `isNativeShell()` to gate desktop-only UI (the `NativeMpvPlayer`, the version badge, etc.). The bridge is absent in the browser.
+Use `isNativeShell()` to gate desktop-only UI (the `NativeMpvPlayer`, the version badge, etc.). The bridge is absent in the browser fallback.
 
 ### Key files
 
 - `src/components/AppShell.tsx` — root layout, global state, nav, Continue Watching, iOS drawer.
-- `src/components/NativeMpvPlayer.tsx` — libmpv-backed player. Issues `loadfile` + property observers via the desktop bridge. Owns the on-screen controls, subtitle picker, audio picker, HDR/RD badges, resume modal, "stream unavailable" modal.
-- `src/components/SimplePlayer.tsx` — `<video>`-element player for the web build.
-- `src/components/SideNav/DesktopNav.tsx` + `SideNav/GetWindowsAppCard.tsx` — sidebar. The download CTA points at this repo's GitHub Releases page and is hidden inside the native shell.
+- `src/components/NativeMpvPlayer.tsx` — libmpv-backed player. Issues `loadfile` + property observers via the desktop bridge. Owns the on-screen controls, subtitle picker, audio picker, HDR/4K/RD badges, resume modal, "stream unavailable" modal.
+- `src/components/SimplePlayer.tsx` — `<video>`-element player fallback for non-native (browser) context.
 - `src/pages/{HomePage,DiscoverPage,DetailPage,PlayerPage}.tsx` — main routes.
 - `src/lib/{stremioApi,stremioAddon,streamHistory,storageApi,desktop,progress,playerSettings}.ts`.
+
+## Releases
+
+The canonical release pipeline is [.github/workflows/release.yml](.github/workflows/release.yml):
+
+1. Bump `version` in `apps/blissful-shell/Cargo.toml`.
+2. Commit, tag `v<version>`, push tag (`git push origin v<version>`).
+3. CI runs on `windows-latest`: fetches vendored binaries from the `vendor-binaries-v1` GitHub release, builds the UI, builds the Rust shell, runs the WiX/Burn pipeline, creates a **draft** GitHub release with the `BlissfulSetup-<version>.exe` attached.
+4. Manually publish the draft from the GitHub Releases UI when you're happy with it. The in-app updater (`src/updater.rs`) picks up the published release within 30 min.
+
+The workflow runs unsigned by default; the SignPath signing step is wired but commented out. To enable: configure `SIGNPATH_API_TOKEN` (secret) and `SIGNPATH_ORGANIZATION_ID` (variable) under repo settings, then uncomment the "Submit to SignPath" block in the workflow.
+
+### Vendored binaries
+
+Runtime DLLs (`libmpv-2.dll`, ffmpeg, MSVC runtime) and `stremio-service.zip` are not committed to this repo. They live as release assets under the `vendor-binaries-v1` prerelease on this repo. The release workflow downloads them at build time via four repository variables (`LIBMPV_ZIP_URL`, `FFMPEG_ZIP_URL`, `STREMIO_SERVICE_ZIP_URL`, `VCRUNTIME_ZIP_URL`). Bump to `vendor-binaries-v2` etc. when one of those bundled components needs to change.
+
+## Code signing
+
+Currently **unsigned** — releases ship without an Authenticode signature, so users see SmartScreen on first install and must click "More info → Run anyway". SignPath Foundation OSS sponsorship has been applied for; approval typically takes 1–4 weeks. Once approved, the workflow's commented-out SignPath step is enabled and subsequent releases are signed transparently in CI.
+
+## Licensing
+
+- The source code in this repo is **MIT** (see [LICENSE](LICENSE)).
+- The shipped installer EXE bundles a GPL-licensed `libmpv-2.dll` (currently the shinchiro mpv-winbuild-cmake build). This makes the **combined installer binary GPL-governed on redistribution**, even though the project's own source remains MIT. The root [README](README.md) license section documents the dual situation in detail.
+- Source code can be forked and modified under MIT; redistribution of the installer carries GPL obligations.
 
 ## Code Style
 
@@ -166,5 +178,6 @@ Use `isNativeShell()` to gate desktop-only UI (the `NativeMpvPlayer`, the versio
 
 ## Key references
 
-- `.github/workflows/release.yml` — CI pipeline that builds the installer on tag push.
-- `apps/blissful-mvs/AGENTS.md` — UI-specific patterns.
+- [.github/workflows/release.yml](.github/workflows/release.yml) — CI release pipeline.
+- [apps/blissful-mvs/AGENTS.md](apps/blissful-mvs/AGENTS.md) — UI-specific patterns and conventions.
+- [LICENSE](LICENSE) + root README license section — licensing details.
