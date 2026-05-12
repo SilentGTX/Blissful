@@ -162,6 +162,16 @@ $msiPath = Join-Path $distDir "Blissful-Setup-$rawVersion.msi"
 if ($LASTEXITCODE -ne 0) { throw 'light.exe failed' }
 Write-Host "MSI produced: $msiPath" -ForegroundColor Green
 
+# Patch the @VERSION@ placeholder in theme.wxl with the actual version
+# from Cargo.toml so the title bar reads "Setup - Blissful version X.Y.Z"
+# (Stremio-style). We restore the placeholder afterwards so the working
+# tree stays template-shaped.
+$themeWxlPath = Join-Path $installerDir 'theme.wxl'
+$themeWxlOriginal = Get-Content $themeWxlPath -Raw
+$themeWxlPatched = $themeWxlOriginal -replace '@VERSION@', $rawVersion
+Set-Content $themeWxlPath $themeWxlPatched -Encoding UTF8
+try {
+
 # --- 4.5. WiX Burn bundle: wrap MSI into Setup.exe ---
 # Produces a self-contained Setup.exe with the Blissful icon. The MSI
 # is embedded as a payload; running the exe shows the Burn wizard and
@@ -177,13 +187,20 @@ $bundleObj = Join-Path $installerDir 'obj\bundle.wixobj'
   -out (Join-Path $installerDir 'obj\') `
   $bundleWxs
 if ($LASTEXITCODE -ne 0) { throw 'candle.exe (bundle) failed' }
-$exePath = Join-Path $distDir "Blissful-Installer-$rawVersion.exe"
+$exePath = Join-Path $distDir "BlissfulSetup-$rawVersion.exe"
 & light.exe -nologo `
   -ext WixBalExtension `
   -out $exePath `
   $bundleObj
 if ($LASTEXITCODE -ne 0) { throw 'light.exe (bundle) failed' }
 Write-Host "Bundle EXE produced: $exePath" -ForegroundColor Green
+
+} finally {
+  # Restore theme.wxl to its template-shaped form so the working tree
+  # doesn't carry a build-stamped version (matters for `git status` /
+  # accidental commits of the patched file).
+  Set-Content $themeWxlPath $themeWxlOriginal -Encoding UTF8
+}
 
 # --- 5. Sign the MSI ---
 if (-not $SkipSign -and $CertPath -and (Test-Path $CertPath)) {

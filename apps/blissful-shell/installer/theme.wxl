@@ -1,18 +1,23 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <!--
   Localization strings for the Blissful Setup bundle theme. Strings
-  referenced as #(loc.Name) inside theme.xml. Keep short — the dialog
+  referenced as #(loc.Name) inside theme.xml. Keep short â€” the dialog
   is intentionally minimal. SuccessInstallHeader / SuccessRepairHeader /
   SuccessUninstallHeader are picked at runtime via EnableCondition.
 -->
 <WixLocalization xmlns="http://wixtoolset.org/schemas/v4/wxl" Culture="en-us">
-  <String Id="Caption">Blissful Installer</String>
+  <!-- Title bar text. Format copied from Stremio's installer:
+       "Setup - Blissful version X.Y.Z". The version is patched in at
+       build time by build.ps1 (replaces @VERSION@ with $rawVersion
+       from Cargo.toml). DON'T hand-edit the version part â€” it's
+       auto-substituted. -->
+  <String Id="Caption">Setup - Blissful version @VERSION@</String>
 
   <String Id="HelpText">Pass /install, /modify, /repair, /uninstall on the command line.</String>
   <String Id="HelpCloseButton">&amp;Close</String>
 
   <!-- Message shown when the user closes/cancels mid-install. WixStdBA
-       looks up this exact key by name — it wasn't in our wxl before, so
+       looks up this exact key by name â€” it wasn't in our wxl before, so
        Burn rendered the literal "#(loc.ConfirmCancelMessage)" placeholder. -->
   <String Id="ConfirmCancelMessage">Are you sure you want to cancel?</String>
 
@@ -24,9 +29,9 @@
   <String Id="OptionsOkButton">&amp;OK</String>
   <String Id="OptionsCancelButton">&amp;Cancel</String>
 
-  <String Id="ProgressHeader">Installing Blissful…</String>
+  <String Id="ProgressHeader">Installing Blissfulâ€¦</String>
   <String Id="ProgressCancelButton">&amp;Cancel</String>
-  <String Id="OverallProgressPackageText">Initializing…</String>
+  <String Id="OverallProgressPackageText">Initializingâ€¦</String>
 
   <String Id="ModifyHeader">Modify, repair, or uninstall Blissful.</String>
   <String Id="RepairButton">&amp;Repair</String>
@@ -43,3 +48,4 @@
   <String Id="FailureHyperlinkLogText">View &lt;a href="#"&gt;log&lt;/a&gt;</String>
   <String Id="FailureCloseButton">&amp;Close</String>
 </WixLocalization>
+
