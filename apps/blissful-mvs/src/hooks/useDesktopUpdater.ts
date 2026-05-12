@@ -60,11 +60,20 @@ export function useDesktopUpdater() {
     const unsubDone = desktop.onUpdateDownloaded(() => {
       setUpdateReady(true);
     });
+    // If the download stalled or errored, unlock the kickoff ref so
+    // the next 30-second poll tick attempts a fresh download. Without
+    // this, a transient failure (network hiccup, CDN drop) strands the
+    // renderer waiting for an `update-downloaded` event that will
+    // never fire.
+    const unsubFail = desktop.onUpdateDownloadFailed(() => {
+      downloadKickedOffRef.current = false;
+    });
 
     return () => {
       window.clearInterval(pollTimer);
       unsubAvail();
       unsubDone();
+      unsubFail();
     };
   }, []);
 

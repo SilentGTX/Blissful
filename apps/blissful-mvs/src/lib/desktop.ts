@@ -146,6 +146,9 @@ export const desktop = {
   onUpdateDownloaded(cb: () => void): () => void {
     return on<null>('update-downloaded', () => cb());
   },
+  onUpdateDownloadFailed(cb: (reason: string) => void): () => void {
+    return on<string>('update-download-failed', cb);
+  },
 
   // ---- generic event subscription escape hatch ----
   on,

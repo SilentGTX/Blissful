@@ -119,6 +119,9 @@ pub fn dispatch(req: &Request) -> Response {
             // Fire-and-forget — the renderer doesn't await the actual
             // download, it waits for the `update-downloaded` Event the
             // updater fires from the tokio runtime when finished.
+            // On failure, post `update-download-failed` so the
+            // renderer can retry / surface an error instead of hanging
+            // forever waiting for `update-downloaded`.
             std::thread::spawn(|| {
                 let rt = match tokio::runtime::Builder::new_current_thread()
                     .enable_all()
@@ -127,11 +130,19 @@ pub fn dispatch(req: &Request) -> Response {
                     Ok(rt) => rt,
                     Err(e) => {
                         warn!(error = ?e, "downloadUpdate: tokio runtime build failed");
+                        post_outgoing(&Outgoing::Event(Event {
+                            event: "update-download-failed".to_string(),
+                            data: json!(format!("tokio runtime build failed: {e}")),
+                        }));
                         return;
                     }
                 };
                 if let Err(e) = rt.block_on(crate::updater::download_available()) {
                     warn!(error = ?e, "downloadUpdate failed");
+                    post_outgoing(&Outgoing::Event(Event {
+                        event: "update-download-failed".to_string(),
+                        data: json!(format!("{e:#}")),
+                    }));
                 }
             });
             Response::ok(&req.id, json!(null))

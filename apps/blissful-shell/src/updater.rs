@@ -251,7 +251,15 @@ pub fn spawn_installer_and_quit() -> Result<()> {
 fn http_client() -> Result<Client> {
     Client::builder()
         .user_agent(USER_AGENT)
-        .timeout(Duration::from_secs(30))
+        // `connect_timeout` only — no total request timeout. The
+        // 30-second total timeout was killing installer downloads
+        // mid-stream around the 95 MB mark on ~25 Mbps connections
+        // (99.8 MB / 3.3 MB/s = 30s — anything slower than that and
+        // reqwest would tear down the response before completion,
+        // leaving the renderer waiting forever for an
+        // `update-downloaded` event that never fired). The connect
+        // timeout still guards against DNS/TLS hangs on a dead host.
+        .connect_timeout(Duration::from_secs(15))
         .build()
         .context("build updater HTTP client")
 }
