@@ -90,6 +90,19 @@ if (Test-Path $ffmpegDir) {
 Copy-Item (Join-Path $shellDir 'resources\stremio-service.zip') $stagingDir
 Copy-Item (Join-Path $shellDir 'resources\icon.ico') $stagingDir
 
+# VC++ runtime DLLs. Rust release builds dynamic-link `vcruntime140.dll`
+# and `msvcp140.dll`; on machines without VC++ Redistributable installed
+# the EXE exits silently before drawing a window. Bundling these
+# alongside blissful-shell.exe lets Windows resolve them locally first.
+$vcrtDir = Join-Path $shellDir 'resources\vcruntime'
+if (Test-Path $vcrtDir) {
+  Get-ChildItem $vcrtDir -Filter '*.dll' | ForEach-Object {
+    Copy-Item $_.FullName $stagingDir
+  }
+} else {
+  Write-Host "NOTE: $vcrtDir missing — VC++ runtime DLLs not bundled. App will require VC++ Redist on target machines." -ForegroundColor DarkYellow
+}
+
 # React build:
 $uiSrc = Join-Path $mvsDir 'dist'
 $uiDst = Join-Path $stagingDir 'blissful-ui'

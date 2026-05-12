@@ -54,18 +54,19 @@
     Success page — separate Text controls for install vs uninstall so
     the message is correct in both flows. WixBundleAction values:
       3 = uninstall, 5 = install, 8 = modify, 9 = repair.
-    EnableCondition + HideWhenDisabled = show only when condition matches.
-    Launch button is hidden on uninstall (nothing to launch).
+    Correct WiX 3.x attribute is `VisibleCondition` (NOT `EnableCondition`
+    which is silently ignored and makes controls global, leaking across
+    every page in the wizard). Launch button hidden on uninstall.
   -->
   <Page Name="Success">
-    <Text X="20" Y="235" Width="445" Height="40" FontId="1" DisablePrefix="yes" Visible="yes"
-          EnableCondition="WixBundleAction = 3" HideWhenDisabled="yes">#(loc.SuccessUninstallHeader)</Text>
-    <Text X="20" Y="235" Width="445" Height="40" FontId="1" DisablePrefix="yes" Visible="yes"
-          EnableCondition="WixBundleAction = 9" HideWhenDisabled="yes">#(loc.SuccessRepairHeader)</Text>
-    <Text X="20" Y="235" Width="445" Height="40" FontId="1" DisablePrefix="yes" Visible="yes"
-          EnableCondition="NOT (WixBundleAction = 3) AND NOT (WixBundleAction = 9)" HideWhenDisabled="yes">#(loc.SuccessInstallHeader)</Text>
-    <Button Name="LaunchButton" X="-100" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0" Visible="yes"
-            EnableCondition="NOT (WixBundleAction = 3)" HideWhenDisabled="yes">#(loc.LaunchButton)</Button>
+    <Text X="20" Y="235" Width="445" Height="40" FontId="1" DisablePrefix="yes"
+          VisibleCondition="WixBundleAction = 3">#(loc.SuccessUninstallHeader)</Text>
+    <Text X="20" Y="235" Width="445" Height="40" FontId="1" DisablePrefix="yes"
+          VisibleCondition="WixBundleAction = 9">#(loc.SuccessRepairHeader)</Text>
+    <Text X="20" Y="235" Width="445" Height="40" FontId="1" DisablePrefix="yes"
+          VisibleCondition="WixBundleAction = 5 OR WixBundleAction = 8">#(loc.SuccessInstallHeader)</Text>
+    <Button Name="LaunchButton" X="-100" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0"
+            VisibleCondition="WixBundleAction = 5">#(loc.LaunchButton)</Button>
     <Button Name="SuccessCancelButton" X="-11" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0">#(loc.SuccessCloseButton)</Button>
   </Page>
 
