@@ -27,7 +27,7 @@ The shell auto-detects whether a Vite dev server is up on 5173 and proxies UI re
 
 ## Prerequisites
 
-Runtime DLLs (libmpv, ffmpeg) and the bundled `stremio-service.zip` are NOT committed — they're downloaded by `apps/blissful-shell/scripts/setup-resources.ps1` (TODO: wire). See `apps/blissful-shell/PREREQUISITES.md`.
+Runtime DLLs (libmpv, ffmpeg) and the bundled `stremio-service.zip` are gitignored — for local dev you stage them yourself under `apps/blissful-shell/resources/`. For CI builds the release workflow fetches them from the `vendor-binaries-v1` GitHub release at build time.
 
 ## Releasing
 

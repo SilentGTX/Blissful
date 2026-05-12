@@ -13,7 +13,7 @@ bundling everything the shell needs at runtime:
 
 One-time, on the machine that builds installers:
 
-1. **Rust + MSVC** — same as dev. See [../PREREQUISITES.md](../PREREQUISITES.md).
+1. **Rust + MSVC** — same as dev (rustup + Visual Studio Build Tools with C++).
 2. **Node + npm** — for the React build.
 3. **WiX Toolset 3.x** — https://github.com/wixtoolset/wix3/releases.
    Add `bin/` to PATH so `heat.exe`, `candle.exe`, `light.exe` resolve.
@@ -25,7 +25,7 @@ One-time, on the machine that builds installers:
    - `BLISSFUL_CERT_PATH` + `BLISSFUL_CERT_PASSWORD` env vars
 
 Plus the dev-only resources already required to compile + run the shell:
-- `../resources/mpv-x64/libmpv-2.dll` (LGPL build; see PREREQUISITES.md §2)
+- `../resources/mpv-x64/libmpv-2.dll` (currently shinchiro GPL build — see root README license section)
 - `../resources/stremio-service.zip`
 - `../resources/ffmpeg-dlls/*`
 - `../resources/icon.ico`

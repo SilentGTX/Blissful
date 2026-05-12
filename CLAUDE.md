@@ -26,7 +26,7 @@ This repo is a mirror of the same two apps in `SilentGTX/OpenCode` (private). Th
 
 ```powershell
 # Dev: runs with the spike0a feature flag (the production entry point).
-# Picks up libmpv-2.dll from resources/mpv-x64/ — see PREREQUISITES.md.
+# Picks up libmpv-2.dll from resources/mpv-x64/ (stage manually for dev).
 cd apps\blissful-shell
 cargo run --features spike0a
 
@@ -64,7 +64,7 @@ Prereqs (one-time):
 - Rust toolchain (rustup + MSVC build tools)
 - Node + npm
 - WiX 3.x binaries on PATH (`heat.exe`, `candle.exe`, `light.exe`) — download from https://github.com/wixtoolset/wix3/releases
-- Vendored binaries staged under `resources/` (see PREREQUISITES.md)
+- Vendored binaries staged under `apps/blissful-shell/resources/` — `mpv-x64/libmpv-2.dll` + `mpv.lib`, `ffmpeg-dlls/*.dll`, `stremio-service.zip`, `vcruntime/*.dll`. For CI the release workflow fetches these from the `vendor-binaries-v1` GitHub release
 
 ## Blissful Shell Architecture (apps/blissful-shell/)
 
@@ -166,7 +166,5 @@ Use `isNativeShell()` to gate desktop-only UI (the `NativeMpvPlayer`, the versio
 
 ## Key references
 
-- `apps/blissful-shell/plan.md` — phase-by-phase architecture history (0a/0b spike -> phase 7 installer).
-- `apps/blissful-shell/PREREQUISITES.md` — how to source the vendored binaries (`libmpv-2.dll`, ffmpeg DLLs, `stremio-service.zip`, vcruntime DLLs) on a fresh dev machine.
-- `apps/blissful-shell/TEST_MATRIX.md` — manual QA checklist before cutting a release.
+- `.github/workflows/release.yml` — CI pipeline that builds the installer on tag push.
 - `apps/blissful-mvs/AGENTS.md` — UI-specific patterns.
