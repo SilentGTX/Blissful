@@ -1,18 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Localization strings for the Blissful Setup bundle theme. Strings
-  referenced as #(loc.Name) inside theme.xml. Keep them short — the
-  dialog is intentionally minimal.
+  referenced as #(loc.Name) inside theme.xml. Keep short — the dialog
+  is intentionally minimal. SuccessInstallHeader / SuccessRepairHeader /
+  SuccessUninstallHeader are picked at runtime via EnableCondition.
 -->
 <WixLocalization xmlns="http://wixtoolset.org/schemas/v4/wxl" Culture="en-us">
   <String Id="Caption">Blissful Setup</String>
-  <String Id="Title">Blissful</String>
-  <String Id="Tagline">Native Windows Stremio client</String>
 
   <String Id="HelpText">Pass /install, /modify, /repair, /uninstall on the command line.</String>
   <String Id="HelpCloseButton">&amp;Close</String>
 
-  <String Id="InstallHeader">Click Install to begin.</String>
+  <String Id="InstallHeader">Click Install to install Blissful.</String>
   <String Id="InstallButton">&amp;Install</String>
   <String Id="WelcomeCancelButton">&amp;Close</String>
 
@@ -29,7 +28,9 @@
   <String Id="UninstallButton">&amp;Uninstall</String>
   <String Id="ModifyCancelButton">&amp;Cancel</String>
 
-  <String Id="SuccessHeader">Blissful installed.</String>
+  <String Id="SuccessInstallHeader">Blissful installed.</String>
+  <String Id="SuccessRepairHeader">Blissful repaired.</String>
+  <String Id="SuccessUninstallHeader">Blissful uninstalled.</String>
   <String Id="LaunchButton">&amp;Launch</String>
   <String Id="SuccessCloseButton">&amp;Close</String>
 

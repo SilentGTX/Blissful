@@ -2,66 +2,76 @@
 <!--
   Custom WiX Burn theme for Blissful Setup.
 
-  Replaces the stock HyperlinkLicense theme so we can:
-    - Drop the "Blissful license terms" link + I-agree checkbox entirely
-    - Give the logo a 128x128 slot at the top-left (the stock theme's
-      ~64x64 slot was cropping the lotus flowers around the green B)
-    - Keep the wizard small and minimal: logo, title, install/close
+  Goals:
+    - Show the BIG Blissful wordmark logo (no cropping, no scaling artifacts)
+    - No license terms link / I-agree checkbox UI
+    - Success page differentiates "installed" vs "uninstalled" (was always
+      showing "Blissful installed." even on uninstall)
+    - Launch button enabled after install, hidden after uninstall
 
-  Layout: 485w x 270h dialog, logo 128x128 top-left, title text right
-  of the logo, install/close buttons bottom-right.
+  Layout: 485w x 340h dialog. Logo 350x200 centered horizontally at top.
+  Page-specific text below the logo. Buttons bottom-right.
 -->
 <Theme xmlns="http://wixtoolset.org/schemas/v4/thmutil">
-  <Window Width="485" Height="270" HexStyle="100a0000" FontId="0">#(loc.Caption)</Window>
+  <Window Width="485" Height="340" HexStyle="100a0000" FontId="0">#(loc.Caption)</Window>
   <Font Id="0" Height="-12" Weight="500" Foreground="000000" Background="ffffff">Segoe UI</Font>
-  <Font Id="1" Height="-24" Weight="500" Foreground="000000">Segoe UI</Font>
-  <Font Id="2" Height="-22" Weight="500" Foreground="666666">Segoe UI</Font>
-  <Font Id="3" Height="-12" Weight="500" Foreground="000000" Background="ffffff">Segoe UI</Font>
+  <Font Id="1" Height="-20" Weight="500" Foreground="000000">Segoe UI</Font>
 
-  <Image X="20" Y="20" Width="128" Height="128" ImageFile="bundle-logo.png" Visible="yes" />
-  <Text X="160" Y="40" Width="305" Height="40" FontId="1">#(loc.Title)</Text>
-  <Text X="160" Y="80" Width="305" Height="32" FontId="2">#(loc.Tagline)</Text>
+  <Image X="67" Y="15" Width="350" Height="200" ImageFile="bundle-logo.png" Visible="yes" />
 
   <Page Name="Help">
-    <Text X="160" Y="120" Width="305" Height="80" FontId="0" DisablePrefix="yes">#(loc.HelpText)</Text>
+    <Text X="20" Y="225" Width="445" Height="60" FontId="0" DisablePrefix="yes">#(loc.HelpText)</Text>
     <Button Name="HelpCloseButton" X="-11" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0">#(loc.HelpCloseButton)</Button>
   </Page>
 
   <Page Name="Install">
-    <Text X="160" Y="120" Width="305" Height="40" FontId="0" DisablePrefix="yes">#(loc.InstallHeader)</Text>
+    <Text X="20" Y="235" Width="445" Height="40" FontId="1" DisablePrefix="yes">#(loc.InstallHeader)</Text>
     <Button Name="InstallButton" X="-100" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0">#(loc.InstallButton)</Button>
     <Button Name="WelcomeCancelButton" X="-11" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0">#(loc.WelcomeCancelButton)</Button>
   </Page>
 
   <Page Name="Options">
-    <Text X="160" Y="120" Width="305" Height="32" FontId="0" DisablePrefix="yes">#(loc.OptionsHeader)</Text>
+    <Text X="20" Y="235" Width="445" Height="40" FontId="1" DisablePrefix="yes">#(loc.OptionsHeader)</Text>
     <Button Name="OptionsOkButton" X="-100" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0">#(loc.OptionsOkButton)</Button>
     <Button Name="OptionsCancelButton" X="-11" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0">#(loc.OptionsCancelButton)</Button>
   </Page>
 
   <Page Name="Progress">
-    <Text X="160" Y="120" Width="305" Height="32" FontId="0" DisablePrefix="yes">#(loc.ProgressHeader)</Text>
-    <Text Name="OverallProgressPackageText" X="160" Y="158" Width="305" Height="17" FontId="0" DisablePrefix="yes">#(loc.OverallProgressPackageText)</Text>
-    <Progressbar Name="OverallCalculatedProgressbar" X="160" Y="178" Width="305" Height="15" />
+    <Text X="20" Y="235" Width="445" Height="20" FontId="1" DisablePrefix="yes">#(loc.ProgressHeader)</Text>
+    <Text Name="OverallProgressPackageText" X="20" Y="260" Width="445" Height="17" FontId="0" DisablePrefix="yes">#(loc.OverallProgressPackageText)</Text>
+    <Progressbar Name="OverallCalculatedProgressbar" X="20" Y="280" Width="445" Height="15" />
     <Button Name="ProgressCancelButton" X="-11" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0">#(loc.ProgressCancelButton)</Button>
   </Page>
 
   <Page Name="Modify">
-    <Text X="160" Y="120" Width="305" Height="32" FontId="0" DisablePrefix="yes">#(loc.ModifyHeader)</Text>
+    <Text X="20" Y="235" Width="445" Height="40" FontId="1" DisablePrefix="yes">#(loc.ModifyHeader)</Text>
     <Button Name="RepairButton" X="-185" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0">#(loc.RepairButton)</Button>
     <Button Name="UninstallButton" X="-100" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0">#(loc.UninstallButton)</Button>
     <Button Name="ModifyCancelButton" X="-11" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0">#(loc.ModifyCancelButton)</Button>
   </Page>
 
+  <!--
+    Success page — separate Text controls for install vs uninstall so
+    the message is correct in both flows. WixBundleAction values:
+      3 = uninstall, 5 = install, 8 = modify, 9 = repair.
+    EnableCondition + HideWhenDisabled = show only when condition matches.
+    Launch button is hidden on uninstall (nothing to launch).
+  -->
   <Page Name="Success">
-    <Text X="160" Y="120" Width="305" Height="40" FontId="1" DisablePrefix="yes">#(loc.SuccessHeader)</Text>
-    <Button Name="LaunchButton" X="-100" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0">#(loc.LaunchButton)</Button>
+    <Text X="20" Y="235" Width="445" Height="40" FontId="1" DisablePrefix="yes" Visible="yes"
+          EnableCondition="WixBundleAction = 3" HideWhenDisabled="yes">#(loc.SuccessUninstallHeader)</Text>
+    <Text X="20" Y="235" Width="445" Height="40" FontId="1" DisablePrefix="yes" Visible="yes"
+          EnableCondition="WixBundleAction = 9" HideWhenDisabled="yes">#(loc.SuccessRepairHeader)</Text>
+    <Text X="20" Y="235" Width="445" Height="40" FontId="1" DisablePrefix="yes" Visible="yes"
+          EnableCondition="NOT (WixBundleAction = 3) AND NOT (WixBundleAction = 9)" HideWhenDisabled="yes">#(loc.SuccessInstallHeader)</Text>
+    <Button Name="LaunchButton" X="-100" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0" Visible="yes"
+            EnableCondition="NOT (WixBundleAction = 3)" HideWhenDisabled="yes">#(loc.LaunchButton)</Button>
     <Button Name="SuccessCancelButton" X="-11" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0">#(loc.SuccessCloseButton)</Button>
   </Page>
 
   <Page Name="Failure">
-    <Text X="160" Y="120" Width="305" Height="80" FontId="0" DisablePrefix="yes">#(loc.FailureHeader)</Text>
-    <Hypertext Name="FailureLogFileLink" X="160" Y="200" Width="305" Height="17" FontId="0" TabStop="yes" HideWhenDisabled="yes">#(loc.FailureHyperlinkLogText)</Hypertext>
+    <Text X="20" Y="235" Width="445" Height="60" FontId="0" DisablePrefix="yes">#(loc.FailureHeader)</Text>
+    <Hypertext Name="FailureLogFileLink" X="20" Y="295" Width="445" Height="17" FontId="0" TabStop="yes" HideWhenDisabled="yes">#(loc.FailureHyperlinkLogText)</Hypertext>
     <Button Name="FailureCloseButton" X="-11" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0">#(loc.FailureCloseButton)</Button>
   </Page>
 </Theme>

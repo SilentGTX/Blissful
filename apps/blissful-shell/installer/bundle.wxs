@@ -30,9 +30,14 @@
            schema (CNDL0010), but our custom theme.xml has no EulaHyperlink
            or EulaAcceptCheckbox controls — so the URL is set internally
            and never displayed. The Install button enables without an
-           acceptance gate. -->
+           acceptance gate.
+
+           LaunchTarget points at the installed exe so the Launch button
+           on the Success page is enabled and actually starts Blissful.
+           Our theme hides the Launch button on uninstall (WixBundleAction=3). -->
       <bal:WixStandardBootstrapperApplication
         LicenseUrl="https://github.com/SilentGTX/Blissful"
+        LaunchTarget="[ProgramFiles64Folder]Blissful\blissful-shell.exe"
         SuppressOptionsUI="yes"
         ThemeFile="$(var.ResourcesDir)\theme.xml"
         LocalizationFile="$(var.ResourcesDir)\theme.wxl" />
