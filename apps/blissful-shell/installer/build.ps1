@@ -1,10 +1,10 @@
-# Phase 7 — Blissful native shell installer build pipeline.
+# Phase 7 -- Blissful native shell installer build pipeline.
 #
 # What this does:
 #   1. Builds the React app (apps/blissful-mvs).
 #   2. Builds the Rust shell in release mode.
 #   3. Stages every file the installer needs under installer/staging/.
-#   4. Runs WiX (heat → candle → light) to produce an MSI.
+#   4. Runs WiX (heat -> candle -> light) to produce an MSI.
 #   5. Optionally signs the MSI (call installer/sign.ps1 -Path ...).
 #
 # Prerequisites (one-time, on the machine running this script):
@@ -12,9 +12,9 @@
 #   - Node + npm
 #   - WiX Toolset 3.x installed and on PATH (heat.exe, candle.exe, light.exe)
 #     https://github.com/wixtoolset/wix3/releases
-#   - signtool.exe on PATH if you intend to sign — comes with the Windows SDK
-#   - resources/mpv-x64/libmpv-2.dll present per PREREQUISITES.md §2
-#   - resources/stremio-service.zip present per PREREQUISITES.md §3
+#   - signtool.exe on PATH if you intend to sign -- comes with the Windows SDK
+#   - resources/mpv-x64/libmpv-2.dll present per PREREQUISITES.md section 2
+#   - resources/stremio-service.zip present per PREREQUISITES.md section 3
 #
 # Run from anywhere; paths are computed relative to this script.
 
@@ -56,13 +56,18 @@ if ($LASTEXITCODE -ne 0) { throw 'npm ci failed' }
 if ($LASTEXITCODE -ne 0) { throw 'npm run build failed' }
 
 # --- 2. Build the Rust shell (release) ---
+# spike0a is the production entry point (legacy naming -- the "spike"
+# graduated to running everything: ui_server, updater, libmpv, tray,
+# webview). Without this feature flag, main.rs prints a help message
+# and exits with code 2, so the installed app would silently fail to
+# launch.
 Write-Host '== building Rust shell (release) ==' -ForegroundColor Yellow
-& cargo build --manifest-path (Join-Path $shellDir 'Cargo.toml') --release
+& cargo build --manifest-path (Join-Path $shellDir 'Cargo.toml') --release --features spike0a
 if ($LASTEXITCODE -ne 0) { throw 'cargo build --release failed' }
 $shellExe = Join-Path $shellDir 'target\release\blissful-shell.exe'
 if (-not (Test-Path $shellExe)) { throw "shell exe not found at $shellExe" }
 
-# Optional EXE signing — separately useful so we can validate the binary
+# Optional EXE signing -- separately useful so we can validate the binary
 # before bundling it.
 if (-not $SkipSign -and $CertPath -and (Test-Path $CertPath)) {
   Write-Host '== signing blissful-shell.exe ==' -ForegroundColor Yellow
@@ -100,7 +105,7 @@ if (Test-Path $vcrtDir) {
     Copy-Item $_.FullName $stagingDir
   }
 } else {
-  Write-Host "NOTE: $vcrtDir missing — VC++ runtime DLLs not bundled. App will require VC++ Redist on target machines." -ForegroundColor DarkYellow
+  Write-Host "NOTE: $vcrtDir missing -- VC++ runtime DLLs not bundled. App will require VC++ Redist on target machines." -ForegroundColor DarkYellow
 }
 
 # React build:
@@ -136,7 +141,7 @@ if ($LASTEXITCODE -ne 0) { throw 'heat.exe failed' }
 # Also surface the WebView2 bootstrapper under a stable FileKey so the
 # WiX <CustomAction FileKey="WebView2BootstrapperFile"> resolves. The
 # auto-generated component IDs aren't stable, so we REPLACE heat's
-# generated File Id with our well-known one (NOT append — appending
+# generated File Id with our well-known one (NOT append; appending
 # leaves two Id= attributes on the same element, which candle rejects
 # with CNDL0104 "duplicate attribute name").
 $wxsText = Get-Content $generatedWxs -Raw

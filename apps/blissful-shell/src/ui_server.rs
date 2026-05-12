@@ -120,6 +120,10 @@ pub fn spawn_in_background() -> Result<()> {
 fn detect_static_root() -> Option<PathBuf> {
     let exe_dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
     let candidates = [
+        // Flat install layout: WiX MSI stages blissful-ui/ directly next
+        // to blissful-shell.exe.
+        exe_dir.join("blissful-ui"),
+        // Dev / source-tree layouts.
         exe_dir.join("resources").join("blissful-ui"),
         exe_dir.join("../../../apps/blissful-mvs/dist"),
         exe_dir.join("../../resources/blissful-ui"),

@@ -183,6 +183,10 @@ fn locate_zip() -> Result<PathBuf> {
         .map(|p| p.to_path_buf())
         .context("exe parent")?;
     let candidates = [
+        // Flat install layout (MSI ships everything directly next to the
+        // exe, so installed builds find the zip here).
+        exe_dir.join("stremio-service.zip"),
+        // Dev / source-tree layout: resources/ subfolder.
         exe_dir.join("resources").join("stremio-service.zip"),
         exe_dir.join("../../resources/stremio-service.zip"),
         exe_dir.join("../../../resources/stremio-service.zip"),
@@ -325,6 +329,9 @@ fn copy_ffmpeg_dlls(target_dir: &Path) -> Result<()> {
             .map(|x| x.to_path_buf())
             .ok_or_else(|| io::Error::other("no parent"))
     }) {
+        // Flat install layout: WiX MSI stages the ffmpeg DLLs directly
+        // alongside blissful-shell.exe (no ffmpeg-dlls/ subfolder).
+        sources.push(crate_dir.clone());
         sources.push(crate_dir.join("resources").join("ffmpeg-dlls"));
         sources.push(crate_dir.join("../../resources/ffmpeg-dlls"));
     }
