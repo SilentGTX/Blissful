@@ -180,9 +180,13 @@ Write-Host "MSI produced: $msiPath" -ForegroundColor Green
 # (Stremio-style). We restore the placeholder afterwards so the working
 # tree stays template-shaped.
 $themeWxlPath = Join-Path $installerDir 'theme.wxl'
-$themeWxlOriginal = Get-Content $themeWxlPath -Raw
+# Explicit UTF-8 round-trip: PowerShell 5.1's Get-Content defaults to
+# the system codepage (CP1252 on en-US), which mojibakes non-ASCII
+# bytes when the file was saved as UTF-8. Reading + writing with
+# -Encoding UTF8 keeps the bytes intact.
+$themeWxlOriginal = [System.IO.File]::ReadAllText($themeWxlPath, [System.Text.UTF8Encoding]::new($false))
 $themeWxlPatched = $themeWxlOriginal -replace '@VERSION@', $rawVersion
-Set-Content $themeWxlPath $themeWxlPatched -Encoding UTF8
+[System.IO.File]::WriteAllText($themeWxlPath, $themeWxlPatched, [System.Text.UTF8Encoding]::new($false))
 try {
 
 # --- 4.5. WiX Burn bundle: wrap MSI into Setup.exe ---
@@ -210,9 +214,9 @@ Write-Host "Bundle EXE produced: $exePath" -ForegroundColor Green
 
 } finally {
   # Restore theme.wxl to its template-shaped form so the working tree
-  # doesn't carry a build-stamped version (matters for `git status` /
-  # accidental commits of the patched file).
-  Set-Content $themeWxlPath $themeWxlOriginal -Encoding UTF8
+  # doesn't carry a build-stamped version. WriteAllText with explicit
+  # UTF-8 (no BOM) keeps the file byte-identical to the source.
+  [System.IO.File]::WriteAllText($themeWxlPath, $themeWxlOriginal, [System.Text.UTF8Encoding]::new($false))
 }
 
 # --- 5. Sign the MSI ---

@@ -51,22 +51,18 @@
   </Page>
 
   <!--
-    Success page — separate Text controls for install vs uninstall so
-    the message is correct in both flows. WixBundleAction values:
-      3 = uninstall, 5 = install, 8 = modify, 9 = repair.
-    Correct WiX 3.x attribute is `VisibleCondition` (NOT `EnableCondition`
-    which is silently ignored and makes controls global, leaking across
-    every page in the wizard). Launch button hidden on uninstall.
+    Success page. Single neutral success text — WixBundleAction isn't
+    reliably exposed to theme conditions in WiX 3.x, so trying to
+    differentiate install/uninstall/repair messages causes ALL of them
+    to render simultaneously (page-leak). One generic message keeps it
+    clean across every flow. Launch button uses the built-in
+    WixStdBALaunchTargetExists check which is genuinely supported and
+    correctly false post-uninstall.
   -->
   <Page Name="Success">
-    <Text X="20" Y="235" Width="445" Height="40" FontId="1" DisablePrefix="yes"
-          VisibleCondition="WixBundleAction = 3">#(loc.SuccessUninstallHeader)</Text>
-    <Text X="20" Y="235" Width="445" Height="40" FontId="1" DisablePrefix="yes"
-          VisibleCondition="WixBundleAction = 9">#(loc.SuccessRepairHeader)</Text>
-    <Text X="20" Y="235" Width="445" Height="40" FontId="1" DisablePrefix="yes"
-          VisibleCondition="WixBundleAction = 5 OR WixBundleAction = 8">#(loc.SuccessInstallHeader)</Text>
+    <Text X="20" Y="235" Width="445" Height="40" FontId="1" DisablePrefix="yes">#(loc.SuccessHeader)</Text>
     <Button Name="LaunchButton" X="-100" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0"
-            VisibleCondition="WixBundleAction = 5">#(loc.LaunchButton)</Button>
+            VisibleCondition="WixStdBALaunchTargetExists">#(loc.LaunchButton)</Button>
     <Button Name="SuccessCancelButton" X="-11" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0">#(loc.SuccessCloseButton)</Button>
   </Page>
 

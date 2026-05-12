@@ -1,24 +1,25 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <!--
   Localization strings for the Blissful Setup bundle theme. Strings
-  referenced as #(loc.Name) inside theme.xml. Keep short â€” the dialog
-  is intentionally minimal. SuccessInstallHeader / SuccessRepairHeader /
-  SuccessUninstallHeader are picked at runtime via EnableCondition.
+  referenced as #(loc.Name) inside theme.xml. Keep short - the dialog
+  is intentionally minimal. ASCII-only on purpose: build.ps1's text
+  patching pipeline corrupts non-ASCII (an earlier '...' ellipsis
+  character got mangled to garbage after a round-trip).
 -->
 <WixLocalization xmlns="http://wixtoolset.org/schemas/v4/wxl" Culture="en-us">
   <!-- Title bar text. Format copied from Stremio's installer:
        "Setup - Blissful version X.Y.Z". The version is patched in at
        build time by build.ps1 (replaces @VERSION@ with $rawVersion
-       from Cargo.toml). DON'T hand-edit the version part â€” it's
+       from Cargo.toml). DON'T hand-edit the version part - it's
        auto-substituted. -->
   <String Id="Caption">Setup - Blissful version @VERSION@</String>
 
   <String Id="HelpText">Pass /install, /modify, /repair, /uninstall on the command line.</String>
   <String Id="HelpCloseButton">&amp;Close</String>
 
-  <!-- Message shown when the user closes/cancels mid-install. WixStdBA
-       looks up this exact key by name â€” it wasn't in our wxl before, so
-       Burn rendered the literal "#(loc.ConfirmCancelMessage)" placeholder. -->
+  <!-- WixStdBA looks up ConfirmCancelMessage by name when the user
+       cancels mid-install. Without it, the literal placeholder leaks
+       into the prompt. -->
   <String Id="ConfirmCancelMessage">Are you sure you want to cancel?</String>
 
   <String Id="InstallHeader">Click Install to install Blissful.</String>
@@ -29,18 +30,19 @@
   <String Id="OptionsOkButton">&amp;OK</String>
   <String Id="OptionsCancelButton">&amp;Cancel</String>
 
-  <String Id="ProgressHeader">Installing Blissfulâ€¦</String>
+  <String Id="ProgressHeader">Installing Blissful...</String>
   <String Id="ProgressCancelButton">&amp;Cancel</String>
-  <String Id="OverallProgressPackageText">Initializingâ€¦</String>
+  <String Id="OverallProgressPackageText">Initializing...</String>
 
   <String Id="ModifyHeader">Modify, repair, or uninstall Blissful.</String>
   <String Id="RepairButton">&amp;Repair</String>
   <String Id="UninstallButton">&amp;Uninstall</String>
   <String Id="ModifyCancelButton">&amp;Cancel</String>
 
-  <String Id="SuccessInstallHeader">Blissful installed.</String>
-  <String Id="SuccessRepairHeader">Blissful repaired.</String>
-  <String Id="SuccessUninstallHeader">Blissful uninstalled.</String>
+  <!-- Single success header for install/uninstall/repair. WiX 3.x
+       theme conditions can't differentiate WixBundleAction reliably,
+       so we use one neutral string that fits all flows. -->
+  <String Id="SuccessHeader">Setup complete.</String>
   <String Id="LaunchButton">&amp;Launch</String>
   <String Id="SuccessCloseButton">&amp;Close</String>
 
@@ -48,4 +50,3 @@
   <String Id="FailureHyperlinkLogText">View &lt;a href="#"&gt;log&lt;/a&gt;</String>
   <String Id="FailureCloseButton">&amp;Close</String>
 </WixLocalization>
-
