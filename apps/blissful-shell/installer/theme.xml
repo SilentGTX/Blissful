@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Custom WiX Burn theme for Blissful Setup.
+
+  Replaces the stock HyperlinkLicense theme so we can:
+    - Drop the "Blissful license terms" link + I-agree checkbox entirely
+    - Give the logo a 128x128 slot at the top-left (the stock theme's
+      ~64x64 slot was cropping the lotus flowers around the green B)
+    - Keep the wizard small and minimal: logo, title, install/close
+
+  Layout: 485w x 270h dialog, logo 128x128 top-left, title text right
+  of the logo, install/close buttons bottom-right.
+-->
+<Theme xmlns="http://wixtoolset.org/schemas/v4/thmutil">
+  <Window Width="485" Height="270" HexStyle="100a0000" FontId="0">#(loc.Caption)</Window>
+  <Font Id="0" Height="-12" Weight="500" Foreground="000000" Background="ffffff">Segoe UI</Font>
+  <Font Id="1" Height="-24" Weight="500" Foreground="000000">Segoe UI</Font>
+  <Font Id="2" Height="-22" Weight="500" Foreground="666666">Segoe UI</Font>
+  <Font Id="3" Height="-12" Weight="500" Foreground="000000" Background="ffffff">Segoe UI</Font>
+
+  <Image X="20" Y="20" Width="128" Height="128" ImageFile="bundle-logo.png" Visible="yes" />
+  <Text X="160" Y="40" Width="305" Height="40" FontId="1">#(loc.Title)</Text>
+  <Text X="160" Y="80" Width="305" Height="32" FontId="2">#(loc.Tagline)</Text>
+
+  <Page Name="Help">
+    <Text X="160" Y="120" Width="305" Height="80" FontId="0" DisablePrefix="yes">#(loc.HelpText)</Text>
+    <Button Name="HelpCloseButton" X="-11" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0">#(loc.HelpCloseButton)</Button>
+  </Page>
+
+  <Page Name="Install">
+    <Text X="160" Y="120" Width="305" Height="40" FontId="0" DisablePrefix="yes">#(loc.InstallHeader)</Text>
+    <Button Name="InstallButton" X="-100" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0">#(loc.InstallButton)</Button>
+    <Button Name="WelcomeCancelButton" X="-11" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0">#(loc.WelcomeCancelButton)</Button>
+  </Page>
+
+  <Page Name="Options">
+    <Text X="160" Y="120" Width="305" Height="32" FontId="0" DisablePrefix="yes">#(loc.OptionsHeader)</Text>
+    <Button Name="OptionsOkButton" X="-100" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0">#(loc.OptionsOkButton)</Button>
+    <Button Name="OptionsCancelButton" X="-11" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0">#(loc.OptionsCancelButton)</Button>
+  </Page>
+
+  <Page Name="Progress">
+    <Text X="160" Y="120" Width="305" Height="32" FontId="0" DisablePrefix="yes">#(loc.ProgressHeader)</Text>
+    <Text Name="OverallProgressPackageText" X="160" Y="158" Width="305" Height="17" FontId="0" DisablePrefix="yes">#(loc.OverallProgressPackageText)</Text>
+    <Progressbar Name="OverallCalculatedProgressbar" X="160" Y="178" Width="305" Height="15" />
+    <Button Name="ProgressCancelButton" X="-11" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0">#(loc.ProgressCancelButton)</Button>
+  </Page>
+
+  <Page Name="Modify">
+    <Text X="160" Y="120" Width="305" Height="32" FontId="0" DisablePrefix="yes">#(loc.ModifyHeader)</Text>
+    <Button Name="RepairButton" X="-185" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0">#(loc.RepairButton)</Button>
+    <Button Name="UninstallButton" X="-100" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0">#(loc.UninstallButton)</Button>
+    <Button Name="ModifyCancelButton" X="-11" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0">#(loc.ModifyCancelButton)</Button>
+  </Page>
+
+  <Page Name="Success">
+    <Text X="160" Y="120" Width="305" Height="40" FontId="1" DisablePrefix="yes">#(loc.SuccessHeader)</Text>
+    <Button Name="LaunchButton" X="-100" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0">#(loc.LaunchButton)</Button>
+    <Button Name="SuccessCancelButton" X="-11" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0">#(loc.SuccessCloseButton)</Button>
+  </Page>
+
+  <Page Name="Failure">
+    <Text X="160" Y="120" Width="305" Height="80" FontId="0" DisablePrefix="yes">#(loc.FailureHeader)</Text>
+    <Hypertext Name="FailureLogFileLink" X="160" Y="200" Width="305" Height="17" FontId="0" TabStop="yes" HideWhenDisabled="yes">#(loc.FailureHyperlinkLogText)</Hypertext>
+    <Button Name="FailureCloseButton" X="-11" Y="-11" Width="85" Height="27" TabStop="yes" FontId="0">#(loc.FailureCloseButton)</Button>
+  </Page>
+</Theme>

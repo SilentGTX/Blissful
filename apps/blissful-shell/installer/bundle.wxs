@@ -20,14 +20,23 @@
           IconSourceFile="$(var.ResourcesDir)\icon.ico"
           Compressed="yes">
 
-    <!-- Built-in standard bootstrapper UI with a "View license" link.
-         No RTF file required; LicenseUrl points to the repo so users
-         can read terms there. -->
+    <!-- Custom theme: drops the license-link + I-agree-checkbox UI
+         that the stock HyperlinkLicense theme forces, and gives the
+         Blissful logo a 128x128 slot (vs the stock theme's ~64x64
+         that was cropping the lotus flowers around the green B).
+         theme.xml + theme.wxl live next to this file. -->
     <BootstrapperApplicationRef Id="WixStandardBootstrapperApplication.HyperlinkLicense">
+      <!-- LicenseUrl is required by WiX 3.x's WixStandardBootstrapperApplication
+           schema (CNDL0010), but our custom theme.xml has no EulaHyperlink
+           or EulaAcceptCheckbox controls — so the URL is set internally
+           and never displayed. The Install button enables without an
+           acceptance gate. -->
       <bal:WixStandardBootstrapperApplication
         LicenseUrl="https://github.com/SilentGTX/Blissful"
         SuppressOptionsUI="yes"
-        LogoFile="$(var.ResourcesDir)\icon.ico" />
+        ThemeFile="$(var.ResourcesDir)\theme.xml"
+        LocalizationFile="$(var.ResourcesDir)\theme.wxl" />
+      <Payload SourceFile="$(var.ResourcesDir)\bundle-logo.png" />
     </BootstrapperApplicationRef>
 
     <Chain>
