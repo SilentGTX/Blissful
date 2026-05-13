@@ -127,12 +127,23 @@ export const desktop = {
 
   // ---- auto-updater (Phase 1 stubs; Phase 6 implements) ----
   /**
-   * Pull-style update query. Returns the cached UpdateInfo the shell's
-   * background poller found, or null. Use this on mount + on a timer to
-   * recover from missing the one-shot `update-available` event.
+   * Pull-style combined update query. Returns:
+   * - `available`: the cached UpdateInfo the shell's background poller found
+   *   (null if no update or check hasn't completed yet)
+   * - `downloaded`: whether the installer has finished downloading to %TEMP%
+   *
+   * Used to recover from missed `update-available` / `update-downloaded`
+   * events — those events drop silently when fired from background threads
+   * because the shell's event_sink is thread-local.
    */
-  getUpdateStatus(): Promise<{ version: string; installerUrl: string } | null> {
-    return call<{ version: string; installerUrl: string } | null>('getUpdateStatus');
+  getUpdateStatus(): Promise<{
+    available: { version: string; installerUrl: string } | null;
+    downloaded: boolean;
+  }> {
+    return call<{
+      available: { version: string; installerUrl: string } | null;
+      downloaded: boolean;
+    }>('getUpdateStatus');
   },
   downloadUpdate(): Promise<null> {
     return call<null>('downloadUpdate');

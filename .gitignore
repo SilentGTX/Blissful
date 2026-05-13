@@ -15,8 +15,12 @@ apps/blissful-shell/resources/test-media/
 apps/blissful-shell/resources/stremio-service.zip
 apps/blissful-shell/resources/stremio-service/
 
-# Installer output
+# Installer output + WiX intermediates left behind by local builds
 apps/blissful-shell/installer/build/
+apps/blissful-shell/installer/dist/
+apps/blissful-shell/installer/obj/
+apps/blissful-shell/installer/staging/
+apps/blissful-shell/installer/staging-files.wxs
 apps/blissful-shell/installer/*.msi
 apps/blissful-shell/installer/*.exe
 

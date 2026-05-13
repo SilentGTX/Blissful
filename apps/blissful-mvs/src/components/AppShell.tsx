@@ -75,7 +75,7 @@ import {
 } from '../lib/savedAccounts';
 
 export default function AppShell() {
-  const { updateReady, installNow, dismissUpdate } = useDesktopUpdater();
+  const { updateReady, isInstalling, installNow, dismissUpdate } = useDesktopUpdater();
   const isTorrentioAddonUrl = (url: string): boolean => /torrentio\.strem\.fun/i.test(url);
 
   // ---------- read from providers ------------------------------------------
@@ -1158,7 +1158,7 @@ export default function AppShell() {
       </div>
 
       {/* Desktop auto-update toast */}
-      {updateReady && (
+      {updateReady && !isInstalling && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-3 rounded-2xl bg-white/10 backdrop-blur-xl border border-white/15 px-5 py-3 shadow-2xl">
           <span className="text-sm text-white/90">New update ready. Restart now?</span>
           <button
@@ -1173,6 +1173,25 @@ export default function AppShell() {
           >
             Later
           </button>
+        </div>
+      )}
+
+      {/* Installing-update full-screen overlay. Shown after the user
+          clicks "Update & Restart" and held for the brief moment
+          before the shell quits + the installer takes over. Without
+          this, the click looks like "app suddenly closed for no
+          reason". */}
+      {isInstalling && (
+        <div className="fixed inset-0 z-[10000] flex flex-col items-center justify-center bg-black/85 backdrop-blur-xl">
+          <div className="flex flex-col items-center gap-4 rounded-3xl border border-white/15 bg-white/5 px-10 py-8 shadow-2xl">
+            <div className="h-12 w-12 animate-spin rounded-full border-4 border-white/15 border-t-[#19f7d2]" />
+            <div className="text-center">
+              <div className="text-base font-semibold text-white">Installing update</div>
+              <div className="mt-1 text-sm text-white/60">
+                Blissful will relaunch when it's done.
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </AppContext.Provider>

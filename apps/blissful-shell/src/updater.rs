@@ -118,6 +118,26 @@ pub fn get_available() -> Option<UpdateInfo> {
     AVAILABLE.lock().unwrap().clone()
 }
 
+/// Combined pull-style status — available update info plus whether the
+/// installer has finished downloading. Renderer polls this on mount and
+/// every 30 seconds. We can't rely on the `update-downloaded` Event for
+/// the toast because event_sink is thread-local: events fired from the
+/// updater's tokio thread silently drop. Reading the static Mutex
+/// state directly bypasses that entirely.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateStatus {
+    pub available: Option<UpdateInfo>,
+    pub downloaded: bool,
+}
+
+pub fn get_status() -> UpdateStatus {
+    UpdateStatus {
+        available: AVAILABLE.lock().unwrap().clone(),
+        downloaded: DOWNLOADED_INSTALLER.lock().unwrap().is_some(),
+    }
+}
+
 /// One-shot check. Returns Some(info) only if a newer tag exists with a
 /// downloadable .exe asset.
 pub async fn check_once() -> Result<Option<UpdateInfo>> {
@@ -238,12 +258,52 @@ pub fn spawn_installer_and_quit() -> Result<()> {
             .spawn()
             .with_context(|| format!("spawn msiexec for {}", path.display()))?;
     } else {
-        // NSIS / Inno / custom .exe installer — /SILENT is the de-facto
-        // standard silent flag both NSIS and Inno honor.
-        std::process::Command::new(&path)
-            .arg("/SILENT")
+        // WiX Burn bundle. Two problems being solved:
+        //
+        // 1. The flag — Burn uses /passive (brief progress UI, no
+        //    user interaction) or /quiet (no UI at all). /SILENT is
+        //    Inno Setup's convention; Burn silently ignores it.
+        //
+        // 2. Auto-relaunch — Burn's /passive does NOT trigger the
+        //    bootstrapper's "Launch when finished" action, so without
+        //    a chained relaunch the user ends up staring at a closed
+        //    window after a successful install. We chain in a
+        //    generated temp .bat: run the installer, then `start` the
+        //    freshly-installed blissful-shell.exe. Single `&` (not
+        //    `&&`) so the relaunch fires even on no-op installs and
+        //    the user always gets their app back.
+        //
+        // Why a .bat file rather than `cmd /C <chain>`: Rust's
+        // Command::arg escapes quotes with backslash-quote (Win32
+        // convention), but cmd's /C parser interprets `\"` as a
+        // literal backslash followed by a quote — mangling the chain
+        // into garbage like `'\"installer-path\"'`. Writing the
+        // chain to a .bat and spawning that sidesteps the escaping
+        // problem entirely; cmd reads the file content directly with
+        // its normal parser.
+        let installer = path.to_string_lossy();
+        let program_files = std::env::var("ProgramFiles")
+            .unwrap_or_else(|_| "C:\\Program Files".into());
+        let shell_exe = format!("{program_files}\\Blissful\\blissful-shell.exe");
+        let bat_content = format!(
+            "@echo off\r\n\"{installer}\" /passive /norestart\r\nstart \"\" \"{shell_exe}\"\r\n"
+        );
+        let bat_path = std::env::temp_dir().join("blissful-update.bat");
+        std::fs::write(&bat_path, bat_content)
+            .with_context(|| format!("write update launcher {}", bat_path.display()))?;
+        // Windows CreateProcess resolves the .bat extension to cmd.exe
+        // automatically. CREATE_NO_WINDOW (0x08000000) suppresses the
+        // console window cmd would otherwise pop while running the
+        // .bat — without it the user sees a black terminal flash
+        // between clicking "Update & Restart" and the new Blissful
+        // appearing. The installer's own /passive progress UI is a
+        // separate window, unaffected.
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        std::process::Command::new(&bat_path)
+            .creation_flags(CREATE_NO_WINDOW)
             .spawn()
-            .with_context(|| format!("spawn installer {}", path.display()))?;
+            .with_context(|| format!("spawn update launcher {}", bat_path.display()))?;
     }
     Ok(())
 }

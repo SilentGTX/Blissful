@@ -105,15 +105,16 @@ pub fn dispatch(req: &Request) -> Response {
 
         // ---- auto-updater (Phase 6) ----
         "getUpdateStatus" => {
-            // Pull-style query for the renderer. Returns the last update
-            // the background poller found, or null. Lets the renderer
-            // recover from missing the one-shot `update-available` event
-            // (race against React mount completing by the 15s initial
-            // check) by polling on a timer instead.
-            match crate::updater::get_available() {
-                Some(info) => Response::ok(&req.id, serde_json::to_value(&info).unwrap_or(json!(null))),
-                None => Response::ok(&req.id, json!(null)),
-            }
+            // Pull-style combined query: { available, downloaded }.
+            // - `available` is the cached new-release info from check_once
+            //   (Option<UpdateInfo>), recovers from missed update-available
+            //   events.
+            // - `downloaded` is whether download_available has completed,
+            //   recovers from missed update-downloaded events. Both events
+            //   are unreliable because event_sink is thread-local and the
+            //   updater fires from a tokio thread with no sink registered.
+            let status = crate::updater::get_status();
+            Response::ok(&req.id, serde_json::to_value(&status).unwrap_or(json!(null)))
         }
         "downloadUpdate" => {
             // Fire-and-forget — the renderer doesn't await the actual

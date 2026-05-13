@@ -17,6 +17,13 @@ import { desktop, isNativeShell } from '../lib/desktop';
 //     so the two paths don't race or double-download.
 export function useDesktopUpdater() {
   const [updateReady, setUpdateReady] = useState(false);
+  // `isInstalling` is set when the user clicks "Update & Restart". The
+  // overlay reads it to render an "Installing update..." screen. We hold
+  // for ~800ms before firing the IPC so the user sees the overlay
+  // BEFORE the shell quits — otherwise the click registers as "app
+  // suddenly closed with no feedback" (which is how the broken /SILENT
+  // path manifested).
+  const [isInstalling, setIsInstalling] = useState(false);
   const downloadKickedOffRef = useRef(false);
 
   useEffect(() => {
@@ -45,9 +52,17 @@ export function useDesktopUpdater() {
     const pollOnce = () => {
       desktop
         .getUpdateStatus()
-        .then((info) => {
-          log(`getUpdateStatus -> ${info ? info.version : 'null'}`);
-          if (info) kickOffDownload('poll');
+        .then((status) => {
+          const ver = status.available ? status.available.version : 'null';
+          log(`getUpdateStatus -> available=${ver}, downloaded=${status.downloaded}`);
+          if (status.downloaded) {
+            // Installer is on disk and ready to spawn. Flip the toast
+            // even if no event-bus message arrived (events drop on
+            // background-thread firings due to thread-local sink).
+            setUpdateReady(true);
+          } else if (status.available) {
+            kickOffDownload('poll');
+          }
         })
         .catch((e: unknown) => {
           log(`getUpdateStatus IPC threw: ${String(e)}`);
@@ -79,14 +94,24 @@ export function useDesktopUpdater() {
   }, []);
 
   const installNow = () => {
-    if (isNativeShell()) {
-      desktop.installUpdate().catch(() => {});
-    }
+    if (!isNativeShell()) return;
+    // Show the overlay first, then trigger the install after a short
+    // delay. The shell exits as soon as installUpdate is dispatched,
+    // so without this delay the user sees zero feedback between
+    // clicking the button and the window vanishing.
+    setIsInstalling(true);
+    window.setTimeout(() => {
+      desktop.installUpdate().catch(() => {
+        // IPC error means the install never spawned. Drop the overlay
+        // so the user isn't stuck looking at "Installing..." forever.
+        setIsInstalling(false);
+      });
+    }, 800);
   };
 
   const dismissUpdate = () => {
     setUpdateReady(false);
   };
 
-  return { updateReady, installNow, dismissUpdate };
+  return { updateReady, isInstalling, installNow, dismissUpdate };
 }
