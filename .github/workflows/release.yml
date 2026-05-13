@@ -290,3 +290,64 @@ jobs:
           make_latest: true
           generate_release_notes: true
           fail_on_unmatched_files: true
+
+      - name: Prune old releases (keep latest 2 + Stable pin)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STABLE_TAG: ${{ vars.STABLE_RELEASE_TAG }}
+        run: |
+          # Retention policy: after every publish, the GitHub Releases
+          # page shows EXACTLY the last 2 Blissful versions plus a
+          # manually pinned Stable release. Everything older is deleted.
+          #
+          # "Blissful release" = tag matches `v<digit>.*`. The unrelated
+          # `vendor-binaries-*` releases (libmpv / ffmpeg / etc. payload
+          # bundles) are filtered out by that prefix and always preserved.
+          #
+          # The Stable pin is read from the `STABLE_RELEASE_TAG` repo
+          # variable. Empty/unset = no pin (rule degrades to just
+          # "latest 2"). The pin is intentionally manual — the choice of
+          # which build counts as "known good" is a judgment call, not
+          # a derivation, so we don't auto-rotate it.
+          $ErrorActionPreference = 'Stop'
+          $all = gh release list --repo $env:GITHUB_REPOSITORY --limit 50 `
+                   --json tagName,publishedAt,isLatest,isPrerelease |
+                 ConvertFrom-Json
+
+          $blissful = $all |
+            Where-Object { $_.tagName -match '^v\d' } |
+            Sort-Object publishedAt -Descending
+
+          if ($blissful.Count -le 2) {
+            Write-Host "Only $($blissful.Count) Blissful release(s) on remote — nothing to prune."
+            exit 0
+          }
+
+          $keep = [System.Collections.Generic.HashSet[string]]::new()
+          # Top 2 by publish date (the new build + the prior one).
+          foreach ($r in ($blissful | Select-Object -First 2)) {
+            $null = $keep.Add($r.tagName)
+          }
+          if ($env:STABLE_TAG) {
+            $null = $keep.Add($env:STABLE_TAG)
+            Write-Host "Stable pin: $env:STABLE_TAG"
+          } else {
+            Write-Host "STABLE_RELEASE_TAG not set — keeping only latest 2."
+          }
+          Write-Host ('Keep set: ' + ($keep -join ', '))
+
+          foreach ($r in $blissful) {
+            if ($keep.Contains($r.tagName)) {
+              Write-Host "  ✓ keep   $($r.tagName)"
+              continue
+            }
+            Write-Host "  ✗ delete $($r.tagName)"
+            # Release-only delete; we leave the git tag in place so
+            # `git log` / `git tag` history stays intact. Anyone who
+            # wants to clean the tags too can run a separate
+            # `git push --delete origin <tag>` — intentionally NOT done
+            # here because tag removal is essentially irreversible.
+            gh release delete $r.tagName --repo $env:GITHUB_REPOSITORY --yes
+          }
