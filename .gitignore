@@ -14,6 +14,9 @@ apps/blissful-shell/resources/ffmpeg-dlls/
 apps/blissful-shell/resources/test-media/
 apps/blissful-shell/resources/stremio-service.zip
 apps/blissful-shell/resources/stremio-service/
+# vcruntime DLLs are MSVC redistributables — staged per-dev / fetched by
+# the CI workflow at build time, never tracked in git.
+apps/blissful-shell/resources/vcruntime/*.dll
 
 # Installer output + WiX intermediates left behind by local builds
 apps/blissful-shell/installer/build/
@@ -31,6 +34,7 @@ vendor-binaries/
 .DS_Store
 .idea/
 .vscode/
+.claude/
 *.swp
 *.swo
 Thumbs.db
