@@ -1098,10 +1098,17 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     // Without it, BluRay rips' subs ignore the vertical-position slider
     // entirely while SRT/VTT addon subs move fine.
     desktop.mpv.command('set', 'sub-ass-force-margins', 'yes').catch(() => {});
-    // sub-scale wins over sub-font-size for ASS subs. 28 px = 1.0x.
-    const sizeScale = settings.subtitlesSizePx / 28;
-    desktop.mpv.command('set', 'sub-scale', String(sizeScale)).catch(() => {});
-    desktop.mpv.command('set', 'sub-font-size', String(settings.subtitlesSizePx)).catch(() => {});
+    // Embedded subs are hardcoded to 16 px regardless of the
+    // `subtitlesSizePx` user setting — the setting only controls the
+    // HTML overlay used for addon-supplied subtitles, where the
+    // larger BluRay-style sizes look reasonable. mpv-rendered
+    // embedded subs (typically already styled by the source) look
+    // oversized at the same numeric scale, so we lock them at the
+    // 16 px baseline. sub-scale wins over sub-font-size for ASS;
+    // 28 px = 1.0x scale, so 16/28 ≈ 0.57x.
+    const embeddedSubPx = 16;
+    desktop.mpv.command('set', 'sub-scale', String(embeddedSubPx / 28)).catch(() => {});
+    desktop.mpv.command('set', 'sub-font-size', String(embeddedSubPx)).catch(() => {});
     // mpv color (AARRGGBB) — for SRT/VTT text subs, also as a fallback
     // path for ASS in some builds.
     desktop.mpv.command('set', 'sub-color', hex(settings.subtitlesTextColor, '#FFFFFFFF')).catch(() => {});
@@ -1122,7 +1129,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       `PrimaryColour=${ass(settings.subtitlesTextColor, 'rgba(255,255,255,1)')}`,
       `OutlineColour=${ass(settings.subtitlesOutlineColor, 'rgba(0,0,0,0.75)')}`,
       `BackColour=${ass(settings.subtitlesBackgroundColor, 'rgba(0,0,0,0)')}`,
-      `FontSize=${Math.round(settings.subtitlesSizePx * 2)}`,
+      `FontSize=${Math.round(embeddedSubPx * 2)}`,
     ].join(',');
     desktop.mpv.command('set', 'sub-ass-force-style', assStyle).catch(() => {});
     // Re-parse the active sub track with the new force-style. For
@@ -1996,31 +2003,16 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     applySubtitleSelection,
   ]);
 
-  // Update subtitle size live + persist. Other Stremio-style preferences
-  // (text/background/outline color) keep their existing entry on the
-  // Settings page; iter 2 only surfaces size in the popover since it's
-  // the one viewers most often change mid-watch.
+  // Update subtitle size live + persist. The size setting only
+  // affects the HTML overlay used for addon subtitles; embedded
+  // (mpv-rendered) subs are pinned to 16 px in the main styling
+  // effect regardless of this value, so we don't push any mpv
+  // commands here — that would briefly resize embedded subs to
+  // `px` before the styling effect re-runs and snaps them back to
+  // 16, causing a visible flicker.
   const applySubtitleSize = useCallback(
     (px: number) => {
       setSubtitleSizePx(px);
-      // Push sub-scale + sub-font-size; for ASS, also rewrite the ASS
-      // Default style's FontSize via sub-ass-force-style and re-parse.
-      // The settings-sync effect would eventually catch this through
-      // playerSettings dep but the user expects an immediate visual,
-      // so we fire-and-forget here too.
-      const scale = px / 28;
-      desktop.mpv
-        .command('set', 'sub-scale', String(scale))
-        .catch((e: unknown) => console.error('[player] sub-scale failed', e));
-      desktop.mpv
-        .command('set', 'sub-font-size', String(px))
-        .catch((e: unknown) => console.error('[player] sub-font-size failed', e));
-      // FontSize-only ASS force-style. The settings-sync effect re-emits
-      // the full style block including colors; this is enough for size.
-      desktop.mpv
-        .command('set', 'sub-ass-force-style', `FontSize=${Math.round(px * 2)}`)
-        .catch(() => {});
-      desktop.mpv.command('sub-reload').catch(() => {});
       try {
         writeStoredPlayerSettings({ ...props.playerSettings, subtitlesSizePx: px });
       } catch {
@@ -2064,17 +2056,26 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   }, [markSeekStart]);
 
   const onScrubKey = useCallback((e: React.KeyboardEvent) => {
+    // Arrow keys jump by the user-configured seek duration. Default
+    // 10s — was previously hardcoded to ±5s, which silently ignored
+    // the player-settings value and made the "seek duration" slider
+    // a no-op.
+    const seekSec = Math.max(1, Math.round(props.playerSettings.seekTimeDurationMs / 1000));
     if (e.key === 'ArrowLeft') {
       markSeekStart();
-      desktop.seek(-5).catch(() => {});
+      desktop.seek(-seekSec).catch(() => {});
     } else if (e.key === 'ArrowRight') {
       markSeekStart();
-      desktop.seek(5).catch(() => {});
+      desktop.seek(seekSec).catch(() => {});
     }
-  }, [markSeekStart]);
+  }, [markSeekStart, props.playerSettings.seekTimeDurationMs]);
 
   // Keyboard shortcuts: space=pause, ArrowLeft/Right=seek, F=fullscreen.
   useEffect(() => {
+    const seekSec = Math.max(
+      1,
+      Math.round(props.playerSettings.seekTimeDurationMs / 1000),
+    );
     const handler = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
       if (e.code === 'Space') {
@@ -2083,11 +2084,11 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         showControls();
       } else if (e.code === 'ArrowLeft') {
         markSeekStart();
-        desktop.seek(-5).catch(() => {});
+        desktop.seek(-seekSec).catch(() => {});
         showControls();
       } else if (e.code === 'ArrowRight') {
         markSeekStart();
-        desktop.seek(5).catch(() => {});
+        desktop.seek(seekSec).catch(() => {});
         showControls();
       } else if (e.code === 'KeyF') {
         desktop.toggleFullscreen().catch(() => {});
@@ -2097,7 +2098,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [togglePlay, showControls, onBack, markSeekStart]);
+  }, [togglePlay, showControls, onBack, markSeekStart, props.playerSettings.seekTimeDurationMs]);
 
   // Prefer the clean movie/episode name from meta over the verbose
   // stream title (which embeds resolution + seeders + size like

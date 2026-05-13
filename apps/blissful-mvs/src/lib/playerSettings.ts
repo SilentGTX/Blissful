@@ -29,7 +29,7 @@ export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
   assSubtitlesStyling: true,
   audioLanguage: null,
   surroundSound: false,
-  seekTimeDurationMs: 20000,
+  seekTimeDurationMs: 10000,
   seekShortTimeDurationMs: 4000,
   playInExternalPlayer: 'none',
   nextVideoNotificationDurationMs: 30000,
