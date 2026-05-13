@@ -48,9 +48,12 @@ use crate::state::post_outgoing;
 
 const GITHUB_REPO: &str = "SilentGTX/Blissful";
 const USER_AGENT: &str = concat!("blissful-shell/", env!("CARGO_PKG_VERSION"));
-/// Wait before the first check fires so we don't bother the user the
-/// instant the window appears.
-const FIRST_CHECK_DELAY: Duration = Duration::from_secs(15);
+/// Brief delay before the first check so the WebView2 host finishes its
+/// initial paint before the toast can race in. Anything less than ~1 s
+/// risks the toast rendering before the React app has mounted; anything
+/// more is wasted latency on a path the user explicitly notices ("why
+/// is the update prompt slow to appear?").
+const FIRST_CHECK_DELAY: Duration = Duration::from_secs(2);
 /// Cadence after the first check. Matches the Electron auto-updater.
 const CHECK_INTERVAL: Duration = Duration::from_secs(30 * 60);
 
