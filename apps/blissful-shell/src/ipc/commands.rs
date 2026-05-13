@@ -296,7 +296,16 @@ fn mpv_seek(req: &Request) -> Response {
             .as_ref()
             .map(|p| {
                 let sec_str = seconds.to_string();
-                p.command("seek", &[sec_str.as_str(), mode.as_str()])
+                // Append +exact so mpv aligns precisely to the target
+                // frame instead of snapping to the next keyframe. Without
+                // this, a "+10s" seek on a stream with a 20s GOP lands
+                // ~20s past the current position because mpv's default
+                // --hr-seek=default falls back to keyframe-only for
+                // longer seeks. Exact seeks are slightly slower
+                // (decoder has to walk forward from the prior keyframe)
+                // but match what users expect from the duration slider.
+                let mode_exact = format!("{mode}+exact");
+                p.command("seek", &[sec_str.as_str(), mode_exact.as_str()])
             })
             .unwrap_or_else(|| Err(anyhow::anyhow!("no player")))
     });

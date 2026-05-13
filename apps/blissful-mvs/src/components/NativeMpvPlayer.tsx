@@ -2060,11 +2060,21 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     // 10s — was previously hardcoded to ±5s, which silently ignored
     // the player-settings value and made the "seek duration" slider
     // a no-op.
+    //
+    // preventDefault is critical: without it, the browser's native
+    // <input type="range"> ArrowLeft/Right handling ALSO fires,
+    // advancing the slider by `step` and triggering onChange. That
+    // populates scrubValue, and our onKeyUp's commitScrub then issues
+    // a SECOND seek (absolute → scrubValue) on top of the relative
+    // seek we did here, producing the "moved 10s, buffered, moved
+    // 10s more" double-seek behavior.
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
     const seekSec = Math.max(1, Math.round(props.playerSettings.seekTimeDurationMs / 1000));
     if (e.key === 'ArrowLeft') {
       markSeekStart();
       desktop.seek(-seekSec).catch(() => {});
-    } else if (e.key === 'ArrowRight') {
+    } else {
       markSeekStart();
       desktop.seek(seekSec).catch(() => {});
     }
@@ -2734,9 +2744,6 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
                 onMouseUp={commitScrub}
                 onTouchEnd={commitScrub}
                 onPointerUp={commitScrub}
-                onKeyUp={(e) => {
-                  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') commitScrub();
-                }}
                 onKeyDown={onScrubKey}
                 style={fillStyle(progressPct)}
                 aria-label="Seek"
