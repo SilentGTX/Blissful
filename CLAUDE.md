@@ -165,8 +165,9 @@ Currently **unsigned** — releases ship without an Authenticode signature, so u
 ## Licensing
 
 - The source code in this repo is **MIT** (see [LICENSE](LICENSE)).
-- The shipped installer EXE bundles a GPL-licensed `libmpv-2.dll` (currently the shinchiro mpv-winbuild-cmake build). This makes the **combined installer binary GPL-governed on redistribution**, even though the project's own source remains MIT. The root [README](README.md) license section documents the dual situation in detail.
-- Source code can be forked and modified under MIT; redistribution of the installer carries GPL obligations.
+- The shipped installer EXE bundles an **LGPLv2.1+** `libmpv-2.dll` (currently the [zhongfly/mpv-winbuild](https://github.com/zhongfly/mpv-winbuild) `mpv-dev-lgpl-x86_64` build, uploaded as `libmpv-lgpl.zip` on the `vendor-binaries-v1` release). The combined installer is therefore **LGPL-governed on redistribution** — libmpv source must be available (zhongfly's repo satisfies this) and users must be able to swap in their own build. Blissful loads `libmpv-2.dll` dynamically from `%ProgramFiles%\Blissful\`, so the swap is trivial. The root [README](README.md) license section documents the situation in detail.
+- Source code can be forked and modified under MIT; the installer's LGPL obligations only apply when *redistributing* the prebuilt installer.
+- Historical note: pre–vendor-binaries-v1/`libmpv-lgpl.zip` the project bundled the GPL shinchiro build, which made the combined installer GPL-governed and the bundled DLL ~118 MB. The LGPL build is ~96 MB.
 
 ## Code Style
 

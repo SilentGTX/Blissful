@@ -41,15 +41,27 @@ redistribute the source under MIT terms.
 
 The **distributed installer** (`BlissfulSetup-*.exe`) bundles a copy of
 `libmpv-2.dll` built from the upstream [mpv](https://github.com/mpv-player/mpv)
-project's GPL configuration (currently the [shinchiro/mpv-winbuild-cmake](https://github.com/shinchiro/mpv-winbuild-cmake)
-prebuilt). As a result the **combined installer binary is governed by GPL
-terms on redistribution**, even though the Blissful source itself remains
-MIT. If you redistribute the installer you inherit the GPL obligations
-(make the corresponding source available, license the redistribution
-under GPL-compatible terms, etc.). The source of libmpv is publicly
-available at the link above; Blissful's own source is on this repository.
+project's **LGPLv2.1+ configuration** (currently the
+[zhongfly/mpv-winbuild](https://github.com/zhongfly/mpv-winbuild) LGPL
+prebuilt — `mpv-dev-lgpl-x86_64-*.7z`). As a result the **combined
+installer binary is governed by LGPL terms on redistribution**, while
+the Blissful source itself remains MIT. The practical LGPL obligations
+when redistributing the installer are:
 
-This dual situation is normal for OSS projects that link against
-GPL-licensed media libraries (libmpv, GPL FFmpeg builds, etc.) and does
+- Make the libmpv source available (zhongfly's repo above + the
+  Blissful release the binary came from satisfies this).
+- Don't statically link libmpv into the shell — Blissful loads
+  `libmpv-2.dll` dynamically at runtime, so this is already true.
+- Allow users to replace the bundled `libmpv-2.dll` with their own
+  LGPL-compatible build. They already can: the file lives next to
+  `blissful-shell.exe` in `%ProgramFiles%\Blissful\`.
+
+Switching from the historical GPL build (shinchiro) to this LGPL build
+also shrinks the installer (~20 MB savings — the LGPL build omits GPL
+codecs like x264/x265 encoders that Blissful doesn't use for playback
+anyway).
+
+This dual MIT-source / LGPL-bundle situation is normal for OSS
+projects that dynamically link against LGPL media libraries and does
 not affect your ability to fork, modify, or self-build the Blissful
 source under MIT.
