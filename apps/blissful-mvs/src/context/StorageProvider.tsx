@@ -13,6 +13,7 @@ import {
   type StoredProfile,
 } from '../lib/storageApi';
 import {
+  applyStreamingServerCacheSize,
   DEFAULT_PLAYER_SETTINGS,
   readStoredPlayerSettings,
   writeStoredPlayerSettings,
@@ -127,11 +128,19 @@ export function StorageProvider({
   const savePlayerSettings = useCallback(
     async (settings: PlayerSettings) => {
       const next = { ...DEFAULT_PLAYER_SETTINGS, ...settings };
+      // Forward a streaming-server cache-size change to the running
+      // service via its `/settings` POST so the bump takes effect now,
+      // not on next launch. Compared against `playerSettings` rather
+      // than read from `next` blindly so we don't hit the endpoint on
+      // every settings save — only when the value actually changes.
+      if (next.streamingServerCacheSizeBytes !== playerSettings.streamingServerCacheSizeBytes) {
+        void applyStreamingServerCacheSize(next.streamingServerCacheSizeBytes);
+      }
       setPlayerSettings(next);
       writeStoredPlayerSettings(next);
       persistStorageState({ playerSettings: next });
     },
-    [persistStorageState]
+    [persistStorageState, playerSettings.streamingServerCacheSizeBytes]
   );
 
   const userProfile: StoredProfile = useMemo(() => {

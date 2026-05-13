@@ -18,10 +18,7 @@ import {
   fetchStoredState,
   type StoredProfile,
 } from '../lib/storageApi';
-import {
-  applyStreamingServerCacheSize,
-  type PlayerSettings,
-} from '../lib/playerSettings';
+import { applyStreamingServerCacheSize } from '../lib/playerSettings';
 import { TopNav } from '../layout/top-nav/TopNav';
 import { NetflixTopBar } from '../layout/netflix/NetflixTopBar';
 import { AccountModal } from '../layout/app-shell/components/AccountModal';
@@ -77,7 +74,7 @@ export default function AppShell() {
   const {
     storageState, storageHydrated,
     homeRowPrefs, setHomeRowPrefs,
-    playerSettings, savePlayerSettings: rawSavePlayerSettings,
+    playerSettings,
     persistStorageState, userProfile, updateUserProfile,
   } = useStorage();
 
@@ -101,23 +98,6 @@ export default function AppShell() {
     runResume,
     runStartOver,
   } = useContinueWatchingContext();
-
-  // Wrap savePlayerSettings so changes to the streaming-server cache
-  // ceiling are forwarded to the running streaming server via its
-  // /settings POST endpoint. Without this the new value is only used on
-  // next app launch.
-  const providerSavePlayerSettings = useCallback(
-    async (next: PlayerSettings) => {
-      if (
-        next.streamingServerCacheSizeBytes !==
-        playerSettings.streamingServerCacheSizeBytes
-      ) {
-        void applyStreamingServerCacheSize(next.streamingServerCacheSizeBytes);
-      }
-      return rawSavePlayerSettings(next);
-    },
-    [playerSettings.streamingServerCacheSizeBytes, rawSavePlayerSettings],
-  );
 
   // On app boot, apply the persisted cache size to the streaming server.
   // The shell-spawned runtime starts with whatever's in server-settings.

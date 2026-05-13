@@ -9,7 +9,10 @@
 
 import React from 'react';
 import { ScrubBar } from './ScrubBar';
-import { PlayerControlIcon as StremioIcon } from '../PlayerControlIcons';
+import {
+  PlayerControlIcon as StremioIcon,
+  type StremioIconName,
+} from '../PlayerControlIcons';
 
 export type PlayerControlsBarProps = {
   // Scrub bar pass-throughs.
@@ -27,7 +30,7 @@ export type PlayerControlsBarProps = {
   muted: boolean;
   toggleMute: () => void;
   volume01: number;
-  volumeIcon: string;
+  volumeIcon: StremioIconName;
   onVolumeChange: (next: number) => void;
 
   // Audio / subtitle pickers.

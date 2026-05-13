@@ -388,15 +388,9 @@ function buildTorrentStreamUrl(
   return `${serverUrl}/${infoHash}/${selectedFile}${query ? `?${query}` : ''}`;
 }
 
-function formatTime(secs: number | undefined): string {
-  if (secs == null || !Number.isFinite(secs) || secs < 0) return '0:00';
-  const s = Math.floor(secs);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const ss = s % 60;
-  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
-  return `${m}:${String(ss).padStart(2, '0')}`;
-}
+// `formatTime` lives in ./NativeMpvPlayer/ScrubBar.tsx — the only
+// caller after the player decomposition. Re-import here if anything
+// in this file ever needs to render a hh:mm:ss again.
 
 export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   const navigate = useNavigate();
