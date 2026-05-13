@@ -34,7 +34,7 @@ use std::io;
 use std::net::{Shutdown, TcpStream};
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::Duration;
 use tracing::{debug, info, warn};
@@ -52,13 +52,39 @@ const REQUIRED_FFMPEG_DLLS: &[&str] = &[
     "swscale-5.dll",
 ];
 
-/// PID of the spawned service (if we own it), for kill-on-shell-exit.
-/// Stored as Option so a missing service is gracefully a no-op on drop.
-static SERVICE_PID: Mutex<Option<u32>> = Mutex::new(None);
+/// Owned `Child` handle for the spawned stremio-service. Held so we can
+/// `try_wait()` to detect a mid-session crash (the OS may recycle the
+/// PID, so taskkill-by-PID is a hazard — `Child` carries the original
+/// process handle that's stable across PID reuse) and `kill()` cleanly
+/// on shell shutdown.
+static SERVICE_CHILD: Mutex<Option<Child>> = Mutex::new(None);
+
+/// Reap an owned child if it has already exited so the next call to
+/// `ensure_started` will respawn instead of skipping the spawn on the
+/// stale handle. Logs the exit status so a crash leaves a breadcrumb
+/// in shell.log instead of vanishing.
+fn reap_dead_child() {
+    let mut guard = SERVICE_CHILD.lock().unwrap();
+    if let Some(child) = guard.as_mut() {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                warn!(?status, "stremio-service exited; will respawn on next ensure_started");
+                *guard = None;
+            }
+            Ok(None) => {
+                // Still running — no action.
+            }
+            Err(e) => {
+                warn!(error = ?e, "try_wait on stremio-service failed");
+            }
+        }
+    }
+}
 
 /// Public entry: idempotent. Returns Ok(true) if the service is reachable
 /// on port 11470 by the time we return.
 pub fn ensure_started() -> Result<bool> {
+    reap_dead_child();
     if is_alive() {
         debug!("streaming server already alive on 127.0.0.1:11470 — reusing");
         return Ok(true);
@@ -121,31 +147,29 @@ pub fn ensure_started() -> Result<bool> {
 
     let pid = child.id();
     {
-        let mut guard = SERVICE_PID.lock().unwrap();
-        *guard = Some(pid);
+        let mut guard = SERVICE_CHILD.lock().unwrap();
+        *guard = Some(child);
     }
-    // Don't .wait() — fire-and-forget. The Child handle drops here but
-    // the OS process continues running; we kill by PID later if needed.
-    std::mem::forget(child);
 
     info!(pid, "stremio-service spawned, waiting for it to bind 11470");
     wait_for_listening(Duration::from_secs(15))
 }
 
-/// Forcefully kill the spawned service via taskkill /T /F. Called on
-/// shell shutdown. No-op if we never spawned one (e.g. we reused an
-/// existing Stremio Desktop's service).
+/// Cleanly terminate the spawned service on shell shutdown. Uses the
+/// retained `Child` handle so we don't risk killing an unrelated
+/// process that the OS may have given the recycled PID — historically
+/// this used `taskkill /PID` which had exactly that bug. `wait()`
+/// after kill reaps the zombie. No-op if we never spawned (the user
+/// is using an existing Stremio Desktop's running service).
 pub fn kill_owned_process() {
-    let pid_opt = SERVICE_PID.lock().unwrap().take();
-    if let Some(pid) = pid_opt {
+    let child_opt = SERVICE_CHILD.lock().unwrap().take();
+    if let Some(mut child) = child_opt {
+        let pid = child.id();
         info!(pid, "killing owned stremio-service");
-        // CREATE_NO_WINDOW for the taskkill itself too.
-        let _ = Command::new("taskkill")
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
-            .creation_flags(0x08000000)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+        if let Err(e) = child.kill() {
+            warn!(pid, error = ?e, "kill failed; process may already have exited");
+        }
+        let _ = child.wait();
     }
 }
 
@@ -169,7 +193,13 @@ fn ensure_extracted_and_locate_binary() -> Result<PathBuf> {
         debug!(target = %target_dir.display(), "stremio-service already extracted");
     }
 
-    copy_ffmpeg_dlls(&target_dir).ok(); // non-fatal — service may not need them all
+    // FFmpeg DLLs are link-time-required: every entry in
+    // REQUIRED_FFMPEG_DLLS is a hard dependency of stremio-runtime.exe.
+    // The historical `.ok()` here swallowed copy-failures and the
+    // subsequent service-spawn fell over with no diagnostic. Bubble the
+    // failure so `ensureStreamingServer` surfaces "streaming server
+    // unavailable" through the IPC `Err` arm.
+    copy_ffmpeg_dlls(&target_dir).context("stage ffmpeg DLLs")?;
     let exe = find_service_binary(&target_dir)
         .ok_or_else(|| anyhow!("no *service*.exe found under {}", target_dir.display()))?;
     Ok(exe)
@@ -266,11 +296,17 @@ fn extract_zip(zip_path: &Path, target_dir: &Path) -> Result<()> {
             None => continue,
         };
         if entry.is_dir() {
-            fs::create_dir_all(&outpath).ok();
+            // Failure here (permission denied, disk full, AV lock)
+            // produces a partial extraction whose service binary then
+            // misses dependencies — historical behavior was to swallow
+            // this and fail-without-trace on spawn. Bubble.
+            fs::create_dir_all(&outpath)
+                .with_context(|| format!("mkdir during extract: {}", outpath.display()))?;
             continue;
         }
         if let Some(parent) = outpath.parent() {
-            fs::create_dir_all(parent).ok();
+            fs::create_dir_all(parent)
+                .with_context(|| format!("mkdir parent during extract: {}", parent.display()))?;
         }
         let mut out = fs::File::create(&outpath)
             .with_context(|| format!("create {}", outpath.display()))?;
@@ -314,14 +350,15 @@ fn find_service_binary(root: &Path) -> Option<PathBuf> {
 }
 
 fn copy_ffmpeg_dlls(target_dir: &Path) -> Result<()> {
-    let missing: Vec<&&str> = REQUIRED_FFMPEG_DLLS
+    let initially_missing: Vec<&str> = REQUIRED_FFMPEG_DLLS
         .iter()
+        .copied()
         .filter(|dll| !target_dir.join(dll).exists())
         .collect();
-    if missing.is_empty() {
+    if initially_missing.is_empty() {
         return Ok(());
     }
-    debug!(count = missing.len(), "copying ffmpeg DLLs into stremio-service dir");
+    debug!(count = initially_missing.len(), "copying ffmpeg DLLs into stremio-service dir");
 
     let mut sources: Vec<PathBuf> = vec![];
     if let Ok(crate_dir) = std::env::current_exe().and_then(|p| {
@@ -345,7 +382,7 @@ fn copy_ffmpeg_dlls(target_dir: &Path) -> Result<()> {
         if !src_dir.is_dir() {
             continue;
         }
-        for dll in &missing {
+        for dll in &initially_missing {
             let src = src_dir.join(dll);
             let dst = target_dir.join(dll);
             if !src.exists() || dst.exists() {
@@ -355,6 +392,23 @@ fn copy_ffmpeg_dlls(target_dir: &Path) -> Result<()> {
                 warn!(dll = %dll, error = ?e, "ffmpeg DLL copy failed");
             }
         }
+    }
+
+    // Final check: anything still missing after every source has been
+    // tried is a hard error — the service binary will fail to load.
+    // Surfacing the precise missing-files list here lets the renderer
+    // show a meaningful error rather than the user getting "streams
+    // never start" with no log entry.
+    let still_missing: Vec<&str> = REQUIRED_FFMPEG_DLLS
+        .iter()
+        .copied()
+        .filter(|dll| !target_dir.join(dll).exists())
+        .collect();
+    if !still_missing.is_empty() {
+        return Err(anyhow!(
+            "ffmpeg DLLs missing after copy: {}",
+            still_missing.join(", ")
+        ));
     }
     Ok(())
 }

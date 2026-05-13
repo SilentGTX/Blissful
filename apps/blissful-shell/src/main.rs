@@ -14,8 +14,10 @@
 #![cfg_attr(all(not(test), not(debug_assertions)), windows_subsystem = "windows")]
 
 use anyhow::{Context, Result};
+#[cfg(not(debug_assertions))]
+use std::path::Path;
 use std::path::PathBuf;
-use tracing::info;
+use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
 mod ipc;
@@ -43,9 +45,10 @@ fn main() -> Result<()> {
     // so the default tracing_subscriber writer drops every log line
     // into the void — meaning a user-reported issue like "updater
     // isn't firing" has zero diagnostic surface to work from. Write
-    // to %APPDATA%/Blissful/shell.log instead. Truncated per launch
-    // so the file reflects "what happened this session" rather than
-    // growing unbounded.
+    // to %APPDATA%/Blissful/shell.log instead. Rotate (not truncate)
+    // on each launch so a crash that triggers a relaunch doesn't wipe
+    // out the log explaining the crash; one backup (`shell.log.1`) is
+    // sufficient for "previous session" diagnosis.
     //
     // Debug builds keep stderr — `cargo run` is more useful with live
     // terminal output, and the file would just add noise.
@@ -67,6 +70,7 @@ fn main() -> Result<()> {
             if let Some(parent) = p.parent() {
                 let _ = std::fs::create_dir_all(parent);
             }
+            rotate_shell_log(p);
             if let Ok(file) = std::fs::OpenOptions::new()
                 .create(true)
                 .write(true)
@@ -99,6 +103,7 @@ fn main() -> Result<()> {
         }
     }
 
+    install_panic_hook();
     info!("Blissful Shell v{} starting", env!("CARGO_PKG_VERSION"));
     if let Some(p) = &log_path {
         info!(path = %p.display(), "shell tracing log file");
@@ -136,6 +141,56 @@ fn main() -> Result<()> {
         eprintln!("Production entry point is not implemented yet (Phase 1+).");
         std::process::exit(2);
     }
+}
+
+/// Rotate `shell.log` → `shell.log.1` on launch. Keeping a single
+/// backup is enough for the most common diagnostic case ("the previous
+/// run crashed and I just relaunched") without growing unbounded the way
+/// a multi-generation scheme would. Best-effort — failure here is not
+/// fatal, we'd rather lose the prior log than block startup. Only used
+/// on release builds (debug logs to stderr).
+#[cfg(not(debug_assertions))]
+fn rotate_shell_log(path: &Path) {
+    if !path.exists() {
+        return;
+    }
+    let backup = path.with_extension("log.1");
+    // Remove the existing backup first; `rename` over an existing file
+    // is implementation-defined on Windows pre-1809 and a hard error in
+    // some configurations.
+    let _ = std::fs::remove_file(&backup);
+    let _ = std::fs::rename(path, &backup);
+}
+
+/// Funnel panics into the configured tracing sink before unwinding /
+/// aborting. Without this, a panic in any background thread (UI thread,
+/// updater thread, ui-server thread) dies silently in release builds
+/// because `windows_subsystem = "windows"` closes stderr and
+/// `panic = "abort"` skips the default panic hook's location info. We
+/// install AFTER tracing init so the panic message lands in
+/// `shell.log` alongside the rest of the diagnostic context.
+fn install_panic_hook() {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let location = info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "<unknown>".to_string());
+        let payload = info
+            .payload()
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| info.payload().downcast_ref::<String>().map(|s| s.as_str()))
+            .unwrap_or("<non-string panic payload>");
+        let thread = std::thread::current()
+            .name()
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| format!("{:?}", std::thread::current().id()));
+        error!(thread = %thread, location = %location, payload = %payload, "PANIC");
+        // Chain the default hook so the standard backtrace/abort
+        // behavior still runs once the message is in the log.
+        previous(info);
+    }));
 }
 
 /// Look for `libmpv-2.dll` in the standard locations. Returns the directory

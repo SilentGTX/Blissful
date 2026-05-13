@@ -107,12 +107,16 @@ pub fn dispatch(req: &Request) -> Response {
         "getUpdateStatus" => {
             // Pull-style combined query: { available, downloaded }.
             // - `available` is the cached new-release info from check_once
-            //   (Option<UpdateInfo>), recovers from missed update-available
-            //   events.
-            // - `downloaded` is whether download_available has completed,
-            //   recovers from missed update-downloaded events. Both events
-            //   are unreliable because event_sink is thread-local and the
-            //   updater fires from a tokio thread with no sink registered.
+            //   (Option<UpdateInfo>).
+            // - `downloaded` is whether download_available has completed.
+            // The event path (update-available / update-downloaded /
+            // update-download-failed) is reliable now that outgoing
+            // events go through state::OUTGOING_TX + an NWG Notice
+            // rather than a UI-thread thread_local sink. The pull
+            // accessor stays around for the renderer-mount race: if the
+            // React app hasn't subscribed by the time the first event
+            // fires (15-second initial check after launch), it can
+            // recover the state on the next polling interval.
             let status = crate::updater::get_status();
             Response::ok(&req.id, serde_json::to_value(&status).unwrap_or(json!(null)))
         }
@@ -166,6 +170,47 @@ pub fn dispatch(req: &Request) -> Response {
     }
 }
 
+/// Commands the renderer is allowed to issue through `mpv.command`. Kept
+/// deliberately tight: mpv's command surface includes `run`/`subprocess`
+/// (spawn arbitrary processes), `load-script` (execute arbitrary Lua),
+/// `quit` (abrupt termination outside the shell's lifecycle handling),
+/// and a long tail of options-list mutators we don't need. The renderer
+/// is trusted today, but the WebView2 host runs HTTP-fetched content
+/// (addon manifests, addon-embedded UIs) — a single script-injection
+/// foothold inside the WebView origin would otherwise translate to
+/// arbitrary process spawn via `mpv.command('run', ...)`. Pause/play
+/// and properties go through their own dedicated IPC commands
+/// (`play`, `pause`, `seek`, `mpv.setProperty`) which don't pass
+/// through this allowlist.
+///
+/// To extend: confirm the command is read-only or scoped to playback
+/// state, then add it here. Keep this in sync with stremio-shell-ng's
+/// equivalent mpv-bridge allowlist where possible — both clients front
+/// the same library so the legitimate command surface overlaps almost
+/// entirely.
+const ALLOWED_MPV_COMMANDS: &[&str] = &[
+    "loadfile",
+    "stop",
+    "seek",
+    "set",
+    "cycle",
+    "frame-step",
+    "frame-back-step",
+    "screenshot",
+    "screenshot-to-file",
+    "sub-add",
+    "sub-remove",
+    "sub-reload",
+    "audio-add",
+    "audio-remove",
+    "audio-reload",
+    "playlist-clear",
+    "playlist-next",
+    "playlist-prev",
+    "show-text",
+    "osd-msg",
+];
+
 fn mpv_command(req: &Request) -> Response {
     // args: [name, arg1, arg2, ...]. Anything non-string is stringified.
     let arr = match req.args.as_array() {
@@ -177,6 +222,17 @@ fn mpv_command(req: &Request) -> Response {
         Some(n) => n,
         None => return Response::err(&req.id, "bad-args", "first arg (mpv command name) must be a string"),
     };
+    if !ALLOWED_MPV_COMMANDS.contains(&name.as_str()) {
+        // Log at warn (not info/debug) so a renderer trying to escape
+        // the sandbox shows up in shell.log — there's no legitimate
+        // path that hits this branch.
+        warn!(command = %name, "rejected mpv command not on allowlist");
+        return Response::err(
+            &req.id,
+            "command-not-allowed",
+            format!("mpv command '{name}' is not on the shell allowlist"),
+        );
+    }
     let rest: Vec<String> = arr[1..]
         .iter()
         .map(|v| match v {

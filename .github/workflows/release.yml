@@ -24,6 +24,26 @@
 #   STREMIO_SERVICE_ZIP_URL — direct URL to stremio-service.zip
 #   VCRUNTIME_ZIP_URL       — zip with msvcp140 + vcruntime140(_1).dll
 #
+# Plus a matching SHA-256 hash for each (uppercase hex, no separators):
+#
+#   LIBMPV_ZIP_SHA256
+#   FFMPEG_ZIP_SHA256
+#   STREMIO_SERVICE_ZIP_SHA256
+#   VCRUNTIME_ZIP_SHA256
+#
+# The hashes are mandatory — without them the workflow refuses to build.
+# Compute once on a trusted machine via `Get-FileHash <zip> -Algorithm SHA256`
+# (PowerShell) or `sha256sum <zip>` (Linux/macOS) and paste into the repo
+# variables UI. Rotate by re-running the hashing step whenever the vendor
+# blob changes.
+#
+# Why mandatory: the URLs live as plain repo variables and resolve over
+# plain HTTPS; a hijack of either the variable value or the CDN serving
+# the asset would otherwise ship malicious DLLs into every release with
+# no in-band signal. Authenticode signing on the final installer
+# (SignPath, see below) does not retroactively protect the bundled
+# DLLs — the signature covers the outer EXE, not the contents.
+#
 # Recommended hosting: create a separate "vendor-binaries-v1" tag on this
 # repo, upload all four zips as release assets, and reference them by their
 # public download URL. The vendor blob then versions independently of the
@@ -114,17 +134,42 @@ jobs:
           FFMPEG_ZIP_URL: ${{ vars.FFMPEG_ZIP_URL }}
           STREMIO_SERVICE_ZIP_URL: ${{ vars.STREMIO_SERVICE_ZIP_URL }}
           VCRUNTIME_ZIP_URL: ${{ vars.VCRUNTIME_ZIP_URL }}
+          LIBMPV_ZIP_SHA256: ${{ vars.LIBMPV_ZIP_SHA256 }}
+          FFMPEG_ZIP_SHA256: ${{ vars.FFMPEG_ZIP_SHA256 }}
+          STREMIO_SERVICE_ZIP_SHA256: ${{ vars.STREMIO_SERVICE_ZIP_SHA256 }}
+          VCRUNTIME_ZIP_SHA256: ${{ vars.VCRUNTIME_ZIP_SHA256 }}
         run: |
           $ErrorActionPreference = 'Stop'
           $required = @{
-            LIBMPV_ZIP_URL          = $env:LIBMPV_ZIP_URL
-            FFMPEG_ZIP_URL          = $env:FFMPEG_ZIP_URL
-            STREMIO_SERVICE_ZIP_URL = $env:STREMIO_SERVICE_ZIP_URL
-            VCRUNTIME_ZIP_URL       = $env:VCRUNTIME_ZIP_URL
+            LIBMPV_ZIP_URL             = $env:LIBMPV_ZIP_URL
+            FFMPEG_ZIP_URL             = $env:FFMPEG_ZIP_URL
+            STREMIO_SERVICE_ZIP_URL    = $env:STREMIO_SERVICE_ZIP_URL
+            VCRUNTIME_ZIP_URL          = $env:VCRUNTIME_ZIP_URL
+            LIBMPV_ZIP_SHA256          = $env:LIBMPV_ZIP_SHA256
+            FFMPEG_ZIP_SHA256          = $env:FFMPEG_ZIP_SHA256
+            STREMIO_SERVICE_ZIP_SHA256 = $env:STREMIO_SERVICE_ZIP_SHA256
+            VCRUNTIME_ZIP_SHA256       = $env:VCRUNTIME_ZIP_SHA256
           }
           $missing = $required.GetEnumerator() | Where-Object { -not $_.Value } | ForEach-Object { $_.Key }
           if ($missing) {
             throw "Repository variables not configured: $($missing -join ', '). See workflow header for instructions."
+          }
+
+          # Fetch + integrity-check helper. The hash is compared
+          # case-insensitively so users can paste either Get-FileHash's
+          # uppercase output or sha256sum's lowercase. A mismatch aborts
+          # the build before the archive is touched — even Expand-Archive
+          # is a parser exposed to attacker-controlled bytes, so we want
+          # the gate ahead of every Expand step.
+          function Fetch-AndVerify {
+            param([string]$Url, [string]$ExpectedSha, [string]$OutFile, [string]$Label)
+            Write-Host "--> Fetching $Label..."
+            Invoke-WebRequest -Uri $Url -OutFile $OutFile
+            $actual = (Get-FileHash $OutFile -Algorithm SHA256).Hash
+            if ($actual.ToUpperInvariant() -ne $ExpectedSha.ToUpperInvariant()) {
+              throw "$Label SHA-256 mismatch: expected $ExpectedSha, got $actual"
+            }
+            Write-Host "    $Label SHA-256 verified: $actual"
           }
 
           $resources = 'apps/blissful-shell/resources'
@@ -132,23 +177,19 @@ jobs:
           New-Item -ItemType Directory -Force -Path "$resources/ffmpeg-dlls" | Out-Null
           New-Item -ItemType Directory -Force -Path "$resources/vcruntime" | Out-Null
 
-          Write-Host '--> Fetching libmpv (LGPL build)...'
-          Invoke-WebRequest -Uri $env:LIBMPV_ZIP_URL -OutFile libmpv.zip
+          Fetch-AndVerify -Url $env:LIBMPV_ZIP_URL -ExpectedSha $env:LIBMPV_ZIP_SHA256 -OutFile libmpv.zip -Label 'libmpv (LGPL build)'
           Expand-Archive -Path libmpv.zip -DestinationPath "$resources/mpv-x64" -Force
           if (-not (Test-Path "$resources/mpv-x64/libmpv-2.dll")) {
             throw 'libmpv-2.dll missing after extraction — wrong zip layout?'
           }
 
-          Write-Host '--> Fetching ffmpeg DLLs...'
-          Invoke-WebRequest -Uri $env:FFMPEG_ZIP_URL -OutFile ffmpeg.zip
+          Fetch-AndVerify -Url $env:FFMPEG_ZIP_URL -ExpectedSha $env:FFMPEG_ZIP_SHA256 -OutFile ffmpeg.zip -Label 'ffmpeg DLLs'
           Expand-Archive -Path ffmpeg.zip -DestinationPath "$resources/ffmpeg-dlls" -Force
 
-          Write-Host '--> Fetching stremio-service...'
-          Invoke-WebRequest -Uri $env:STREMIO_SERVICE_ZIP_URL `
-            -OutFile "$resources/stremio-service.zip"
+          Fetch-AndVerify -Url $env:STREMIO_SERVICE_ZIP_URL -ExpectedSha $env:STREMIO_SERVICE_ZIP_SHA256 -OutFile "$resources/stremio-service.zip" -Label 'stremio-service'
+          # No extraction here; the shell extracts at first run from %APPDATA%.
 
-          Write-Host '--> Fetching VC++ runtime DLLs...'
-          Invoke-WebRequest -Uri $env:VCRUNTIME_ZIP_URL -OutFile vcruntime.zip
+          Fetch-AndVerify -Url $env:VCRUNTIME_ZIP_URL -ExpectedSha $env:VCRUNTIME_ZIP_SHA256 -OutFile vcruntime.zip -Label 'VC++ runtime DLLs'
           Expand-Archive -Path vcruntime.zip -DestinationPath "$resources/vcruntime" -Force
 
           Remove-Item libmpv.zip, ffmpeg.zip, vcruntime.zip
@@ -168,6 +209,25 @@ jobs:
           "path=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "name=$($exe.Name)"     | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           Write-Host "Built: $($exe.FullName) ($([math]::Round($exe.Length/1MB,1)) MB)"
+
+      - name: Compute installer SHA-256 sidecar
+        id: installer-sha
+        shell: pwsh
+        run: |
+          # The in-app updater (apps/blissful-shell/src/updater.rs) fetches
+          # this sidecar before downloading the installer and refuses to
+          # spawn the installer on a SHA mismatch. The sidecar lives next
+          # to the installer asset on the GitHub release and follows the
+          # `<installer-name>.sha256` convention (single-line: hex hash,
+          # space-space, filename — same format as `sha256sum` output).
+          $exePath = '${{ steps.installer.outputs.path }}'
+          $exeName = '${{ steps.installer.outputs.name }}'
+          $hash = (Get-FileHash $exePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          $sidecarPath = "$exePath.sha256"
+          "$hash  $exeName" | Out-File -FilePath $sidecarPath -Encoding ascii -NoNewline
+          "path=$sidecarPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "SHA-256 sidecar: $sidecarPath"
+          Write-Host (Get-Content $sidecarPath -Raw)
 
       - name: Upload unsigned installer artifact
         id: upload-unsigned
@@ -205,8 +265,12 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          # When signing is enabled, switch this to steps.signed-installer.outputs.path
-          files: ${{ steps.installer.outputs.path }}
+          # When signing is enabled, switch the installer path to
+          # steps.signed-installer.outputs.path and recompute the .sha256
+          # sidecar against the signed file (signing rewrites the EXE).
+          files: |
+            ${{ steps.installer.outputs.path }}
+            ${{ steps.installer-sha.outputs.path }}
           # Tags with a hyphen (v0.1.0-beta.1, v0.2.0-rc.3) are flagged as
           # prereleases so the /releases/latest endpoint — and therefore
           # the in-app updater — only picks up clean vX.Y.Z tags as

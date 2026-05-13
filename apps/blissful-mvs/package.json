@@ -9,7 +9,9 @@
     "dev:shell": "node -e \"const fs=require('fs');try{fs.rmSync('../blissful-shell/target/debug/blissful-ui',{recursive:true,force:true})}catch(e){}\" && node ../../scripts/run-cargo.cjs run --manifest-path ../blissful-shell/Cargo.toml --features spike0a",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.15",
@@ -44,6 +46,7 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
     "vite": "^7.2.4",
-    "vite-plugin-pwa": "^1.2.0"
+    "vite-plugin-pwa": "^1.2.0",
+    "vitest": "^2.1.9"
   }
 }

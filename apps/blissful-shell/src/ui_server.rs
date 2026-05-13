@@ -231,6 +231,71 @@ async fn handle_request(
     }
 }
 
+/// Decision the addon-proxy reaches after validating the requested
+/// target URL. Split out as a pure function so the security-critical
+/// host/path gating can be exhaustively unit-tested without standing
+/// up a hyper server. Any new branch (new bypass host, new allowed
+/// path) MUST be exercised by a test in the `tests` module below.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum AddonProxyDecision {
+    /// Missing or unparseable url= query parameter; respond 400.
+    BadRequest(&'static str),
+    /// Localhost / private-network target that isn't the bundled
+    /// stremio-service on 11470 with an allowed path; respond 403.
+    Forbidden,
+    /// Allowed localhost passthrough (stremio-service on 11470). Use
+    /// the supplied URL verbatim with `forward_url`.
+    BypassUpstream,
+    /// Public target; proxy through blissful.budinoff.com.
+    ProxyUpstream,
+}
+
+pub(crate) fn classify_addon_proxy_target(target: &str) -> AddonProxyDecision {
+    let parsed = match url::Url::parse(target) {
+        Ok(u) => u,
+        Err(_) => return AddonProxyDecision::BadRequest("Invalid url"),
+    };
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return AddonProxyDecision::BadRequest("Unsupported protocol");
+    }
+    // Forbid proxying to localhost — except the local stremio-server
+    // on port 11470. That server is bundled and supervised by the
+    // shell itself, so we can trust it; specific allowed paths are
+    //   /local-addon/* (legacy addons baked into stremio-service)
+    //   /subtitles.vtt (SRT/SSA -> VTT + encoding normalization)
+    //   /opensubHash   (compute OpenSubtitles 8-byte hash for sync)
+    //
+    // We branch on the typed `Host` variant rather than `host_str()`
+    // so we don't have to remember that the `url` crate returns IPv6
+    // hosts with surrounding brackets (`"[::1]"`) — a unit test
+    // caught that the old `host_str()`-and-match approach silently
+    // routed `http://[::1]:9999/admin` to the public proxy because
+    // the literal `"::1"` arm never fired.
+    let is_loopback = match parsed.host() {
+        Some(url::Host::Domain(d)) => d.eq_ignore_ascii_case("localhost"),
+        Some(url::Host::Ipv4(addr)) => {
+            addr.is_loopback() || addr == std::net::Ipv4Addr::UNSPECIFIED
+        }
+        Some(url::Host::Ipv6(addr)) => {
+            addr.is_loopback() || addr == std::net::Ipv6Addr::UNSPECIFIED
+        }
+        None => false,
+    };
+    if is_loopback {
+        let path = parsed.path();
+        let is_streaming_server = parsed.port() == Some(11470)
+            && (path.starts_with("/local-addon/")
+                || path == "/subtitles.vtt"
+                || path == "/opensubHash");
+        return if is_streaming_server {
+            AddonProxyDecision::BypassUpstream
+        } else {
+            AddonProxyDecision::Forbidden
+        };
+    }
+    AddonProxyDecision::ProxyUpstream
+}
+
 async fn addon_proxy(req: &Request<Incoming>) -> Result<Response<BoxBody>> {
     let qs = req.uri().query().unwrap_or("");
     let url_param = parse_query(qs)
@@ -242,45 +307,29 @@ async fn addon_proxy(req: &Request<Incoming>) -> Result<Response<BoxBody>> {
         None => return Ok(text_response(StatusCode::BAD_REQUEST, "text/plain", "Missing url")),
     };
 
-    let parsed = match url::Url::parse(&target) {
-        Ok(u) => u,
-        Err(_) => return Ok(text_response(StatusCode::BAD_REQUEST, "text/plain", "Invalid url")),
-    };
-    if !matches!(parsed.scheme(), "http" | "https") {
-        return Ok(text_response(StatusCode::BAD_REQUEST, "text/plain", "Unsupported protocol"));
-    }
-    // Forbid proxying to localhost — except the local stremio-server
-    // on port 11470. That server is bundled and supervised by the
-    // shell itself, so we can trust it; specific allowed paths are
-    //   /local-addon/* (legacy addons baked into stremio-service)
-    //   /subtitles.vtt (SRT/SSA -> VTT + encoding normalization)
-    //   /opensubHash   (compute OpenSubtitles 8-byte hash for sync)
-    let mut bypass_upstream = false;
-    if let Some(host) = parsed.host_str() {
-        if matches!(host, "localhost" | "127.0.0.1" | "0.0.0.0" | "::1") {
-            let path = parsed.path();
-            let is_streaming_server = parsed.port() == Some(11470)
-                && (path.starts_with("/local-addon/")
-                    || path == "/subtitles.vtt"
-                    || path == "/opensubHash");
-            if !is_streaming_server {
-                return Ok(text_response(StatusCode::FORBIDDEN, "text/plain", "Forbidden host"));
-            }
-            // Localhost targets can't be reached by the public upstream
-            // addon-proxy; forward DIRECTLY from the shell.
-            bypass_upstream = true;
+    match classify_addon_proxy_target(&target) {
+        AddonProxyDecision::BadRequest(msg) => {
+            Ok(text_response(StatusCode::BAD_REQUEST, "text/plain", msg))
+        }
+        AddonProxyDecision::Forbidden => Ok(text_response(
+            StatusCode::FORBIDDEN,
+            "text/plain",
+            "Forbidden host",
+        )),
+        AddonProxyDecision::BypassUpstream => forward_url(req, &target).await,
+        AddonProxyDecision::ProxyUpstream => {
+            // Proxy through blissful.budinoff.com first so the upstream
+            // addon-proxy handles addon authentication/quirks; the React
+            // app's existing behavior on the web build uses the same
+            // upstream.
+            let full = format!(
+                "{}?url={}",
+                ADDON_PROXY_UPSTREAM,
+                urlencoding::encode(&target)
+            );
+            forward_url(req, &full).await
         }
     }
-
-    if bypass_upstream {
-        return forward_url(req, &target).await;
-    }
-
-    // Proxy through blissful.budinoff.com first so the upstream addon-proxy
-    // handles addon authentication/quirks; the React app's existing
-    // behavior on the web build uses the same upstream.
-    let full = format!("{}?url={}", ADDON_PROXY_UPSTREAM, urlencoding::encode(&target));
-    forward_url(req, &full).await
 }
 
 async fn resolve_url(req: &Request<Incoming>) -> Result<Response<BoxBody>> {
@@ -592,4 +641,108 @@ fn parse_query(qs: &str) -> Vec<(String, String)> {
 #[allow(dead_code)]
 fn empty_body() -> BoxBody {
     Empty::<Bytes>::new().map_err(|never| match never {}).boxed()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AddonProxyDecision::*;
+    use super::{classify_addon_proxy_target, AddonProxyDecision};
+
+    #[test]
+    fn rejects_unparseable_url() {
+        assert!(matches!(
+            classify_addon_proxy_target("not a url at all"),
+            AddonProxyDecision::BadRequest(_)
+        ));
+    }
+
+    #[test]
+    fn rejects_unsupported_scheme() {
+        for scheme in ["javascript", "data", "file", "ftp"] {
+            let url = format!("{scheme}://anything");
+            assert!(
+                matches!(
+                    classify_addon_proxy_target(&url),
+                    AddonProxyDecision::BadRequest(_)
+                ),
+                "scheme {scheme} should be rejected",
+            );
+        }
+    }
+
+    #[test]
+    fn forbids_localhost_outside_streaming_server() {
+        // Wrong port.
+        assert_eq!(
+            classify_addon_proxy_target("http://127.0.0.1:8080/anything"),
+            Forbidden
+        );
+        // Right port, wrong path.
+        assert_eq!(
+            classify_addon_proxy_target("http://127.0.0.1:11470/admin"),
+            Forbidden
+        );
+        // localhost alias.
+        assert_eq!(
+            classify_addon_proxy_target("http://localhost:9999/foo"),
+            Forbidden
+        );
+        // 0.0.0.0 alias.
+        assert_eq!(
+            classify_addon_proxy_target("http://0.0.0.0:11470/secret"),
+            Forbidden
+        );
+    }
+
+    #[test]
+    fn bypasses_upstream_for_streaming_server_allowed_paths() {
+        let allowed = [
+            "http://127.0.0.1:11470/local-addon/cinemeta",
+            "http://localhost:11470/local-addon/anything",
+            "http://127.0.0.1:11470/subtitles.vtt",
+            "http://127.0.0.1:11470/opensubHash",
+        ];
+        for url in allowed {
+            assert_eq!(
+                classify_addon_proxy_target(url),
+                BypassUpstream,
+                "{url} should bypass upstream",
+            );
+        }
+    }
+
+    #[test]
+    fn proxies_public_https_through_upstream() {
+        assert_eq!(
+            classify_addon_proxy_target("https://torrentio.strem.fun/manifest.json"),
+            ProxyUpstream
+        );
+        assert_eq!(
+            classify_addon_proxy_target("http://example.com/manifest.json"),
+            ProxyUpstream
+        );
+    }
+
+    #[test]
+    fn ipv6_loopback_does_not_leak_to_public_proxy() {
+        // The exact decision for IPv6 loopback depends on how the
+        // `url` crate normalises `host_str` (with or without brackets,
+        // which the match arm cares about) — but the security
+        // property to guard is that it CANNOT be classified as
+        // ProxyUpstream, which would let the renderer reach a private
+        // IPv6 endpoint through the upstream's open-proxy path.
+        let decision = classify_addon_proxy_target("http://[::1]:9999/admin");
+        assert_ne!(decision, ProxyUpstream);
+    }
+
+    #[test]
+    fn local_addon_path_must_start_with_prefix() {
+        // /local-addonsubpath without the trailing slash on the
+        // prefix would be a path-confusion bug; the implementation
+        // uses starts_with("/local-addon/") to guard against that.
+        assert_eq!(
+            classify_addon_proxy_target("http://127.0.0.1:11470/local-addonshenanigans"),
+            Forbidden
+        );
+    }
 }

@@ -10,7 +10,9 @@ import { getUser, type StremioApiUser } from '../lib/stremioApi';
 import {
   getSavedAccounts,
   removeSavedAccount,
+  updateSavedAccountProfile as updateSavedAccountProfileLocal,
   upsertSavedAccount,
+  type AccountProfile,
   type SavedAccount,
 } from '../lib/savedAccounts';
 import { useUserSession } from '../layout/app-shell/hooks/useUserSession';
@@ -31,6 +33,13 @@ type AuthContextValue = {
   setAuthKey: (value: string | null) => void;
   setUser: (value: StremioApiUser | null) => void;
   setSavedAccounts: (value: SavedAccount[]) => void;
+  /**
+   * Update displayName / avatar for a saved account in localStorage
+   * AND refresh the in-memory `savedAccounts` list so consumers see
+   * the change immediately. AccountsPage uses this for avatar edits;
+   * AppShell uses it during the post-login profile sync.
+   */
+  updateSavedAccountProfile: (authKey: string, profile: Partial<AccountProfile>) => void;
 };
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
@@ -161,6 +170,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
     [authKey, savedAccounts],
   );
 
+  const updateSavedAccountProfile = useCallback(
+    (authKeyToUpdate: string, profile: Partial<AccountProfile>) => {
+      updateSavedAccountProfileLocal(authKeyToUpdate, profile);
+      setSavedAccounts(getSavedAccounts());
+    },
+    [],
+  );
+
   // ---- memo ---------------------------------------------------------------
 
   const value = useMemo<AuthContextValue>(
@@ -175,6 +192,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setAuthKey,
       setUser,
       setSavedAccounts,
+      updateSavedAccountProfile,
     }),
     [
       authKey,
@@ -184,6 +202,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       logout,
       switchAccount,
       removeAccount,
+      updateSavedAccountProfile,
     ],
   );
 

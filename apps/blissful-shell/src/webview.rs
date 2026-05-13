@@ -138,21 +138,15 @@ impl WebView {
                         |_| Ok(()),
                     );
 
-                    // Register an event sink so commands can push Events
-                    // (Outgoing::Event) back to JS without needing direct
-                    // access to the WebView. The sink captures the WebView
-                    // by clone — webview2::WebView is COM-refcounted so a
-                    // clone is cheap and remains valid on the UI thread.
-                    let webview_for_sink = webview.clone();
+                    // Register the resize closure so fullscreen toggles
+                    // can refit the WebView from the IPC dispatcher (UI
+                    // thread). Outgoing events go through the channel
+                    // installed by main_window — no per-controller sink
+                    // is registered here anymore. Flip the WEBVIEW_READY
+                    // gate so the channel drain handler starts posting.
                     let controller_for_resize = controller.clone();
                     crate::state::SHELL.with(|s| {
                         let mut st = s.borrow_mut();
-                        st.event_sink = Some(Box::new(move |payload| {
-                            let json = ipc::serialize(payload);
-                            if let Err(e) = webview_for_sink.post_web_message_as_string(&json) {
-                                error!(error = ?e, "event sink post failed");
-                            }
-                        }));
                         st.resize_webview = Some(Box::new(move |x, y, w, h| {
                             let rect = winapi::shared::windef::RECT {
                                 left: x,
@@ -162,6 +156,44 @@ impl WebView {
                             };
                             let _ = controller_for_resize.put_bounds(rect);
                         }));
+                    });
+                    crate::state::mark_webview_ready();
+
+                    // Origin lock-down: every legitimate page navigation
+                    // lands on http://127.0.0.1:<ui-server port>. Any
+                    // other origin — a malicious href, a hijacked addon
+                    // banner, an open-redirect on the storage upstream
+                    // — would otherwise replace our same-origin React
+                    // app with attacker-controlled content while leaving
+                    // the auth token in localStorage and the
+                    // `blissfulDesktop` IPC bridge alive on the new
+                    // document. We cancel the navigation and shell out
+                    // to the OS default browser for legitimate external
+                    // links (http/https), drop anything else (javascript:,
+                    // data:, file:, custom schemes) silently — those
+                    // have no business inside the shell.
+                    let _ = webview.add_navigation_starting(move |_w, args| {
+                        let uri = args.get_uri().unwrap_or_default();
+                        if is_allowed_internal_uri(&uri) {
+                            return Ok(());
+                        }
+                        error!(uri = %uri, "blocked navigation off-origin");
+                        let _ = args.put_cancel(true);
+                        open_in_default_browser(&uri);
+                        Ok(())
+                    });
+
+                    // Block `window.open()` / target="_blank" from
+                    // spawning a second WebView. We don't want a popup
+                    // surface to live inside the shell — that creates
+                    // a second origin that doesn't inherit our
+                    // navigation lock-down. Route http/https to the OS
+                    // default browser and drop everything else.
+                    let _ = webview.add_new_window_requested(move |_w, args| {
+                        let _ = args.put_handled(true);
+                        let uri = args.get_uri().unwrap_or_default();
+                        open_in_default_browser(&uri);
+                        Ok(())
                     });
 
                     // Phase 5 splash: fire on_ready once when the initial
@@ -247,5 +279,75 @@ impl WebView {
             bottom: y + h,
         };
         let _ = controller.put_bounds(rect);
+    }
+
+    /// Post a single JSON payload to the renderer via WebView2's
+    /// `post_web_message_as_string`. Must be called on the UI thread —
+    /// the WebView2 host is STA and WebView calls from a worker thread
+    /// fail with HRESULT_FROM_WIN32(RPC_E_WRONG_THREAD). The shell's
+    /// outgoing-event drain handler in main_window invokes this from
+    /// inside the NWG event loop, satisfying that constraint by
+    /// construction.
+    pub fn post_message(&self, json: &str) {
+        let Some(controller) = self.controller.borrow().as_ref().cloned() else {
+            return;
+        };
+        let webview = match controller.get_webview() {
+            Ok(w) => w,
+            Err(e) => {
+                error!(error = ?e, "post_message: get_webview failed");
+                return;
+            }
+        };
+        if let Err(e) = webview.post_web_message_as_string(json) {
+            error!(error = ?e, "post_message: post_web_message_as_string failed");
+        }
+    }
+}
+
+/// True if the URI is one the shell allows to load inside the WebView2
+/// frame. Everything else is routed to the OS default browser (or
+/// dropped). The match is on (scheme, host, port) — `127.0.0.1` on the
+/// UI server's bound port is the only legitimate document origin; we
+/// also keep WebView2's own internal `about:blank` so DevTools and the
+/// initial empty document are allowed through.
+fn is_allowed_internal_uri(uri: &str) -> bool {
+    if uri.is_empty() || uri == "about:blank" {
+        return true;
+    }
+    let Ok(parsed) = url::Url::parse(uri) else {
+        return false;
+    };
+    if parsed.scheme() != "http" {
+        return false;
+    }
+    let Some(host) = parsed.host_str() else {
+        return false;
+    };
+    if host != "127.0.0.1" {
+        return false;
+    }
+    let bound = crate::ui_server::ui_server_port();
+    parsed.port() == Some(bound)
+}
+
+/// Hand off http/https URIs to the OS default browser via the same
+/// `cmd /c start` trick the updater uses (CREATE_NO_WINDOW suppresses
+/// the console flash). Anything else — javascript:, data:, file:, custom
+/// schemes — is silently ignored: there is no legitimate flow from
+/// inside the shell that wants those handled by an external app.
+fn open_in_default_browser(uri: &str) {
+    let lower = uri.to_ascii_lowercase();
+    if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+        return;
+    }
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let result = std::process::Command::new("cmd")
+        .args(["/C", "start", "", uri])
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn();
+    if let Err(e) = result {
+        error!(uri = %uri, error = ?e, "failed to launch external URI");
     }
 }

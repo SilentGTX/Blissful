@@ -1,7 +1,9 @@
 import { Button } from '@heroui/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { useAppContext } from '../context/AppContext';
+import { useAddons } from '../context/AddonsProvider';
+import { useAuth } from '../context/AuthProvider';
+import { useUI } from '../context/UIProvider';
 import { datastorePutLibraryItems, normalizeStremioImage } from '../lib/stremioApi';
 import { getLastStreamSelection } from '../lib/streamHistory';
 import { useMetaDetails } from '../models/useMetaDetails';
@@ -21,7 +23,9 @@ import { isElectronDesktopApp } from '../lib/platform';
 import { useImdbRating } from '../lib/useImdbRating';
 
 export default function DetailPage() {
-  const { addons, authKey, setQuery, uiStyle } = useAppContext();
+  const { addons } = useAddons();
+  const { authKey } = useAuth();
+  const { setQuery, uiStyle } = useUI();
   const params = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();

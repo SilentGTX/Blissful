@@ -5,7 +5,12 @@ import { ErrorBoundary, ErrorRow } from '../components/ErrorBoundary';
 import { SkeletonHomeRow } from '../components/Skeleton';
 import MediaRail from '../components/MediaRail';
 import MediaRailMobile from '../components/MediaRailMobile';
-import { useAppContext } from '../context/AppContext';
+import { useAddons } from '../context/AddonsProvider';
+import { useAuth } from '../context/AuthProvider';
+import { useContinueWatchingContext } from '../context/ContinueWatchingProvider';
+import { useHomeCatalogContext } from '../context/HomeCatalogProvider';
+import { useStorage } from '../context/StorageProvider';
+import { useUI } from '../context/UIProvider';
 import type { MediaItem, MediaType } from '../types/media';
 import type { AddonDescriptor } from '../lib/stremioApi';
 import {
@@ -30,21 +35,13 @@ import { useNetflixReveal } from '../features/home/hooks/useNetflixReveal';
 
 export default function HomePage() {
   const maxRowItems = 10;
-  const {
-    movieItems,
-    seriesItems,
-    loading,
-    addons,
-    addonsLoading,
-    homeRowOptions,
-    homeRowPrefs,
-    setHomeRowPrefs,
-    saveHomeRowPrefs,
-    homeEditMode,
-    continueWatching,
-    authKey,
-    uiStyle,
-  } = useAppContext();
+  const { addons, addonsLoading } = useAddons();
+  const { authKey } = useAuth();
+  const { uiStyle, homeEditMode } = useUI();
+  const { homeRowPrefs, setHomeRowPrefs } = useStorage();
+  const { movieItems, seriesItems, loading, homeRowOptions, saveHomeRowPrefs } =
+    useHomeCatalogContext();
+  const { continueWatching } = useContinueWatchingContext();
   const navigate = useNavigate();
   const isNetflix = uiStyle === 'netflix';
   const revealRootRef = useRef<HTMLDivElement | null>(null);

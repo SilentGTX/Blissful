@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useAppContext } from '../context/AppContext';
+import { useAddons } from '../context/AddonsProvider';
+import { useAuth } from '../context/AuthProvider';
+import { useStorage } from '../context/StorageProvider';
 import SimplePlayer from '../components/SimplePlayer';
 import NativeMpvPlayer from '../components/NativeMpvPlayer';
 import { isNativeShell } from '../lib/desktop';
@@ -85,7 +87,9 @@ function formatNextInfo(v: MetaVideo): NextEpisodeInfo {
 }
 
 export default function PlayerPage() {
-  const { addons, authKey, playerSettings } = useAppContext();
+  const { addons } = useAddons();
+  const { authKey } = useAuth();
+  const { playerSettings } = useStorage();
   const [searchParams] = useSearchParams();
   const [resolvedPlayerSettings, setResolvedPlayerSettings] = useState<PlayerSettings>(playerSettings);
 

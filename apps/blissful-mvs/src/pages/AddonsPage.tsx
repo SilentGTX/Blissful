@@ -1,16 +1,15 @@
 import { Button, Input } from '@heroui/react';
-import { useAppContext } from '../context/AppContext';
+import { useState } from 'react';
+import { useAddons } from '../context/AddonsProvider';
+import { useModals } from '../context/ModalsProvider';
 import { getAddonDisplayName } from '../lib/stremioApi';
 
 export default function AddonsPage() {
-  const {
-    addons,
-    addonsQuery,
-    setAddonsQuery,
-    addonsLoading,
-    openAddAddon,
-    uninstallAddon,
-  } = useAppContext();
+  const { addons, addonsLoading, uninstallAddon } = useAddons();
+  const { openAddAddon } = useModals();
+  // Search filter is page-local — no other consumer reads it, so it
+  // doesn't need to live in a context.
+  const [addonsQuery, setAddonsQuery] = useState('');
 
   const filtered = addonsQuery.trim()
     ? addons.filter((addon) => {

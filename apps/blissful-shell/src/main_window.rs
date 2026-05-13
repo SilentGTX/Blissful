@@ -27,7 +27,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::ipc::protocol::{Event as IpcEvent, Outgoing};
 use crate::player::{OwnedMpvEvent, Player};
-use crate::state::{post_outgoing, SHELL};
+use crate::state::{install_outgoing_channel, is_webview_ready, post_outgoing, SHELL};
 use crate::tray::Tray;
 use crate::webview::{NavTarget, WebView};
 
@@ -46,6 +46,13 @@ pub struct SpikeWindow {
     /// navigation. Used to un-hide the main window after the page paints
     /// (delayed-show splash pattern).
     ready_notice: nwg::Notice,
+    /// Notice pinged by `state::post_outgoing` whenever an Outgoing event
+    /// is enqueued for the renderer. The drain handler reads
+    /// `outgoing_rx` and forwards through WebView2. Single bottleneck on
+    /// the UI thread — replaces the historical thread_local event_sink
+    /// that silently dropped events fired from worker threads.
+    outgoing_notice: nwg::Notice,
+    outgoing_rx: flume::Receiver<Outgoing>,
 }
 
 pub fn run_spike(test_file: &str) -> Result<()> {
@@ -145,6 +152,21 @@ pub fn run_spike(test_file: &str) -> Result<()> {
         .context("mpv Notice build")?;
     let (mpv_event_tx, mpv_event_rx) = flume::unbounded::<OwnedMpvEvent>();
     let notice_sender = mpv_notice.sender();
+
+    // Outgoing-event channel for `Outgoing`s posted via `state::post_outgoing`
+    // from any thread (updater tokio task, IPC handlers, fullscreen toggle,
+    // …). Installed BEFORE the WebView2 host starts so an event fired in
+    // the narrow window between channel ready and controller ready stays
+    // queued — the drain handler gates on `is_webview_ready()`. We have
+    // to build the NWG Notice with `&window` as parent which is why this
+    // can't move to a helper on a different thread.
+    let mut outgoing_notice = nwg::Notice::default();
+    nwg::Notice::builder()
+        .parent(&window)
+        .build(&mut outgoing_notice)
+        .context("outgoing Notice build")?;
+    let (outgoing_tx, outgoing_rx) = flume::unbounded::<Outgoing>();
+    install_outgoing_channel(outgoing_tx, outgoing_notice.sender());
 
     // Init libmpv pointing at the PARENT window (stremio-shell-ng pattern).
     // libmpv creates its render child window directly under parent, as a
@@ -250,6 +272,8 @@ pub fn run_spike(test_file: &str) -> Result<()> {
         mpv_event_rx,
         tray,
         ready_notice,
+        outgoing_notice,
+        outgoing_rx,
     });
 
     let spike_for_evt = Rc::clone(&spike);
@@ -283,24 +307,29 @@ pub fn run_spike(test_file: &str) -> Result<()> {
                 }
             }
             // Phase 5 splash: WebView2 finished its first navigation —
-            // show the main window now that the page has painted.
+            // show the main window now that the page has painted. Also
+            // poke the outgoing-event notice so any events queued
+            // between channel install and controller ready get drained
+            // immediately rather than waiting on the next event to
+            // arrive.
             Event::OnNotice if handle == spike_for_evt.ready_notice.handle => {
                 if !spike_for_evt.window.visible() {
                     spike_for_evt.window.set_visible(true);
                     spike_for_evt.window.set_focus();
                     info!("main window shown after WebView2 NavigationCompleted");
                 }
+                spike_for_evt.outgoing_notice.sender().notice();
             }
             Event::OnNotice if handle == spike_for_evt.mpv_notice.handle => {
-                // Don't drain until the WebView2 event sink is registered,
+                // Don't drain until the WebView2 controller is ready,
                 // otherwise the initial property dump (duration, volume,
                 // etc. emitted on observe_property at libmpv init time)
-                // arrives in the channel before the sink exists, gets
-                // drained, and is silently dropped. Leaving them buffered
-                // means the next Notice (e.g. when time-pos ticks after
-                // sink registration) drains the backlog plus the new event.
-                let sink_ready = SHELL.with(|s| s.borrow().event_sink.is_some());
-                if !sink_ready {
+                // arrives in the channel before WebView2 can receive
+                // anything, gets drained into a no-op `post_message`,
+                // and is silently lost. Leaving them buffered means
+                // they fan out through the outgoing channel on the
+                // next tick after the controller comes up.
+                if !is_webview_ready() {
                     return;
                 }
                 while let Ok(mpv_evt) = spike_for_evt.mpv_event_rx.try_recv() {
@@ -309,6 +338,23 @@ pub fn run_spike(test_file: &str) -> Result<()> {
                         event: event_name.to_string(),
                         data,
                     }));
+                }
+            }
+            // Drain queued Outgoing events and post them through
+            // WebView2. Replaces the historical thread_local event_sink
+            // path — events fired from worker threads (updater tokio
+            // task, future async commands) now reach the renderer
+            // reliably because the notice + drain happens entirely on
+            // the UI thread where WebView2 calls are safe.
+            Event::OnNotice if handle == spike_for_evt.outgoing_notice.handle => {
+                if !is_webview_ready() {
+                    return;
+                }
+                let webview_ref = spike_for_evt.webview.borrow();
+                let Some(wv) = webview_ref.as_ref() else { return };
+                while let Ok(payload) = spike_for_evt.outgoing_rx.try_recv() {
+                    let json = crate::ipc::serialize(&payload);
+                    wv.post_message(&json);
                 }
             }
 

@@ -23,7 +23,19 @@
 // styled identically to SimplePlayer's translucent strips so users get the
 // same look. The middle of the screen is transparent so mpv shows through.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { playbackClock, TIME_POS_STATE_THROTTLE_MS } from './NativeMpvPlayer/playbackClock';
+import { PlayerControlsBar } from './NativeMpvPlayer/PlayerControlsBar';
+import { AudioMenuPopover } from './NativeMpvPlayer/AudioMenuPopover';
+import { PlayerHdrBadges } from './NativeMpvPlayer/PlayerHdrBadges';
+import { SubtitleMenuPopover } from './NativeMpvPlayer/SubtitleMenuPopover';
+import { subtitleLangLabel } from './NativeMpvPlayer/subtitleHelpers';
 import { useNavigate } from 'react-router-dom';
 import { ChromePicker, type ColorResult } from 'react-color';
 import { desktop, type MpvTrack } from '../lib/desktop';
@@ -169,30 +181,10 @@ const LANGUAGE_ALIASES: Record<string, string[]> = {
   uk: ['uk', 'ukr'], ukr: ['uk', 'ukr'],
 };
 
-function subtitleLangLabel(lang: string): string {
-  const l = lang.trim().toLowerCase();
-  if (!l) return 'Unknown';
-  const map: Record<string, string> = {
-    en: 'English', eng: 'English',
-    es: 'Spanish', spa: 'Spanish',
-    fr: 'French', fra: 'French', fre: 'French',
-    it: 'Italian', ita: 'Italian',
-    pt: 'Portuguese', por: 'Portuguese', ptbr: 'Portuguese (BR)',
-    de: 'German', deu: 'German', ger: 'German',
-    nl: 'Dutch', nld: 'Dutch', dut: 'Dutch',
-    ru: 'Russian', rus: 'Russian',
-    pl: 'Polish', pol: 'Polish',
-    tr: 'Turkish', tur: 'Turkish',
-    ar: 'Arabic', ara: 'Arabic',
-    hi: 'Hindi', hin: 'Hindi',
-    ja: 'Japanese', jpn: 'Japanese',
-    ko: 'Korean', kor: 'Korean',
-    zh: 'Chinese', zho: 'Chinese', chi: 'Chinese',
-    uk: 'Ukrainian', ukr: 'Ukrainian',
-  };
-  if (map[l]) return map[l];
-  return l.length <= 4 ? l.toUpperCase() : l;
-}
+// Re-export under the original name so the rest of NativeMpvPlayer
+// can keep using `subtitleLangLabel(...)` unchanged. New file is
+// `./NativeMpvPlayer/subtitleHelpers.ts` — see that file for the
+// table + the labelling rules.
 
 function languageMatch(target: string | null, candidate: string | null): boolean {
   if (!target || !candidate) return false;
@@ -409,6 +401,11 @@ function formatTime(secs: number | undefined): string {
 export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   const navigate = useNavigate();
   const [timePos, setTimePos] = useState(0);
+  // Last wall-clock time we wrote `timePos` through React state. Used
+  // by the time-pos handler to skip setState calls that would land
+  // inside the throttle window — the live value still flows to the
+  // module-level `playbackClock` store every tick.
+  const lastTimePosStateWriteRef = useRef(0);
   // Subtitle render clock — Stremio's pattern (from stremio-video's
   // withHTMLSubtitles). On every mpv `time-pos` tick we snapshot the
   // current value and the wall-clock instant. The rAF render loop
@@ -764,7 +761,21 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
           break;
         case 'time-pos':
           if (typeof value === 'number') {
-            setTimePos(value);
+            // Always push the raw value to the live store so the
+            // scrub bar's slider fill stays smooth at mpv's full
+            // tick rate without re-rendering the rest of the player.
+            playbackClock.set(value);
+            // React state is rate-limited so the heavy component
+            // body doesn't re-render at every mpv tick. Effects
+            // keyed off `timePos` still see live-ish values (within
+            // ~200 ms) which is well below any user-perceptible
+            // threshold for the things that read it (up-next arming,
+            // hasVideo gate, ref tracking).
+            const now = Date.now();
+            if (now - lastTimePosStateWriteRef.current >= TIME_POS_STATE_THROTTLE_MS) {
+              lastTimePosStateWriteRef.current = now;
+              setTimePos(value);
+            }
             // Only anchor the subtitle clock from time-pos if we
             // haven't seen a playback-time tick yet (graceful
             // fallback on shells that don't observe playback-time).
@@ -1336,6 +1347,21 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   const toggleMute = useCallback(() => {
     desktop.mpv.setProperty('mute', !muted).catch(() => {});
   }, [muted]);
+
+  // Volume slider handler. Hoisted from the inline JSX so
+  // `<PlayerControlsBar>`'s memoised slider props stay reference-stable
+  // between parent renders that don't change the volume itself.
+  // mpv's `volume-max` is set to 200 in the shell init — 0..2 in the
+  // slider maps to 0..200 % with software amplification above 100.
+  const onVolumeChange = useCallback((next: number) => {
+    const target = Math.round(Math.min(200, Math.max(0, next * 100)));
+    desktop.mpv.setProperty('volume', target).catch(() => {});
+    desktop.mpv.setProperty('mute', target === 0).catch(() => {});
+  }, []);
+
+  const onToggleFullscreen = useCallback(() => {
+    desktop.toggleFullscreen().catch(() => {});
+  }, []);
 
   // Fetch the track list from mpv. Triggered on FileLoaded (and after
   // mpv.setProperty('aid'/'sid') for an explicit refresh).
@@ -2118,6 +2144,21 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   const headerPrimary = props.metaTitle ?? props.title ?? 'Playing';
   const controlsOpacity = controlsVisible ? 'opacity-100' : 'opacity-0';
 
+  // Audio-track button gating. 0-or-1 tracks → disabled with a hover
+  // hint explaining why. Memoised so `<PlayerControlsBar>` doesn't
+  // see a fresh prop reference on parent renders that don't touch the
+  // track list.
+  const { audioDisabled, audioDisabledTitle } = useMemo(() => {
+    const audioTrackCount = tracks.filter((t) => t.kind === 'audio').length;
+    const disabled = audioTrackCount < 2;
+    const title = disabled
+      ? audioTrackCount === 0
+        ? 'No audio tracks'
+        : 'Only one audio track'
+      : 'Audio tracks';
+    return { audioDisabled: disabled, audioDisabledTitle: title };
+  }, [tracks]);
+
   // mpv volume runs 0-200 (we set volume-max=200 in the shell init), so
   // the slider maps 0-2 with 1.0 = unity gain (no amplification). Above
   // 100 mpv applies software amplification — necessary for tracks that
@@ -2177,52 +2218,13 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
             <StremioIcon name="chevron-back" className="h-5 w-5" />
             <span className="max-w-[40vw] truncate">{headerPrimary}</span>
           </button>
-          {/* Top-right badge cluster. HDR fires when mpv reports a PQ
-              or HLG transfer characteristic for the active video
-              track — same predicate Stremio's HDRLabel uses. RD is
-              a pure URL inspection: torrentio + Real-Debrid stream
-              URLs always pass through /resolve/realdebrid/. */}
-          <div className="flex items-center gap-2">
-            {(() => {
-              const isHdr = videoGamma === 'pq' || videoGamma === 'hlg';
-              // 4K detection: stream title parsing gives an instant
-              // badge before the decoder has reported dimensions, but
-              // uploaders mislabel constantly (1080p reencodes tagged
-              // "4K", upscales sold as UHD). Once mpv reports `dwidth`
-              // we trust that as ground truth and let it override the
-              // title's claim either direction.
-              const titleSays4K = /\b(?:2160p|4k|uhd)\b/i.test(props.title ?? '');
-              const is4K =
-                videoDwidth !== null ? videoDwidth >= 3840 : titleSays4K;
-              const isRealDebrid = /\/resolve\/realdebrid\//i.test(props.url ?? '');
-              const badgeClass =
-                'rounded-md border border-white/15 bg-black/45 px-2 py-1 text-[10px] font-bold tracking-wider text-white/80 backdrop-blur';
-              return (
-                <>
-                  {is4K ? (
-                    <div className={badgeClass} title="Ultra High Definition">
-                      4K
-                    </div>
-                  ) : null}
-                  {isHdr ? (
-                    <div className={badgeClass} title={videoGamma === 'pq' ? 'HDR10' : 'HLG'}>
-                      HDR
-                    </div>
-                  ) : null}
-                  {isRealDebrid ? (
-                    <div className={badgeClass} title="Real-Debrid">
-                      RD
-                    </div>
-                  ) : null}
-                </>
-              );
-            })()}
-            {error ? (
-              <div className="rounded-full bg-red-500/20 px-3 py-1 text-xs text-red-200 backdrop-blur">
-                {error}
-              </div>
-            ) : null}
-          </div>
+          <PlayerHdrBadges
+            videoGamma={videoGamma}
+            videoDwidth={videoDwidth}
+            streamTitle={props.title ?? null}
+            streamUrl={props.url ?? null}
+            error={error}
+          />
         </div>
       </div>
 
@@ -2316,315 +2318,37 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       ) : null}
 
 
-      {/* Audio-track picker — lists every audio track libmpv reported. */}
       {audioMenuOpen ? (
-        <div
-          className="absolute inset-0 z-30"
-          onClick={() => setAudioMenuOpen(false)}
-        >
-        <div
-          className="absolute right-[7.5rem] bottom-32 w-[min(280px,92vw)] rounded-2xl border border-white/10 bg-black/85 p-2 text-sm text-white backdrop-blur"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="px-2 pb-1 pt-1 text-xs font-semibold uppercase tracking-wider text-white/70">
-            Audio
-          </div>
-          <div className="max-h-[40vh] overflow-y-auto">
-            {tracks.filter((t) => t.kind === 'audio').length === 0 ? (
-              <div className="px-2 py-2 text-xs text-white/55">No audio tracks</div>
-            ) : (
-              tracks
-                .filter((t) => t.kind === 'audio')
-                .map((t) => {
-                  const active = t.selected || audioId === t.id;
-                  const label =
-                    t.title ?? t.lang ?? t.codec ?? `Track ${t.id}`;
-                  const meta = [t.lang, t.codec].filter(Boolean).join(' · ');
-                  return (
-                    <button
-                      key={`a-${t.id}`}
-                      onClick={() => selectAudio(t.id)}
-                      className={
-                        'flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm ' +
-                        (active
-                          ? 'bg-[#19f7d2]/20 font-semibold text-[#19f7d2]'
-                          : 'text-white hover:bg-white/10')
-                      }
-                    >
-                      <span className="min-w-0 flex-1 truncate">{label}</span>
-                      {meta ? (
-                        <span className="flex-shrink-0 text-[10px] uppercase text-white/45">
-                          {meta}
-                        </span>
-                      ) : null}
-                    </button>
-                  );
-                })
-            )}
-          </div>
-        </div>
-        </div>
+        <AudioMenuPopover
+          tracks={tracks}
+          audioId={audioId}
+          selectAudio={selectAudio}
+          onClose={() => setAudioMenuOpen(false)}
+        />
       ) : null}
 
-      {/* Subtitle picker — 3-column modal mirroring SimplePlayer:
-          Languages | Variants | Settings. Both addon-fetched subs and
-          embedded mpv tracks (`kind === 'sub'`) live in the same modal,
-          with embedded variants tagged "In video" so the user can tell
-          them apart. */}
       {subMenuOpen ? (
-        // Full-screen transparent backdrop intercepts outside clicks.
-        // Click on the panel itself doesn't bubble (stopPropagation),
-        // so only clicks AROUND the panel close it.
-        <div
-          className="absolute inset-0 z-30"
-          onClick={() => setSubMenuOpen(false)}
-        >
-        <div
-          className="absolute right-6 bottom-32 w-[min(820px,94vw)] rounded-2xl border border-white/10 bg-black/85 p-3 text-sm text-white backdrop-blur"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-[220px_1fr_240px]">
-            {/* Column 1 — Subtitles Languages */}
-            <div>
-              <div className="mb-2 text-xs font-semibold tracking-wide text-white/70">
-                Subtitles Languages
-              </div>
-              <div className="max-h-[50vh] overflow-auto rounded-xl border border-white/10 p-1">
-                <button
-                  type="button"
-                  className={
-                    'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left hover:bg-white/10 ' +
-                    (selectedSubKey === 'off' ? 'bg-white/10' : '')
-                  }
-                  onClick={() => {
-                    setSelectedSubLang(null);
-                    void applySubtitleSelection('off');
-                    setSubMenuOpen(false);
-                  }}
-                >
-                  <span>Off</span>
-                  {selectedSubKey === 'off' ? (
-                    <span className="h-2 w-2 rounded-full bg-emerald-300" />
-                  ) : null}
-                </button>
-
-                {combinedSubLanguages.map((lang) => {
-                  // "IN VIDEO" tag fires if ANY embedded sub matches
-                  // the canonical of this row's lang — handles cases
-                  // where the row's raw lang is "english" (from addon)
-                  // but the embedded track is "eng".
-                  const rowCanon = subtitleLangLabel(lang);
-                  const embeddedCount = tracks.filter(
-                    (t) =>
-                      t.kind === 'sub' &&
-                      subtitleLangLabel((t.lang ?? 'unknown').toLowerCase()) === rowCanon,
-                  ).length;
-                  return (
-                    <button
-                      key={lang}
-                      type="button"
-                      className={
-                        'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left hover:bg-white/10 ' +
-                        (selectedSubLang === lang ? 'bg-white/10' : '')
-                      }
-                      onClick={() => {
-                        setSelectedSubLang(lang);
-                        // Auto-apply the first variant for this language
-                        // so users don't have to take a second click —
-                        // matches the existing on-mount auto-pick
-                        // behavior but for manual language switches.
-                        const key = firstVariantKeyForLanguage(lang);
-                        if (key) void applySubtitleSelection(key);
-                      }}
-                    >
-                      <span className="flex items-center gap-2 truncate">
-                        <span>{subtitleLangLabel(lang)}</span>
-                        {embeddedCount > 0 ? (
-                          <span className="rounded bg-[#19f7d2]/20 px-1 text-[9px] uppercase tracking-wider text-[#19f7d2]">
-                            embedded
-                          </span>
-                        ) : null}
-                      </span>
-                      {selectedSubLang === lang ? (
-                        <span className="h-2 w-2 rounded-full bg-emerald-300" />
-                      ) : null}
-                    </button>
-                  );
-                })}
-
-                {combinedSubLanguages.length === 0 ? (
-                  <div className="px-3 py-2 text-xs text-white/60">No subtitles</div>
-                ) : null}
-              </div>
-            </div>
-
-            {/* Column 2 — Subtitles Variants */}
-            <div>
-              <div className="mb-2 text-xs font-semibold tracking-wide text-white/70">
-                Subtitles Variants
-              </div>
-              <div className="max-h-[50vh] overflow-auto rounded-xl border border-white/10 p-1">
-                {selectedSubLang ? (
-                  variantsForLanguage.length > 0 ? (
-                    variantsForLanguage.map((v) => (
-                      <button
-                        key={v.key}
-                        type="button"
-                        className={
-                          'flex w-full items-start justify-between gap-3 rounded-lg px-3 py-2 text-left hover:bg-white/10 ' +
-                          (selectedSubKey === v.key ? 'bg-white/10' : '')
-                        }
-                        onClick={() => {
-                          void applySubtitleSelection(v.key);
-                          setSubMenuOpen(false);
-                        }}
-                      >
-                        {/* Per user spec: just `Language` on top and
-                            `Embedded`/`<addon name>` underneath. Hide
-                            the raw codec/title (dvd_subtitle, eng,
-                            etc.) — those are useless to a viewer. */}
-                        <span className="min-w-0 flex-1">
-                          <div className="truncate text-sm text-white/90">
-                            {subtitleLangLabel(selectedSubLang)}
-                          </div>
-                          <div className="truncate text-xs text-white/60">
-                            {v.embedded ? 'Embedded' : v.origin}
-                          </div>
-                        </span>
-                        {selectedSubKey === v.key ? (
-                          <span className="mt-1 h-2 w-2 rounded-full bg-emerald-300" />
-                        ) : null}
-                      </button>
-                    ))
-                  ) : (
-                    <div className="px-3 py-2 text-xs text-white/60">No variants</div>
-                  )
-                ) : (
-                  <div className="px-3 py-2 text-xs text-white/60">Choose a language</div>
-                )}
-              </div>
-            </div>
-
-            {/* Column 3 — Subtitles Settings (ports SimplePlayer 1:1) */}
-            <div>
-              <div className="mb-2 text-xs font-semibold tracking-wide text-white/70">
-                Subtitles Settings
-              </div>
-              <div className="space-y-4 rounded-xl border border-white/10 p-3 text-xs text-white/70">
-                <div>
-                  <div className="mb-2 flex items-center justify-between">
-                    <span>Delay (s)</span>
-                    <span>{subtitleDelay.toFixed(1)}</span>
-                  </div>
-                  <input
-                    className="bliss-player-range h-2 w-full cursor-pointer appearance-none"
-                    type="range"
-                    min={-5}
-                    max={5}
-                    step={0.1}
-                    value={subtitleDelay}
-                    onChange={(e) => setSubtitleDelay(Number.parseFloat(e.target.value))}
-                  />
-                </div>
-                <div>
-                  <div className="mb-2 flex items-center justify-between">
-                    <span>Size</span>
-                    <span>{subtitleSizePx}px</span>
-                  </div>
-                  <input
-                    className="bliss-player-range h-2 w-full cursor-pointer appearance-none"
-                    type="range"
-                    min={16}
-                    max={64}
-                    step={2}
-                    value={subtitleSizePx}
-                    onChange={(e) => applySubtitleSize(Number.parseFloat(e.target.value))}
-                  />
-                </div>
-                <div>
-                  <div className="mb-2 flex items-center justify-between">
-                    <span>Vertical Position</span>
-                    <span>
-                      {subtitleVerticalPercent === 0
-                        ? 'default'
-                        : `${subtitleVerticalPercent > 0 ? '+' : ''}${subtitleVerticalPercent}`}
-                    </span>
-                  </div>
-                  <input
-                    className="bliss-player-range h-2 w-full cursor-pointer appearance-none"
-                    type="range"
-                    min={-50}
-                    max={50}
-                    step={1}
-                    value={subtitleVerticalPercent}
-                    onChange={(e) => setSubtitleVerticalPercent(Number.parseFloat(e.target.value))}
-                  />
-                </div>
-                <div>
-                  <div className="mb-2 flex items-center justify-between">
-                    <span>Text color</span>
-                    <span>{subtitleTextParsed.alpha === 0 ? 'transparent' : subtitleTextParsed.hex.toUpperCase()}</span>
-                  </div>
-                  <button
-                    type="button"
-                    className="flex h-9 w-full items-center justify-end rounded-lg border border-white/10 bg-transparent px-2"
-                    onClick={(event) => openColorPopover('text', event.currentTarget)}
-                  >
-                    {subtitleTextParsed.alpha === 0 ? (
-                      <span className="text-xs text-white/60">transparent</span>
-                    ) : (
-                      <span
-                        className="h-5 w-full rounded border border-white/20"
-                        style={{ background: subtitleTextParsed.hex }}
-                      />
-                    )}
-                  </button>
-                </div>
-                <div>
-                  <div className="mb-2 flex items-center justify-between">
-                    <span>Background</span>
-                    <span>{subtitleBgParsed.alpha === 0 ? 'transparent' : subtitleBgParsed.hex.toUpperCase()}</span>
-                  </div>
-                  <button
-                    type="button"
-                    className="flex h-9 w-full items-center justify-end rounded-lg border border-white/10 bg-transparent px-2"
-                    onClick={(event) => openColorPopover('bg', event.currentTarget)}
-                  >
-                    {subtitleBgParsed.alpha === 0 ? (
-                      <span className="text-xs text-white/60">transparent</span>
-                    ) : (
-                      <span
-                        className="h-5 w-full rounded border border-white/20"
-                        style={{ background: subtitleBgParsed.hex }}
-                      />
-                    )}
-                  </button>
-                </div>
-                <div>
-                  <div className="mb-2 flex items-center justify-between">
-                    <span>Outline</span>
-                    <span>{subtitleOutlineParsed.alpha === 0 ? 'transparent' : subtitleOutlineParsed.hex.toUpperCase()}</span>
-                  </div>
-                  <button
-                    type="button"
-                    className="flex h-9 w-full items-center justify-end rounded-lg border border-white/10 bg-transparent px-2"
-                    onClick={(event) => openColorPopover('outline', event.currentTarget)}
-                  >
-                    {subtitleOutlineParsed.alpha === 0 ? (
-                      <span className="text-xs text-white/60">transparent</span>
-                    ) : (
-                      <span
-                        className="h-5 w-full rounded border border-white/20"
-                        style={{ background: subtitleOutlineParsed.hex }}
-                      />
-                    )}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        </div>
+        <SubtitleMenuPopover
+          tracks={tracks}
+          selectedSubKey={selectedSubKey}
+          selectedSubLang={selectedSubLang}
+          setSelectedSubLang={setSelectedSubLang}
+          combinedSubLanguages={combinedSubLanguages}
+          variantsForLanguage={variantsForLanguage}
+          firstVariantKeyForLanguage={firstVariantKeyForLanguage}
+          applySubtitleSelection={applySubtitleSelection}
+          subtitleDelay={subtitleDelay}
+          setSubtitleDelay={setSubtitleDelay}
+          subtitleSizePx={subtitleSizePx}
+          applySubtitleSize={applySubtitleSize}
+          subtitleVerticalPercent={subtitleVerticalPercent}
+          setSubtitleVerticalPercent={setSubtitleVerticalPercent}
+          subtitleTextParsed={subtitleTextParsed}
+          subtitleBgParsed={subtitleBgParsed}
+          subtitleOutlineParsed={subtitleOutlineParsed}
+          openColorPopover={openColorPopover}
+          onClose={() => setSubMenuOpen(false)}
+        />
       ) : null}
 
       {/* ChromePicker popover — mirrors SimplePlayer. Positioned next to
@@ -2704,151 +2428,35 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         </div>
       ) : null}
 
-      {/* Stremio-style bottom controls. Layout:
-            row 1 (scrubber): time · thin teal-filled progress bar · time,
-                              with a subtle gradient fade for legibility
-                              over bright video.
-            row 2 (controls):  solid dark strip — play+volume on the left,
-                              audio/subs/fullscreen on the right.
-          Teal accent is --bliss-teal (the user's brand color); both
-          sliders fill from the left in teal up to their value, with a
-          translucent white trough beyond. */}
-      {(() => {
-        const currentTime = scrubValue != null ? scrubValue : timePos;
-        const progressPct =
-          duration > 0
-            ? Math.max(0, Math.min(100, (currentTime / duration) * 100))
-            : 0;
-        const volumePct = Math.max(0, Math.min(100, (volume01 / 2) * 100));
-        const fillStyle = (pct: number) => ({
-          background: `linear-gradient(to right, var(--bliss-teal) 0%, var(--bliss-teal) ${pct}%, rgba(255,255,255,0.18) ${pct}%, rgba(255,255,255,0.18) 100%)`,
-        });
-        return (
-          <div
-            className={
-              'pointer-events-none absolute inset-x-0 bottom-0 z-20 transition-opacity duration-300 ' +
-              controlsOpacity
-            }
-          >
-            {/* Scrubber row */}
-            <div className="pointer-events-auto flex items-center gap-4 bg-gradient-to-t from-black/85 via-black/55 to-transparent px-5 pb-1.5 pt-10 text-xs font-mono tabular-nums text-white">
-              <span className="min-w-[56px] text-left">{formatTime(currentTime)}</span>
-              <input
-                type="range"
-                className="bliss-player-range h-1 flex-1 cursor-pointer appearance-none rounded-full"
-                min={0}
-                max={Math.max(0.1, duration)}
-                step={1}
-                value={Math.min(currentTime, duration > 0 ? duration : currentTime)}
-                onChange={onScrubInput}
-                onMouseUp={commitScrub}
-                onTouchEnd={commitScrub}
-                onPointerUp={commitScrub}
-                onKeyDown={onScrubKey}
-                style={fillStyle(progressPct)}
-                aria-label="Seek"
-              />
-              <span className="min-w-[56px] text-right">{formatTime(duration)}</span>
-            </div>
-
-            {/* Solid controls strip */}
-            <div className="pointer-events-auto flex items-center justify-between gap-3 bg-black/85 px-4 py-2 backdrop-blur">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={togglePlay}
-                  className="bliss-player-icon-btn flex h-10 w-10 items-center justify-center rounded-full"
-                  aria-label={paused ? 'Play' : 'Pause'}
-                >
-                  {paused ? (
-                    <StremioIcon name="play" className="h-6 w-6" />
-                  ) : (
-                    <StremioIcon name="pause" className="h-6 w-6" />
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={toggleMute}
-                  className="bliss-player-icon-btn flex h-10 w-10 items-center justify-center rounded-full"
-                  aria-label={muted ? 'Unmute' : 'Mute'}
-                >
-                  <StremioIcon name={volumeIcon} className="h-5 w-5" />
-                </button>
-                <input
-                  type="range"
-                  className="bliss-player-range h-1 w-28 cursor-pointer appearance-none rounded-full"
-                  min={0}
-                  max={2}
-                  step={0.01}
-                  value={volume01}
-                  onChange={(e) => {
-                    const next = Number.parseFloat(e.target.value);
-                    if (!Number.isFinite(next)) return;
-                    // Clamp 0-200% — mpv's volume-max is set to 200 in
-                    // the shell init. Above 100 applies software amp.
-                    const target = Math.round(Math.min(200, Math.max(0, next * 100)));
-                    desktop.mpv.setProperty('volume', target).catch(() => {});
-                    desktop.mpv.setProperty('mute', target === 0).catch(() => {});
-                  }}
-                  style={fillStyle(volumePct)}
-                  aria-label="Volume"
-                />
-              </div>
-              <div className="flex items-center gap-1">
-                {(() => {
-                  // Disable the audio-track button when the file has 0 or
-                  // 1 audio tracks — there's nothing to switch to.
-                  const audioTrackCount = tracks.filter((t) => t.kind === 'audio').length;
-                  const audioDisabled = audioTrackCount < 2;
-                  return (
-                    <button
-                      type="button"
-                      disabled={audioDisabled}
-                      onClick={() => {
-                        setSubMenuOpen(false);
-                        setAudioMenuOpen((v) => !v);
-                        if (!audioMenuOpen) refreshTracks();
-                      }}
-                      className="bliss-player-icon-btn flex h-10 w-10 items-center justify-center rounded-full disabled:cursor-not-allowed disabled:opacity-40"
-                      aria-label="Audio tracks"
-                      title={
-                        audioDisabled
-                          ? audioTrackCount === 0
-                            ? 'No audio tracks'
-                            : 'Only one audio track'
-                          : 'Audio tracks'
-                      }
-                    >
-                      <StremioIcon name="audio-tracks" className="h-5 w-5" />
-                    </button>
-                  );
-                })()}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAudioMenuOpen(false);
-                    setSubMenuOpen((v) => !v);
-                    if (!subMenuOpen) refreshTracks();
-                  }}
-                  className="bliss-player-icon-btn flex h-10 w-10 items-center justify-center rounded-full"
-                  aria-label="Subtitle tracks"
-                  title="Subtitles"
-                >
-                  <StremioIcon name="subtitles" className="h-5 w-5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => desktop.toggleFullscreen().catch(() => {})}
-                  className="bliss-player-icon-btn flex h-10 w-10 items-center justify-center rounded-full"
-                  aria-label="Toggle fullscreen"
-                >
-                  <StremioIcon name={isFullscreen ? 'minimize' : 'maximize'} className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+      {/* Stremio-style bottom controls (scrub bar + solid strip). Lives in
+          `<PlayerControlsBar>`; the scrub bar inside it subscribes to
+          the live playback clock so it stays smooth at mpv's full tick
+          rate even while the strip itself only re-renders on
+          pause/volume/track-menu changes. */}
+      <PlayerControlsBar
+        scrubValue={scrubValue}
+        duration={duration}
+        onScrubInput={onScrubInput}
+        commitScrub={commitScrub}
+        onScrubKey={onScrubKey}
+        paused={paused}
+        togglePlay={togglePlay}
+        muted={muted}
+        toggleMute={toggleMute}
+        volume01={volume01}
+        volumeIcon={volumeIcon}
+        onVolumeChange={onVolumeChange}
+        audioDisabled={audioDisabled}
+        audioDisabledTitle={audioDisabledTitle}
+        audioMenuOpen={audioMenuOpen}
+        setAudioMenuOpen={setAudioMenuOpen}
+        subMenuOpen={subMenuOpen}
+        setSubMenuOpen={setSubMenuOpen}
+        refreshTracks={refreshTracks}
+        isFullscreen={isFullscreen}
+        onToggleFullscreen={onToggleFullscreen}
+        controlsOpacity={controlsOpacity}
+      />
     </div>
   );
 }

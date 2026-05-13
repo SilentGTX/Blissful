@@ -3,27 +3,16 @@ import { useDesktopUpdater } from '../hooks/useDesktopUpdater';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import SideNav from './SideNav';
 import WhatToDoDrawer from './WhatToDoDrawer';
-import type { WhatToDoPrompt } from './WhatToDoDrawer';
-import { AppContext } from '../context/AppContext';
 import { useAuth } from '../context/AuthProvider';
 import { useUI } from '../context/UIProvider';
 import { useStorage } from '../context/StorageProvider';
 import { useAddons } from '../context/AddonsProvider';
-import { fetchAddonManifest, fetchCatalog } from '../lib/stremioAddon';
-import type { StremioAddonManifest } from '../lib/stremioAddon';
+import { useModals } from '../context/ModalsProvider';
+import { useHomeCatalogContext } from '../context/HomeCatalogProvider';
+import { useContinueWatchingContext } from '../context/ContinueWatchingProvider';
 import { desktop, isNativeShell } from '../lib/desktop';
-import {
-  addonCollectionGet,
-  addonCollectionSet,
-  datastorePutCollection,
-  type StremioApiUser,
-} from '../lib/stremioApi';
-import type { MediaItem } from '../types/media';
-import {
-  getHomeRowOptions,
-  resolveHomeRowOrder,
-  type HomeRowPrefs,
-} from '../lib/homeRows';
+import type { StremioApiUser } from '../lib/stremioApi';
+import { resolveHomeRowOrder } from '../lib/homeRows';
 import {
   fetchHomeState,
   fetchStoredState,
@@ -43,51 +32,45 @@ import { ProfilePromptModal } from '../layout/app-shell/components/ProfilePrompt
 import { WhoWatchingModal } from '../layout/app-shell/components/WhoWatchingModal';
 import {
   HOME_PREFS_KEY,
-  NETFLIX_BG,
   SIDEBAR_COLLAPSED_KEY,
   SIDEBAR_COLLAPSED_WIDTH,
   SIDEBAR_EXPANDED_WIDTH,
 } from '../layout/app-shell/constants';
-import { useContinueWatching } from '../layout/app-shell/hooks/useContinueWatching';
-import { useContinueWatchingActions } from '../layout/app-shell/hooks/useContinueWatchingActions';
 import { ResumeOrStartOverModal } from './ResumeOrStartOverModal';
 import { StreamUnavailableModal } from './StreamUnavailableModal';
-import { getResumeSeconds } from '../layout/app-shell/utils';
 import { parseEpisodeLabel } from './SideNav/utils';
 import { normalizeStremioImage } from '../lib/stremioApi';
-import type { LibraryItem } from '../lib/stremioApi';
 import { useSearchMenu } from '../layout/app-shell/hooks/useSearchMenu';
 import {
-  applyGradient,
   extractImdbId,
+  getResumeSeconds,
   isLikelyManifestUrl,
   isPlayableUrl,
-  metaToItem,
   normalizePossibleUrl,
   openInVlc,
 } from '../layout/app-shell/utils';
+import { useGradientBackdrop } from '../layout/app-shell/hooks/useGradientBackdrop';
+import { useTorrentioCloneSync } from '../layout/app-shell/hooks/useTorrentioCloneSync';
 import { useErrorToast } from '../lib/useErrorToast';
 import { notifySuccess } from '../lib/toastQueues';
 import {
   getSavedAccounts,
-  updateSavedAccountProfile,
   upsertSavedAccount,
 } from '../lib/savedAccounts';
 
 export default function AppShell() {
   const { updateReady, isInstalling, installNow, dismissUpdate } = useDesktopUpdater();
-  const isTorrentioAddonUrl = (url: string): boolean => /torrentio\.strem\.fun/i.test(url);
 
   // ---------- read from providers ------------------------------------------
   const {
     authKey, user, savedAccounts, login, logout,
-    switchAccount: providerSwitchAccount, removeAccount: providerRemoveAccount,
-    setSavedAccounts,
+    switchAccount: providerSwitchAccount,
+    setSavedAccounts, updateSavedAccountProfile,
   } = useAuth();
 
   const {
-    uiStyle, setUiStyle, isDark, setIsDark,
-    darkGradientKey, setDarkGradientKey, lightGradientKey, setLightGradientKey,
+    uiStyle, isDark,
+    darkGradientKey, lightGradientKey,
     homeEditMode, setHomeEditMode, query, setQuery,
   } = useUI();
 
@@ -97,6 +80,27 @@ export default function AppShell() {
     playerSettings, savePlayerSettings: rawSavePlayerSettings,
     persistStorageState, userProfile, updateUserProfile,
   } = useStorage();
+
+  const { addons, addonsLoading, addonsError, setAddonsError, installAddon } = useAddons();
+
+  // Catalog feed + home-row settings live in HomeCatalogProvider now;
+  // AppShell reads `error` for the toast queue and `homeRowOptions`
+  // for the home-settings key signature.
+  const { error: catalogError, homeRowOptions } = useHomeCatalogContext();
+
+  // Modal state and continue-watching flow are sourced from their own
+  // providers so AppShell stops being a god-object that owns 50+
+  // useState calls — the JSX modal mount points further down read
+  // directly from these hooks.
+  const modals = useModals();
+  const {
+    continueWatching,
+    continueSyncError,
+    onOpenContinueItem,
+    onRemoveContinueItem,
+    runResume,
+    runStartOver,
+  } = useContinueWatchingContext();
 
   // Wrap savePlayerSettings so changes to the streaming-server cache
   // ceiling are forwarded to the running streaming server via its
@@ -127,19 +131,15 @@ export default function AppShell() {
     void applyStreamingServerCacheSize(playerSettings.streamingServerCacheSizeBytes);
   }, [storageHydrated, playerSettings.streamingServerCacheSizeBytes]);
 
-  const {
-    addons, addonsLoading, addonsError, setAddonsError,
-    installAddon, uninstallAddon,
-  } = useAddons();
-
-  // ---------- AppShell-local state (modals, catalog, search, etc.) ---------
-  const [isAccountOpen, setIsAccountOpen] = useState(false);
+  // ---------- AppShell-local state (truly layout-scoped only) --------------
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [needsProfilePromptCheck, setNeedsProfilePromptCheck] = useState(false);
 
+  const closeAccount = modals.closeAccount;
   useEffect(() => {
     const onFsChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
-      setIsAccountOpen(false);
+      closeAccount();
     };
     document.addEventListener('fullscreenchange', onFsChange);
 
@@ -148,13 +148,13 @@ export default function AppShell() {
     // addition to the browser document.fullscreenElement state.
     const unsubFs = desktop.onFullscreenChanged((fs) => {
       setIsFullscreen(fs);
-      setIsAccountOpen(false);
+      closeAccount();
     });
     return () => {
       document.removeEventListener('fullscreenchange', onFsChange);
       unsubFs();
     };
-  }, []);
+  }, [closeAccount]);
 
   const handleToggleFullscreen = useCallback(() => {
     if (isNativeShell()) {
@@ -164,30 +164,6 @@ export default function AppShell() {
     } else {
       document.documentElement.requestFullscreen();
     }
-  }, []);
-  const [isLoginOpen, setIsLoginOpen] = useState(false);
-  const [loginForcedError, setLoginForcedError] = useState<string | null>(null);
-  const [loginPrefillEmail, setLoginPrefillEmail] = useState<string | null>(null);
-  const [isProfilePromptOpen, setIsProfilePromptOpen] = useState(false);
-  const [profilePromptInitialName, setProfilePromptInitialName] = useState('');
-  const [isWhoWatchingOpen, setIsWhoWatchingOpen] = useState(false);
-  const [isAddAddonOpen, setIsAddAddonOpen] = useState(false);
-  const [addonUrlDraft, setAddonUrlDraft] = useState('');
-  const [continueSyncError, setContinueSyncError] = useState<string | null>(null);
-  const [addonsQuery, setAddonsQuery] = useState('');
-  const [manifest, setManifest] = useState<StremioAddonManifest | null>(null);
-  const [movieItems, setMovieItems] = useState<MediaItem[]>([]);
-  const [seriesItems, setSeriesItems] = useState<MediaItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isHomeSettingsOpen, setIsHomeSettingsOpen] = useState(false);
-  const [iosPlayPrompt, setIosPlayPrompt] = useState<WhatToDoPrompt>(null);
-  const [needsProfilePromptCheck, setNeedsProfilePromptCheck] = useState(false);
-  const torrentioCloneSyncDoneRef = useRef<Set<string>>(new Set());
-
-  const openWhoWatching = useCallback(() => {
-    setIsAccountOpen(false);
-    setIsWhoWatchingOpen(true);
   }, []);
 
   const location = useLocation();
@@ -213,10 +189,9 @@ export default function AppShell() {
     );
   }, [sidebarCollapsed]);
 
-  useEffect(() => {
-    if (!isWhoWatchingOpen) return;
-    setIsAccountOpen(false);
-  }, [isWhoWatchingOpen]);
+  // (The "closeAccount when whoWatching opens" coupling is now handled
+  //  inside ModalsProvider's `openWhoWatching` — single call that
+  //  closes account + opens who-watching in one shot.)
 
   const {
     searchMenuRef,
@@ -286,139 +261,24 @@ export default function AppShell() {
     };
   }, [authKey, location.pathname, setHomeRowPrefs]);
 
-  // ---------- torrentio clone sync -----------------------------------------
-  const TORRENTIO_URLS_KEY = 'blissfulTorrentioUrls';
-
-  const torrentioAddonUrls = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          addons
-            .map((addon) => addon.transportUrl)
-            .filter((transportUrl): transportUrl is string => typeof transportUrl === 'string' && isTorrentioAddonUrl(transportUrl))
-        )
-      ),
-    [addons]
-  );
-
-  // Persist Torrentio URLs so guests (no auth) can use them.
-  useEffect(() => {
-    if (torrentioAddonUrls.length > 0) {
-      localStorage.setItem(TORRENTIO_URLS_KEY, JSON.stringify(torrentioAddonUrls));
-    }
-  }, [torrentioAddonUrls]);
-
-  useEffect(() => {
-    if (!authKey) return;
-    if (addonsLoading) return;
-    if (torrentioAddonUrls.length === 0) return;
-    if (savedAccounts.length === 0) return;
-
-    const targetAuthKeys = Array.from(new Set(savedAccounts.map((account) => account.authKey).filter(Boolean)));
-    for (const targetAuthKey of targetAuthKeys) {
-      const signature = `${targetAuthKey}|${torrentioAddonUrls.join('|')}`;
-      if (torrentioCloneSyncDoneRef.current.has(signature)) continue;
-      torrentioCloneSyncDoneRef.current.add(signature);
-
-      void (async () => {
-        try {
-          const existing = await addonCollectionGet({ authKey: targetAuthKey });
-          const existingUrls = new Set(existing.map((addon) => addon.transportUrl));
-          const missingTorrentio = torrentioAddonUrls.filter((url) => !existingUrls.has(url));
-          if (missingTorrentio.length === 0) return;
-          const next = [...existing, ...missingTorrentio.map((transportUrl) => ({ transportUrl }))];
-          await addonCollectionSet({ authKey: targetAuthKey, addons: next });
-        } catch {
-          // Ignore per-account sync failures
-        }
-      })();
-    }
-  }, [addonsLoading, authKey, savedAccounts, torrentioAddonUrls]);
+  useTorrentioCloneSync(authKey, addons, addonsLoading, savedAccounts);
 
   // ---------- error toasts -------------------------------------------------
-  useErrorToast(error, 'Catalog error');
+  useErrorToast(catalogError, 'Catalog error');
   useErrorToast(addonsError, 'Addons error');
   useErrorToast(continueSyncError, 'Continue sync error');
-
-  // ---------- continue watching --------------------------------------------
-  const { continueWatching, setContinueWatching } = useContinueWatching(authKey);
-  const [unavailableItem, setUnavailableItem] = useState<LibraryItem | null>(null);
-  const { onOpenContinueItem: navigateContinueItem, onRemoveContinueItem } =
-    useContinueWatchingActions({
-      authKey,
-      navigate,
-      setContinueWatching,
-      setContinueSyncError,
-      setIosPlayPrompt,
-      onStreamUnavailable: (item) => setUnavailableItem(item),
-    });
-
-  // Modal-gated continue-watching open. Every sidebar click goes through
-  // the shared ResumeOrStartOverModal — user picks "Resume hh:mm:ss" or
-  // "Start over". Items with no saved progress bypass the modal and open
-  // straight to start-over so we don't pop a useless dialog.
-  const [resumeModalItem, setResumeModalItem] = useState<LibraryItem | null>(null);
-  // Tracks the item whose async load is in flight (HEAD probe + meta
-  // fetch). Set when we kick off `navigateContinueItem`, cleared the
-  // moment that promise settles. The overlay below renders against it.
-  const [pendingContinueItem, setPendingContinueItem] = useState<LibraryItem | null>(null);
-  const runContinue = useCallback(
-    async (item: LibraryItem, options?: { source?: 'mobile' | 'desktop'; mode?: 'resume' | 'start-over' }) => {
-      setPendingContinueItem(item);
-      try {
-        await navigateContinueItem(item, options);
-      } catch {
-        // Navigation never throws today, but if it did we'd want the
-        // overlay to clear via the safety timeout below rather than
-        // here — the route-change effect handles the happy path.
-      }
-      // Safety net: if for any reason the route doesn't change within
-      // 10 s (e.g., the user is already on the target detail page and
-      // we re-navigated to the same URL), the route-change effect
-      // won't fire and the overlay would get stuck. This clamps it.
-      window.setTimeout(() => setPendingContinueItem(null), 10000);
-    },
-    [navigateContinueItem],
-  );
-
-  // Clear the loading veil once the route actually changes — NOT in the
-  // navigateContinueItem finally — because that fires the moment
-  // `navigate()` returns (synchronous), before React has committed the
-  // new route. Clearing too early gives a flash where the old page
-  // becomes visible for one paint before the new one mounts. Tying it
-  // to pathname change ensures the new route is committed first, then
-  // its own overlay (autoplay veil / mpv buffering) takes over before
-  // we drop ours.
-  const continueOverlayPathRef = useRef(location.pathname);
-  useEffect(() => {
-    if (continueOverlayPathRef.current !== location.pathname) {
-      continueOverlayPathRef.current = location.pathname;
-      setPendingContinueItem(null);
-    }
-  }, [location.pathname]);
-  const onOpenContinueItem = useCallback(
-    (item: LibraryItem, options?: { source?: 'mobile' | 'desktop' }) => {
-      const seconds = getResumeSeconds(item);
-      if (!seconds || seconds <= 0) {
-        void runContinue(item, { ...options, mode: 'start-over' });
-        return;
-      }
-      setResumeModalItem(item);
-    },
-    [runContinue],
-  );
 
   // ---------- addon install modal handler ----------------------------------
   const handleInstallAddon = useCallback(async () => {
     if (!authKey) return;
     try {
-      const url = new URL(addonUrlDraft.trim());
+      const url = new URL(modals.addonUrlDraft.trim());
       await installAddon(url.toString());
-      setIsAddAddonOpen(false);
+      modals.closeAddAddon();
     } catch {
       setAddonsError('Invalid addon URL');
     }
-  }, [addonUrlDraft, authKey, installAddon, setAddonsError]);
+  }, [authKey, installAddon, modals, setAddonsError]);
 
   // ---------- search submit ------------------------------------------------
   const handleSearchSubmit = useCallback(() => {
@@ -441,8 +301,7 @@ export default function AppShell() {
     const url = normalizePossibleUrl(raw);
     if (url) {
       if (isLikelyManifestUrl(url)) {
-        setAddonUrlDraft(url);
-        setIsAddAddonOpen(true);
+        modals.openAddAddonWith(url);
         return;
       }
       if (isPlayableUrl(url)) {
@@ -453,7 +312,7 @@ export default function AppShell() {
 
     addToSearchHistory(raw);
     navigate(`/search?search=${encodeURIComponent(raw)}`);
-  }, [addToSearchHistory, navigate, query, setIsSearchMenuOpen]);
+  }, [addToSearchHistory, modals, navigate, query, setIsSearchMenuOpen]);
 
   // ---------- logout handler (delegates to provider) -----------------------
   const handleLogout = useCallback(() => {
@@ -482,11 +341,10 @@ export default function AppShell() {
           displayName: profile.displayName,
           avatar: profile.avatar,
         });
-        setSavedAccounts(getSavedAccounts());
       }
       await updateUserProfile(profile);
     },
-    [authKey, updateUserProfile, setSavedAccounts]
+    [authKey, updateUserProfile, updateSavedAccountProfile]
   );
 
   const syncSavedAccountProfileFromStorage = useCallback(
@@ -514,7 +372,7 @@ export default function AppShell() {
         // ignore sync errors
       }
     },
-    [setSavedAccounts]
+    [setSavedAccounts, updateSavedAccountProfile]
   );
 
   // ---------- switch account (wraps provider + handles login modal) --------
@@ -533,11 +391,12 @@ export default function AppShell() {
       await providerSwitchAccount(authKeyToUse);
       void syncSavedAccountProfileFromStorage(authKeyToUse, { _id: next.userId, email: next.email } as StremioApiUser);
     } catch {
-      setLoginForcedError('Session expired for this account. Please enter your credentials again.');
-      setLoginPrefillEmail(next.email.includes('@') ? next.email : null);
-      setIsLoginOpen(true);
+      modals.openLoginWith({
+        forcedError: 'Session expired for this account. Please enter your credentials again.',
+        prefillEmail: next.email.includes('@') ? next.email : null,
+      });
     }
-  }, [authKey, savedAccounts, providerSwitchAccount, syncSavedAccountProfileFromStorage]);
+  }, [authKey, savedAccounts, providerSwitchAccount, syncSavedAccountProfileFromStorage, modals]);
 
   // ---------- profile prompt check -----------------------------------------
   // Only open the "Who's watching?" prompt when the user has NEITHER a
@@ -577,12 +436,12 @@ export default function AppShell() {
       return;
     }
 
-    setProfilePromptInitialName(user.email?.split('@')[0] || '');
-    setIsProfilePromptOpen(true);
+    modals.openProfilePrompt(user.email?.split('@')[0] || '');
     setNeedsProfilePromptCheck(false);
   }, [
     authKey,
     handleUpdateUserProfile,
+    modals,
     needsProfilePromptCheck,
     savedAccounts,
     storageHydrated,
@@ -605,168 +464,11 @@ export default function AppShell() {
     return 'home';
   }, [location.pathname]);
 
-  // ---------- catalog fetch ------------------------------------------------
-  useEffect(() => {
-    let cancelled = false;
-
-    Promise.all([
-      fetchAddonManifest(),
-      fetchCatalog({ type: 'movie', id: 'top' }),
-      fetchCatalog({ type: 'series', id: 'top' }),
-    ])
-      .then(([manifest, movies, series]) => {
-        if (cancelled) return;
-        setManifest(manifest);
-        setMovieItems(movies.metas.map((meta) => metaToItem({ ...meta, type: 'movie' })));
-        setSeriesItems(series.metas.map((meta) => metaToItem({ ...meta, type: 'series' })));
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        const message = err instanceof Error ? err.message : 'Failed to load catalog';
-        setError(message);
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // ---------- gradient effects ---------------------------------------------
-  useEffect(() => {
-    if (uiStyle === 'netflix') {
-      document.documentElement.style.setProperty('--dynamic-bg', NETFLIX_BG);
-      return;
-    }
-    const key = isDark ? darkGradientKey : lightGradientKey;
-    applyGradient(key, isDark);
-  }, [darkGradientKey, lightGradientKey, isDark, uiStyle]);
-
-  useEffect(() => {
-    if (!document.documentElement.style.getPropertyValue('--dynamic-bg')) {
-      if (uiStyle === 'netflix') {
-        document.documentElement.style.setProperty('--dynamic-bg', NETFLIX_BG);
-        return;
-      }
-      const key = isDark ? darkGradientKey : lightGradientKey;
-      applyGradient(key, isDark);
-    }
-  }, [darkGradientKey, lightGradientKey, isDark, uiStyle]);
-
-  // ---------- AppContext facade value (deprecated) --------------------------
-  const ctxValue = useMemo(
-    () => ({
-      uiStyle,
-      setUiStyle,
-      isDark,
-      setIsDark,
-      darkGradientKey,
-      setDarkGradientKey,
-      lightGradientKey,
-      setLightGradientKey,
-      query,
-      setQuery,
-      movieItems,
-      seriesItems,
-      loading,
-      error,
-      manifest,
-      authKey,
-      user,
-      userProfile,
-      updateUserProfile: handleUpdateUserProfile,
-      continueWatching,
-      addons,
-      addonsQuery,
-      setAddonsQuery,
-      addonsLoading,
-      addonsError,
-      homeRowOptions: getHomeRowOptions(addons),
-      homeRowPrefs,
-      setHomeRowPrefs,
-      saveHomeRowPrefs: async (prefs: HomeRowPrefs) => {
-        setHomeRowPrefs(prefs);
-        localStorage.setItem(HOME_PREFS_KEY, JSON.stringify(prefs));
-        persistStorageState({ homeRowPrefs: prefs });
-        if (!authKey) return;
-        try {
-          await datastorePutCollection<HomeRowPrefs>({
-            authKey,
-            collection: 'blissful_home',
-            items: [{ _id: 'home', data: prefs }],
-          });
-        } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : '';
-          if (message.toLowerCase().includes('sync disabled')) return;
-          throw err;
-        }
-      },
-      homeEditMode,
-      setHomeEditMode,
-      playerSettings,
-      savePlayerSettings: providerSavePlayerSettings,
-      openLogin: () => setIsLoginOpen(true),
-      openAccount: () => setIsAccountOpen(true),
-      openAddAddon: () => setIsAddAddonOpen(true),
-      installAddon: async (url: string) => {
-        await installAddon(url);
-      },
-      uninstallAddon: async (url: string) => {
-        await uninstallAddon(url);
-      },
-      savedAccounts,
-      switchAccount: handleSwitchAccount,
-      removeAccount: providerRemoveAccount,
-      updateSavedAccountProfile: (authKeyToUpdate: string, profile: StoredProfile) => {
-        updateSavedAccountProfile(authKeyToUpdate, profile);
-        setSavedAccounts(getSavedAccounts());
-      },
-    }),
-    [
-      uiStyle,
-      setUiStyle,
-      isDark,
-      setIsDark,
-      darkGradientKey,
-      setDarkGradientKey,
-      lightGradientKey,
-      setLightGradientKey,
-      query,
-      movieItems,
-      seriesItems,
-      loading,
-      error,
-      manifest,
-      authKey,
-      user,
-      userProfile,
-      handleUpdateUserProfile,
-      continueWatching,
-      addons,
-      addonsQuery,
-      addonsLoading,
-      addonsError,
-      persistStorageState,
-      installAddon,
-      uninstallAddon,
-      homeRowPrefs,
-      setHomeRowPrefs,
-      homeEditMode,
-      playerSettings,
-      providerSavePlayerSettings,
-      savedAccounts,
-      handleSwitchAccount,
-      providerRemoveAccount,
-      setSavedAccounts,
-    ]
-  );
+  useGradientBackdrop(uiStyle, isDark, darkGradientKey, lightGradientKey);
 
   const homeSettingsKey = useMemo(
-    () => JSON.stringify(resolveHomeRowOrder(getHomeRowOptions(addons), homeRowPrefs)),
-    [addons, homeRowPrefs]
+    () => JSON.stringify(resolveHomeRowOrder(homeRowOptions, homeRowPrefs)),
+    [homeRowOptions, homeRowPrefs]
   );
 
   const navSizeStyle = {
@@ -809,7 +511,7 @@ export default function AppShell() {
   );
 
   return (
-    <AppContext.Provider value={ctxValue}>
+    <>
       <div
         className={`min-h-screen ${isNetflix ? 'netflix-root' : ''}`}
         style={{ background: 'var(--dynamic-bg)' }}
@@ -824,7 +526,7 @@ export default function AppShell() {
                     <SideNav
                       active={activeNav}
                       onChange={(next) => navigate(next === 'home' ? '/' : `/${next}`)}
-                      onOpenLogin={() => setIsLoginOpen(true)}
+                      onOpenLogin={modals.openLogin}
                       onLogout={handleLogout}
                       userLabel={displayName}
                       continueWatching={continueWatching}
@@ -867,11 +569,11 @@ export default function AppShell() {
                   onClearHistory={clearSearchHistory}
                   onToggleHomeEdit={() => setHomeEditMode(!homeEditMode)}
                   isHomeRoute={location.pathname === '/'}
-                  onOpenProfiles={openWhoWatching}
-                  onLogin={() => setIsLoginOpen(true)}
+                  onOpenProfiles={modals.openWhoWatching}
+                  onLogin={modals.openLogin}
                   onLogout={handleLogout}
                   onNavigateSettings={() => navigate('/settings')}
-                  onOpenHomeSettings={() => setIsHomeSettingsOpen(true)}
+                  onOpenHomeSettings={modals.openHomeSettings}
                   onNavigateAddons={() => navigate('/addons')}
                   onNavigateAccounts={() => navigate('/accounts')}
                   onToggleFullscreen={handleToggleFullscreen}
@@ -879,7 +581,7 @@ export default function AppShell() {
                   setSearchMenuOpen={setIsSearchMenuOpen}
                   accountAvatar={userProfile.avatar}
                   accountDisplayName={displayName}
-                  isWhoWatchingOpen={isWhoWatchingOpen}
+                  isWhoWatchingOpen={modals.isWhoWatchingOpen}
                 />
 
                 {isSearchMenuOpen ? (
@@ -902,7 +604,7 @@ export default function AppShell() {
             <SideNav
               active={activeNav}
               onChange={(next) => navigate(next === 'home' ? '/' : `/${next}`)}
-              onOpenLogin={() => setIsLoginOpen(true)}
+              onOpenLogin={modals.openLogin}
               onLogout={handleLogout}
               userLabel={displayName}
               continueWatching={continueWatching}
@@ -945,7 +647,7 @@ export default function AppShell() {
               navigate(`/search?search=${encodeURIComponent(value)}`);
             }}
             onClearHistory={clearSearchHistory}
-            onOpenAccount={() => setIsAccountOpen(true)}
+            onOpenAccount={modals.openAccount}
           />
         ) : null}
 
@@ -967,38 +669,38 @@ export default function AppShell() {
           </div>
         ) : null}
 
-        {!isWhoWatchingOpen ? (
+        {!modals.isWhoWatchingOpen ? (
           <AccountModal
-            isOpen={isAccountOpen}
-            onOpenChange={setIsAccountOpen}
+            isOpen={modals.isAccountOpen}
+            onOpenChange={modals.setIsAccountOpen}
             user={user}
             displayName={displayName}
             avatar={userProfile.avatar}
             isFullscreen={isFullscreen}
             onLogout={handleLogout}
-            onLogin={() => setIsLoginOpen(true)}
+            onLogin={modals.openLogin}
             onNavigateSettings={() => navigate('/settings')}
-            onOpenHomeSettings={() => setIsHomeSettingsOpen(true)}
+            onOpenHomeSettings={modals.openHomeSettings}
             onNavigateAddons={() => navigate('/addons')}
             onNavigateAccounts={() => navigate('/accounts')}
-            onOpenProfiles={openWhoWatching}
+            onOpenProfiles={modals.openWhoWatching}
             onToggleFullscreen={handleToggleFullscreen}
           />
         ) : null}
 
         <AddAddonModal
-          isOpen={isAddAddonOpen}
-          onOpenChange={setIsAddAddonOpen}
-          addonUrlDraft={addonUrlDraft}
-          onAddonUrlDraftChange={setAddonUrlDraft}
+          isOpen={modals.isAddAddonOpen}
+          onOpenChange={(open) => (open ? modals.openAddAddon() : modals.closeAddAddon())}
+          addonUrlDraft={modals.addonUrlDraft}
+          onAddonUrlDraftChange={modals.setAddonUrlDraft}
           addonsError={addonsError}
           addonsLoading={addonsLoading}
           onInstall={handleInstallAddon}
         />
 
         <HomeSettingsDialog
-          isOpen={isHomeSettingsOpen}
-          onOpenChange={setIsHomeSettingsOpen}
+          isOpen={modals.isHomeSettingsOpen}
+          onOpenChange={(open) => (open ? modals.openHomeSettings() : modals.closeHomeSettings())}
           settingsKey={homeSettingsKey}
         />
 
@@ -1006,44 +708,35 @@ export default function AppShell() {
           // We DON'T gate on `!authKey` here — "Add account" flows open
           // the login modal while another session is active, and that
           // gate would prevent the modal from rendering at all.
-          // Closing on auth success is handled by:
-          //   - explicit `setIsLoginOpen(false)` in onAuthSuccess
-          //   - `onOpenChange(false)` after notifySuccess
-          //   - LoginModal's own `if (!isOpen) return null` early-return
-          isOpen={isLoginOpen}
+          // Closing is wired through ModalsProvider.closeLogin which
+          // also clears the forced-error/prefill state in one shot.
+          isOpen={modals.isLoginOpen}
           onOpenChange={(open) => {
-            setIsLoginOpen(open);
-            if (!open) {
-              setLoginForcedError(null);
-              setLoginPrefillEmail(null);
-            }
+            if (!open) modals.closeLogin();
           }}
-          forcedErrorMessage={loginForcedError}
-          forcedEmail={loginPrefillEmail}
+          forcedErrorMessage={modals.loginForcedError}
+          forcedEmail={modals.loginPrefillEmail}
           onAuthSuccess={(nextKey, nextUser) => {
             login(nextKey, nextUser);
-            setLoginForcedError(null);
-            setLoginPrefillEmail(null);
             // Close the login modal itself — the profile prompt that
             // opens next (via `needsProfilePromptCheck`) was rendering
             // on top of a still-open login modal, so dismissing the
             // profile prompt revealed the login form again.
-            setIsLoginOpen(false);
+            modals.closeLogin();
             setNeedsProfilePromptCheck(true);
           }}
         />
 
         <ProfilePromptModal
-          isOpen={isProfilePromptOpen}
-          initialName={profilePromptInitialName}
+          isOpen={modals.isProfilePromptOpen}
+          initialName={modals.profilePromptInitialName}
           onSave={async (profile) => {
             // Close the modal optimistically — close first so a slow
             // or failing storage-server save doesn't leave the modal
-            // open after the click. Previously `setIsProfilePromptOpen
-            // (false)` ran AFTER the await; if `saveStoredState`
-            // threw (storage server unreachable), the close line was
-            // skipped entirely and Continue appeared to do nothing.
-            setIsProfilePromptOpen(false);
+            // open after the click. Previously the close line ran
+            // AFTER the await, so a `saveStoredState` failure left
+            // the prompt hanging open with no feedback.
+            modals.closeProfilePrompt();
             try {
               await handleUpdateUserProfile(profile);
               notifySuccess('Profile updated', `Welcome, ${profile.displayName}.`);
@@ -1054,88 +747,81 @@ export default function AppShell() {
         />
 
         <WhoWatchingModal
-          isOpen={isWhoWatchingOpen}
-          onOpenChange={setIsWhoWatchingOpen}
+          isOpen={modals.isWhoWatchingOpen}
+          onOpenChange={modals.setIsWhoWatchingOpen}
           accounts={savedAccounts}
           currentAuthKey={authKey}
           onSwitchAccount={handleSwitchAccount}
-          onAddProfile={() => setIsLoginOpen(true)}
+          onAddProfile={modals.openLogin}
           onManageAccounts={() => navigate('/accounts')}
         />
 
         <WhatToDoDrawer
-          isOpen={Boolean(iosPlayPrompt)}
-          prompt={iosPlayPrompt}
-          onClose={() => setIosPlayPrompt(null)}
+          isOpen={Boolean(modals.iosPlayPrompt)}
+          prompt={modals.iosPlayPrompt}
+          onClose={() => modals.setIosPlayPrompt(null)}
           onPlayVlc={(url) => {
             openInVlc(url);
-            setIosPlayPrompt(null);
+            modals.setIosPlayPrompt(null);
           }}
           onPlayWeb={(playerLink) => {
             navigate(playerLink);
-            setIosPlayPrompt(null);
+            modals.setIosPlayPrompt(null);
           }}
         />
 
         <StreamUnavailableModal
-          isOpen={unavailableItem !== null}
-          title={unavailableItem?.name ?? ''}
+          isOpen={modals.unavailableItem !== null}
+          title={modals.unavailableItem?.name ?? ''}
           episodeLabel={
-            unavailableItem?.type === 'series'
+            modals.unavailableItem?.type === 'series'
               ? parseEpisodeLabel(
-                  (unavailableItem.state as { video_id?: string | null } | undefined)
+                  (modals.unavailableItem.state as { video_id?: string | null } | undefined)
                     ?.video_id ??
-                    unavailableItem.behaviorHints?.defaultVideoId ??
+                    modals.unavailableItem.behaviorHints?.defaultVideoId ??
                     null,
                 )
               : null
           }
-          poster={unavailableItem ? normalizeStremioImage(unavailableItem.poster) ?? null : null}
+          poster={modals.unavailableItem ? normalizeStremioImage(modals.unavailableItem.poster) ?? null : null}
           onPickAnother={() => {
-            if (!unavailableItem) return;
+            const item = modals.unavailableItem;
+            if (!item) return;
             const videoId =
-              (unavailableItem.state as { video_id?: string | null } | undefined)?.video_id ??
-              unavailableItem.behaviorHints?.defaultVideoId ??
+              (item.state as { video_id?: string | null } | undefined)?.video_id ??
+              item.behaviorHints?.defaultVideoId ??
               null;
-            const base = `/detail/${encodeURIComponent(unavailableItem.type)}/${encodeURIComponent(unavailableItem._id)}`;
+            const base = `/detail/${encodeURIComponent(item.type)}/${encodeURIComponent(item._id)}`;
             navigate(
-              unavailableItem.type === 'series' && typeof videoId === 'string'
+              item.type === 'series' && typeof videoId === 'string'
                 ? `${base}?videoId=${encodeURIComponent(videoId)}`
                 : base,
             );
           }}
-          onClose={() => setUnavailableItem(null)}
+          onClose={() => modals.setUnavailableItem(null)}
         />
 
         <ResumeOrStartOverModal
-          isOpen={resumeModalItem !== null}
-          title={resumeModalItem?.name ?? ''}
+          isOpen={modals.resumeModalItem !== null}
+          title={modals.resumeModalItem?.name ?? ''}
           episodeLabel={
-            resumeModalItem?.type === 'series'
+            modals.resumeModalItem?.type === 'series'
               ? parseEpisodeLabel(
-                  (resumeModalItem.state as { video_id?: string | null } | undefined)?.video_id ??
-                    resumeModalItem.behaviorHints?.defaultVideoId ??
+                  (modals.resumeModalItem.state as { video_id?: string | null } | undefined)?.video_id ??
+                    modals.resumeModalItem.behaviorHints?.defaultVideoId ??
                     null,
                 )
               : null
           }
-          poster={resumeModalItem ? normalizeStremioImage(resumeModalItem.poster) ?? null : null}
-          resumeSeconds={resumeModalItem ? (getResumeSeconds(resumeModalItem) ?? 0) : 0}
+          poster={modals.resumeModalItem ? normalizeStremioImage(modals.resumeModalItem.poster) ?? null : null}
+          resumeSeconds={modals.resumeModalItem ? (getResumeSeconds(modals.resumeModalItem) ?? 0) : 0}
           onResume={() => {
-            if (resumeModalItem) {
-              const item = resumeModalItem;
-              setResumeModalItem(null);
-              void runContinue(item, { mode: 'resume' });
-            }
+            if (modals.resumeModalItem) runResume(modals.resumeModalItem);
           }}
           onStartOver={() => {
-            if (resumeModalItem) {
-              const item = resumeModalItem;
-              setResumeModalItem(null);
-              void runContinue(item, { mode: 'start-over' });
-            }
+            if (modals.resumeModalItem) runStartOver(modals.resumeModalItem);
           }}
-          onClose={() => setResumeModalItem(null)}
+          onClose={() => modals.setResumeModalItem(null)}
         />
 
         {/* Continue-watching loading veil — identical to DetailPage's
@@ -1145,7 +831,7 @@ export default function AppShell() {
             chain ends on /detail?autoplay=1 or /player's mpv-buffering
             screen, the visual is one continuous loading state with no
             flash between routes. */}
-        {pendingContinueItem ? (
+        {modals.pendingContinueItem ? (
           // Plain black cover. No spinner / pill — the click-to-route
           // delay is short enough that any indicator just flashes
           // briefly and looks worse than nothing. The overlay's only
@@ -1194,6 +880,6 @@ export default function AppShell() {
           </div>
         </div>
       )}
-    </AppContext.Provider>
+    </>
   );
 }

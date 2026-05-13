@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import MediaRail from '../components/MediaRail';
 import { SkeletonSearchGrid } from '../components/Skeleton';
-import { useAppContext } from '../context/AppContext';
+import { useAddons } from '../context/AddonsProvider';
+import { useUI } from '../context/UIProvider';
 import { fetchAddonManifest, fetchCatalog } from '../lib/stremioAddon';
 import type { MediaItem, MediaType } from '../types/media';
 
@@ -65,7 +66,8 @@ function isKitsuAddon(manifest?: { id?: string; name?: string } | null): boolean
 }
 
 export default function SearchPage() {
-  const { setQuery, addons } = useAppContext();
+  const { addons } = useAddons();
+  const { setQuery } = useUI();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const q = (searchParams.get('search') ?? searchParams.get('query') ?? '').trim();

@@ -2,7 +2,8 @@ import { Button, ListBox, Select, Spinner } from '@heroui/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import MediaCard from '../components/MediaCard';
-import { useAppContext } from '../context/AppContext';
+import { useAuth } from '../context/AuthProvider';
+import { useModals } from '../context/ModalsProvider';
 import { CloseIcon } from '../icons/CloseIcon';
 import {
   datastoreGetLibraryItems,
@@ -50,7 +51,8 @@ function typeLabel(type: string): string {
 }
 
 export default function LibraryPage() {
-  const { authKey, openLogin } = useAppContext();
+  const { authKey } = useAuth();
+  const { openLogin } = useModals();
   const navigate = useNavigate();
 
   const [items, setItems] = useState<LibraryItem[]>([]);

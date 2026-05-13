@@ -3,20 +3,17 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PenIcon } from '../icons/PenIcon';
 import { CloseIcon } from '../icons/CloseIcon';
-import { useAppContext } from '../context/AppContext';
+import { useAuth } from '../context/AuthProvider';
+import { useModals } from '../context/ModalsProvider';
+import { useStorage } from '../context/StorageProvider';
 import { PRESET_PROFILE_AVATARS, renderProfileAvatar } from '../lib/profileAvatars';
 import { notifyInfo } from '../lib/toastQueues';
 
 export default function AccountsPage() {
-  const {
-    authKey,
-    savedAccounts,
-    switchAccount,
-    removeAccount,
-    openLogin,
-    updateSavedAccountProfile,
-    updateUserProfile,
-  } = useAppContext();
+  const { authKey, savedAccounts, switchAccount, removeAccount, updateSavedAccountProfile } =
+    useAuth();
+  const { updateUserProfile } = useStorage();
+  const { openLogin } = useModals();
   const navigate = useNavigate();
 
   const hasAccounts = savedAccounts.length > 0;

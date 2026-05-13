@@ -11,7 +11,8 @@ import BottomDrawer from '../components/BottomDrawer';
 import { SkeletonSearchGrid } from '../components/Skeleton';
 import MediaCard from '../components/MediaCard';
 import StremioIcon from '../components/StremioIcon';
-import { useAppContext } from '../context/AppContext';
+import { useAddons } from '../context/AddonsProvider';
+import { useUI } from '../context/UIProvider';
 import { ImdbIcon } from '../icons/ImdbIcon';
 import { useDiscoverCatalogData } from '../features/discover/hooks/useDiscoverCatalogData';
 import { useDiscoverSelection } from '../features/discover/hooks/useDiscoverSelection';
@@ -21,7 +22,8 @@ import { useImdbRating } from '../lib/useImdbRating';
 import type { MediaItem, MediaType } from '../types/media';
 
 export default function DiscoverPage() {
-  const { query, addons, isDark, setQuery } = useAppContext();
+  const { addons } = useAddons();
+  const { query, isDark, setQuery } = useUI();
   const params = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();

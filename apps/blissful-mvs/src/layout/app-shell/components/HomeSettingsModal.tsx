@@ -1,11 +1,15 @@
 import { Button } from '@heroui/react';
 import { useState } from 'react';
-import { useAppContext } from '../../../context/AppContext';
+import { useAuth } from '../../../context/AuthProvider';
+import { useHomeCatalogContext } from '../../../context/HomeCatalogProvider';
+import { useStorage } from '../../../context/StorageProvider';
 import { resolveHomeRowOrder, type HomeRowPrefs } from '../../../lib/homeRows';
 import { useErrorToast } from '../../../lib/useErrorToast';
 
 export function HomeSettingsModal({ onClose }: { onClose: () => void }) {
-  const { authKey, homeRowOptions, homeRowPrefs, saveHomeRowPrefs } = useAppContext();
+  const { authKey } = useAuth();
+  const { homeRowPrefs } = useStorage();
+  const { homeRowOptions, saveHomeRowPrefs } = useHomeCatalogContext();
   const { order, hidden } = resolveHomeRowOrder(homeRowOptions, homeRowPrefs);
   const [draft, setDraft] = useState<HomeRowPrefs>(() => ({ order, hidden }));
   const [saveError, setSaveError] = useState<string | null>(null);

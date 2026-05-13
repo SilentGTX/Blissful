@@ -4,6 +4,9 @@ import { useUI } from './UIProvider';
 import { StorageProvider } from './StorageProvider';
 import { AddonsProvider } from './AddonsProvider';
 import { useStorage } from './StorageProvider';
+import { HomeCatalogProvider } from './HomeCatalogProvider';
+import { ModalsProvider } from './ModalsProvider';
+import { ContinueWatchingProvider } from './ContinueWatchingProvider';
 
 // ---------------------------------------------------------------------------
 // Inner component that reads StorageProvider to feed AddonsProvider
@@ -42,7 +45,13 @@ export function ProvidersGlue({ children }: { children: ReactNode }) {
       setDarkGradientKey={setDarkGradientKey}
       setLightGradientKey={setLightGradientKey}
     >
-      <AddonsGlue>{children}</AddonsGlue>
+      <AddonsGlue>
+        <ModalsProvider>
+          <HomeCatalogProvider>
+            <ContinueWatchingProvider>{children}</ContinueWatchingProvider>
+          </HomeCatalogProvider>
+        </ModalsProvider>
+      </AddonsGlue>
     </StorageProvider>
   );
 }

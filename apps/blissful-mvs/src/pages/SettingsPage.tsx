@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Checkbox, ListBox, ScrollShadow, Select } from '@heroui/react';
 import { ChromePicker, type ColorResult } from 'react-color';
-import { useAppContext } from '../context/AppContext';
+import { useStorage } from '../context/StorageProvider';
+import { useUI } from '../context/UIProvider';
 import {
   EXTERNAL_PLAYER_OPTIONS,
   NEXT_VIDEO_POPUP_OPTIONS_MS,
@@ -16,7 +17,8 @@ import {
 const triggerClassName = 'bg-white/10 border border-white/10 rounded-full h-9 text-white';
 
 export default function SettingsPage() {
-  const { uiStyle, setUiStyle, playerSettings, savePlayerSettings } = useAppContext();
+  const { uiStyle, setUiStyle } = useUI();
+  const { playerSettings, savePlayerSettings } = useStorage();
   const [colorModal, setColorModal] = useState<'text' | 'bg' | 'outline' | null>(null);
 
   const updateSettings = (next: Partial<PlayerSettings>) => {

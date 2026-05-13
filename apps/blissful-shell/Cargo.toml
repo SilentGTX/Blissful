@@ -1,6 +1,6 @@
 [package]
 name = "blissful-shell"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 edition = "2021"
 description = "Blissful Desktop — Rust + WebView2 + libmpv native shell"
 license-file = "../../LICENSE"
@@ -108,6 +108,13 @@ urlencoding = "2"
 
 # Phase 6 auto-updater: semver comparison against `env!("CARGO_PKG_VERSION")`.
 semver = "1"
+
+# Phase 6 auto-updater integrity verification: SHA-256 of the downloaded
+# installer is checked against a sidecar published by CI alongside the
+# release asset, blocking a tampered installer from spawning even before
+# Authenticode signing lands. See updater::verify_installer_hash.
+sha2 = "0.10"
+hex = "0.4"
 
 [features]
 default = []
