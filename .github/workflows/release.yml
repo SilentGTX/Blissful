@@ -271,11 +271,22 @@ jobs:
           files: |
             ${{ steps.installer.outputs.path }}
             ${{ steps.installer-sha.outputs.path }}
-          # Tags with a hyphen (v0.1.0-beta.1, v0.2.0-rc.3) are flagged as
-          # prereleases so the /releases/latest endpoint — and therefore
-          # the in-app updater — only picks up clean vX.Y.Z tags as
-          # stable updates. Push a vN.N.N (no suffix) when you actually
-          # want users on the new version.
-          prerelease: ${{ contains(github.ref, '-') }}
+          # Every tag is published as a regular (non-prerelease) release
+          # and explicitly promoted to "Latest". This is what the in-app
+          # updater hits via /releases/latest — without `make_latest`
+          # GitHub leaves the prior release flagged Latest and the new
+          # build is invisible to the auto-update path until manually
+          # un-flagged.
+          #
+          # We deliberately do NOT auto-flag hyphenated tags
+          # (v0.1.0-beta.1, v0.2.0-rc.3) as prereleases the way GitHub's
+          # default heuristic suggests — operationally every release in
+          # this repo is meant to roll out to existing users, the
+          # version suffix is just informational. To intentionally ship
+          # a release that does NOT propagate via auto-update, edit it
+          # from the GitHub UI after publish and tick "Set as a
+          # pre-release".
+          prerelease: false
+          make_latest: true
           generate_release_notes: true
           fail_on_unmatched_files: true
