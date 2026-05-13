@@ -85,6 +85,7 @@ pub fn dispatch(req: &Request) -> Response {
         "mpv.command" => mpv_command(req),
         "mpv.setProperty" => mpv_set_property(req),
         "mpv.getTracks" => mpv_get_tracks(req),
+        "mpv.getChapters" => mpv_get_chapters(req),
         "seek" => mpv_seek(req),
 
         // ---- window / fullscreen ----
@@ -329,6 +330,20 @@ fn mpv_get_tracks(req: &Request) -> Response {
     });
     match r {
         Ok(tracks) => Response::ok(&req.id, serde_json::to_value(&tracks).unwrap_or(json!([]))),
+        Err(e) => Response::err(&req.id, "mpv-error", e.to_string()),
+    }
+}
+
+fn mpv_get_chapters(req: &Request) -> Response {
+    let r = SHELL.with(|s| {
+        s.borrow()
+            .player
+            .as_ref()
+            .map(|p| p.get_chapters())
+            .unwrap_or_else(|| Err(anyhow::anyhow!("no player")))
+    });
+    match r {
+        Ok(chapters) => Response::ok(&req.id, serde_json::to_value(&chapters).unwrap_or(json!([]))),
         Err(e) => Response::err(&req.id, "mpv-error", e.to_string()),
     }
 }

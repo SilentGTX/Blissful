@@ -24,6 +24,17 @@ export interface MpvTrack {
   selected: boolean;
 }
 
+/**
+ * Single chapter as returned by `desktop.mpv.getChapters`. Mirrors mpv's
+ * `chapter-list/N/{time,title}` shape — there's no `end` field, callers
+ * compute intro/outro end-times from the NEXT chapter's `time` or fall
+ * back to the file's `duration` for the last chapter.
+ */
+export interface MpvChapter {
+  time: number;
+  title: string | null;
+}
+
 declare global {
   interface Window {
     blissfulDesktop?: BlissfulDesktopBridge;
@@ -90,6 +101,18 @@ export const desktop = {
      */
     getTracks(): Promise<MpvTrack[]> {
       return call<MpvTrack[]>('mpv.getTracks');
+    },
+    /**
+     * Fetch the file's chapter list. Same Node-workaround as
+     * getTracks — the shell loops `chapter-list/N/{time,title}`
+     * since libmpv2 5.0 panics on Format::Node. Returns `[]` for
+     * files with no chapter markers. Used by the Skip Intro / Skip
+     * Recap button to look up the current chapter's title (via the
+     * `mpv-prop-change` event for `chapter`) + the next chapter's
+     * `time` (the skip target).
+     */
+    getChapters(): Promise<MpvChapter[]> {
+      return call<MpvChapter[]>('mpv.getChapters');
     },
   },
 

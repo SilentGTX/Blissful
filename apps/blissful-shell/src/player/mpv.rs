@@ -273,6 +273,54 @@ pub struct TrackInfo {
     pub selected: bool,
 }
 
+/// Single chapter as returned by `Player::get_chapters`. Mirrors mpv's
+/// `chapter-list/N/{title,time}` shape. There's no `end` field in
+/// mpv's data — the caller computes intro/outro end-times from the
+/// NEXT chapter's `time` (or the file's `duration` if this is the last
+/// chapter). See `apps/blissful-mvs/src/components/NativeMpvPlayer/`
+/// for the renderer-side classification + skip-button UI.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ChapterInfo {
+    /// Chapter start time in seconds (mpv's `chapter-list/N/time`).
+    pub time: f64,
+    /// Chapter title as authored. `None` for chapters without a title
+    /// (mpv's `chapter-list/N/title` returns property-unavailable).
+    pub title: Option<String>,
+}
+
+impl Player {
+    /// Walk `chapter-list/N/{time,title}` and return one ChapterInfo per
+    /// chapter, in mpv's order. Same shape-around-Format::Node-panic
+    /// trick as `get_tracks` — we can't read `chapter-list` as a whole
+    /// (libmpv2 5.0.3 has no `MpvNode` decoder and observing/getting
+    /// the Node format hits `unimplemented!()` in the crate), but the
+    /// per-index sub-properties are plain Int64/Double/String which
+    /// the crate handles.
+    ///
+    /// Returns an empty Vec when the file has no chapter markers
+    /// (mpv's `chapter-list/count` returns 0). Callers should treat
+    /// that as "skip-intro feature inactive for this stream".
+    pub fn get_chapters(&self) -> Result<Vec<ChapterInfo>> {
+        let count: i64 = self
+            .inner
+            .get_property("chapter-list/count")
+            .map_err(|e| anyhow!("mpv get chapter-list/count: {e:?}"))?;
+        let mut out = Vec::with_capacity(count.max(0) as usize);
+        for i in 0..count {
+            let time: f64 = self
+                .inner
+                .get_property(&format!("chapter-list/{i}/time"))
+                .unwrap_or(0.0);
+            let title: Option<String> = self
+                .inner
+                .get_property(&format!("chapter-list/{i}/title"))
+                .ok();
+            out.push(ChapterInfo { time, title });
+        }
+        Ok(out)
+    }
+}
+
 fn run_event_loop(mut mpv: Mpv, dispatcher: Arc<dyn EventDispatcher<Output = ()>>) {
     info!("mpv event loop started");
     loop {

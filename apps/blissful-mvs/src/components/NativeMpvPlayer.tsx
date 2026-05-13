@@ -35,6 +35,8 @@ import { PlayerControlsBar } from './NativeMpvPlayer/PlayerControlsBar';
 import { AudioMenuPopover } from './NativeMpvPlayer/AudioMenuPopover';
 import { PlayerHdrBadges } from './NativeMpvPlayer/PlayerHdrBadges';
 import { SubtitleMenuPopover } from './NativeMpvPlayer/SubtitleMenuPopover';
+import { SkipChapterButton } from './NativeMpvPlayer/SkipChapterButton';
+import { useChapterSkip } from './NativeMpvPlayer/useChapterSkip';
 import { subtitleLangLabel } from './NativeMpvPlayer/subtitleHelpers';
 import { useNavigate } from 'react-router-dom';
 import { ChromePicker, type ColorResult } from 'react-color';
@@ -2138,6 +2140,12 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   const headerPrimary = props.metaTitle ?? props.title ?? 'Playing';
   const controlsOpacity = controlsVisible ? 'opacity-100' : 'opacity-0';
 
+  // Skip Intro / Recap / Credits detection driven by mpv chapter
+  // markers. Returns null when the current chapter doesn't match any
+  // of the intro/recap/outro regexes, or when the file has no
+  // chapters — in which case `<SkipChapterButton>` renders nothing.
+  const chapterSkip = useChapterSkip(duration);
+
   // Audio-track button gating. 0-or-1 tracks → disabled with a hover
   // hint explaining why. Memoised so `<PlayerControlsBar>` doesn't
   // see a fresh prop reference on parent renders that don't touch the
@@ -2420,6 +2428,21 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
             {overlayCueText}
           </div>
         </div>
+      ) : null}
+
+      {/* Skip Intro / Recap / Credits — floats bottom-right above the
+          controls strip. Visible only while the current chapter's
+          title matches one of the intro/recap/outro regexes. Click
+          seeks to the start of the next chapter; the button stays
+          dismissed for that chapter for the rest of the playback so
+          a stray chapter-prop re-fire doesn't bring it back. */}
+      {chapterSkip ? (
+        <SkipChapterButton
+          kind={chapterSkip.kind}
+          label={chapterSkip.label}
+          onSkip={chapterSkip.onSkip}
+          controlsOpacity={controlsOpacity}
+        />
       ) : null}
 
       {/* Stremio-style bottom controls (scrub bar + solid strip). Lives in

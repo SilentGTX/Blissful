@@ -82,4 +82,14 @@ pub const OBSERVED_PROPERTIES: &[(&str, libmpv2::Format)] = &[
     // what we need to fix stuck-loader cases where one of the two
     // false transitions doesn't reach us.
     ("seeking", libmpv2::Format::Flag),
+    // Current chapter index (0-based; -1 if playback is before the
+    // first chapter). Drives the Skip Intro / Skip Recap button: on
+    // each change the renderer looks up the new chapter's title from
+    // its cached chapter-list (fetched once on FileLoaded), pattern-
+    // matches against the intro/recap regexes, and surfaces a skip
+    // button positioned to seek to `chapter-list[idx+1].time`. NB
+    // `chapter-list` itself is NOT observable here because libmpv2
+    // 5.0 panics on Format::Node — the renderer fetches it via a
+    // dedicated `mpv.getChapters` IPC (see player::mpv::get_chapters).
+    ("chapter", libmpv2::Format::Int64),
 ];
