@@ -1,0 +1,12 @@
+{
+  "name": "blissful",
+  "private": true,
+  "description": "Thin proxy for repo-root npm scripts. Each one delegates to apps/blissful-mvs (which owns the actual deps + concurrently runner).",
+  "scripts": {
+    "dev": "npm run --prefix apps/blissful-mvs dev",
+    "dev:vite": "npm run --prefix apps/blissful-mvs dev:vite",
+    "dev:shell": "npm run --prefix apps/blissful-mvs dev:shell",
+    "build": "npm run --prefix apps/blissful-mvs build",
+    "lint": "npm run --prefix apps/blissful-mvs lint"
+  }
+}

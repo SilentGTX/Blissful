@@ -4,7 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently 'cd ../blissful-storage && npm start' 'vite' --names 'STORAGE,VITE' --prefix-colors 'cyan,magenta'",
+    "dev": "concurrently --names \"VITE,SHELL\" --prefix-colors \"magenta,cyan\" --kill-others-on-fail \"npm:dev:vite\" \"npm:dev:shell\"",
+    "dev:vite": "vite",
+    "dev:shell": "node -e \"const fs=require('fs');try{fs.rmSync('../blissful-shell/target/debug/blissful-ui',{recursive:true,force:true})}catch(e){}\" && node ../../scripts/run-cargo.cjs run --manifest-path ../blissful-shell/Cargo.toml --features spike0a",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
