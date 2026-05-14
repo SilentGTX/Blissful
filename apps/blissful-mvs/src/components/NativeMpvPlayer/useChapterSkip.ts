@@ -94,14 +94,37 @@ export function useChapterSkip(duration: number): ChapterSkipState | null {
   useEffect(() => {
     let cancelled = false;
 
+    // Diagnostic helper. Lands in %APPDATA%/Blissful/player.log so we
+    // can see what mpv actually reported for files where the Skip
+    // Intro button doesn't appear when the user expected it to. Cheap
+    // — fires at most a few times per file load.
+    const log = (line: string) => {
+      desktop.log(`[chapter-skip] ${line}`).catch(() => {});
+    };
+
     const refreshChapters = async () => {
       try {
         const list = await desktop.mpv.getChapters();
         if (cancelled) return;
-        setChapters(Array.isArray(list) ? list : []);
-      } catch {
+        const arr = Array.isArray(list) ? list : [];
+        setChapters(arr);
+        if (arr.length === 0) {
+          log('chapters: file has no chapter markers');
+        } else {
+          log(
+            `chapters: ${arr.length} found -> ` +
+              arr
+                .map(
+                  (c, i) =>
+                    `${i}:"${c.title ?? '(untitled)'}"@${c.time.toFixed(1)}s`,
+                )
+                .join(', '),
+          );
+        }
+      } catch (err: unknown) {
         if (cancelled) return;
         setChapters([]);
+        log(`chapters: getChapters() threw ${String(err)}`);
       }
     };
 
@@ -116,7 +139,11 @@ export function useChapterSkip(duration: number): ChapterSkipState | null {
     const unsubProp = desktop.onMpvPropChange((e) => {
       if (e.name !== 'chapter') return;
       const v = e.value;
-      if (typeof v === 'number') setCurrentIdx(Math.floor(v));
+      if (typeof v === 'number') {
+        const idx = Math.floor(v);
+        setCurrentIdx(idx);
+        log(`chapter prop -> ${idx}`);
+      }
     });
 
     // Initial fetch in case FileLoaded already fired before this mount.
@@ -141,7 +168,7 @@ export function useChapterSkip(duration: number): ChapterSkipState | null {
     [],
   );
 
-  return useMemo<ChapterSkipState | null>(() => {
+  const state = useMemo<ChapterSkipState | null>(() => {
     if (currentIdx < 0 || currentIdx >= chapters.length) return null;
     if (dismissedRef.current.has(currentIdx)) return null;
     const current = chapters[currentIdx];
@@ -166,4 +193,24 @@ export function useChapterSkip(duration: number): ChapterSkipState | null {
       onSkip: () => onSkip(currentIdx, endTime),
     };
   }, [chapters, currentIdx, duration, onSkip]);
+
+  // Log the resolution decision so when a user reports "I expected
+  // Skip Intro on this episode and didn't see it", we can read back
+  // what mpv reported for the current chapter title and why the
+  // classifier rejected it. Only fires on the actual index/title
+  // boundary, not on every render.
+  useEffect(() => {
+    if (currentIdx < 0 || chapters.length === 0) return;
+    const current = chapters[currentIdx];
+    const title = current?.title ?? '(untitled)';
+    const kind = classifyChapter(current?.title);
+    const verdict = kind
+      ? `classified=${kind}, button=${state ? 'shown' : 'dismissed'}`
+      : 'no match (button hidden)';
+    desktop
+      .log(`[chapter-skip] idx=${currentIdx} title="${title}" -> ${verdict}`)
+      .catch(() => {});
+  }, [chapters, currentIdx, state]);
+
+  return state;
 }

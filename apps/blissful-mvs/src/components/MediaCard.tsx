@@ -55,7 +55,7 @@ export default function MediaCard({
   if (variant === 'poster') {
     const p = typeof progress === 'number' && Number.isFinite(progress) ? Math.min(100, Math.max(0, progress)) : null;
     return (
-      <div className="w-full">
+      <div className="group/poster w-full">
         <div
           className={
             'cursor-pointer touch-manipulation ' +
@@ -74,12 +74,9 @@ export default function MediaCard({
         >
           <Card
             className={
-              'group rounded-2xl p-0 shadow-[0_18px_40px_rgba(0,0,0,0.25)] backdrop-blur-xl border border-white/10 ' +
-              'hover:border-white hover:shadow-[0_0_5px_rgba(255,255,255,0.3),0_0_50px_rgba(255,255,255,0.15),inset_0_0_20px_rgba(255,255,255,0.1)] hover:bg-white/1 ' +
+              'group rounded-2xl p-0 shadow-[0_18px_40px_rgba(0,0,0,0.25)] backdrop-blur-xl border-0 ' +
               (showHoverActions ? ' netflix-card' : '') +
-              (selected
-                ? 'solid-surface border-white shadow-[0_0_25px_rgba(255,255,255,0.3),0_0_50px_rgba(255,255,255,0.15),inset_0_0_20px_rgba(255,255,255,0.1)] bg-white/10'
-                : '')
+              (selected ? 'solid-surface bg-white/10' : '')
             }
           >
             <Card.Content className="p-0 overflow-hidden">
@@ -145,7 +142,7 @@ export default function MediaCard({
             </Card.Content>
           </Card>
         </div>
-        <div className="mt-3 text-center text-sm font-medium text-foreground/90 line-clamp-2">
+        <div className="mt-3 text-center text-sm font-medium text-foreground/90 line-clamp-2 transition-colors duration-500 ease-out group-hover/poster:text-[var(--bliss-teal)]">
           {item.title}
         </div>
       </div>

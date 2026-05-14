@@ -509,6 +509,34 @@ export default function SettingsPage() {
                       </Select>
                     </div>
 
+                    <div className="md:col-span-2">
+                      <div className="text-xs text-foreground/60 mb-2">TMDB API key</div>
+                      <input
+                        type="text"
+                        value={playerSettings.tmdbApiKey}
+                        onChange={(e) => updateSettings({ tmdbApiKey: e.target.value.trim() })}
+                        placeholder="paste your TMDB v3 API key"
+                        autoComplete="off"
+                        spellCheck={false}
+                        className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-foreground/90 placeholder:text-foreground/40 focus:border-[var(--bliss-teal)] focus:outline-none"
+                      />
+                      <div className="mt-2 text-xs text-foreground/50">
+                        Used as a rating fallback for posters where
+                        IMDB doesn't have a rating yet (typically new
+                        releases under IMDB's vote threshold). Free
+                        key at{' '}
+                        <a
+                          href="https://www.themoviedb.org/settings/api"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[var(--bliss-teal)] underline-offset-2 hover:underline"
+                        >
+                          themoviedb.org/settings/api
+                        </a>
+                        . Leave blank to disable.
+                      </div>
+                    </div>
+
                   </div>
                 </div>
               </div>

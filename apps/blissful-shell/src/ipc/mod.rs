@@ -12,9 +12,10 @@ use tracing::{debug, error};
 
 /// Parse a raw JSON string from `add_web_message_received` and dispatch.
 /// Returns the response payload that the caller should serialize and post
-/// back to the WebView via `post_web_message_as_string`. Returns None when
-/// the raw message couldn't be parsed as a Request (caller treats those as
-/// legacy/unstructured messages — see webview.rs fallback).
+/// back to the WebView via `post_web_message_as_string`. Returns `None`
+/// when the raw message couldn't be parsed as a typed Request — the
+/// caller falls back to the legacy raw-string `on_message` handler so the
+/// Phase 0 spike buttons still work.
 pub fn dispatch(raw: &str) -> Option<Outgoing> {
     let req: Request = match serde_json::from_str(raw) {
         Ok(r) => r,
@@ -24,8 +25,7 @@ pub fn dispatch(raw: &str) -> Option<Outgoing> {
         }
     };
     debug!(id = %req.id, command = %req.command, "ipc: dispatching");
-    let resp = commands::dispatch(&req);
-    Some(Outgoing::Response(resp))
+    Some(Outgoing::Response(commands::dispatch(&req)))
 }
 
 /// Serialize an Outgoing payload to JSON for posting through WebView2.

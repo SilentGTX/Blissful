@@ -18,6 +18,12 @@ export type PlayerSettings = {
   pauseOnMinimize: boolean;
   /** Streaming-server torrent cache size in bytes. `null` = unlimited. */
   streamingServerCacheSizeBytes: number | null;
+  /** Optional TMDB v3 API key. Used as a third-tier rating fallback
+   *  after IMDB scrape + Cinemeta both miss — gives ratings for
+   *  brand-new releases that IMDB hasn't crossed the vote threshold
+   *  on yet. Empty string = TMDB fallback disabled. Get a free key
+   *  at https://www.themoviedb.org/settings/api. */
+  tmdbApiKey: string;
 };
 
 export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
@@ -40,6 +46,7 @@ export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
   // The cache is a max ceiling, not a fixed allocation: only fills as
   // torrents are streamed.
   streamingServerCacheSizeBytes: 107374182400,
+  tmdbApiKey: '',
 };
 
 export const STREAMING_CACHE_SIZE_OPTIONS: Array<{

@@ -846,6 +846,20 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
               setBuffering(true);
             } else if (observedBufferingTrueRef.current) {
               setBuffering(false);
+              // Diagnostic: log where mpv landed after the seek
+              // completed so we can compare against the scrub
+              // target. If the landed value differs significantly,
+              // mpv snapped to a keyframe or fell back to a prior
+              // position because the requested frame wasn't fetched.
+              if (name === 'seeking') {
+                desktop
+                  .log(
+                    `[seek][landed] ${name}=false at ` +
+                      `time-pos=${timePosRef.current.toFixed(3)}s ` +
+                      `(playbackClock=${playbackClock.get().toFixed(3)}s)`,
+                  )
+                  .catch(() => {});
+              }
             }
           }
           break;
@@ -1105,16 +1119,27 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     // Without it, BluRay rips' subs ignore the vertical-position slider
     // entirely while SRT/VTT addon subs move fine.
     desktop.mpv.command('set', 'sub-ass-force-margins', 'yes').catch(() => {});
-    // Embedded subs are hardcoded to 16 px regardless of the
-    // `subtitlesSizePx` user setting — the setting only controls the
-    // HTML overlay used for addon-supplied subtitles, where the
-    // larger BluRay-style sizes look reasonable. mpv-rendered
-    // embedded subs (typically already styled by the source) look
-    // oversized at the same numeric scale, so we lock them at the
-    // 16 px baseline. sub-scale wins over sub-font-size for ASS;
-    // 28 px = 1.0x scale, so 16/28 ≈ 0.57x.
-    const embeddedSubPx = 16;
-    desktop.mpv.command('set', 'sub-scale', String(embeddedSubPx / 28)).catch(() => {});
+    // Embedded sub size:
+    //   * sub-font-size controls SRT/VTT (mpv's default text
+    //     renderer). The unit is "pixels at a window height of 720"
+    //     so the displayed size scales with viewport height.
+    //   * sub-scale multiplies BOTH renderers. Pinned at 1.0 so
+    //     ASS-format subs (BD rips) render at the size the release
+    //     group authored — anything else either over-magnifies them
+    //     (visible cause of the original 16px hardcode) or shrinks
+    //     them under the slider value (the bug this comment
+    //     replaced, where SRT subs from Western WEB-DLs rendered at
+    //     ~9 effective px and looked invisible).
+    //   * The user's slider feeds sub-font-size so the SRT path is
+    //     user-controlled, while ASS stays at the file's authored
+    //     size. We read from the LOCAL `subtitleSizePx` state, not
+    //     `props.playerSettings.subtitlesSizePx`, because the slider
+    //     bypasses `savePlayerSettings()` (it writes localStorage
+    //     directly + setSubtitleSizePx for instant feedback) — if
+    //     this effect read from props it would never re-fire on
+    //     slider drag and the visible size wouldn't change.
+    const embeddedSubPx = subtitleSizePx ?? 32;
+    desktop.mpv.command('set', 'sub-scale', '1.0').catch(() => {});
     desktop.mpv.command('set', 'sub-font-size', String(embeddedSubPx)).catch(() => {});
     // mpv color (AARRGGBB) — for SRT/VTT text subs, also as a fallback
     // path for ASS in some builds.
@@ -1132,11 +1157,16 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     //   OutlineColour = outline color
     //   BackColour    = shadow color (used as background)
     //   FontSize      = ASS script font-size unit (≈px×2 at 720 PlayResY)
+    // ASS `FontSize` is in script units; at the typical PlayResY=720
+    // it's nearly equivalent to mpv's sub-font-size pixels-at-720p,
+    // so passing `embeddedSubPx` directly keeps SRT (sub-font-size)
+    // and ASS (this FontSize) at visually matching sizes — both
+    // governed by the user's `subtitlesSizePx` slider.
     const assStyle = [
       `PrimaryColour=${ass(settings.subtitlesTextColor, 'rgba(255,255,255,1)')}`,
       `OutlineColour=${ass(settings.subtitlesOutlineColor, 'rgba(0,0,0,0.75)')}`,
       `BackColour=${ass(settings.subtitlesBackgroundColor, 'rgba(0,0,0,0)')}`,
-      `FontSize=${Math.round(embeddedSubPx * 2)}`,
+      `FontSize=${embeddedSubPx}`,
     ].join(',');
     desktop.mpv.command('set', 'sub-ass-force-style', assStyle).catch(() => {});
     // Re-parse the active sub track with the new force-style. For
@@ -1173,6 +1203,12 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     desktop.mpv.command('set', 'alang', alang).catch(() => {});
     desktop.mpv.command('set', 'slang', settings.subtitlesLanguage ?? '').catch(() => {});
   }, [
+    // `subtitleSizePx` is the local state the in-player slider drives
+    // directly. The settings-page editor goes through
+    // `props.playerSettings.subtitlesSizePx` (the React state) which
+    // PlayerPage syncs into props on change. Both deps so either path
+    // re-fires the styling effect and the new size reaches mpv.
+    subtitleSizePx,
     props.playerSettings.subtitlesSizePx,
     props.playerSettings.subtitlesTextColor,
     props.playerSettings.subtitlesBackgroundColor,
@@ -1223,9 +1259,17 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   const timePosRef = useRef(timePos);
   const durationRef = useRef(duration);
   const pausedRef = useRef(paused);
+  // Mirrors the `buffering` state into a ref so the HTML subtitle
+  // overlay's rAF loop can freeze the cue clock during cache
+  // underrun + seek (mpv flips `paused-for-cache` / `seeking` for
+  // those, NOT `pause` — so pausedRef alone doesn't catch them,
+  // and the rAF kept extrapolating wall-clock time forward past a
+  // frozen frame, making subs visibly drift mid-buffer).
+  const bufferingRef = useRef(false);
   timePosRef.current = timePos;
   durationRef.current = duration;
   pausedRef.current = paused;
+  bufferingRef.current = buffering;
   useEffect(() => {
     const interval = window.setInterval(() => {
       const t = timePosRef.current;
@@ -1365,6 +1409,26 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     try {
       const list = await desktop.mpv.getTracks();
       setTracks(Array.isArray(list) ? list : []);
+      // Diagnostic: dump the sub tracks so we can tell whether mpv
+      // saw embedded subs at all when the user reports "I don't see
+      // subtitles." If this logs zero sub rows, mpv hasn't loaded
+      // them (file/codec issue); if it logs rows but the overlay is
+      // blank, the issue is on the selection / visibility side.
+      if (Array.isArray(list)) {
+        const subs = list.filter((t) => t.kind === 'sub');
+        const audios = list.filter((t) => t.kind === 'audio');
+        desktop
+          .log(
+            `[tracks] mpv: ${audios.length} audio, ${subs.length} sub -> ` +
+              subs
+                .map(
+                  (t) =>
+                    `sid=${t.id}/${t.lang ?? '?'}/${t.codec ?? '?'}/${t.selected ? 'SEL' : '-'}/"${t.title ?? ''}"`,
+                )
+                .join(' | '),
+          )
+          .catch(() => {});
+      }
     } catch {
       // ignore
     }
@@ -1587,11 +1651,16 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     let lastCueText = overlayCueText;
     const tick = () => {
       const snap = subClockRef.current;
-      // When paused, freeze the cue clock at the snapshot value so
-      // subtitles don't keep advancing through a still frame. The
-      // pause edge re-anchors `videoTime` to the actual time-pos at
-      // that instant, so resume continues from the right place.
-      const elapsed = pausedRef.current ? 0 : (Date.now() - snap.lastSyncAt) / 1000;
+      // Freeze the cue clock whenever playback isn't actually
+      // advancing: `paused` (user toggle) OR `buffering` (mpv
+      // flipped `paused-for-cache` or `seeking` because of a cache
+      // underrun / seek-in-flight). The previous version checked
+      // only `pausedRef`, so during a buffer underrun the rAF kept
+      // walking wall-clock time forward against a frozen frame and
+      // the wrong cue line showed up. Both refs re-anchor when the
+      // next `time-pos` / `playback-time` event lands.
+      const frozen = pausedRef.current || bufferingRef.current;
+      const elapsed = frozen ? 0 : (Date.now() - snap.lastSyncAt) / 1000;
       const t = snap.videoTime + elapsed - subtitleDelay;
       const cue = findCueAt(addonSubCues, t);
       const next = cue ? cue.text : '';
@@ -1617,52 +1686,40 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       .catch((e: unknown) => console.error('[player] sub-delay failed', e));
   }, [subtitleDelay]);
 
-  // Push vertical position. Two-axis mapping so the whole -50..+50 range
-  // is usable:
-  //   - Positive offset moves subs UP via mpv `sub-pos` (0=top..100=bottom).
-  //     sub-margin-y stays at 120 so subs still clear the controls card.
-  //   - Negative offset moves subs DOWN by shrinking `sub-margin-y` —
-  //     sub-pos can't go above 100 (mpv clamps), so the only way past
-  //     the controls-clearance margin is to reduce that margin. At
-  //     offset = -50 the margin reaches 0, putting subs flush with the
-  //     window's bottom edge (i.e. into the letterbox bar on
-  //     cinemascope content).
-  // Default mpv margin is 22; we use 120 as the offset=0 baseline so
-  // embedded subs clear the ~120px bottom controls card by default.
+  // Vertical-position slider mapping.
+  //
+  // mpv's `sub-pos` is bounded 0..100 (0=top, 100=bottom). For
+  // ASS-format embedded subs libass clamps values >100 back to the
+  // frame edge — which is why the previous `sub-pos = 120` baseline
+  // looked fine on anime BD rips. But for SRT/text subs there's no
+  // clamp; mpv just keeps drawing further off-screen. That's exactly
+  // what made embedded English subtitles on Western WEB-DL releases
+  // (From, plenty of MGM+/Netflix/Amazon rips) silently invisible
+  // even though mpv reported sid=1 SELECTED.
+  //
+  // Pin `sub-pos = 100` (frame bottom) and do ALL the vertical lift
+  // via `sub-margin-y` in pixels, which works the same for SRT, VTT,
+  // and ASS. The asymmetric ramp keeps the prior feel (slider=0 sits
+  // at the mpv default ~22px above bottom, +50 lifts well clear of
+  // the controls card, -50 dives into the letterbox / below the
+  // frame for cinemascope content).
   useEffect(() => {
-    // Baseline shifted DOWN from mpv's 100 default: at slider=0 subs
-    // sit at the screen edge / into the letterbox bar on widescreen.
-    //   slider=+50 → sub-pos=50,  sub-margin-y=+120 (mid-screen, clear of controls)
-    //   slider=  0 → sub-pos=120, sub-margin-y=0    (baseline — into letterbox)
-    //   slider=-50 → sub-pos=120, sub-margin-y=-200 (deeper into letterbox)
-    //
-    // sub-pos alone clamps at the screen edge for ASS subs even at the
-    // 150 max — libass keeps the text inside its render surface. To
-    // push past that we drop sub-margin-y NEGATIVE on the down half;
-    // mpv interprets that as "below the bottom edge" and libass renders
-    // accordingly. Unlike sub-ass-force-style this is applied at render
-    // time with no track reload, so dragging the slider doesn't
-    // re-buffer.
-    const subPos =
-      subtitleVerticalPercent >= 0
-        ? Math.max(0, 120 - subtitleVerticalPercent * 1.4)
-        : 120;
-    // Asymmetric ramp: positive slope 2.4/unit gives +50 → +120 (clears
-    // controls when subs are pulled up via sub-pos), negative slope
-    // 4/unit gives -50 → -200 (subs ~200px below screen edge).
+    //   slider=+50 → margin=120 px (well above the controls card)
+    //   slider=  0 → margin= 22 px (mpv default — subs at frame bottom)
+    //   slider=-50 → margin=-178 px (deep into letterbox / off-screen)
     const subMarginY =
       subtitleVerticalPercent >= 0
-        ? Math.round(subtitleVerticalPercent * 2.4)
-        : Math.round(subtitleVerticalPercent * 4);
+        ? Math.round(22 + (subtitleVerticalPercent * (120 - 22)) / 50)
+        : Math.round(22 + subtitleVerticalPercent * 4);
     desktop.mpv
-      .command('set', 'sub-pos', String(subPos))
+      .command('set', 'sub-pos', '100')
       .catch((e: unknown) => console.error('[player] sub-pos failed', e));
     desktop.mpv
       .command('set', 'sub-margin-y', String(subMarginY))
       .catch((e: unknown) => console.error('[player] sub-margin-y failed', e));
     // Force libass to re-render with the new margins. Without this, ASS
-    // subs that were parsed before sub-ass-force-margins=yes was set
-    // keep their original positions even after sub-margin-y changes.
+    // subs parsed before sub-ass-force-margins=yes was set keep their
+    // original positions even after sub-margin-y changes.
     desktop.mpv.command('sub-reload').catch(() => {});
   }, [subtitleVerticalPercent]);
 
@@ -2066,16 +2123,94 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     setBuffering(true);
   }, [paused]);
 
+  // Two-part scrub handling. (1) Rapid clicks on torrent streams
+  // thrashed the streaming server — each new `seek absolute+exact`
+  // cancels mpv's in-flight piece fetch and after a few of those
+  // mpv fell back to the last buffered position. Leading + trailing
+  // debounce here: the first click in a quiet period fires
+  // immediately (no added latency for normal seeking), follow-up
+  // clicks within ~2 s collapse into one trailing-edge seek to the
+  // LATEST target after 250 ms of inactivity.
+  //
+  // (2) Visual flicker: `commitScrub` used to `setScrubValue(null)`
+  // immediately. With the value cleared, ScrubBar reverts to
+  // showing `livePos`, which is mpv's OLD time-pos until the seek
+  // actually lands. The slider visibly snapped to the target,
+  // rebounded to the old position, then caught up — looked like
+  // "seek didn't go". Now we KEEP `scrubValue` pegged to the commit
+  // target until either (a) mpv's time-pos reports a value within
+  // 1.5 s of it, or (b) a 5 s safety timeout fires. The auto-clear
+  // lives in a separate effect below.
+  const scrubDebounceTimerRef = useRef<number | null>(null);
+  const lastScrubFireRef = useRef(0);
   const commitScrub = useCallback(() => {
     setScrubValue((current) => {
-      if (current != null) {
-        markSeekStart();
-        desktop.seek(current, 'absolute').catch(() => {});
-        setTimePos(current);
+      if (current == null) return null;
+      markSeekStart();
+      setTimePos(current);
+      desktop
+        .log(
+          `[seek][scrub] commit target=${current.toFixed(3)}s ` +
+            `(timePos before=${timePosRef.current.toFixed(3)}s, duration=${durationRef.current.toFixed(3)}s)`,
+        )
+        .catch(() => {});
+
+      const now = Date.now();
+      const sinceLastFire = now - lastScrubFireRef.current;
+      if (scrubDebounceTimerRef.current != null) {
+        window.clearTimeout(scrubDebounceTimerRef.current);
+        scrubDebounceTimerRef.current = null;
       }
-      return null;
+      if (sinceLastFire > 2000) {
+        lastScrubFireRef.current = now;
+        desktop.seek(current, 'absolute').catch(() => {});
+      } else {
+        scrubDebounceTimerRef.current = window.setTimeout(() => {
+          lastScrubFireRef.current = Date.now();
+          scrubDebounceTimerRef.current = null;
+          desktop
+            .log(`[seek][scrub] debounced fire target=${current.toFixed(3)}s`)
+            .catch(() => {});
+          desktop.seek(current, 'absolute').catch(() => {});
+        }, 250);
+      }
+      // Hold the slider at the commit target — the clear-when-mpv-
+      // catches-up effect releases it.
+      return current;
     });
   }, [markSeekStart]);
+
+  // Clear the held `scrubValue` once mpv's LIVE clock reaches the
+  // target (within 1.5 s — absorbs the inevitable keyframe-snap of
+  // a few hundred ms on long-GOP encodes).
+  //
+  // Subscribes directly to `playbackClock` rather than depending on
+  // the React `timePos` state because `commitScrub` also calls
+  // `setTimePos(current)` for optimistic up-next-overlay timing —
+  // that pre-set would immediately fire a timePos-based clear,
+  // dropping the hold the instant scrubValue was set and the
+  // ScrubBar would fall back to displaying `livePos` (mpv's old,
+  // pre-seek position) until mpv actually catches up. Visible as
+  // "I clicked 50, landed at 38, then jumped to 50, flicker."
+  //
+  // Safety timeout at 5 s in case the seek hangs or mpv never gets
+  // close (e.g., seek lands within the EOF clamp).
+  useEffect(() => {
+    if (scrubValue == null) return;
+    const target = scrubValue;
+    const checkAndClear = () => {
+      if (Math.abs(playbackClock.get() - target) < 1.5) {
+        setScrubValue(null);
+      }
+    };
+    checkAndClear();
+    const unsub = playbackClock.subscribe(checkAndClear);
+    const safety = window.setTimeout(() => setScrubValue(null), 5000);
+    return () => {
+      unsub();
+      window.clearTimeout(safety);
+    };
+  }, [scrubValue]);
 
   const onScrubKey = useCallback((e: React.KeyboardEvent) => {
     // Arrow keys jump by the user-configured seek duration. Default
