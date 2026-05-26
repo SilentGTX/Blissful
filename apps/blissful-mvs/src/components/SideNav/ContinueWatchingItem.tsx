@@ -2,7 +2,7 @@ import { normalizeStremioImage } from '../../lib/stremioApi';
 import type { LibraryItem } from '../../lib/stremioApi';
 import { getContinueSubtitle } from './utils';
 import { CloseIcon } from '../../icons/CloseIcon';
-import { StremioLogo } from '../../icons/StremioLogo';
+
 
 export type ContinueWatchingItemProps = {
   item: LibraryItem;
