@@ -332,7 +332,8 @@ export function BottomControls(props: BottomControlsProps) {
             type="button"
             className="bliss-player-icon-btn flex h-10 w-10 items-center justify-center rounded-full"
             onClick={onToggleFullscreen}
-            aria-label="Toggle fullscreen"
+            aria-label={isFullscreen ? 'Exit full screen mode' : 'Enter full screen mode'}
+            title={isFullscreen ? 'Exit full screen mode' : 'Enter full screen mode'}
           >
             {isFullscreen ? (
               <StremioIcon name="minimize" className="h-5 w-5" />
