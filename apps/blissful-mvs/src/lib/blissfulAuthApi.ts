@@ -275,7 +275,31 @@ export async function updateBlissfulLibraryProgress(token: string, params: {
 }): Promise<void> {
   const all = await fetchBlissfulLibrary<Record<string, unknown> & { _id: string }>(token);
   const existing = all.find((it) => it._id === params.id);
-  if (!existing) return;
+  // If the item isn't in the library yet, create a minimal entry so
+  // Continue Watching picks it up. Without this, progress for titles
+  // the user never explicitly bookmarked is silently lost.
+  if (!existing) {
+    const nowIso = new Date().toISOString();
+    const normalizedType = params.type === 'anime' ? 'series' : params.type;
+    const timeOffset = Math.max(0, Math.round(params.timeSeconds * 1000));
+    const duration =
+      typeof params.durationSeconds === 'number' && Number.isFinite(params.durationSeconds) && params.durationSeconds > 0
+        ? Math.max(0, Math.round(params.durationSeconds * 1000))
+        : 0;
+    const fresh: Record<string, unknown> = {
+      _id: params.id,
+      type: normalizedType,
+      _mtime: nowIso,
+      state: {
+        lastWatched: nowIso,
+        timeOffset,
+        duration,
+        video_id: normalizedType === 'series' ? (params.videoId ?? null) : null,
+      },
+    };
+    await putBlissfulLibraryItem(token, params.id, fresh);
+    return;
+  }
   const nowIso = new Date().toISOString();
   const normalizedType = params.type === 'anime' ? 'series' : params.type;
   const timeOffset = Math.max(0, Math.round(params.timeSeconds * 1000));

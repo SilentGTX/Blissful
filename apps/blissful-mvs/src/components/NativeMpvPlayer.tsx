@@ -1737,7 +1737,26 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       ? settings.audioLanguage
       : 'eng,en';
     desktop.mpv.command('set', 'alang', alang).catch(() => {});
-    desktop.mpv.command('set', 'slang', settings.subtitlesLanguage ?? '').catch(() => {});
+    // mpv's `slang` expects ISO 639 codes (eng, en), not display
+    // names (English). Map common names and pass through anything
+    // that already looks like a code.
+    const subLangPref = settings.subtitlesLanguage ?? '';
+    const langMap: Record<string, string> = {
+      english: 'eng,en', german: 'ger,deu,de', french: 'fre,fra,fr',
+      spanish: 'spa,es', italian: 'ita,it', portuguese: 'por,pt',
+      russian: 'rus,ru', japanese: 'jpn,ja', korean: 'kor,ko',
+      chinese: 'chi,zho,zh', arabic: 'ara,ar', hindi: 'hin,hi',
+      turkish: 'tur,tr', polish: 'pol,pl', dutch: 'dut,nld,nl',
+      swedish: 'swe,sv', czech: 'cze,ces,cs', romanian: 'rum,ron,ro',
+      hungarian: 'hun,hu', bulgarian: 'bul,bg', croatian: 'hrv,hr',
+      serbian: 'srp,sr', slovak: 'slo,slk,sk', slovenian: 'slv,sl',
+      greek: 'gre,ell,el', danish: 'dan,da', finnish: 'fin,fi',
+      norwegian: 'nor,no', thai: 'tha,th', vietnamese: 'vie,vi',
+      indonesian: 'ind,id', malay: 'may,msa,ms', hebrew: 'heb,he',
+      persian: 'per,fas,fa', ukrainian: 'ukr,uk', albanian: 'alb,sqi,sq',
+    };
+    const slangValue = langMap[subLangPref.toLowerCase()] ?? subLangPref;
+    desktop.mpv.command('set', 'slang', slangValue).catch(() => {});
   }, [
     // `subtitleSizePx` is the local state the in-player slider drives
     // directly. The settings-page editor goes through
