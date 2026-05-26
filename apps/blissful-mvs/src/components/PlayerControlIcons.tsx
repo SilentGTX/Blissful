@@ -1,8 +1,8 @@
-// Stremio-style icon set used by the in-player control bar. Shared by
-// SimplePlayer (browser HTMLVideoElement path) and NativeMpvPlayer (Rust
-// shell libmpv path). Lifted out of SimplePlayer.tsx so the native
-// player doesn't have to pull in SimplePlayer's full module graph
-// (HLS.js, react-color, etc.) at import time.
+// Stremio-style icon set used by the in-player control bar. Lifted out
+// of BlissfulPlayer.tsx into its own module so the SettingsPanel / Pause-
+// overlay / etc. sub-components can import these icons without pulling
+// in BlissfulPlayer's full graph (HLS.js, react-color, etc.) at import
+// time.
 //
 // Note: there's a separate `components/StremioIcon.tsx` for the catalog
 // / detail icon set (IMDb, add-to-library, etc.) — different icon names
@@ -23,7 +23,15 @@ export type StremioIconName =
   | 'more-horizontal'
   | 'chevron-back'
   | 'maximize'
-  | 'minimize';
+  | 'minimize'
+  | 'settings'
+  | 'cloud'
+  | 'episodes'
+  | 'skip-forward'
+  | 'heart'
+  | 'heart-filled'
+  | 'check'
+  | 'x';
 
 type StremioIconPath = { d: string; style: CSSProperties };
 type StremioIconDef = { viewBox: string; paths: StremioIconPath[] };
@@ -212,6 +220,126 @@ export const STREMIO_ICONS: Record<StremioIconName, StremioIconDef> = {
       },
     ],
   },
+  settings: {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65a.5.5 0 0 0 .12-.64l-2-3.46a.5.5 0 0 0-.61-.22l-2.49 1a7.3 7.3 0 0 0-1.69-.98l-.38-2.65A.5.5 0 0 0 14 2h-4a.49.49 0 0 0-.49.42l-.38 2.65a7.7 7.7 0 0 0-1.69.98l-2.49-1a.5.5 0 0 0-.61.22l-2 3.46a.5.5 0 0 0 .12.64l2.11 1.65A8 8 0 0 0 4.5 12c0 .34.03.66.07.98L2.46 14.63a.5.5 0 0 0-.12.64l2 3.46c.14.24.43.34.68.22l2.42-1a7.3 7.3 0 0 0 1.69.98l.38 2.65c.05.24.25.42.49.42h4c.24 0 .44-.18.49-.42l.38-2.65a7.7 7.7 0 0 0 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46a.5.5 0 0 0-.12-.64zM12 15.5A3.5 3.5 0 0 1 8.5 12 3.5 3.5 0 0 1 12 8.5a3.5 3.5 0 0 1 3.5 3.5 3.5 3.5 0 0 1-3.5 3.5',
+        style: {
+          stroke: 'currentcolor',
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+          strokeWidth: '1.4',
+          fill: 'none',
+        },
+      },
+    ],
+  },
+  cloud: {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M19.35 10.04A7.5 7.5 0 0 0 12 4a7.5 7.5 0 0 0-6.96 4.81 5.5 5.5 0 0 0 .96 10.94h13a4.5 4.5 0 0 0 .35-9.71',
+        style: {
+          stroke: 'currentcolor',
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+          strokeWidth: '1.6',
+          fill: 'none',
+        },
+      },
+    ],
+  },
+  episodes: {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M4 6h13M4 12h13M4 18h13M20 6v.01M20 12v.01M20 18v.01',
+        style: {
+          stroke: 'currentcolor',
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+          strokeWidth: '2',
+          fill: 'none',
+        },
+      },
+    ],
+  },
+  'skip-forward': {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M6 4l12 8-12 8zM20 4v16',
+        style: {
+          stroke: 'currentcolor',
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+          strokeWidth: '2',
+          fill: 'currentcolor',
+        },
+      },
+    ],
+  },
+  heart: {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M12 21s-7-4.5-9.5-9C1 8 3 4 7 4c2 0 3.5 1 5 3 1.5-2 3-3 5-3 4 0 6 4 4.5 8-2.5 4.5-9.5 9-9.5 9z',
+        style: {
+          stroke: 'currentcolor',
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+          strokeWidth: '1.6',
+          fill: 'none',
+        },
+      },
+    ],
+  },
+  'heart-filled': {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M12 21s-7-4.5-9.5-9C1 8 3 4 7 4c2 0 3.5 1 5 3 1.5-2 3-3 5-3 4 0 6 4 4.5 8-2.5 4.5-9.5 9-9.5 9z',
+        style: {
+          stroke: 'currentcolor',
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+          strokeWidth: '1.6',
+          fill: 'currentcolor',
+        },
+      },
+    ],
+  },
+  check: {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M5 12l5 5L20 7',
+        style: {
+          stroke: 'currentcolor',
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+          strokeWidth: '2.4',
+          fill: 'none',
+        },
+      },
+    ],
+  },
+  x: {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M6 6l12 12M18 6L6 18',
+        style: {
+          stroke: 'currentcolor',
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+          strokeWidth: '2',
+          fill: 'none',
+        },
+      },
+    ],
+  },
 };
 
 export function PlayerControlIcon({
@@ -231,3 +359,8 @@ export function PlayerControlIcon({
     </svg>
   );
 }
+
+// Alias kept for BlissfulPlayer + its sub-components, which historically
+// referred to this component as `StremioIcon`. Both resolve to the
+// same render — PlayerControlIcon is the canonical name.
+export const StremioIcon = PlayerControlIcon;

@@ -31,27 +31,55 @@ import {
   useState,
 } from 'react';
 import { playbackClock, TIME_POS_STATE_THROTTLE_MS } from './NativeMpvPlayer/playbackClock';
-import { PlayerControlsBar } from './NativeMpvPlayer/PlayerControlsBar';
-import { AudioMenuPopover } from './NativeMpvPlayer/AudioMenuPopover';
-import { PlayerHdrBadges } from './NativeMpvPlayer/PlayerHdrBadges';
-import { SubtitleMenuPopover } from './NativeMpvPlayer/SubtitleMenuPopover';
+import { BottomControls } from './NativeMpvPlayer/BottomControls';
+import { TopOverlay } from './NativeMpvPlayer/TopOverlay';
+import { PauseOverlay, type PauseOverlayVideo } from './NativeMpvPlayer/PauseOverlay';
+import {
+  WatchPartyActivityToast,
+  WatchPartyButton,
+  WatchPartyDrawer,
+  WatchPartyNamePrompt,
+  WatchPartyPasswordPrompt,
+} from './WatchParty';
+import type { WatchPartyDrawerTab } from './WatchParty/WatchPartyDrawer';
+import { BufferingOverlay } from './NativeMpvPlayer/BufferingOverlay';
+import { usePlayerReady } from '../context/PlayerReadyProvider';
+import { triggerStremioItemSync } from '../lib/stremioLinkApi';
+import { UpNextOverlay } from './NativeMpvPlayer/UpNextOverlay';
+import { SettingsPanel, type SettingsTab } from './NativeMpvPlayer/SettingsPanel';
 import { SkipChapterButton } from './NativeMpvPlayer/SkipChapterButton';
 import { useChapterSkip } from './NativeMpvPlayer/useChapterSkip';
 import { subtitleLangLabel } from './NativeMpvPlayer/subtitleHelpers';
+import { EpisodesDrawer, type EpisodeVideo, type DrawerSeasonInfo } from './NativeMpvPlayer/EpisodesDrawer';
 import { useNavigate } from 'react-router-dom';
 import { ChromePicker, type ColorResult } from 'react-color';
 import { desktop, type MpvTrack } from '../lib/desktop';
-import { PlayerControlIcon as StremioIcon } from './PlayerControlIcons';
+import type { StremioIconName } from './PlayerControlIcons';
 import type { AddonDescriptor } from '../lib/stremioApi';
 import { setProgress } from '../lib/progressStore';
 import { addToLibraryItem, updateLibraryItemProgress } from '../lib/stremioApi';
+import { updateBlissfulLibraryProgress } from '../lib/blissfulAuthApi';
 import { fetchSubtitles, fetchOpenSubHash } from '../lib/stremioAddon';
 import { getLastStreamSelection, setLastStreamSelection } from '../lib/streamHistory';
-import { notifyInfo } from '../lib/toastQueues';
+import { notifyError, notifyInfo, notifySuccess } from '../lib/toastQueues';
 import {
   writeStoredPlayerSettings,
   type PlayerSettings,
 } from '../lib/playerSettings';
+import { useWatchPartyMpv } from '../lib/useWatchPartyMpv';
+import {
+  buildRoomPlayerUrl,
+  createWatchPartyRoom,
+  getOrCreateGuestUserId,
+  getStoredGuestName,
+  getWatchPartyPassword,
+  getWatchPartyRoom,
+  setStoredGuestName,
+  stashWatchPartyPassword,
+  clearWatchPartyPassword,
+  type WatchPartyRoomInfo,
+} from '../lib/watchParty';
+import { useStorage } from '../context/StorageProvider';
 import type { NextEpisodeInfo } from '../pages/PlayerPage';
 
 // ── Color helpers (mirrors SimplePlayer 1:1) ───────────────────────────
@@ -225,7 +253,28 @@ interface NativeMpvPlayerProps {
   addons: AddonDescriptor[];
   authKey: string | null;
   playerSettings: PlayerSettings;
+  savePlayerSettings: (settings: PlayerSettings) => Promise<void>;
   nextEpisodeInfo: NextEpisodeInfo | null;
+  /** Show-level description for the PauseOverlay. */
+  description?: string;
+  /** Show-level IMDb rating for the PauseOverlay. */
+  imdbRating?: string;
+  /** Episode video list for the PauseOverlay per-episode metadata. */
+  videos?: Array<{
+    id: string;
+    title?: string;
+    season?: number;
+    episode?: number;
+    thumbnail?: string;
+    released?: string;
+    overview?: string;
+    description?: string;
+    rating?: string | number;
+  }>;
+  /** Watch-party room code (from `?room=...` on the URL). When
+   *  present, the player connects to the room over WS and stays in
+   *  lock-step with the host's timeline. */
+  roomCode?: string | null;
 }
 
 const STREAMING_SERVER_URL = 'http://127.0.0.1:11470';
@@ -396,6 +445,15 @@ function buildTorrentStreamUrl(
 
 export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   const navigate = useNavigate();
+  const { setReady: setPlayerReady } = usePlayerReady();
+  useEffect(() => {
+    setPlayerReady(true);
+    triggerStremioItemSync(props.authKey ?? null, props.id ?? null);
+    return () => {
+      setPlayerReady(false);
+      triggerStremioItemSync(props.authKey ?? null, props.id ?? null);
+    };
+  }, [setPlayerReady, props.authKey, props.id]);
   const [timePos, setTimePos] = useState(0);
   // Last wall-clock time we wrote `timePos` through React state. Used
   // by the time-pos handler to skip setState calls that would land
@@ -420,8 +478,15 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   const hasPlaybackTimeRef = useRef(false);
   const [duration, setDuration] = useState(0);
   const [paused, setPaused] = useState(false);
+  // Ref that tracks the latest paused state — needed by the watch
+  // party hook (which fires before the periodic-progress ref block)
+  // and the subtitle rAF loop. Declared early so both consumers can
+  // read it without temporal dead-zone issues.
+  const wpPausedRef = useRef(false);
+  wpPausedRef.current = paused;
   const [buffering, setBuffering] = useState(true);
   const [controlsVisible, setControlsVisible] = useState(true);
+  const [instantHideControls, setInstantHideControls] = useState(false);
   // mpv `video-params/gamma` (transfer characteristic). "pq"/"hlg" =
   // HDR. Used to render the HDR badge top-right of the player —
   // matches Stremio's HDRLabel behavior 1:1.
@@ -441,8 +506,14 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   // Track list fetched from mpv after FileLoaded. Audio + sub menus draw
   // from this.
   const [tracks, setTracks] = useState<MpvTrack[]>([]);
-  const [audioMenuOpen, setAudioMenuOpen] = useState(false);
-  const [subMenuOpen, setSubMenuOpen] = useState(false);
+  // Legacy popover state -- kept as setters for the openSettings
+  // callback to close them if somehow left open. The popovers
+  // themselves are replaced by the unified SettingsPanel.
+  const [, setAudioMenuOpen] = useState(false);
+  const [, setSubMenuOpen] = useState(false);
+  // Unified settings panel state.
+  const [settingsPanelOpen, setSettingsPanelOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('subtitles');
   // Addon-fetched subtitles + 3-column picker modal (mirrors SimplePlayer).
   const [addonSubs, setAddonSubs] = useState<AddonSubtitleTrack[]>([]);
   const [selectedSubLang, setSelectedSubLang] = useState<string | null>(null);
@@ -470,7 +541,8 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   // Mapped to mpv `sub-pos` (0=top..100=bottom) as
   //   sub-pos = clamp(0, 100, 100 - offset)
   // so offset=0 → 100 (mpv default), offset=+50 → 50 (mid-screen).
-  const [subtitleVerticalPercent, setSubtitleVerticalPercent] = useState(0);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [subtitleVerticalPercent, _setSubtitleVerticalPercent] = useState(0);
   // Local color overrides, editable from the modal's color pickers.
   // Seeded from playerSettings; on change we also persist back.
   const [subtitleColor, setSubtitleColor] = useState(
@@ -520,9 +592,414 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   // Unlike `playbackStartedRef` (which resets on every seek), this
   // sticks for the lifetime of the player instance. The buffering veil
   // uses it to decide whether to paint the poster backdrop: yes on the
-  // initial load (covers a black screen), no on subsequent mid-play
-  // buffering (we want the user to see the paused frame through).
-  const [hasShownVideo, setHasShownVideo] = useState(false);
+  const [, setHasShownVideo] = useState(false);
+  // ── Episodes drawer state (series only) ──────────────────────────
+  const [episodesOpen, setEpisodesOpen] = useState(false);
+  const toggleEpisodes = useCallback(() => setEpisodesOpen((v) => !v), []);
+  // Coverflow refs + state (owned here, passed through to the drawer).
+  const currentEpisodeCardRef = useRef<HTMLButtonElement | null>(null);
+  const episodesListRef = useRef<HTMLDivElement | null>(null);
+  const [episodesFocusIndex, setEpisodesFocusIndex] = useState<number | null>(null);
+  useEffect(() => {
+    if (!episodesOpen) return;
+    // Drawer mounts with focusIndex=null; it falls back to the
+    // currently-playing episode's index, and the translateY math
+    // centers the stack. No scrollIntoView needed — transform-driven.
+    setEpisodesFocusIndex(null);
+  }, [episodesOpen]);
+  // Custom carousel scroll: input is intercepted and converted to
+  // signed step counts that bump the focus index.
+  const episodesCountRef = useRef(0);
+  const wheelAccumRef = useRef(0);
+  const advanceFocusByRef = useRef<((steps: number) => void) | null>(null);
+  advanceFocusByRef.current = (steps: number) => {
+    if (steps === 0) return;
+    setEpisodesFocusIndex((prev) => {
+      const total = episodesCountRef.current;
+      if (total <= 0) return prev;
+      const current = prev ?? 0;
+      const next = Math.max(0, Math.min(total - 1, current + steps));
+      if (next === current) return current;
+      return next;
+    });
+  };
+  useEffect(() => {
+    if (!episodesOpen) return;
+    const container = episodesListRef.current;
+    if (!container) return;
+    const WHEEL_THRESHOLD = 80;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      if (
+        wheelAccumRef.current !== 0 &&
+        Math.sign(e.deltaY) !== Math.sign(wheelAccumRef.current)
+      ) {
+        wheelAccumRef.current = 0;
+      }
+      wheelAccumRef.current += e.deltaY;
+      if (Math.abs(wheelAccumRef.current) >= WHEEL_THRESHOLD) {
+        const dir = wheelAccumRef.current > 0 ? 1 : -1;
+        wheelAccumRef.current = 0;
+        advanceFocusByRef.current?.(dir);
+      }
+    };
+    container.addEventListener('wheel', onWheel, { passive: false });
+    let touchLastY = 0;
+    let touchAccum = 0;
+    const SWIPE_THRESHOLD = 50;
+    const onTouchStart = (e: TouchEvent) => {
+      touchLastY = e.touches[0]?.clientY ?? 0;
+      touchAccum = 0;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      const y = e.touches[0]?.clientY ?? 0;
+      const dy = touchLastY - y;
+      touchLastY = y;
+      e.preventDefault();
+      if (touchAccum !== 0 && Math.sign(dy) !== Math.sign(touchAccum)) {
+        touchAccum = 0;
+      }
+      touchAccum += dy;
+      if (Math.abs(touchAccum) >= SWIPE_THRESHOLD) {
+        const dir = touchAccum > 0 ? 1 : -1;
+        touchAccum = 0;
+        advanceFocusByRef.current?.(dir);
+      }
+    };
+    container.addEventListener('touchstart', onTouchStart, { passive: true });
+    container.addEventListener('touchmove', onTouchMove, { passive: false });
+    return () => {
+      container.removeEventListener('wheel', onWheel);
+      container.removeEventListener('touchstart', onTouchStart);
+      container.removeEventListener('touchmove', onTouchMove);
+    };
+  }, [episodesOpen]);
+  const episodesScrollRaf = useRef<number | null>(null);
+  const episodesScrollLockUntilRef = useRef<number>(0);
+  const lockEpisodesScroll = useCallback((durationMs: number = 500) => {
+    episodesScrollLockUntilRef.current = Date.now() + durationMs;
+  }, []);
+  const handleEpisodesScroll = useCallback(() => {
+    if (Date.now() < episodesScrollLockUntilRef.current) return;
+    if (episodesScrollRaf.current != null) return;
+    episodesScrollRaf.current = requestAnimationFrame(() => {
+      episodesScrollRaf.current = null;
+      const container = episodesListRef.current;
+      if (!container) return;
+      const cards = container.querySelectorAll<HTMLElement>('[data-episode-idx]');
+      if (cards.length === 0) return;
+      const rect = container.getBoundingClientRect();
+      const containerCenter = rect.top + rect.height / 2;
+      let bestIdx = -1;
+      let bestDist = Number.POSITIVE_INFINITY;
+      cards.forEach((c) => {
+        const r = c.getBoundingClientRect();
+        const cardCenter = r.top + r.height / 2;
+        const dist = Math.abs(cardCenter - containerCenter);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestIdx = Number(c.dataset.episodeIdx);
+        }
+      });
+      if (bestIdx >= 0) setEpisodesFocusIndex(bestIdx);
+    });
+  }, []);
+  const [episodesSearch, setEpisodesSearch] = useState('');
+  const [episodesSeason, setEpisodesSeason] = useState<number | null>(null);
+  // Auto-next is the same boolean as the account-stored
+  // `bingeWatching` PlayerSettings field. The Episodes drawer toggle
+  // is a quick way to flip the account setting without going to the
+  // Settings page; both surfaces stay in sync because they read /
+  // write the same field via writeStoredPlayerSettings.
+  const [autoNext, setAutoNextLocal] = useState(props.playerSettings.bingeWatching);
+  useEffect(() => { setAutoNextLocal(props.playerSettings.bingeWatching); }, [props.playerSettings.bingeWatching]);
+  const setAutoNext = useCallback(
+    (value: boolean) => {
+      setAutoNextLocal(value);
+      const next = { ...props.playerSettings, bingeWatching: value };
+      void props.savePlayerSettings(next);
+    },
+    [props.playerSettings, props.savePlayerSettings],
+  );
+  // Available seasons + current ep season (for default seasonSelect).
+  const seriesSeasons = useMemo(() => {
+    if (!props.videos) return [] as number[];
+    const set = new Set<number>();
+    for (const v of props.videos) if (v.season != null) set.add(v.season);
+    return Array.from(set).sort((a, b) => a - b);
+  }, [props.videos]);
+  const currentEpisodeSeason = useMemo(() => {
+    if (!props.videoId) return null;
+    const parts = props.videoId.split(':');
+    const s = parts.length >= 3 ? Number.parseInt(parts[parts.length - 2], 10) : NaN;
+    return Number.isFinite(s) ? s : null;
+  }, [props.videoId]);
+  // Initialize seasonSelect to current episode's season when the
+  // drawer first opens, falling back to the smallest season.
+  useEffect(() => {
+    if (!episodesOpen) return;
+    if (episodesSeason != null) return;
+    setEpisodesSeason(currentEpisodeSeason ?? seriesSeasons[0] ?? null);
+  }, [episodesOpen, episodesSeason, currentEpisodeSeason, seriesSeasons]);
+  // Per-season info — overview + per-episode runtime / description.
+  // Fetched from TMDB lazily when the episodes drawer is open.
+  const [seasonInfoCache, setSeasonInfoCache] = useState<Record<number, DrawerSeasonInfo>>({});
+  const currentSeasonInfo = episodesSeason != null ? seasonInfoCache[episodesSeason] : undefined;
+  useEffect(() => {
+    if (!episodesOpen || episodesSeason == null) return;
+    if (seasonInfoCache[episodesSeason]) return;
+    const imdbId = props.id?.startsWith('tt') ? props.id : null;
+    if (!imdbId) return;
+    let cancelled = false;
+    import('../lib/tmdb').then(({ fetchTmdbId }) =>
+      fetchTmdbId(imdbId).then((lookup) => {
+        if (cancelled || !lookup?.tmdbId) return;
+        const url = `https://api.themoviedb.org/3/tv/${lookup.tmdbId}/season/${episodesSeason}?api_key=6e355fdb72b74620e1ce2354a7a574cd`;
+        fetch(url).then((r) => r.json()).then((data: Record<string, unknown>) => {
+          if (cancelled) return;
+          const episodes: DrawerSeasonInfo['episodes'] = {};
+          const eps = Array.isArray(data.episodes) ? data.episodes : [];
+          for (const ep of eps) {
+            const epNum = (ep as Record<string, unknown>).episode_number;
+            if (typeof epNum === 'number') {
+              episodes[epNum] = {
+                runtime: typeof (ep as Record<string, unknown>).runtime === 'number' ? (ep as Record<string, unknown>).runtime as number : null,
+                overview: typeof (ep as Record<string, unknown>).overview === 'string' ? (ep as Record<string, unknown>).overview as string : null,
+              };
+            }
+          }
+          setSeasonInfoCache((prev) => ({
+            ...prev,
+            [episodesSeason!]: {
+              overview: typeof data.overview === 'string' ? data.overview : null,
+              episodes,
+            },
+          }));
+        }).catch(() => {});
+      })
+    ).catch(() => {});
+    return () => { cancelled = true; };
+  }, [episodesOpen, episodesSeason, seasonInfoCache, props.id]);
+  // ── Watch party ──────────────────────────────────────────────────
+  //
+  // Full integration of the watch-party system using the mpv-adapted
+  // hook (useWatchPartyMpv) which uses desktop.play/pause/seek
+  // instead of a <video> element.
+  const storageCtx = useStorage();
+  const profileDisplayName = storageCtx.userProfile?.displayName?.trim() || '';
+  const [storedGuestName, setStoredGuestNameState] = useState<string | null>(() => getStoredGuestName());
+  const watchPartyDisplayName =
+    profileDisplayName && profileDisplayName !== 'Guest'
+      ? profileDisplayName
+      : storedGuestName;
+  const [guestId] = useState<string>(() => getOrCreateGuestUserId());
+
+  const [roomInfo, setRoomInfo] = useState<{ hasPassword: boolean } | null>(null);
+  const [partyPassword, setPartyPassword] = useState<string | null>(() =>
+    props.roomCode ? getWatchPartyPassword(props.roomCode) : null
+  );
+  useEffect(() => {
+    setPartyPassword(props.roomCode ? getWatchPartyPassword(props.roomCode) : null);
+  }, [props.roomCode]);
+
+  // Fetch room info to know if password is required.
+  useEffect(() => {
+    if (!props.roomCode) {
+      setRoomInfo(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const info = await getWatchPartyRoom(props.roomCode!);
+      if (cancelled) return;
+      setRoomInfo(info ? { hasPassword: info.hasPassword } : null);
+    })();
+    return () => { cancelled = true; };
+  }, [props.roomCode]);
+
+  const handleHostEpisodeChange = useCallback(
+    (videoId: string | null) => {
+      if (!videoId) return;
+      const params = new URLSearchParams(window.location.search);
+      // Keep room code on the URL so the next episode stays in the party.
+      params.set('videoId', videoId);
+      params.delete('t');
+      params.delete('autoplay');
+      navigate(`/player?${params.toString()}`, { replace: true });
+    },
+    [navigate]
+  );
+
+  // Gate: only connect when room info loaded, password supplied if
+  // needed, and display name chosen.
+  const partyShouldConnect =
+    !!props.roomCode
+    && roomInfo != null
+    && (!roomInfo.hasPassword || !!partyPassword)
+    && !!watchPartyDisplayName;
+
+  const watchParty = useWatchPartyMpv({
+    roomCode: partyShouldConnect ? props.roomCode ?? null : null,
+    authToken: props.authKey,
+    guestId: props.authKey ? null : guestId,
+    displayName: watchPartyDisplayName ?? '',
+    password: partyPassword,
+    onHostEpisodeChange: handleHostEpisodeChange,
+    pausedRef: wpPausedRef,
+  });
+
+  // Clear stale password on error.
+  useEffect(() => {
+    if (watchParty.error === 'incorrect password' && props.roomCode) {
+      clearWatchPartyPassword(props.roomCode);
+      setPartyPassword(null);
+    }
+  }, [watchParty.error, props.roomCode]);
+
+  // Host broadcasts episode changes.
+  const lastAnnouncedVideoIdRef = useRef<string | null>(props.videoId);
+  useEffect(() => {
+    if (!watchParty.isHost) return;
+    if (lastAnnouncedVideoIdRef.current === props.videoId) return;
+    lastAnnouncedVideoIdRef.current = props.videoId;
+    watchParty.announceEpisode(props.videoId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchParty.isHost, watchParty.announceEpisode, props.videoId]);
+
+  const [creatingRoom, setCreatingRoom] = useState(false);
+  const [watchPartyOpen, setWatchPartyOpen] = useState(false);
+  const [watchPartyTab, setWatchPartyTab] = useState<WatchPartyDrawerTab>('open');
+  const [watchPartyActiveTab, setWatchPartyActiveTab] = useState<'people' | 'chat'>('people');
+
+  // Unread chat badge.
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
+  const lastSeenChatLenRef = useRef(0);
+  const didInitChatLenRef = useRef(false);
+  useEffect(() => {
+    if (!watchParty.connected) {
+      didInitChatLenRef.current = false;
+      lastSeenChatLenRef.current = 0;
+      return;
+    }
+    const len = watchParty.chat.length;
+    if (!didInitChatLenRef.current) {
+      didInitChatLenRef.current = true;
+      lastSeenChatLenRef.current = len;
+      return;
+    }
+    const chatVisible = watchPartyOpen && watchPartyActiveTab === 'chat';
+    if (chatVisible) {
+      lastSeenChatLenRef.current = len;
+      if (unreadChatCount !== 0) setUnreadChatCount(0);
+      return;
+    }
+    if (len <= lastSeenChatLenRef.current) {
+      lastSeenChatLenRef.current = len;
+      return;
+    }
+    const fresh = watchParty.chat.slice(lastSeenChatLenRef.current);
+    const fromOthers = fresh.filter((m) => m.from.userId !== watchParty.selfUserId).length;
+    lastSeenChatLenRef.current = len;
+    if (fromOthers > 0) setUnreadChatCount((prev) => prev + fromOthers);
+  }, [watchParty.connected, watchParty.chat, watchParty.selfUserId, watchPartyOpen, watchPartyActiveTab, unreadChatCount]);
+
+  const createParty = useCallback(
+    async (password: string | null) => {
+      if (!props.id || !props.type || creatingRoom) return;
+      setCreatingRoom(true);
+      try {
+        const partyType = props.type === 'series' ? 'series' : 'movie';
+        const code = await createWatchPartyRoom({
+          authToken: props.authKey,
+          guestId: props.authKey ? null : guestId,
+          type: partyType,
+          imdbId: props.id,
+          videoId: props.videoId,
+          password,
+        });
+        if (password) stashWatchPartyPassword(code, password);
+        const params = new URLSearchParams(window.location.search);
+        params.set('room', code);
+        navigate(`/player?${params.toString()}`, { replace: true });
+        notifySuccess(
+          'Watch party started',
+          `Room ${code.toUpperCase()}${password ? ' -- password set' : ''}. Copy the code or invite link from the panel on the right.`
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        notifyError('Failed to start watch party', message);
+        throw err;
+      } finally {
+        setCreatingRoom(false);
+      }
+    },
+    [props.authKey, props.id, props.type, props.videoId, creatingRoom, guestId, navigate]
+  );
+
+  const handleLeaveParty = useCallback(() => {
+    if (props.roomCode) clearWatchPartyPassword(props.roomCode);
+    watchParty.leave();
+    const params = new URLSearchParams(window.location.search);
+    params.delete('room');
+    navigate(`/player?${params.toString()}`, { replace: true });
+    setWatchPartyOpen(false);
+  }, [props.roomCode, watchParty, navigate]);
+
+  const handleNavigateToRoom = useCallback(
+    async (room: WatchPartyRoomInfo) => {
+      const url = await buildRoomPlayerUrl(room);
+      navigate(url);
+      setWatchPartyOpen(false);
+    },
+    [navigate]
+  );
+
+  // Password prompt gate.
+  const showPasswordPrompt =
+    !!props.roomCode && roomInfo?.hasPassword === true && !partyPassword;
+  const handlePasswordSubmit = useCallback(
+    (password: string) => {
+      if (!props.roomCode) return;
+      stashWatchPartyPassword(props.roomCode, password);
+      setPartyPassword(password);
+    },
+    [props.roomCode]
+  );
+  const handlePasswordCancel = useCallback(() => {
+    if (props.roomCode) clearWatchPartyPassword(props.roomCode);
+    const params = new URLSearchParams(window.location.search);
+    params.delete('room');
+    navigate(`/player?${params.toString()}`, { replace: true });
+  }, [props.roomCode, navigate]);
+
+  // Name prompt gate.
+  const showNamePrompt = !!props.roomCode && !watchPartyDisplayName;
+  const handleNameSubmit = useCallback((name: string) => {
+    setStoredGuestName(name);
+    setStoredGuestNameState(name);
+  }, []);
+  const handleNameCancel = useCallback(() => {
+    if (props.roomCode) clearWatchPartyPassword(props.roomCode);
+    const params = new URLSearchParams(window.location.search);
+    params.delete('room');
+    navigate(`/player?${params.toString()}`, { replace: true });
+  }, [props.roomCode, navigate]);
+
+  // Watch party button slot for TopOverlay.
+  const watchPartySlot = (
+    <WatchPartyButton
+      onClick={() => {
+        if (!props.roomCode) setWatchPartyTab('open');
+        setWatchPartyOpen(true);
+      }}
+      roomCode={props.roomCode ?? null}
+      connected={watchParty.connected}
+      hasPassword={roomInfo?.hasPassword ?? false}
+      participants={watchParty.participants}
+      unreadCount={unreadChatCount}
+      busy={creatingRoom}
+    />
+  );
 
   // Override the CSS variable that drives AppShell's outer background
   // (`var(--dynamic-bg)` on AppShell's root div) plus html/body/#root
@@ -811,6 +1288,21 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         case 'pause':
           if (typeof value === 'boolean') {
             setPaused(value);
+            if (value) {
+              // Paused — show controls and keep them visible
+              setControlsVisible(true);
+              setInstantHideControls(false);
+              if (controlsHideTimerRef.current != null) {
+                window.clearTimeout(controlsHideTimerRef.current);
+                controlsHideTimerRef.current = null;
+              }
+            } else {
+              // Resumed — start the 3s auto-hide timer
+              if (controlsHideTimerRef.current != null) {
+                window.clearTimeout(controlsHideTimerRef.current);
+              }
+              controlsHideTimerRef.current = window.setTimeout(() => setControlsVisible(false), 3000);
+            }
             // Re-anchor the subtitle clock on every pause/resume edge.
             // The rAF loop reads pausedRef (synced on each render) to
             // freeze elapsed time on pause; the snapshot keeps
@@ -978,6 +1470,49 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     navigate,
   ]);
 
+  // Episode drawer: navigate to a different episode. Reuses the same
+  // stream-history lookup pattern as advanceToNextEpisode.
+  const onSelectEpisode = useCallback(
+    (video: EpisodeVideo) => {
+      if (!props.type || !props.id) return;
+      // Guests cannot change episodes — only the host can.
+      if (!watchParty.isHost && watchParty.connected) return;
+      if (video.id === props.videoId) {
+        // Already playing this episode — just close the drawer.
+        setEpisodesOpen(false);
+        return;
+      }
+      const storedStream = getLastStreamSelection({
+        authKey: props.authKey,
+        type: props.type,
+        id: props.id,
+        videoId: video.id,
+      });
+      const params = new URLSearchParams();
+      if (storedStream?.url) {
+        params.set('url', storedStream.url);
+        if (storedStream.title) params.set('title', storedStream.title);
+        if (props.type) params.set('type', props.type);
+        if (props.id) params.set('id', props.id);
+        params.set('videoId', video.id);
+        if (props.poster) params.set('poster', props.poster);
+        if (props.metaTitle) params.set('metaTitle', props.metaTitle);
+        if (props.logo) params.set('logo', props.logo);
+        if (props.background) params.set('background', props.background);
+        navigate(`/player?${params.toString()}`, { replace: true });
+      } else {
+        params.set('videoId', video.id);
+        if (video.season !== null) params.set('season', String(video.season));
+        if (video.episode !== null) params.set('episode', String(video.episode));
+        navigate(
+          `/detail/${encodeURIComponent(props.type)}/${encodeURIComponent(props.id)}?${params.toString()}`,
+          { replace: true },
+        );
+      }
+    },
+    [props.type, props.id, props.videoId, props.authKey, props.poster, props.metaTitle, props.logo, props.background, navigate, watchParty.isHost, watchParty.connected],
+  );
+
   // Time-based trigger: show up-next overlay when remaining ≤ configured
   // notification duration.
   useEffect(() => {
@@ -1003,10 +1538,11 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   useEffect(() => {
     const unsub = desktop.onMpvEvent((e) => {
       if (e.type !== 'EndFile') return;
-      // EndFile reasons we care about: "EOF" / "Stop" (natural end);
-      // ignore "Error" / "Quit" / "Redirect".
+      // Only trigger on natural end-of-file — "eof" means the video
+      // played to completion. Skip "error", "quit", "redirect", "stop"
+      // (stop = user-initiated or loadfile replacing the current file).
       const reason = (e.reason ?? '').toLowerCase();
-      if (reason.includes('error') || reason.includes('quit')) return;
+      if (reason !== 'eof') return;
       if (upNextFiredRef.current) return;
       if (!props.nextEpisodeInfo) return;
       if (!showUpNext && !upNextCancelledRef.current) {
@@ -1301,6 +1837,17 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
           .catch(() => {
             // ignore — next tick will retry
           });
+        // Also write progress to the Blissful backend so it persists
+        // across devices and shows up in Continue Watching immediately.
+        void updateBlissfulLibraryProgress(props.authKey, {
+          id: props.id,
+          type: props.type,
+          videoId: props.videoId ?? null,
+          timeSeconds: t,
+          durationSeconds: d,
+        }).catch(() => {
+          // throttled writes will catch up next session
+        });
       }
     }, 1000);
     return () => window.clearInterval(interval);
@@ -1338,11 +1885,14 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
 
   // Auto-hide controls after 3s of mouse inactivity.
   const showControls = useCallback(() => {
+    setInstantHideControls(false);
     setControlsVisible(true);
     if (controlsHideTimerRef.current != null) {
       window.clearTimeout(controlsHideTimerRef.current);
     }
-    controlsHideTimerRef.current = window.setTimeout(() => setControlsVisible(false), 3000);
+    if (!pausedRef.current) {
+      controlsHideTimerRef.current = window.setTimeout(() => setControlsVisible(false), 3000);
+    }
   }, []);
 
   // Hide controls instantly — used when the cursor leaves the player
@@ -1350,10 +1900,12 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   // outside the window immediately dismisses the controls bar, no
   // fade timer). Cancels the pending 3s auto-hide so we don't fight it.
   const hideControlsNow = useCallback(() => {
+    if (pausedRef.current) return;
     if (controlsHideTimerRef.current != null) {
       window.clearTimeout(controlsHideTimerRef.current);
       controlsHideTimerRef.current = null;
     }
+    setInstantHideControls(true);
     setControlsVisible(false);
   }, []);
   useEffect(() => {
@@ -1380,9 +1932,14 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   }, [navigate, props.type, props.id, props.videoId]);
 
   const togglePlay = useCallback(() => {
-    if (paused) desktop.play().catch(() => {});
-    else desktop.pause().catch(() => {});
-  }, [paused]);
+    if (paused) {
+      desktop.play().catch(() => {});
+      watchParty.broadcastPlay();
+    } else {
+      desktop.pause().catch(() => {});
+      watchParty.broadcastPause();
+    }
+  }, [paused, watchParty]);
 
   const toggleMute = useCallback(() => {
     desktop.mpv.setProperty('mute', !muted).catch(() => {});
@@ -1433,6 +1990,16 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       // ignore
     }
   }, []);
+
+  // Open the unified settings panel on the specified tab. Closes the
+  // old-style audio/sub popovers if they happen to be open.
+  const openSettings = useCallback((tab: SettingsTab) => {
+    setAudioMenuOpen(false);
+    setSubMenuOpen(false);
+    setSettingsTab(tab);
+    setSettingsPanelOpen(true);
+    void refreshTracks();
+  }, [refreshTracks]);
 
   const selectAudio = useCallback(
     async (id: number | 'no') => {
@@ -1751,11 +2318,13 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     [props.playerSettings],
   );
 
-  const openColorPopover = useCallback(
+  // Legacy color popover trigger -- kept for the ChromePicker which is
+  // still mounted in the render tree for backward compatibility. The
+  // new SettingsPanel uses inline color swatches instead. Prefixed to
+  // suppress the unused-variable lint.
+  const _openColorPopover = useCallback(
     (key: 'text' | 'bg' | 'outline', target: HTMLElement) => {
       const rect = target.getBoundingClientRect();
-      // Position the popover above the button (272-px wide), clamped to
-      // the viewport so it doesn't overflow on small windows.
       const top = Math.max(8, rect.top - 380);
       const left = Math.max(8, Math.min(rect.left, window.innerWidth - 280));
       setColorPopoverPos({ top, left });
@@ -1763,6 +2332,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     },
     [],
   );
+  void _openColorPopover;
 
   const subtitleTextParsed = useMemo(() => parseColor(subtitleColor), [subtitleColor]);
   const subtitleBgParsed = useMemo(() => parseColor(subtitleBackgroundColor), [subtitleBackgroundColor]);
@@ -1937,6 +2507,22 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     return out;
   }, [tracks, addonSubs]);
 
+  // Per-canonical-lang variant count (embedded + addon). Used by the
+  // SettingsPanel to display "N VARIANTS" next to each language row.
+  const variantCountByLang = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const t of tracks) {
+      if (t.kind !== 'sub') continue;
+      const canon = subtitleLangLabel((t.lang ?? 'unknown').trim().toLowerCase());
+      counts[canon] = (counts[canon] ?? 0) + 1;
+    }
+    for (const t of addonSubs) {
+      const canon = subtitleLangLabel(t.lang.trim().toLowerCase());
+      counts[canon] = (counts[canon] ?? 0) + 1;
+    }
+    return counts;
+  }, [tracks, addonSubs]);
+
   // Variants (both embedded and addon) for the selected language.
   // Default the language pick to the user's preferred sub language (or
   // English) once subtitles have been gathered. Doesn't auto-load — the
@@ -2035,23 +2621,8 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   // having to round-trip through setSelectedSubLang + recomputed memo.
   // Lets us auto-apply on manual language pick the same way the
   // auto-pick effect does on file load.
-  const firstVariantKeyForLanguage = useCallback(
-    (lang: string): string | null => {
-      const targetCanon = subtitleLangLabel(lang);
-      const sameCanon = (l: string | null | undefined) =>
-        Boolean(l) && subtitleLangLabel(l as string) === targetCanon;
-      const embedded = tracks.find(
-        (t) => t.kind === 'sub' && sameCanon(t.lang ?? 'unknown'),
-      );
-      if (embedded) return `embedded:${embedded.id}`;
-      const addon = addonSubs
-        .filter((t) => sameCanon(t.lang))
-        .slice()
-        .sort((a, b) => scoreSubtitleTrack(b) - scoreSubtitleTrack(a))[0];
-      return addon ? `addon:${addon.key}` : null;
-    },
-    [tracks, addonSubs],
-  );
+  // (firstVariantKeyForLanguage removed -- the unified SettingsPanel
+  // drills into language variants directly and doesn't need the helper.)
 
   // Auto-load the user's preferred subtitle language. Fires when:
   //   - mpv has finished loading the file (FileLoaded event), AND
@@ -2164,6 +2735,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       if (sinceLastFire > 2000) {
         lastScrubFireRef.current = now;
         desktop.seek(current, 'absolute').catch(() => {});
+        watchParty.broadcastSeek(current);
       } else {
         scrubDebounceTimerRef.current = window.setTimeout(() => {
           lastScrubFireRef.current = Date.now();
@@ -2172,13 +2744,14 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
             .log(`[seek][scrub] debounced fire target=${current.toFixed(3)}s`)
             .catch(() => {});
           desktop.seek(current, 'absolute').catch(() => {});
+          watchParty.broadcastSeek(current);
         }, 250);
       }
       // Hold the slider at the commit target — the clear-when-mpv-
       // catches-up effect releases it.
       return current;
     });
-  }, [markSeekStart]);
+  }, [markSeekStart, watchParty]);
 
   // Clear the held `scrubValue` once mpv's LIVE clock reaches the
   // target (within 1.5 s — absorbs the inevitable keyframe-snap of
@@ -2231,11 +2804,13 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     if (e.key === 'ArrowLeft') {
       markSeekStart();
       desktop.seek(-seekSec).catch(() => {});
+      watchParty.broadcastSeek(Math.max(0, playbackClock.get() - seekSec));
     } else {
       markSeekStart();
       desktop.seek(seekSec).catch(() => {});
+      watchParty.broadcastSeek(playbackClock.get() + seekSec);
     }
-  }, [markSeekStart, props.playerSettings.seekTimeDurationMs]);
+  }, [markSeekStart, props.playerSettings.seekTimeDurationMs, watchParty]);
 
   // Keyboard shortcuts: space=pause, ArrowLeft/Right=seek, F=fullscreen.
   useEffect(() => {
@@ -2252,10 +2827,12 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       } else if (e.code === 'ArrowLeft') {
         markSeekStart();
         desktop.seek(-seekSec).catch(() => {});
+        watchParty.broadcastSeek(Math.max(0, playbackClock.get() - seekSec));
         showControls();
       } else if (e.code === 'ArrowRight') {
         markSeekStart();
         desktop.seek(seekSec).catch(() => {});
+        watchParty.broadcastSeek(playbackClock.get() + seekSec);
         showControls();
       } else if (e.code === 'KeyF') {
         desktop.toggleFullscreen().catch(() => {});
@@ -2265,7 +2842,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [togglePlay, showControls, onBack, markSeekStart, props.playerSettings.seekTimeDurationMs]);
+  }, [togglePlay, showControls, onBack, markSeekStart, props.playerSettings.seekTimeDurationMs, watchParty]);
 
   // Prefer the clean movie/episode name from meta over the verbose
   // stream title (which embeds resolution + seeders + size like
@@ -2275,26 +2852,46 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   const headerPrimary = props.metaTitle ?? props.title ?? 'Playing';
   const controlsOpacity = controlsVisible ? 'opacity-100' : 'opacity-0';
 
+  // Map props.videos to the PauseOverlayVideo shape for the enriched
+  // pause overlay (season/episode/title/description/rating per episode).
+  const pauseOverlayVideos = useMemo((): PauseOverlayVideo[] => {
+    if (!props.videos?.length) return [];
+    return props.videos.map((v) => ({
+      id: v.id,
+      title: v.title ?? null,
+      season: v.season ?? null,
+      episode: v.episode ?? null,
+      thumbnail: v.thumbnail ?? null,
+      released: v.released ?? null,
+      description: v.overview ?? v.description ?? null,
+      rating: v.rating != null ? String(v.rating) : null,
+    }));
+  }, [props.videos]);
+
+  // Map props.videos to the EpisodeVideo shape for the episodes drawer.
+  // Cinemeta uses `name` for episode titles; some addons use `title`.
+  const drawerEpisodes = useMemo((): EpisodeVideo[] => {
+    if (!props.videos?.length) return [];
+    return props.videos.map((v: Record<string, unknown>) => ({
+      id: String(v.id ?? ''),
+      title: ((v.title ?? v.name ?? null) as string | null),
+      season: typeof v.season === 'number' ? v.season : null,
+      episode: typeof v.episode === 'number' ? v.episode : null,
+      thumbnail: (v.thumbnail ?? null) as string | null,
+      released: (v.released ?? null) as string | null,
+      description: ((v.overview ?? v.description ?? null) as string | null),
+      rating: v.rating != null ? String(v.rating) : null,
+    }));
+  }, [props.videos]);
+
   // Skip Intro / Recap / Credits detection driven by mpv chapter
   // markers. Returns null when the current chapter doesn't match any
   // of the intro/recap/outro regexes, or when the file has no
   // chapters — in which case `<SkipChapterButton>` renders nothing.
   const chapterSkip = useChapterSkip(duration);
 
-  // Audio-track button gating. 0-or-1 tracks → disabled with a hover
-  // hint explaining why. Memoised so `<PlayerControlsBar>` doesn't
-  // see a fresh prop reference on parent renders that don't touch the
-  // track list.
-  const { audioDisabled, audioDisabledTitle } = useMemo(() => {
-    const audioTrackCount = tracks.filter((t) => t.kind === 'audio').length;
-    const disabled = audioTrackCount < 2;
-    const title = disabled
-      ? audioTrackCount === 0
-        ? 'No audio tracks'
-        : 'Only one audio track'
-      : 'Audio tracks';
-    return { audioDisabled: disabled, audioDisabledTitle: title };
-  }, [tracks]);
+  // (Audio-track button gating removed -- the unified SettingsPanel
+  // shows/hides the audio tab based on track count internally.)
 
   // mpv volume runs 0-200 (we set volume-max=200 in the shell init), so
   // the slider maps 0-2 with 1.0 = unity gain (no amplification). Above
@@ -2328,173 +2925,173 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       onMouseMove={showControls}
       onMouseDown={showControls}
       onMouseLeave={hideControlsNow}
-      // Click anywhere on the bare video area to toggle play/pause —
-      // matches Stremio's player behavior. Controls and popouts have
-      // their own onClick handlers that consume the event before it
-      // bubbles up; we only fire when the actual click target is this
-      // outer container OR the same-level transparent click-catcher,
-      // i.e. the empty video region.
       onClick={(e) => {
         if (e.target === e.currentTarget) togglePlay();
       }}
     >
-      {/* Top gradient overlay — back button on a frosted pill, matches
-          SimplePlayer's chevron-back + truncated title pattern. */}
-      <div
-        className={
-          'pointer-events-none absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/80 via-black/50 to-transparent px-6 pt-6 pb-4 transition-opacity duration-300 ' +
-          controlsOpacity
-        }
-      >
-        <div className="pointer-events-auto flex items-start justify-between gap-3">
-          <button
-            type="button"
-            onClick={onBack}
-            className="flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-2 text-sm font-semibold text-white backdrop-blur hover:bg-white/15"
-          >
-            <StremioIcon name="chevron-back" className="h-5 w-5" />
-            <span className="max-w-[40vw] truncate">{headerPrimary}</span>
-          </button>
-          <PlayerHdrBadges
-            videoGamma={videoGamma}
-            videoDwidth={videoDwidth}
-            streamTitle={props.title ?? null}
-            streamUrl={props.url ?? null}
-            error={error}
-          />
-        </div>
-      </div>
+      {/* Top overlay -- back button + HDR/4K/RD badges. Slides in/out
+          from the top, matching OpenCode's BlissfulPlayer TopOverlay. */}
+      <TopOverlay
+        showControls={controlsVisible}
+        headerPrimary={headerPrimary}
+        onBack={onBack}
+        videoGamma={videoGamma}
+        videoDwidth={videoDwidth}
+        streamTitle={props.title ?? null}
+        streamUrl={props.url ?? null}
+        error={error}
+        rightSlot={watchPartySlot}
+      />
 
-      {/* Buffering veil. Two layouts:
-          - Initial load (no video shown yet): full-bleed poster
-            backdrop + centered fading logo. Replaces the black screen
-            with something that reads as "your movie is loading",
-            matching Stremio's behavior.
-          - Mid-playback (after first frame has rendered): just the
-            centered fading logo, no backdrop — the user is mid-seek
-            or hit a cache underrun and we want the paused video frame
-            visible behind. */}
-      {buffering ? (
-        <div
-          className="pointer-events-none absolute inset-0 z-10"
-          style={{ background: hasShownVideo ? 'transparent' : '#000' }}
-        >
-          {!hasShownVideo && (props.background || props.poster) ? (
-            // 1:1 with the detail page's hero treatment: object-fit
-            // cover, top-left anchored, opacity 0.3. The Continue
-            // Watching path now also passes the wide `background` (not
-            // just the vertical poster), so this looks identical to
-            // the manual-torrent-pick flow which the user confirmed is
-            // correct.
-            <img
-              className="absolute inset-0 h-full w-full"
-              src={props.background ?? props.poster}
-              alt=" "
-              style={{
-                objectFit: 'cover',
-                objectPosition: 'top left',
-                opacity: 0.3,
-              }}
-            />
-          ) : null}
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="bliss-buffering-panel">
-              {props.logo || props.poster ? (
-                <img
-                  className="bliss-buffering-loader"
-                  src={props.logo ?? props.poster ?? undefined}
-                  alt=" "
-                />
-              ) : (
-                <div className="bliss-buffering-fallback">Buffering</div>
-              )}
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <BufferingOverlay visible={buffering} logo={props.logo} />
 
-      {/* Up-next prompt — auto-advance preview with countdown.
-          Sits at the bottom-right corner above the controls bar. */}
-      {showUpNext && props.nextEpisodeInfo ? (
-        <div
-          className={
-            'absolute right-6 bottom-32 z-30 flex w-[min(360px,92vw)] gap-3 overflow-hidden rounded-2xl border border-white/10 bg-black/75 p-3 text-white shadow-[0_12px_32px_rgba(0,0,0,0.4)] backdrop-blur transition-opacity ' +
-            controlsOpacity
-          }
-        >
-          {props.nextEpisodeInfo.nextThumbnail ? (
-            <img
-              src={props.nextEpisodeInfo.nextThumbnail}
-              alt=""
-              className="h-[72px] w-[120px] flex-shrink-0 rounded object-cover"
-            />
-          ) : null}
-          <div className="min-w-0 flex-1">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-white/70">
-              Up Next · in {upNextCountdown}s
-            </div>
-            <div className="mt-0.5 truncate text-sm font-semibold">
-              {props.nextEpisodeInfo.nextEpisodeTitle}
-            </div>
-            <div className="mt-2 flex gap-2">
-              <button
-                onClick={advanceToNextEpisode}
-                className="rounded-md bg-[#19f7d2] px-3 py-1 text-xs font-semibold text-black hover:bg-[#19f7d2]/80"
-              >
-                Watch Now
-              </button>
-              <button
-                onClick={cancelUpNext}
-                className="rounded-md border border-white/25 bg-white/10 px-3 py-1 text-xs text-white hover:bg-white/20"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      {/* Pause overlay -- cinematic metadata card when paused. Shows
+          title/logo + runtime info in the bottom-left. */}
+      <PauseOverlay
+        isPlaying={!paused}
+        hasPlayedOnce={hasVideo}
+        metaTitle={props.metaTitle ?? null}
+        title={props.title ?? null}
+        description={props.description ?? null}
+        logo={props.logo}
+        type={props.type}
+        videoId={props.videoId}
+        videos={pauseOverlayVideos}
+        imdbId={props.id.startsWith('tt') ? props.id : null}
+        imdbRating={props.imdbRating ?? null}
+        duration={duration}
+      />
 
+      {/* Up-next overlay -- auto-advance card with thumbnail, countdown
+          bar, and Play Now / Cancel buttons. */}
+      <UpNextOverlay
+        visible={showUpNext}
+        nextEpisodeInfo={props.nextEpisodeInfo}
+        countdown={upNextCountdown}
+        playerSettings={props.playerSettings}
+        onCancel={cancelUpNext}
+        onAdvance={advanceToNextEpisode}
+        controlsOpacity={controlsOpacity}
+      />
 
-      {audioMenuOpen ? (
-        <AudioMenuPopover
-          tracks={tracks}
-          audioId={audioId}
-          selectAudio={selectAudio}
-          onClose={() => setAudioMenuOpen(false)}
+      {/* Unified settings panel -- slides in from the right. Audio
+          tracks + subtitle picker + appearance customization. */}
+      <SettingsPanel
+        open={settingsPanelOpen}
+        onClose={() => setSettingsPanelOpen(false)}
+        tab={settingsTab}
+        onTabChange={setSettingsTab}
+        tracks={tracks}
+        audioId={audioId}
+        selectAudio={selectAudio}
+        selectedSubKey={selectedSubKey}
+        selectedSubLang={selectedSubLang}
+        setSelectedSubLang={setSelectedSubLang}
+        combinedSubLanguages={combinedSubLanguages}
+        variantsForLanguage={variantsForLanguage}
+        variantCountByLang={variantCountByLang}
+        applySubtitleSelection={applySubtitleSelection}
+        subtitleSizePx={subtitleSizePx}
+        onSubtitleSizePxChange={applySubtitleSize}
+        subtitleColor={subtitleColor}
+        onSubtitleColorChange={(c) => updateColor('text', c, 1)}
+        subtitleDelay={subtitleDelay}
+        onSubtitleDelayChange={setSubtitleDelay}
+        playerSettings={props.playerSettings}
+      />
+
+      {/* Episodes drawer -- slides in from the right. Lists episodes
+          for the current season; clicking switches playback. */}
+      <EpisodesDrawer
+        open={episodesOpen}
+        onClose={() => setEpisodesOpen(false)}
+        type={props.type}
+        videos={drawerEpisodes}
+        videoId={props.videoId}
+        background={props.background ?? null}
+        poster={props.poster ?? null}
+        seriesSeasons={seriesSeasons}
+        episodesSeason={episodesSeason}
+        setEpisodesSeason={setEpisodesSeason}
+        currentSeasonInfo={currentSeasonInfo}
+        episodesSearch={episodesSearch}
+        setEpisodesSearch={setEpisodesSearch}
+        autoNext={autoNext}
+        setAutoNext={setAutoNext}
+        episodesListRef={episodesListRef}
+        currentEpisodeCardRef={currentEpisodeCardRef}
+        handleEpisodesScroll={handleEpisodesScroll}
+        lockEpisodesScroll={lockEpisodesScroll}
+        episodesFocusIndex={episodesFocusIndex}
+        setEpisodesFocusIndex={setEpisodesFocusIndex}
+        episodesCountRef={episodesCountRef}
+        progressLookupId={props.id}
+        progressLookupType={props.type}
+        onSelectEpisode={onSelectEpisode}
+      />
+
+      {/* Watch party drawer -- slides in from the right. Fully wired
+          to the mpv-adapted watch party hook. */}
+      <WatchPartyDrawer
+        open={watchPartyOpen}
+        onClose={() => setWatchPartyOpen(false)}
+        tab={watchPartyTab}
+        onTabChange={setWatchPartyTab}
+        roomCode={props.roomCode ?? null}
+        connected={watchParty.connected}
+        selfUserId={watchParty.selfUserId}
+        hostUserId={watchParty.hostUserId}
+        participants={watchParty.participants}
+        chat={watchParty.chat}
+        sendChat={watchParty.sendChat}
+        sendTyping={watchParty.sendTyping}
+        typingNames={watchParty.typingNames}
+        activity={watchParty.activity}
+        reactions={watchParty.reactions}
+        toggleReaction={watchParty.toggleReaction}
+        activeRoomTab={watchPartyActiveTab}
+        onActiveRoomTabChange={setWatchPartyActiveTab}
+        hasPassword={roomInfo?.hasPassword ?? false}
+        error={watchParty.error}
+        onLeave={handleLeaveParty}
+        onTransferHost={watchParty.transferHost}
+        canCreate={!!props.authKey && !!props.type && !!props.id}
+        creatingRoom={creatingRoom}
+        onCreateRoom={createParty}
+        onNavigateToRoom={handleNavigateToRoom}
+      />
+
+      {/* Watch party activity toast -- surfaces join/leave/seek events. */}
+      {watchParty.connected ? (
+        <WatchPartyActivityToast
+          activity={watchParty.activity}
+          chat={watchParty.chat}
+          selfUserId={watchParty.selfUserId}
         />
       ) : null}
 
-      {subMenuOpen ? (
-        <SubtitleMenuPopover
-          tracks={tracks}
-          selectedSubKey={selectedSubKey}
-          selectedSubLang={selectedSubLang}
-          setSelectedSubLang={setSelectedSubLang}
-          combinedSubLanguages={combinedSubLanguages}
-          variantsForLanguage={variantsForLanguage}
-          firstVariantKeyForLanguage={firstVariantKeyForLanguage}
-          applySubtitleSelection={applySubtitleSelection}
-          subtitleDelay={subtitleDelay}
-          setSubtitleDelay={setSubtitleDelay}
-          subtitleSizePx={subtitleSizePx}
-          applySubtitleSize={applySubtitleSize}
-          subtitleVerticalPercent={subtitleVerticalPercent}
-          setSubtitleVerticalPercent={setSubtitleVerticalPercent}
-          subtitleTextParsed={subtitleTextParsed}
-          subtitleBgParsed={subtitleBgParsed}
-          subtitleOutlineParsed={subtitleOutlineParsed}
-          openColorPopover={openColorPopover}
-          onClose={() => setSubMenuOpen(false)}
+      {/* Watch party name prompt -- shown when user has no display name. */}
+      {showNamePrompt ? (
+        <WatchPartyNamePrompt
+          onSubmit={handleNameSubmit}
+          onCancel={handleNameCancel}
         />
       ) : null}
 
-      {/* ChromePicker popover — mirrors SimplePlayer. Positioned next to
-          whichever color button opened it. Updates colors live via
-          updateColor which persists to playerSettings and bounces
-          through the styling effect → mpv. */}
+      {/* Watch party password prompt -- shown when room needs a password. */}
+      {showPasswordPrompt && !showNamePrompt ? (
+        <WatchPartyPasswordPrompt
+          roomCode={props.roomCode!}
+          onSubmit={handlePasswordSubmit}
+          onCancel={handlePasswordCancel}
+        />
+      ) : null}
+
+      {/* ChromePicker popover -- positioned next to whichever color
+          button opened it. Updates colors live via updateColor. */}
       {colorModal && activeColor && colorPopoverPos ? (
         <div
-          className="fixed z-40 rounded-2xl border border-white/10 bg-black/80 p-4 text-white backdrop-blur"
+          className="fixed z-[50] rounded-2xl border border-white/10 bg-black/80 p-4 text-white backdrop-blur"
           style={{ top: colorPopoverPos.top, left: colorPopoverPos.left, width: 272 }}
         >
           <div className="mb-3 text-sm font-semibold">Pick color</div>
@@ -2526,11 +3123,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       ) : null}
 
       {/* HTML subtitle overlay (Stremio architecture: addon subs are
-          rendered here, not via mpv sub-add). z-25 puts it ABOVE the
-          z-20 controls so subs stay readable when controls are shown
-          — matches Stremio. Baseline `bottom` is lifted to ~12vh so
-          subs already sit above the controls bar even at slider=0;
-          the user's vertical slider still nudges from that baseline. */}
+          rendered here, not via mpv sub-add). */}
       {overlayCueText ? (
         <div
           className="pointer-events-none absolute inset-x-0 z-[25] flex justify-center px-4 text-center"
@@ -2565,12 +3158,8 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         </div>
       ) : null}
 
-      {/* Skip Intro / Recap / Credits — floats bottom-right above the
-          controls strip. Visible only while the current chapter's
-          title matches one of the intro/recap/outro regexes. Click
-          seeks to the start of the next chapter; the button stays
-          dismissed for that chapter for the rest of the playback so
-          a stray chapter-prop re-fire doesn't bring it back. */}
+      {/* Skip Intro / Recap / Credits -- floats bottom-right above the
+          controls strip. */}
       {chapterSkip ? (
         <SkipChapterButton
           kind={chapterSkip.kind}
@@ -2580,12 +3169,11 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         />
       ) : null}
 
-      {/* Stremio-style bottom controls (scrub bar + solid strip). Lives in
-          `<PlayerControlsBar>`; the scrub bar inside it subscribes to
-          the live playback clock so it stays smooth at mpv's full tick
-          rate even while the strip itself only re-renders on
-          pause/volume/track-menu changes. */}
-      <PlayerControlsBar
+      {/* Bottom controls -- scrub bar + transport strip. Slides in/out
+          from the bottom, matching OpenCode's BlissfulPlayer layout. */}
+      <BottomControls
+        showControls={controlsVisible}
+        instantHideControls={instantHideControls}
         scrubValue={scrubValue}
         duration={duration}
         onScrubInput={onScrubInput}
@@ -2596,18 +3184,15 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         muted={muted}
         toggleMute={toggleMute}
         volume01={volume01}
-        volumeIcon={volumeIcon}
+        volumeIcon={volumeIcon as StremioIconName}
         onVolumeChange={onVolumeChange}
-        audioDisabled={audioDisabled}
-        audioDisabledTitle={audioDisabledTitle}
-        audioMenuOpen={audioMenuOpen}
-        setAudioMenuOpen={setAudioMenuOpen}
-        subMenuOpen={subMenuOpen}
-        setSubMenuOpen={setSubMenuOpen}
-        refreshTracks={refreshTracks}
         isFullscreen={isFullscreen}
         onToggleFullscreen={onToggleFullscreen}
-        controlsOpacity={controlsOpacity}
+        nextEpisodeInfo={props.nextEpisodeInfo}
+        advanceToNextEpisode={advanceToNextEpisode}
+        openSettings={openSettings}
+        isSeriesLike={props.type === 'series'}
+        toggleEpisodes={toggleEpisodes}
       />
     </div>
   );

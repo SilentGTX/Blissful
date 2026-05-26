@@ -24,6 +24,7 @@ const LibraryPage = lazy(() => import('./pages/LibraryPage'));
 const PlayerPage = lazy(() => import('./pages/PlayerPage'));
 const SearchPage = lazy(() => import('./pages/SearchPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const InvitePage = lazy(() => import('./pages/InvitePage'));
 
 export default function App() {
   return (
@@ -39,7 +40,7 @@ export default function App() {
         <Route
           path="/*"
           element={<SplashScreen>
-      <Toast.Provider placement="bottom" queue={notificationQueue} />
+      <Toast.Provider placement="top" queue={notificationQueue} />
       <Toast.Provider placement="bottom start" queue={errorQueue} />
       <Toast.Provider placement="bottom end" queue={successQueue} />
       <AuthProvider>
@@ -127,6 +128,14 @@ export default function App() {
                   element={
                     <Suspense fallback={<LoadingRow />}>
                       <SettingsPage />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="invite/:code"
+                  element={
+                    <Suspense fallback={<div className="fixed inset-0 z-[60] bg-black" />}>
+                      <InvitePage />
                     </Suspense>
                   }
                 />

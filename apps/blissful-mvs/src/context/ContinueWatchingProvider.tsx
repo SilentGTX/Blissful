@@ -23,7 +23,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import type { LibraryItem } from '../lib/stremioApi';
+import type { LibraryItem } from '../lib/mediaTypes';
 import { getResumeSeconds } from '../layout/app-shell/utils';
 import { useContinueWatching } from '../layout/app-shell/hooks/useContinueWatching';
 import { useContinueWatchingActions } from '../layout/app-shell/hooks/useContinueWatchingActions';
@@ -64,7 +64,6 @@ export function ContinueWatchingProvider({ children }: { children: ReactNode }) 
   const {
     setResumeModalItem,
     setUnavailableItem,
-    setIosPlayPrompt,
     setPendingContinueItem,
   } = useModals();
 
@@ -77,7 +76,6 @@ export function ContinueWatchingProvider({ children }: { children: ReactNode }) 
       navigate,
       setContinueWatching,
       setContinueSyncError,
-      setIosPlayPrompt,
       onStreamUnavailable: (item) => setUnavailableItem(item),
     });
 
@@ -114,6 +112,16 @@ export function ContinueWatchingProvider({ children }: { children: ReactNode }) 
     (item: LibraryItem, options?: ContinueOpenOptions) => {
       const seconds = getResumeSeconds(item);
       if (!seconds || seconds <= 0) {
+        void runContinue(item, { ...options, mode: 'start-over' });
+        return;
+      }
+      // Inside a watch party (current URL carries ?room=…), skip
+      // the Resume / Start-over modal entirely — the party's video
+      // is host-driven and we don't want a per-user resume seek
+      // fighting the room's timeline. Just start the new show from
+      // the beginning. Navigation here drops ?room= so the user
+      // also cleanly leaves the party in the process.
+      if (typeof window !== 'undefined' && /[?&]room=/.test(window.location.search)) {
         void runContinue(item, { ...options, mode: 'start-over' });
         return;
       }

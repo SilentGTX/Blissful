@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom';
-import type { LibraryItem } from '../../lib/stremioApi';
+import type { LibraryItem } from '../../lib/mediaTypes';
 import { ContinueWatchingItem } from './ContinueWatchingItem';
 
 export type ContinueWatchingDrawerProps = {

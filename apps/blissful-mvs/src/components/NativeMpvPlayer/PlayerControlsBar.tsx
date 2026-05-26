@@ -77,7 +77,7 @@ export const PlayerControlsBar = React.memo(function PlayerControlsBar({
 }: PlayerControlsBarProps) {
   const volumePct = Math.max(0, Math.min(100, (volume01 / 2) * 100));
   const volumeFillStyle = {
-    background: `linear-gradient(to right, var(--bliss-teal) 0%, var(--bliss-teal) ${volumePct}%, rgba(255,255,255,0.18) ${volumePct}%, rgba(255,255,255,0.18) 100%)`,
+    background: `linear-gradient(to right, var(--bliss-accent) 0%, var(--bliss-accent) ${volumePct}%, rgba(255,255,255,0.18) ${volumePct}%, rgba(255,255,255,0.18) 100%)`,
   };
 
   return (

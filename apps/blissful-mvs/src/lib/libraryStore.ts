@@ -28,6 +28,10 @@ export function isInLibrary(params: { type: string; id: string }): boolean {
   return readAll().some((e) => e.type === params.type && e.id === params.id);
 }
 
+export function getLibraryEntry(params: { type: string; id: string }): LibraryEntry | null {
+  return readAll().find((e) => e.type === params.type && e.id === params.id) ?? null;
+}
+
 export function toggleLibrary(entry: Omit<LibraryEntry, 'addedAt'>): boolean {
   const items = readAll();
   const idx = items.findIndex((e) => e.type === entry.type && e.id === entry.id);

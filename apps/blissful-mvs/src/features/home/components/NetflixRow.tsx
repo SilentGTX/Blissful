@@ -6,7 +6,7 @@ import type { StremioMetaDetail } from '../../../lib/stremioAddon';
 import { fetchMeta } from '../../../lib/stremioAddon';
 import { ChevronLeftIcon } from '../../../icons/ChevronLeftIcon';
 import { ChevronRightIcon } from '../../../icons/ChevronRightIcon';
-import { ImdbIcon } from '../../../icons/ImdbIcon';
+import { Rating } from '../../../components/Rating';
 import { InfoIcon } from '../../../icons/InfoIcon';
 import { PlayIcon } from '../../../icons/PlayIcon';
 
@@ -121,7 +121,7 @@ export function NetflixRow({ title, items, progressById, onItemPress }: NetflixR
     metaYear ? String(metaYear) : null,
     metaRuntime ?? null,
   ].filter((v): v is string => typeof v === 'string' && v.length > 0);
-  const imdbRating = focusedItem.rating ? focusedItem.rating.toFixed(1) : null;
+  // Rating shown via shared <Rating /> below; raw value passed in.
   const cast = meta?.cast?.slice(0, 4) ?? [];
   const trailerId = meta?.trailerStreams?.find((t) => t?.ytId)?.ytId ?? null;
 
@@ -234,12 +234,11 @@ export function NetflixRow({ title, items, progressById, onItemPress }: NetflixR
         <div key={focusedItem.id} className="netflix-row-details">
           <div className="netflix-row-meta">
             <div className="netflix-row-meta-line">{metaParts.length > 0 ? metaParts.join(' · ') : ' '}</div>
-            {imdbRating ? (
-              <div className="netflix-imdb">
-                <ImdbIcon className="netflix-imdb-icon" />
-                <span className="netflix-imdb-score">{imdbRating}</span>
-              </div>
-            ) : null}
+            <Rating
+              initialRating={focusedItem.rating ?? null}
+              className="netflix-imdb"
+              iconClassName="netflix-imdb-icon"
+            />
           </div>
           {focusedItem.blurb ? <div className="netflix-row-desc">{focusedItem.blurb}</div> : null}
           {cast.length > 0 ? (

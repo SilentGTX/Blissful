@@ -36,7 +36,13 @@ export const NETFLIX_BG =
 
 export const HOME_PREFS_KEY = 'blissfulHomePrefs';
 export const SIDEBAR_COLLAPSED_KEY = 'blissfulSidebarCollapsed';
-export const SIDEBAR_EXPANDED_WIDTH = '360px';
-export const SIDEBAR_COLLAPSED_WIDTH = '128px';
+// Sidebar widths scale fluidly with viewport so the chrome doesn't
+// look like a tiny strip on 4K/TV screens. At 1920w the expanded
+// sidebar is ~360px (current desktop look); at 3840w it caps at
+// 520px (roughly proportional to the bigger canvas). The collapsed
+// floor is 128px so the active pill has visible breathing room
+// around the 20px icon at any viewport size.
+export const SIDEBAR_EXPANDED_WIDTH = 'clamp(280px, 18vw, 520px)';
+export const SIDEBAR_COLLAPSED_WIDTH = 'clamp(128px, 7vw, 200px)';
 export const SEARCH_HISTORY_KEY = 'blissfulSearchHistory';
 export const SEARCH_HISTORY_LIMIT = 8;

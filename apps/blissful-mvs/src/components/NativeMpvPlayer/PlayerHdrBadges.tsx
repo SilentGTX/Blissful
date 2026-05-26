@@ -1,14 +1,7 @@
-// Top-right badge cluster on the player: 4K, HDR, RD (Real-Debrid).
+// Top-right badge cluster on the player: source name, 4K, HDR, RD.
 //
-// HDR fires when mpv reports a PQ or HLG transfer characteristic for
-// the active video track — same predicate Stremio's HDRLabel uses.
-// 4K detection is two-stage: stream-title parsing gives an instant
-// badge before the decoder has reported dimensions (uploaders mislabel
-// constantly — 1080p reencodes get tagged "4K", real UHDs sold as
-// "WEB-DL"), then mpv's `dwidth` overrides as ground truth once
-// available.
-// RD is a pure URL inspection: torrentio + Real-Debrid stream URLs
-// always pass through /resolve/realdebrid/.
+// Source detection: extracts the addon/service name from the stream URL
+// so the user knows which torrent provider is serving the current file.
 
 import React from 'react';
 
@@ -23,6 +16,20 @@ export type PlayerHdrBadgesProps = {
 const BADGE_CLASS =
   'rounded-md border border-white/15 bg-black/45 px-2 py-1 text-[10px] font-bold tracking-wider text-white/80 backdrop-blur';
 
+function detectSource(url: string | null): string | null {
+  if (!url) return null;
+  if (/\/resolve\/realdebrid\//i.test(url)) return 'RD';
+  if (/torrentio\.strem\.fun/i.test(url)) return 'Torrentio';
+  if (/thepiratebay.*strem/i.test(url)) return 'TPB+';
+  if (/comet\.elfhosted/i.test(url)) return 'Comet';
+  if (/mediafusion\.elfhosted/i.test(url)) return 'MediaFusion';
+  if (/debridio/i.test(url)) return 'Debridio';
+  if (/alldebrid/i.test(url)) return 'AD';
+  if (/premiumize/i.test(url)) return 'PM';
+  if (/127\.0\.0\.1:11470/i.test(url)) return 'Local';
+  return null;
+}
+
 export const PlayerHdrBadges = React.memo(function PlayerHdrBadges({
   videoGamma,
   videoDwidth,
@@ -33,9 +40,14 @@ export const PlayerHdrBadges = React.memo(function PlayerHdrBadges({
   const isHdr = videoGamma === 'pq' || videoGamma === 'hlg';
   const titleSays4K = /\b(?:2160p|4k|uhd)\b/i.test(streamTitle ?? '');
   const is4K = videoDwidth !== null ? videoDwidth >= 3840 : titleSays4K;
-  const isRealDebrid = /\/resolve\/realdebrid\//i.test(streamUrl ?? '');
+  const source = detectSource(streamUrl);
   return (
     <div className="flex items-center gap-2">
+      {source ? (
+        <div className={BADGE_CLASS} title={source}>
+          {source}
+        </div>
+      ) : null}
       {is4K ? (
         <div className={BADGE_CLASS} title="Ultra High Definition">
           4K
@@ -44,11 +56,6 @@ export const PlayerHdrBadges = React.memo(function PlayerHdrBadges({
       {isHdr ? (
         <div className={BADGE_CLASS} title={videoGamma === 'pq' ? 'HDR10' : 'HLG'}>
           HDR
-        </div>
-      ) : null}
-      {isRealDebrid ? (
-        <div className={BADGE_CLASS} title="Real-Debrid">
-          RD
         </div>
       ) : null}
       {error ? (

@@ -1,4 +1,4 @@
-import type { LibraryItem } from '../../lib/stremioApi';
+import type { LibraryItem } from '../../lib/mediaTypes';
 
 export type SideNavView = 'home' | 'discover' | 'library' | 'addons' | 'settings';
 
@@ -6,6 +6,7 @@ export type SideNavProps = {
   active: SideNavView;
   onChange: (next: SideNavView) => void;
   onOpenLogin: () => void;
+  onOpenJoinParty: () => void;
   onLogout: () => void;
   userLabel: string | null;
   continueWatching: LibraryItem[];

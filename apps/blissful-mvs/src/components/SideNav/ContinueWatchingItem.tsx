@@ -2,6 +2,7 @@ import { normalizeStremioImage } from '../../lib/stremioApi';
 import type { LibraryItem } from '../../lib/stremioApi';
 import { getContinueSubtitle } from './utils';
 import { CloseIcon } from '../../icons/CloseIcon';
+import { StremioLogo } from '../../icons/StremioLogo';
 
 export type ContinueWatchingItemProps = {
   item: LibraryItem;
@@ -20,13 +21,17 @@ export function ContinueWatchingItem({ item, onOpen, onRemove, compact = false }
     : null;
   const subtitle = getContinueSubtitle(item);
 
-  const paddingClass = compact ? 'p-2 pr-7' : 'p-3 pr-8';
+  // Padding clamps with viewport so on tall screens each card has
+  // visibly more chrome (bigger touch target, more breathing room)
+  // and on short screens it stays dense. The non-compact variant
+  // (used in side drawers) keeps its original sizing.
+  const paddingClass = compact ? 'p-[clamp(0.375rem,1vh,0.625rem)] pr-[clamp(1.25rem,2.5vh,1.75rem)]' : 'p-3 pr-8';
   const iconSize = compact ? 12 : 14;
 
   return (
     <div
       key={item._id}
-      className={`relative w-full cursor-pointer rounded-2xl bg-white/6 ${paddingClass} text-left hover:bg-white/10`}
+      className={`relative w-full shrink-0 snap-start cursor-pointer rounded-2xl bg-white/6 ${paddingClass} text-left hover:bg-white/10`}
       role="button"
       tabIndex={0}
       onClick={onOpen}
@@ -49,23 +54,29 @@ export function ContinueWatchingItem({ item, onOpen, onRemove, compact = false }
         <CloseIcon size={iconSize} />
       </button>
 
-      <div className="flex items-center gap-3">
-        <div className="h-10 w-10 overflow-hidden rounded-xl bg-white/10">
+      <div className={`flex items-center ${compact ? 'gap-[clamp(0.5rem,1vh,0.75rem)]' : 'gap-3'}`}>
+        <div className={`shrink-0 overflow-hidden bg-white/10 ${compact ? 'h-[clamp(2rem,4.5vh,3rem)] w-[clamp(2rem,4.5vh,3rem)] rounded-xl' : 'h-10 w-10 rounded-xl'}`}>
           {poster ? <img src={poster} alt="" className="h-full w-full object-cover" /> : null}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium text-foreground/90">{item.name}</div>
-          <div className="mt-1 text-xs">
+          <div className={`truncate font-medium text-foreground/90 ${compact ? 'text-[clamp(12px,1.6vh,15px)] leading-tight' : 'text-sm'}`}>{item.name}</div>
+          <div className={`${compact ? 'mt-[clamp(0.125rem,0.5vh,0.375rem)] text-[clamp(10px,1.3vh,12px)]' : 'mt-1 text-xs'} flex items-center gap-1.5 min-w-0`}>
             {subtitle.epLabel && (
-              <span className="text-foreground/80">{subtitle.epLabel} · </span>
+              <span className="text-foreground/80 shrink-0">{subtitle.epLabel} · </span>
             )}
-            <span className={subtitle.isExternal ? 'text-orange-400 font-semibold' : 'text-foreground/60'}>
+            <span className={`truncate ${subtitle.isExternal ? 'text-orange-400 font-semibold' : 'text-foreground/60'}`}>
               {subtitle.text}
             </span>
+            {subtitle.source === 'stremio' ? (
+              <>
+                <span className="text-foreground/80 shrink-0">·</span>
+                <StremioLogo size={12} className="shrink-0" />
+              </>
+            ) : null}
           </div>
           {progress !== null ? (
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
-              <div className="h-full bg-emerald-400" style={{ width: `${progress}%` }} />
+            <div className={`overflow-hidden rounded-full bg-white/10 ${compact ? 'mt-[clamp(0.25rem,0.7vh,0.5rem)] h-[clamp(3px,0.6vh,6px)]' : 'mt-2 h-1.5'}`}>
+              <div className="h-full bg-[var(--bliss-accent)]" style={{ width: `${progress}%` }} />
             </div>
           ) : null}
         </div>

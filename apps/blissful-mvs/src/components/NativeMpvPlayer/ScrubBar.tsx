@@ -50,7 +50,7 @@ export const ScrubBar = React.memo(function ScrubBar({
       ? Math.max(0, Math.min(100, (currentTime / duration) * 100))
       : 0;
   const fillStyle = {
-    background: `linear-gradient(to right, var(--bliss-teal) 0%, var(--bliss-teal) ${progressPct}%, rgba(255,255,255,0.18) ${progressPct}%, rgba(255,255,255,0.18) 100%)`,
+    background: `linear-gradient(to right, var(--bliss-accent) 0%, var(--bliss-accent) ${progressPct}%, rgba(255,255,255,0.18) ${progressPct}%, rgba(255,255,255,0.18) 100%)`,
   };
 
   // Hover position tracking — drives the floating text-time tooltip

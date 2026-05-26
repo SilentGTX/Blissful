@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { datastoreGetLibraryItems, type LibraryItem } from '../../../lib/stremioApi';
+import type { LibraryItem } from '../../../lib/stremioApi';
+import { fetchBlissfulLibrary } from '../../../lib/blissfulAuthApi';
 
 export function useContinueWatching(authKey: string | null) {
   const [continueWatching, setContinueWatching] = useState<LibraryItem[]>([]);
@@ -14,12 +15,11 @@ export function useContinueWatching(authKey: string | null) {
     let activeController: AbortController | null = null;
 
     const refreshContinueWatching = () => {
-      // Abort any in-flight request before starting a new one
       activeController?.abort();
       const controller = new AbortController();
       activeController = controller;
 
-      datastoreGetLibraryItems({ authKey, signal: controller.signal })
+      fetchBlissfulLibrary<LibraryItem>(authKey!)
         .then((items) => {
           if (cancelled) return;
           const inProgress = items

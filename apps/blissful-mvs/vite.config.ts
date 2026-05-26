@@ -60,12 +60,19 @@ export default defineConfig({
             },
           },
           {
-            // Stale-while-revalidate for poster images (Stremio CDN)
+            // Cache-first for poster images (metahub / Stremio CDN).
+            // Posters are content-addressed by IMDb id and effectively
+            // immutable, so revisits serve from cache instantly without
+            // a revalidation round-trip — eliminates the "metahub
+            // stalled on revisit" failure mode where the second
+            // background fetch from StaleWhileRevalidate would
+            // sometimes hang. Cold-cache stall handling lives in
+            // MediaCard (PR 2).
             urlPattern: /^https:\/\/(images\.metahub\.space|www\.strem\.io\/images)\/.*/,
-            handler: 'StaleWhileRevalidate',
+            handler: 'CacheFirst',
             options: {
               cacheName: 'poster-cache',
-              expiration: { maxEntries: 300, maxAgeSeconds: 7 * 24 * 60 * 60 },
+              expiration: { maxEntries: 500, maxAgeSeconds: 30 * 24 * 60 * 60 },
             },
           },
         ],
@@ -163,7 +170,10 @@ export default defineConfig({
   ],
   server: {
     host: true,
-    port: 5173,
+    // Override with VITE_DEV_PORT when 5173 is already taken (e.g. another
+    // repo's Vite is running). Keep in sync with BLISSFUL_VITE_PORT on the
+    // shell side so the shell proxies to the right port.
+    port: Number(process.env.VITE_DEV_PORT) || 5173,
     strictPort: true,
     // The native shell serves the page on its own port (5175+) and proxies
     // asset requests to Vite. That works for HTTP, but the shell doesn't
@@ -175,7 +185,7 @@ export default defineConfig({
     // HMR is dev-only.
     hmr: {
       host: '127.0.0.1',
-      clientPort: 5173,
+      clientPort: Number(process.env.VITE_DEV_PORT) || 5173,
     },
     proxy: {
       // Stremio website helpers for Facebook login polling

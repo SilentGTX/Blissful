@@ -1,12 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { Avatar, Button } from '@heroui/react';
-import type { StremioApiUser } from '../../../lib/stremioApi';
+import type { CompatUser } from '../../../context/AuthProvider';
 import { renderProfileAvatar } from '../../../lib/profileAvatars';
 
 type AccountModalProps = {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
-  user: StremioApiUser | null;
+  user: CompatUser | null;
   displayName: string;
   avatar?: string;
   isFullscreen: boolean;
@@ -14,8 +14,6 @@ type AccountModalProps = {
   onLogin: () => void;
   onNavigateSettings: () => void;
   onOpenHomeSettings: () => void;
-  onNavigateAddons: () => void;
-  onNavigateAccounts: () => void;
   onOpenProfiles: () => void;
   onToggleFullscreen: () => void;
 };
@@ -31,8 +29,6 @@ export function AccountModal({
   onLogin,
   onNavigateSettings,
   onOpenHomeSettings,
-  onNavigateAddons,
-  onNavigateAccounts,
   onOpenProfiles,
   onToggleFullscreen,
 }: AccountModalProps) {
@@ -91,7 +87,7 @@ export function AccountModal({
           </Avatar>
           <div className="min-w-0">
             <div className="truncate text-base font-semibold">
-              {displayName || user?.email || user?._id || 'Guest'}
+              {displayName || user?.username || user?.email || user?._id || 'Guest'}
             </div>
             <div className="text-xs text-foreground/60">Account</div>
           </div>
@@ -132,7 +128,7 @@ export function AccountModal({
               onToggleFullscreen();
             }}
           >
-            <span style={{ color: '#19f7d2' }}>{isFullscreen ? 'Exit full screen mode' : 'Enter full screen mode'}</span>
+            <span style={{ color: 'var(--bliss-accent)' }}>{isFullscreen ? 'Exit full screen mode' : 'Enter full screen mode'}</span>
           </Button>
           <Button
             variant="ghost"
@@ -153,26 +149,6 @@ export function AccountModal({
             }}
           >
             Customize Home
-          </Button>
-          <Button
-            variant="ghost"
-            className="w-full justify-start rounded-2xl bg-white/20"
-            onPress={() => {
-              onOpenChange(false);
-              onNavigateAddons();
-            }}
-          >
-            Addons
-          </Button>
-          <Button
-            variant="ghost"
-            className="w-full justify-start rounded-2xl bg-white/20"
-            onPress={() => {
-              onOpenChange(false);
-              onNavigateAccounts();
-            }}
-          >
-            Manage accounts
           </Button>
         </div>
       </div>

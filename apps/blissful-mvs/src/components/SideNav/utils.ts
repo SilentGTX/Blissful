@@ -1,4 +1,4 @@
-import type { LibraryItem } from '../../lib/stremioApi';
+import type { LibraryItem } from '../../lib/mediaTypes';
 import { formatTimecode } from '../../lib/progress';
 
 export function formatTimeMs(ms: number): string {
@@ -23,7 +23,14 @@ export function parseEpisodeLabel(videoId?: string | null): string | null {
   return null;
 }
 
-export function getContinueSubtitle(item: LibraryItem): { text: string; isExternal?: boolean; epLabel?: string | null } {
+export function getContinueSubtitle(item: LibraryItem): {
+  text: string;
+  isExternal?: boolean;
+  epLabel?: string | null;
+  /** When set, this row's current state came from a Stremio sync (not
+   *  from local Blissful playback). The renderer shows a small badge. */
+  source?: 'stremio' | null;
+} {
   const timeOffsetMs = Math.max(0, item.state?.timeOffset ?? 0);
   const durationMs = item.state?.duration ?? 0;
 
@@ -32,22 +39,19 @@ export function getContinueSubtitle(item: LibraryItem): { text: string; isExtern
 
   const videoId = (item.state as any)?.videoId ?? (item.state as any)?.video_id;
   const epLabel = item.type === 'series' ? parseEpisodeLabel(typeof videoId === 'string' ? videoId : null) : null;
+  const source = item._blissProgressSource === 'stremio' ? 'stremio' : null;
 
   if (isExternalPlayer) {
-    return {
-      epLabel,
-      text: 'External progress',
-      isExternal: true,
-    };
+    return { epLabel, text: 'External progress', isExternal: true, source };
   }
 
   if (item.type === 'series') {
     const t = timeOffsetMs > 0 ? formatTimeMs(timeOffsetMs) : null;
-    if (epLabel && t) return { epLabel, text: t };
-    if (epLabel) return { epLabel, text: 'In progress' };
-    return { text: t ?? 'In progress' };
+    if (epLabel && t) return { epLabel, text: t, source };
+    if (epLabel) return { epLabel, text: 'In progress', source };
+    return { text: t ?? 'In progress', source };
   }
-  return { text: formatTimeMs(timeOffsetMs) };
+  return { text: formatTimeMs(timeOffsetMs), source };
 }
 
 export const ICONS = {
@@ -61,4 +65,6 @@ export const ICONS = {
     'M12 2.25a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5a.75.75 0 0 1 .75-.75Zm0 4.5a.75.75 0 0 1 .75.75v7.5a.75.75 0 0 1-1.5 0v-7.5a.75.75 0 0 1 .75-.75Zm6-4.5a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5a.75.75 0 0 1 .75-.75Zm0 4.5a.75.75 0 0 1 .75.75v7.5a.75.75 0 0 1-1.5 0v-7.5a.75.75 0 0 1 .75-.75Zm-12 0a.75.75 0 0 1 .75.75v7.5a.75.75 0 0 1-1.5 0v-7.5a.75.75 0 0 1 .75-.75Zm6 9a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5a.75.75 0 0 1 .75-.75Z',
   logout: 'M10 7V5a2 2 0 0 1 2-2h7v18h-7a2 2 0 0 1-2-2v-2m-6-5h10m0 0-3-3m3 3-3 3',
   continue: 'M12 8v5l3 2M21 12a9 9 0 1 1-9-9',
+  watchParty:
+    'M9 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm6 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM3 20a6 6 0 0 1 12 0H3Zm10 0a8 8 0 0 1 .7-3.2A6 6 0 0 1 21 20h-8Z',
 };

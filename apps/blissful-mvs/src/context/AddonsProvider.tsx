@@ -5,7 +5,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useAddonsManager } from '../layout/app-shell/hooks/useAddonsManager';
-import type { AddonDescriptor } from '../lib/stremioApi';
+import type { AddonDescriptor } from '../lib/mediaTypes';
 import type { BlissfulStorageState } from '../lib/storageApi';
 
 type AddonsContextValue = {
@@ -29,6 +29,7 @@ type AddonsProviderProps = {
   authKey: string | null;
   storedAddonUrls: string[] | null;
   persistStorageState: (partial: Partial<BlissfulStorageState>) => void;
+  realDebridApiKey?: string;
   children: ReactNode;
 };
 
@@ -36,6 +37,7 @@ export function AddonsProvider({
   authKey,
   storedAddonUrls,
   persistStorageState,
+  realDebridApiKey,
   children,
 }: AddonsProviderProps) {
   const {
@@ -45,7 +47,7 @@ export function AddonsProvider({
     setAddonsError,
     installAddon,
     uninstallAddon,
-  } = useAddonsManager({ authKey, storedAddonUrls, persistStorageState });
+  } = useAddonsManager({ authKey, storedAddonUrls, persistStorageState, realDebridApiKey });
 
   const value = useMemo<AddonsContextValue>(
     () => ({

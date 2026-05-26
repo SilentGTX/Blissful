@@ -1,7 +1,26 @@
-const STREMIO_URL = 'https://www.strem.io';
-const MAX_TRIES = 90;
+// Stremio's "Sign in with Facebook" handshake. Two-step:
+//
+//   1. prepareFacebookFlow() -- generate a random state token and the
+//      Stremio URL to navigate to. The popup (or current window) is
+//      then navigated to `${STREMIO_URL}/login-fb/<state>` so the user
+//      sees strem.io in the URL bar and does FB login on Stremio's
+//      actual page.
+//
+//   2. pollFacebookCredentials(state) -- poll
+//      `${STREMIO_URL}/login-fb-get-acc/<state>` until Stremio writes
+//      the resulting FB credentials to that state slot. The caller
+//      then exchanges those creds for a Stremio authKey via
+//      api.strem.io/api/login (browser-direct, never through Blissful).
+//
+// Splitting the flow lets us drive it from the Blissful Settings tab
+// (which holds the JWT and panel state) while the popup window simply
+// navigates to Stremio and goes away.
 
-function randomState(bytes: number = 16) {
+const STREMIO_URL = 'https://www.strem.io';
+const MAX_POLL_TRIES = 90;
+const POLL_INTERVAL_MS = 1500;
+
+function randomState(bytes = 16): string {
   const arr = new Uint8Array(bytes);
   crypto.getRandomValues(arr);
   return Array.from(arr)
@@ -14,8 +33,20 @@ export type FacebookCredentials = {
   fbLoginToken: string;
 };
 
+export type FacebookFlowInit = {
+  state: string;
+  /** URL to navigate (popup or current window) to Stremio's FB login. */
+  stremioUrl: string;
+};
+
+export function prepareFacebookFlow(): FacebookFlowInit {
+  const state = randomState(32);
+  return { state, stremioUrl: `${STREMIO_URL}/login-fb/${state}` };
+}
+
 async function getCredentials(state: string): Promise<FacebookCredentials> {
-  // Use local proxy for CORS.
+  // Routed through the same-origin /stremio proxy (Vite dev + Traefik
+  // prod both forward /stremio/* to www.strem.io) so we avoid CORS.
   const res = await fetch(`/stremio/login-fb-get-acc/${state}`);
   if (!res.ok) {
     throw new Error(`Facebook auth polling failed (${res.status})`);
@@ -27,21 +58,30 @@ async function getCredentials(state: string): Promise<FacebookCredentials> {
   return { email: data.user.email, fbLoginToken: data.user.fbLoginToken };
 }
 
-export async function loginWithFacebookPopup(): Promise<FacebookCredentials> {
-  const state = randomState(32);
-
-  // This is hosted by Stremio and handles the Facebook OAuth flow.
-  // We open it in a new tab/window, then poll for the resulting temp credentials.
-  window.open(`${STREMIO_URL}/login-fb/${state}`, '_blank', 'noopener,noreferrer');
-
-  for (let tries = 0; tries < MAX_TRIES; tries++) {
+export async function pollFacebookCredentials(
+  state: string,
+  options?: { signal?: AbortSignal },
+): Promise<FacebookCredentials> {
+  for (let tries = 0; tries < MAX_POLL_TRIES; tries++) {
+    if (options?.signal?.aborted) {
+      throw new Error('Facebook sign-in cancelled');
+    }
     try {
       return await getCredentials(state);
     } catch {
-      // ignore and retry
+      // No credentials at this state slot yet -- keep polling.
     }
-    await new Promise((r) => setTimeout(r, 1500));
+    await new Promise<void>((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
   }
+  throw new Error('Facebook sign-in timed out');
+}
 
-  throw new Error('Failed to authenticate with Facebook (timeout)');
+/** Legacy one-shot helper used by LoginModal. Opens the FB popup and
+ *  polls until Stremio writes the credentials. Kept for backward
+ *  compatibility; new code should use prepareFacebookFlow() +
+ *  pollFacebookCredentials() separately. */
+export async function loginWithFacebookPopup(): Promise<FacebookCredentials> {
+  const { state, stremioUrl } = prepareFacebookFlow();
+  window.open(stremioUrl, '_blank', 'noopener,noreferrer');
+  return pollFacebookCredentials(state);
 }

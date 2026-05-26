@@ -1,5 +1,6 @@
 import type { MediaItem } from '../types/media';
 import { Card, Chip } from '@heroui/react';
+import { useEffect, useState } from 'react';
 import { InfoIcon } from '../icons/InfoIcon';
 import { ImdbIcon } from '../icons/ImdbIcon';
 import { PlayIcon } from '../icons/PlayIcon';
@@ -35,6 +36,55 @@ export default function MediaCard({
   const resolvedRating = useImdbRating(imdbId, item.rating ?? null);
   const rating = formatRating(resolvedRating ?? undefined);
   const subtitle = [item.year, item.runtime].filter(Boolean).join(' \u00b7 ');
+
+  // Auto-retry posters on error/stall. The <img> element doesn't
+  // re-fetch a failed src on its own, so without this a single CDN
+  // blip from metahub leaves the card with the letter fallback
+  // forever. We retry up to 3 times with exponential backoff,
+  // appending `_r=N` to bust any negative HTTP cache. `imgLoaded`
+  // is tracked only so the stall timer can self-disarm \u2014 it does
+  // NOT gate visibility (poster renders progressively as bytes
+  // arrive, no opacity fade-in).
+  const POSTER_MAX_RETRIES = 3;
+  // 9s of no onLoad/onError = assume stalled. metahub under load can
+  // park a request indefinitely without ever erroring; this kicks the
+  // retry path with a fresh `_r=N` cache-buster so the SW / browser
+  // opens a new request.
+  const POSTER_STALL_MS = 9000;
+  const [imgLoaded, setImgLoaded] = useState(false);
+  const [imgError, setImgError] = useState(false);
+  const [retryNonce, setRetryNonce] = useState(0);
+  useEffect(() => {
+    setImgLoaded(false);
+    setImgError(false);
+    setRetryNonce(0);
+  }, [item.posterUrl]);
+  useEffect(() => {
+    if (!imgError || retryNonce >= POSTER_MAX_RETRIES) return;
+    const delay = 800 * Math.pow(2, retryNonce); // 800ms, 1.6s, 3.2s
+    const timer = window.setTimeout(() => {
+      setImgError(false);
+      setImgLoaded(false);
+      setRetryNonce((n) => n + 1);
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [imgError, retryNonce]);
+  useEffect(() => {
+    if (!item.posterUrl) return;
+    if (imgLoaded || imgError) return;
+    if (retryNonce >= POSTER_MAX_RETRIES) return;
+    const timer = window.setTimeout(() => {
+      setImgError(true);
+    }, POSTER_STALL_MS);
+    return () => window.clearTimeout(timer);
+  }, [item.posterUrl, imgLoaded, imgError, retryNonce]);
+
+  const posterSrc = item.posterUrl
+    ? retryNonce > 0
+      ? `${item.posterUrl}${item.posterUrl.includes('?') ? '&' : '?'}_r=${retryNonce}`
+      : item.posterUrl
+    : null;
+  const posterGaveUp = imgError && retryNonce >= POSTER_MAX_RETRIES;
 
   const handlePlay = () => {
     if (onPlay) {
@@ -81,11 +131,15 @@ export default function MediaCard({
           >
             <Card.Content className="p-0 overflow-hidden">
               <div className="relative poster-aspect overflow-hidden">
-                {item.posterUrl ? (
+                {posterSrc && !posterGaveUp ? (
                   <img
-                    src={item.posterUrl}
+                    src={posterSrc}
                     alt={`${item.title} poster`}
                     className="h-full w-full rounded-2xl object-cover transition-transform duration-300 group-hover:scale-110"
+                    loading="eager"
+                    decoding="async"
+                    onLoad={() => setImgLoaded(true)}
+                    onError={() => setImgError(true)}
                   />
                 ) : (
                   <div className="grid h-full w-full place-items-center rounded-2xl bg-white/10 text-3xl font-semibold">
@@ -134,7 +188,7 @@ export default function MediaCard({
                   <div className="pointer-events-none absolute bottom-3 left-3 right-3 z-10">
                     <div className="relative h-1.5 overflow-hidden rounded-full">
                       <div className="absolute inset-0 bg-black/35" />
-                      <div className="absolute inset-y-0 left-0 bg-emerald-400" style={{ width: `${p}%` }} />
+                      <div className="absolute inset-y-0 left-0 bg-[var(--bliss-accent)]" style={{ width: `${p}%` }} />
                     </div>
                   </div>
                 ) : null}
@@ -142,7 +196,11 @@ export default function MediaCard({
             </Card.Content>
           </Card>
         </div>
-        <div className="mt-3 text-center text-sm font-medium text-foreground/90 line-clamp-2 transition-colors duration-500 ease-out group-hover/poster:text-[var(--bliss-teal)]">
+        {/* min-h reserves space for exactly 2 lines of text-sm (20px line-
+            height × 2 = 2.5rem) so card height stays constant whether the
+            title wraps to 1 or 2 lines — prevents row reflow as titles
+            load asynchronously across the grid. */}
+        <div className="mt-3 min-h-[2.5rem] text-center text-sm font-medium text-foreground/90 line-clamp-2 transition-colors duration-500 ease-out group-hover/poster:text-[var(--bliss-accent)]">
           {item.title}
         </div>
       </div>
@@ -168,11 +226,15 @@ export default function MediaCard({
       >
         <Card.Content className="p-3">
           <div className="relative overflow-hidden rounded-2xl">
-            {item.posterUrl ? (
+            {posterSrc && !posterGaveUp ? (
               <img
-                src={item.posterUrl}
+                src={posterSrc}
                 alt={`${item.title} poster`}
                 className="h-[260px] w-full object-cover transition-transform duration-300 group-hover:scale-110"
+                loading="eager"
+                decoding="async"
+                onLoad={() => setImgLoaded(true)}
+                onError={() => setImgError(true)}
               />
             ) : (
               <div className="grid h-[260px] w-full place-items-center bg-white/10 text-3xl font-semibold">

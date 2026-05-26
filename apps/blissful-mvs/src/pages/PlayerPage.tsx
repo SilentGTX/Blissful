@@ -15,6 +15,10 @@ export type NextEpisodeInfo = {
   nextSeason: number | null;
   nextEpisode: number | null;
   nextThumbnail: string | null;
+  /** ISO timestamp of when the next episode airs/aired. Null when the
+   *  addon doesn't provide it. When set and in the future, the player's
+   *  next-episode button is disabled with an explanatory tooltip. */
+  nextReleased: string | null;
 };
 
 type MetaVideo = {
@@ -25,6 +29,7 @@ type MetaVideo = {
   episode?: number;
   number?: number;
   thumbnail?: string;
+  released?: string;
 };
 
 /** Compute the next episode from the full video list, mirroring useEpisodeSelection logic. */
@@ -83,13 +88,14 @@ function formatNextInfo(v: MetaVideo): NextEpisodeInfo {
     nextSeason: s,
     nextEpisode: e,
     nextThumbnail: v.thumbnail ?? null,
+    nextReleased: v.released ?? null,
   };
 }
 
 export default function PlayerPage() {
   const { addons } = useAddons();
   const { authKey } = useAuth();
-  const { playerSettings } = useStorage();
+  const { playerSettings, savePlayerSettings } = useStorage();
   const [searchParams] = useSearchParams();
   const [resolvedPlayerSettings, setResolvedPlayerSettings] = useState<PlayerSettings>(playerSettings);
 
@@ -117,6 +123,7 @@ export default function PlayerPage() {
   const type = searchParams.get('type');
   const id = searchParams.get('id');
   const videoId = searchParams.get('videoId');
+  const roomCode = searchParams.get('room');
   const isSeriesLike = type === 'series' || type === 'anime';
 
   const startTime = useMemo(() => {
@@ -160,6 +167,7 @@ export default function PlayerPage() {
         nextSeason: typeof parsed.nextSeason === 'number' ? parsed.nextSeason : null,
         nextEpisode: typeof parsed.nextEpisode === 'number' ? parsed.nextEpisode : null,
         nextThumbnail: typeof parsed.nextThumbnail === 'string' ? parsed.nextThumbnail : null,
+        nextReleased: typeof parsed.nextReleased === 'string' ? parsed.nextReleased : null,
       };
     } catch {
       return null;
@@ -202,7 +210,12 @@ export default function PlayerPage() {
         addons={addons}
         authKey={authKey}
         playerSettings={resolvedPlayerSettings}
+        savePlayerSettings={savePlayerSettings}
         nextEpisodeInfo={nextEpisodeInfo}
+        description={meta?.meta?.description ?? undefined}
+        imdbRating={meta?.meta?.imdbRating != null ? String(meta.meta.imdbRating) : undefined}
+        videos={meta?.meta?.videos}
+        roomCode={roomCode}
       />
     );
   }
@@ -221,6 +234,7 @@ export default function PlayerPage() {
       addons={addons}
       authKey={authKey}
       playerSettings={resolvedPlayerSettings}
+      savePlayerSettings={savePlayerSettings}
       nextEpisodeInfo={nextEpisodeInfo}
     />
   );

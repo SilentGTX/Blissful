@@ -27,3 +27,11 @@ export function notifySuccess(title: string, description: string) {
     variant: 'success',
   });
 }
+
+export function notifyWarning(title: string, description?: string) {
+  successQueue.add({
+    title,
+    description,
+    variant: 'warning',
+  });
+}

@@ -1,71 +1,113 @@
 import { useCallback, useEffect, useState } from 'react';
-import {
-  addonCollectionGet,
-  addonCollectionSet,
-  type AddonDescriptor,
-} from '../../../lib/stremioApi';
+import type { AddonDescriptor } from '../../../lib/mediaTypes';
+import { fetchAddonManifest, normalizeAddonBaseUrl } from '../../../lib/stremioAddon';
 import type { BlissfulStorageState } from '../../../lib/storageApi';
 
 type UseAddonsManagerParams = {
   authKey: string | null;
   storedAddonUrls: string[] | null;
   persistStorageState: (partial: Partial<BlissfulStorageState>) => void;
+  realDebridApiKey?: string;
 };
 
-export function useAddonsManager({ authKey, storedAddonUrls, persistStorageState }: UseAddonsManagerParams) {
+const CINEMETA_URL = 'https://v3-cinemeta.strem.io/manifest.json';
+const DEFAULT_ADDON_URLS = [
+  CINEMETA_URL,
+  'https://torrentio.strem.fun/lite/manifest.json',
+  'https://thepiratebay-plus.strem.fun/manifest.json',
+  'https://opensubtitles-v3.strem.io/manifest.json',
+];
+
+/** Hydrate the in-memory addon list from blissful-storage (signed-in)
+ *  or from local defaults (guest mode). Stremio's cloud `addonCollection`
+ *  is no longer involved — Blissful is the source of truth for which
+ *  addons a user has installed. */
+const TORRENTIO_RE = /torrentio\.strem\.fun/i;
+
+export function useAddonsManager({ authKey, storedAddonUrls, persistStorageState, realDebridApiKey }: UseAddonsManagerParams) {
   const [addons, setAddons] = useState<AddonDescriptor[]>([]);
   const [addonsLoading, setAddonsLoading] = useState(false);
   const [addonsError, setAddonsError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!authKey) {
-      // Guest mode: provide default Torrentio addon so guests can browse and
-      // play streams without logging in.  Prefer localStorage (written by
-      // logged-in sessions) then fall back to the build-time env var.
-      const guestUrls: string[] = [];
+    // Pick the source of truth for the URL list, then map to descriptors.
+    // Order: storage state (authed users) → local guest fallback.
+    let sourceUrls: string[];
+    if (authKey) {
+      sourceUrls = storedAddonUrls ?? [];
+    } else {
+      // Guests get Cinemeta + Torrentio + ThePirateBay+ by default.
+      // If localStorage has cached URLs from a previous logged-in
+      // session (written by useTorrentioCloneSync), use those instead.
+      const cached: string[] = [];
       try {
         const raw = localStorage.getItem('blissfulTorrentioUrls');
         if (raw) {
           const parsed = JSON.parse(raw) as string[];
-          if (Array.isArray(parsed)) guestUrls.push(...parsed);
+          if (Array.isArray(parsed) && parsed.length > 0) cached.push(...parsed);
         }
       } catch { /* ignore */ }
-
-      if (guestUrls.length === 0) {
-        const envUrl = import.meta.env.VITE_DEFAULT_TORRENTIO_URL as string | undefined;
-        if (envUrl) guestUrls.push(envUrl);
-      }
-
-      setAddons(guestUrls.map((transportUrl) => ({ transportUrl })));
-      setAddonsLoading(false);
-      return;
+      // Always start with defaults, then merge any cached extras
+      // (e.g. Torrentio RD URL from a previous logged-in session).
+      const defaults = new Set(DEFAULT_ADDON_URLS);
+      const extras = cached.filter((u) => !defaults.has(u));
+      sourceUrls = [...DEFAULT_ADDON_URLS, ...extras];
     }
 
-    let cancelled = false;
-    setAddonsLoading(true);
-    addonCollectionGet({ authKey })
-      .then((items) => {
-        if (cancelled) return;
-        setAddons(items);
-        persistStorageState({ addons: items.map((addon) => addon.transportUrl) });
-      })
-      .catch(() => {
-        if (cancelled) return;
-        if (storedAddonUrls?.length) {
-          setAddons(storedAddonUrls.map((transportUrl) => ({ transportUrl })));
-          return;
-        }
-        setAddons([]);
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setAddonsLoading(false);
-      });
+    // When the user has a Real-Debrid API key, inject the Torrentio RD
+    // addon and remove any non-RD Torrentio URLs. This ensures all
+    // torrent streams are resolved through Real-Debrid.
+    if (authKey && realDebridApiKey) {
+      const rdUrl = `https://torrentio.strem.fun/realdebrid=${realDebridApiKey}/manifest.json`;
+      // Remove ALL existing Torrentio URLs (both RD and non-RD)
+      sourceUrls = sourceUrls.filter((u) => !TORRENTIO_RE.test(u));
+      // Add the RD URL
+      sourceUrls.push(rdUrl);
+    }
 
-    return () => {
-      cancelled = true;
-    };
-  }, [authKey, persistStorageState, storedAddonUrls]);
+    // Always include Cinemeta first — DiscoverPage's redirect picks it
+    // up as the default movie catalog source.
+    const finalUrls = [CINEMETA_URL, ...sourceUrls.filter((u) => u !== CINEMETA_URL)];
+    setAddons(finalUrls.map((transportUrl) => ({ transportUrl })));
+    setAddonsLoading(false);
+  }, [authKey, storedAddonUrls, realDebridApiKey]);
+
+  // Hydrate any addons that don't carry a manifest. Without manifests
+  // the Discover page can't enumerate Type / Catalog / Genre options
+  // and shows an empty drawer on mobile.
+  useEffect(() => {
+    const targets = addons.filter((addon) => !addon.manifest && Boolean(addon.transportUrl));
+    if (targets.length === 0) return;
+    let cancelled = false;
+
+    void Promise.all(
+      targets.map(async (addon) => {
+        try {
+          const base = addon.transportUrl.replace(/\/manifest\.json$/, '').replace(/\/$/, '');
+          const manifest = await fetchAddonManifest(base);
+          return { transportUrl: addon.transportUrl, manifest };
+        } catch {
+          return null;
+        }
+      }),
+    ).then((results) => {
+      if (cancelled) return;
+      const byUrl = new Map<string, NonNullable<typeof results[number]>['manifest']>();
+      for (const r of results) {
+        if (r) byUrl.set(normalizeAddonBaseUrl(r.transportUrl), r.manifest);
+      }
+      if (byUrl.size === 0) return;
+      setAddons((prev) =>
+        prev.map((addon) => {
+          if (addon.manifest) return addon;
+          const manifest = byUrl.get(normalizeAddonBaseUrl(addon.transportUrl));
+          return manifest ? { ...addon, manifest } : addon;
+        }),
+      );
+    });
+
+    return () => { cancelled = true; };
+  }, [addons]);
 
   const installAddon = useCallback(
     async (url: string) => {
@@ -74,16 +116,12 @@ export function useAddonsManager({ authKey, storedAddonUrls, persistStorageState
         const next = [{ transportUrl: url }, ...addons].filter(
           (addon, index, arr) => arr.findIndex((a) => a.transportUrl === addon.transportUrl) === index
         );
-        setAddonsLoading(true);
         setAddonsError(null);
-        await addonCollectionSet({ authKey, addons: next });
         setAddons(next);
         persistStorageState({ addons: next.map((addon) => addon.transportUrl) });
       } catch (err: unknown) {
         setAddonsError(err instanceof Error ? err.message : 'Failed to install addon');
         throw err;
-      } finally {
-        setAddonsLoading(false);
       }
     },
     [addons, authKey, persistStorageState]
@@ -94,16 +132,12 @@ export function useAddonsManager({ authKey, storedAddonUrls, persistStorageState
       if (!authKey) return;
       try {
         const next = addons.filter((addon) => addon.transportUrl !== url);
-        setAddonsLoading(true);
         setAddonsError(null);
-        await addonCollectionSet({ authKey, addons: next });
         setAddons(next);
         persistStorageState({ addons: next.map((addon) => addon.transportUrl) });
       } catch (err: unknown) {
         setAddonsError(err instanceof Error ? err.message : 'Failed to uninstall addon');
         throw err;
-      } finally {
-        setAddonsLoading(false);
       }
     },
     [addons, authKey, persistStorageState]

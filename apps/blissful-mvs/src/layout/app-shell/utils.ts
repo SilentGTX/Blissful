@@ -1,6 +1,6 @@
 import type { MediaItem, MediaType } from '../../types/media';
 import type { HomeRowPrefs } from '../../lib/homeRows';
-import type { LibraryItem } from '../../lib/stremioApi';
+import type { LibraryItem } from '../../lib/mediaTypes';
 import {
   GRADIENT_OPTIONS,
   HOME_PREFS_KEY,

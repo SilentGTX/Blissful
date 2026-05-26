@@ -2,20 +2,20 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDesktopUpdater } from '../hooks/useDesktopUpdater';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import SideNav from './SideNav';
-import WhatToDoDrawer from './WhatToDoDrawer';
 import { useAuth } from '../context/AuthProvider';
 import { useUI } from '../context/UIProvider';
 import { useStorage } from '../context/StorageProvider';
 import { useAddons } from '../context/AddonsProvider';
 import { useModals } from '../context/ModalsProvider';
 import { useHomeCatalogContext } from '../context/HomeCatalogProvider';
+import { PlayerBufferingScreen } from './PlayerBufferingScreen';
+import { usePlayerReady } from '../context/PlayerReadyProvider';
+import { RouteTransition } from './RouteTransition';
 import { useContinueWatchingContext } from '../context/ContinueWatchingProvider';
 import { desktop, isNativeShell } from '../lib/desktop';
-import type { StremioApiUser } from '../lib/stremioApi';
 import { resolveHomeRowOrder } from '../lib/homeRows';
 import {
   fetchHomeState,
-  fetchStoredState,
   type StoredProfile,
 } from '../lib/storageApi';
 import { applyStreamingServerCacheSize } from '../lib/playerSettings';
@@ -35,6 +35,7 @@ import {
 } from '../layout/app-shell/constants';
 import { ResumeOrStartOverModal } from './ResumeOrStartOverModal';
 import { StreamUnavailableModal } from './StreamUnavailableModal';
+import { WatchPartyJoinModal } from './WatchParty';
 import { parseEpisodeLabel } from './SideNav/utils';
 import { normalizeStremioImage } from '../lib/stremioApi';
 import { useSearchMenu } from '../layout/app-shell/hooks/useSearchMenu';
@@ -44,25 +45,21 @@ import {
   isLikelyManifestUrl,
   isPlayableUrl,
   normalizePossibleUrl,
-  openInVlc,
 } from '../layout/app-shell/utils';
 import { useGradientBackdrop } from '../layout/app-shell/hooks/useGradientBackdrop';
 import { useTorrentioCloneSync } from '../layout/app-shell/hooks/useTorrentioCloneSync';
 import { useErrorToast } from '../lib/useErrorToast';
 import { notifySuccess } from '../lib/toastQueues';
-import {
-  getSavedAccounts,
-  upsertSavedAccount,
-} from '../lib/savedAccounts';
+import { usePresenceHeartbeat } from '../lib/usePresenceHeartbeat';
+import { PartyInviteListener } from './PartyInviteListener';
 
 export default function AppShell() {
+  usePresenceHeartbeat();
   const { updateReady, isInstalling, installNow, dismissUpdate } = useDesktopUpdater();
 
   // ---------- read from providers ------------------------------------------
   const {
-    authKey, user, savedAccounts, login, logout,
-    switchAccount: providerSwitchAccount,
-    setSavedAccounts, updateSavedAccountProfile,
+    authKey, user, savedAccounts, logout,
   } = useAuth();
 
   const {
@@ -148,6 +145,7 @@ export default function AppShell() {
 
   const location = useLocation();
   const navigate = useNavigate();
+  const { ready: playerReady } = usePlayerReady();
   const isFullscreenRoute = location.pathname.startsWith('/detail') || location.pathname.startsWith('/player');
   const isNetflix = uiStyle === 'netflix';
 
@@ -190,14 +188,6 @@ export default function AppShell() {
     setIsSearchMenuOpen(false);
     navigate(`/detail/${result.type}/${encodeURIComponent(result.id)}`);
   }, [navigate, setIsSearchMenuOpen]);
-
-  // ---------- account sync effects -----------------------------------------
-  useEffect(() => {
-    if (!authKey || !user) return;
-    upsertSavedAccount(authKey, user);
-    setSavedAccounts(getSavedAccounts());
-    void syncSavedAccountProfileFromStorage(authKey, user);
-  }, [authKey, user]);
 
   // Track the most recent "safe back" route — anything that isn't a
   // /player or /detail page. DetailPage reads `bliss:safe-back` from
@@ -302,81 +292,19 @@ export default function AppShell() {
   // ---------- display name -------------------------------------------------
   const displayName =
     userProfile.displayName?.trim() ||
+    user?.username ||
     user?.email?.split('@')[0] ||
     user?.email ||
     user?._id ||
     'Guest';
 
-  // ---------- profile update (wraps provider + syncs saved accounts) -------
+  // ---------- profile update (wraps provider) -------
   const handleUpdateUserProfile = useCallback(
     async (profile: StoredProfile) => {
-      // Save to localStorage savedAccounts FIRST — synchronous, can't
-      // fail meaningfully. If the backend storage save below throws
-      // (network blip, server 500), we still have the profile locally
-      // so the next login picks it up via savedAccounts and skips the
-      // "Who's watching?" prompt. Previously the order was reversed,
-      // so a backend failure silently dropped the profile entirely.
-      if (authKey) {
-        updateSavedAccountProfile(authKey, {
-          displayName: profile.displayName,
-          avatar: profile.avatar,
-        });
-      }
       await updateUserProfile(profile);
     },
-    [authKey, updateUserProfile, updateSavedAccountProfile]
+    [updateUserProfile]
   );
-
-  const syncSavedAccountProfileFromStorage = useCallback(
-    async (authKeyToSync: string, fallbackUser: StremioApiUser) => {
-      try {
-        const remoteState = await fetchStoredState(authKeyToSync);
-        const remoteProfile = remoteState?.profile;
-        // Only apply remote profile when the local saved account has no
-        // displayName yet. This prevents overwriting locally-customised
-        // profiles (especially when multiple profiles share the same
-        // Stremio userId and therefore the same server-side storage).
-        const local = getSavedAccounts().find((a) => a.authKey === authKeyToSync);
-        if (!local?.displayName && remoteProfile?.displayName) {
-          updateSavedAccountProfile(authKeyToSync, {
-            displayName: remoteProfile.displayName,
-            avatar: remoteProfile.avatar,
-          });
-        }
-        upsertSavedAccount(authKeyToSync, fallbackUser, {
-          displayName: local?.displayName ?? remoteProfile?.displayName,
-          avatar: local?.avatar ?? remoteProfile?.avatar,
-        });
-        setSavedAccounts(getSavedAccounts());
-      } catch {
-        // ignore sync errors
-      }
-    },
-    [setSavedAccounts, updateSavedAccountProfile]
-  );
-
-  // ---------- switch account (wraps provider + handles login modal) --------
-  const handleSwitchAccount = useCallback(async (authKeyToUse: string) => {
-    const next = savedAccounts.find((item) => item.authKey === authKeyToUse);
-    if (!next) return;
-    // Short-circuit when the picked account is the one already active —
-    // no API round-trip, no provider switch (which would still hit
-    // /getUser), just a friendly "welcome back" toast.
-    if (authKeyToUse === authKey) {
-      const greeting = next.displayName || next.email || 'there';
-      notifySuccess('Welcome back', `You're already signed in as ${greeting}.`);
-      return;
-    }
-    try {
-      await providerSwitchAccount(authKeyToUse);
-      void syncSavedAccountProfileFromStorage(authKeyToUse, { _id: next.userId, email: next.email } as StremioApiUser);
-    } catch {
-      modals.openLoginWith({
-        forcedError: 'Session expired for this account. Please enter your credentials again.',
-        prefillEmail: next.email.includes('@') ? next.email : null,
-      });
-    }
-  }, [authKey, savedAccounts, providerSwitchAccount, syncSavedAccountProfileFromStorage, modals]);
 
   // ---------- profile prompt check -----------------------------------------
   // Only open the "Who's watching?" prompt when the user has NEITHER a
@@ -388,30 +316,13 @@ export default function AppShell() {
     if (!authKey || !user) return;
     if (!storageHydrated) return;
 
-    const localProfile =
-      savedAccounts.find((item) => item.authKey === authKey || item.userId === user._id) ?? null;
     const remoteName = storageState?.profile?.displayName?.trim() ?? '';
     const remoteAvatar = storageState?.profile?.avatar?.trim() ?? '';
-    const localName = localProfile?.displayName?.trim() ?? '';
-    const localAvatar = localProfile?.avatar?.trim() ?? '';
 
-    const haveAnyName = Boolean(remoteName || localName);
-    const haveAnyAvatar = Boolean(remoteAvatar || localAvatar);
+    const haveAnyName = Boolean(remoteName);
+    const haveAnyAvatar = Boolean(remoteAvatar);
 
     if (haveAnyName || haveAnyAvatar) {
-      // Hydrate the best-known profile into the backend if anything
-      // local exists that the remote doesn't (so reloads pick it up).
-      const mergedName = remoteName || localName || undefined;
-      const mergedAvatar = remoteAvatar || localAvatar || undefined;
-      if (
-        mergedName !== (storageState?.profile?.displayName ?? undefined) ||
-        mergedAvatar !== (storageState?.profile?.avatar ?? undefined)
-      ) {
-        void handleUpdateUserProfile({
-          displayName: mergedName,
-          avatar: mergedAvatar,
-        });
-      }
       setNeedsProfilePromptCheck(false);
       return;
     }
@@ -420,10 +331,8 @@ export default function AppShell() {
     setNeedsProfilePromptCheck(false);
   }, [
     authKey,
-    handleUpdateUserProfile,
     modals,
     needsProfilePromptCheck,
-    savedAccounts,
     storageHydrated,
     storageState?.profile?.displayName,
     storageState?.profile?.avatar,
@@ -507,6 +416,7 @@ export default function AppShell() {
                       active={activeNav}
                       onChange={(next) => navigate(next === 'home' ? '/' : `/${next}`)}
                       onOpenLogin={modals.openLogin}
+                      onOpenJoinParty={modals.openJoinParty}
                       onLogout={handleLogout}
                       userLabel={displayName}
                       continueWatching={continueWatching}
@@ -521,7 +431,7 @@ export default function AppShell() {
                 </aside>
 
                 <TopNav
-                  userEmail={user?.email ?? null}
+                  userHandle={user?.username ?? user?.email ?? null}
                   isLoggedIn={Boolean(user)}
                   query={query}
                   isSearchMenuOpen={isSearchMenuOpen}
@@ -554,8 +464,6 @@ export default function AppShell() {
                   onLogout={handleLogout}
                   onNavigateSettings={() => navigate('/settings')}
                   onOpenHomeSettings={modals.openHomeSettings}
-                  onNavigateAddons={() => navigate('/addons')}
-                  onNavigateAccounts={() => navigate('/accounts')}
                   onToggleFullscreen={handleToggleFullscreen}
                   onNavigateHome={() => navigate('/')}
                   setSearchMenuOpen={setIsSearchMenuOpen}
@@ -574,7 +482,9 @@ export default function AppShell() {
 
                 <div className="bliss-content">
                   <div className="px-4 pb-24 md:px-5 md:pb-0">
-                    <Outlet />
+                    <RouteTransition>
+                      <Outlet />
+                    </RouteTransition>
                   </div>
                 </div>
               </div>
@@ -585,14 +495,15 @@ export default function AppShell() {
               active={activeNav}
               onChange={(next) => navigate(next === 'home' ? '/' : `/${next}`)}
               onOpenLogin={modals.openLogin}
+              onOpenJoinParty={modals.openJoinParty}
               onLogout={handleLogout}
               userLabel={displayName}
               continueWatching={continueWatching}
               continueSyncError={continueSyncError}
               collapsed={true}
               onToggleCollapsed={() => { }}
-               onOpenContinueItem={onOpenContinueItem}
-               onRemoveContinueItem={onRemoveContinueItem}
+              onOpenContinueItem={onOpenContinueItem}
+              onRemoveContinueItem={onRemoveContinueItem}
               isMobile={true}
             />
           </>
@@ -661,8 +572,6 @@ export default function AppShell() {
             onLogin={modals.openLogin}
             onNavigateSettings={() => navigate('/settings')}
             onOpenHomeSettings={modals.openHomeSettings}
-            onNavigateAddons={() => navigate('/addons')}
-            onNavigateAccounts={() => navigate('/accounts')}
             onOpenProfiles={modals.openWhoWatching}
             onToggleFullscreen={handleToggleFullscreen}
           />
@@ -684,28 +593,7 @@ export default function AppShell() {
           settingsKey={homeSettingsKey}
         />
 
-        <LoginModal
-          // We DON'T gate on `!authKey` here — "Add account" flows open
-          // the login modal while another session is active, and that
-          // gate would prevent the modal from rendering at all.
-          // Closing is wired through ModalsProvider.closeLogin which
-          // also clears the forced-error/prefill state in one shot.
-          isOpen={modals.isLoginOpen}
-          onOpenChange={(open) => {
-            if (!open) modals.closeLogin();
-          }}
-          forcedErrorMessage={modals.loginForcedError}
-          forcedEmail={modals.loginPrefillEmail}
-          onAuthSuccess={(nextKey, nextUser) => {
-            login(nextKey, nextUser);
-            // Close the login modal itself — the profile prompt that
-            // opens next (via `needsProfilePromptCheck`) was rendering
-            // on top of a still-open login modal, so dismissing the
-            // profile prompt revealed the login form again.
-            modals.closeLogin();
-            setNeedsProfilePromptCheck(true);
-          }}
-        />
+        <LoginModal />
 
         <ProfilePromptModal
           isOpen={modals.isProfilePromptOpen}
@@ -729,26 +617,15 @@ export default function AppShell() {
         <WhoWatchingModal
           isOpen={modals.isWhoWatchingOpen}
           onOpenChange={modals.setIsWhoWatchingOpen}
-          accounts={savedAccounts}
-          currentAuthKey={authKey}
-          onSwitchAccount={handleSwitchAccount}
-          onAddProfile={modals.openLogin}
-          onManageAccounts={() => navigate('/accounts')}
+          profileDisplayName={userProfile.displayName}
+          profileAvatar={userProfile.avatar}
+          onEditProfile={() => {
+            modals.setIsWhoWatchingOpen(false);
+            modals.openProfilePrompt(displayName);
+          }}
         />
 
-        <WhatToDoDrawer
-          isOpen={Boolean(modals.iosPlayPrompt)}
-          prompt={modals.iosPlayPrompt}
-          onClose={() => modals.setIosPlayPrompt(null)}
-          onPlayVlc={(url) => {
-            openInVlc(url);
-            modals.setIosPlayPrompt(null);
-          }}
-          onPlayWeb={(playerLink) => {
-            navigate(playerLink);
-            modals.setIosPlayPrompt(null);
-          }}
-        />
+        {/* iOS play prompt removed -- desktop app doesn't need it */}
 
         <StreamUnavailableModal
           isOpen={modals.unavailableItem !== null}
@@ -802,6 +679,11 @@ export default function AppShell() {
             if (modals.resumeModalItem) runStartOver(modals.resumeModalItem);
           }}
           onClose={() => modals.setResumeModalItem(null)}
+        />
+
+        <WatchPartyJoinModal
+          isOpen={modals.isJoinPartyOpen}
+          onOpenChange={(open) => { if (!open) modals.closeJoinParty(); }}
         />
 
         {/* Continue-watching loading veil — identical to DetailPage's
@@ -860,6 +742,9 @@ export default function AppShell() {
           </div>
         </div>
       )}
+
+      <PartyInviteListener />
+      {location.pathname.startsWith('/player') && !playerReady ? <PlayerBufferingScreen /> : null}
     </>
   );
 }

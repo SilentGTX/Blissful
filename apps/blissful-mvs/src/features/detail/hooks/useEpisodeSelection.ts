@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { NavigateFunction } from 'react-router-dom';
-import { formatDate, getEpisodeTitle } from '../utils';
+import { getEpisodeTitle } from '../utils';
 
 type EpisodeVideo = {
   id: string;
@@ -11,6 +11,11 @@ type EpisodeVideo = {
   number?: number;
   released?: string;
   thumbnail?: string;
+  description?: string;
+  runtime?: string;
+  /** Cinemeta ships per-episode rating under the `rating` field (string;
+   *  "0" for unrated). The Rating component skips 0 automatically. */
+  rating?: number | string | null;
 };
 
 type UseEpisodeSelectionParams = {
@@ -43,10 +48,29 @@ export function useEpisodeSelection({
     const qpVideoId = searchParams.get('videoId');
     if (!qpVideoId) return;
     const decoded = decodeURIComponent(qpVideoId);
+    // Exact match first — happens when both Blissful's catalog and the
+    // source agree on the videoId shape (typical for Cinemeta).
     if (videos.some((v) => v.id === decoded)) {
       setSelectedVideoId(decoded);
+      return;
     }
-  }, [searchParams, videos, isSeriesLike]);
+    // Fallback: Stremio's libraryItem video_id is always
+    // `<imdbId>:<season>:<episode>`. When the meta provider uses a
+    // different id shape for the same episode (some addons), match by
+    // (season, episode) instead so a Continue Watching resume from a
+    // Stremio-sourced row still auto-selects the right episode.
+    const tail = decoded.split(':').slice(-2);
+    if (tail.length === 2) {
+      const s = Number.parseInt(tail[0], 10);
+      const e = Number.parseInt(tail[1], 10);
+      if (Number.isFinite(s) && Number.isFinite(e)) {
+        const byNumber = videos.find((v) => v.season === s && v.episode === e);
+        if (byNumber) {
+          setSelectedVideoId(byNumber.id);
+        }
+      }
+    }
+  }, [searchParams, videos, isSeriesLike, setSelectedVideoId]);
 
   const seasons = useMemo(() => {
     if (!isSeriesLike) return [] as number[];
@@ -84,9 +108,21 @@ export function useEpisodeSelection({
       .filter((v) => {
         const needle = episodeSearch.trim().toLowerCase();
         if (!needle) return true;
+        // Numeric query — match the episode number exactly. Accepts
+        // "3" or "3." (mimicking how episodes are labeled in the UI:
+        // "3. The One Where…"). Strip a trailing period before parsing.
+        const numericNeedle = needle.replace(/\.$/, '');
+        if (/^\d+$/.test(numericNeedle)) {
+          const n = Number.parseInt(numericNeedle, 10);
+          const ep = typeof v.episode === 'number'
+            ? v.episode
+            : typeof (v as { number?: number }).number === 'number'
+              ? (v as { number?: number }).number!
+              : null;
+          return ep === n;
+        }
         const title = getEpisodeTitle(v).toLowerCase();
-        const date = formatDate(v.released)?.toLowerCase() ?? '';
-        return title.includes(needle) || date.includes(needle);
+        return title.includes(needle);
       });
   }, [episodeSearch, season, videos, isSeriesLike]);
 

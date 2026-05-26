@@ -66,7 +66,19 @@ pub fn ui_server_url() -> String {
     format!("http://127.0.0.1:{}", ui_server_port())
 }
 
-const VITE_DEV_ORIGIN: &str = "http://localhost:5173";
+// Resolved from BLISSFUL_VITE_PORT env at first use (default 5173). Lets you
+// run a second Vite on a non-default port without recompiling the shell —
+// useful when another repo is already on 5173.
+fn vite_dev_origin() -> &'static str {
+    static CACHED: OnceCell<String> = OnceCell::new();
+    CACHED.get_or_init(|| {
+        let port = std::env::var("BLISSFUL_VITE_PORT")
+            .ok()
+            .and_then(|s| s.parse::<u16>().ok())
+            .unwrap_or(5173);
+        format!("http://localhost:{}", port)
+    })
+}
 const ADDON_PROXY_UPSTREAM: &str = "https://blissful.budinoff.com/addon-proxy";
 const STORAGE_UPSTREAM: &str = "https://blissful.budinoff.com/storage";
 const STREMIO_UPSTREAM: &str = "https://www.strem.io";
@@ -86,7 +98,7 @@ pub fn spawn_in_background() -> Result<()> {
     if let Some(p) = &static_root {
         info!(path = %p.display(), "UI server: serving static React build from disk");
     } else {
-        info!(target = %VITE_DEV_ORIGIN, "UI server: proxying static paths to Vite dev server");
+        info!(target = %vite_dev_origin(), "UI server: proxying static paths to Vite dev server");
     }
 
     let client = Client::builder()
@@ -580,7 +592,7 @@ async fn serve_static_or_vite(req: &Request<Incoming>) -> Result<Response<BoxBod
 
     // Dev: proxy to Vite. Vite serves the React app + handles HMR via
     // websocket on the same origin (ws://localhost:5173/...).
-    let mut target = format!("{}{}", VITE_DEV_ORIGIN, req.uri().path());
+    let mut target = format!("{}{}", vite_dev_origin(), req.uri().path());
     if let Some(qs) = req.uri().query() {
         target.push('?');
         target.push_str(qs);

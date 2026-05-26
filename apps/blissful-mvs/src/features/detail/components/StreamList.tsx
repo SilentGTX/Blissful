@@ -1,12 +1,24 @@
 import { useMemo, useState } from 'react';
-import type { WhatToDoPrompt } from '../../../components/WhatToDoDrawer';
+import { motion } from 'framer-motion';
 import { resolveProgress, formatTimecode } from '../../../lib/progress';
 import type { StreamRow } from '../streams';
-import { isElectronDesktopApp } from '../../../lib/platform';
-import { isIos } from '../utils';
 import { PlayCircleIcon } from '../../../icons/PlayCircleIcon';
 import { Accordion, Separator } from '@heroui/react';
 import { ResumeOrStartOverModal } from '../../../components/ResumeOrStartOverModal';
+
+const rowsStagger = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.025, delayChildren: 0.02 } },
+};
+
+const rowItem = {
+  hidden: { opacity: 0, y: 6 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.22, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] },
+  },
+};
 
 // Resolution bucket for stream grouping. Below the "Top picks" section
 // the order is fixed: 4K → 1080p → 720p → SD → Other. Within each bucket
@@ -23,13 +35,6 @@ function bucketOf(row: StreamRow): ResolutionBucket {
   return 'Other';
 }
 
-type ExternalOpenPrompt = {
-  title: string;
-  url: string;
-  reason: string;
-  internalPlayerLink: string | null;
-};
-
 type StreamListProps = {
   rows: StreamRow[];
   variant: 'mobile' | 'desktop';
@@ -39,7 +44,6 @@ type StreamListProps = {
   metaName: string | null;
   metaPoster?: string | null;
   episodeLabel?: string | null;
-  onlyTorrentioRdResolve: boolean;
   // Merged progress source (local progressStore + Stremio library state).
   // The sidebar Continue Watching uses Stremio library state directly —
   // localStorage often hasn't been populated yet for series episodes, so
@@ -53,8 +57,6 @@ type StreamListProps = {
     durationSeconds: number;
   };
   onNavigate: (playerLink: string) => void;
-  onOpenIosPrompt: (prompt: WhatToDoPrompt) => void;
-  onOpenExternalPrompt: (prompt: ExternalOpenPrompt) => void;
 };
 
 export function StreamList({
@@ -66,11 +68,8 @@ export function StreamList({
   metaName,
   metaPoster,
   episodeLabel,
-  onlyTorrentioRdResolve,
   getEpisodeProgressInfo,
   onNavigate,
-  onOpenIosPrompt,
-  onOpenExternalPrompt,
 }: StreamListProps) {
   const isMobile = variant === 'mobile';
   const displayRows = rows;
@@ -109,7 +108,7 @@ export function StreamList({
 
   // Add `?t=<seconds>` to a player URL so clicking the progress bar
   // resumes exactly where we left off. PlayerPage reads `t` from
-  // searchParams and seeks mpv to that timestamp after loadfile.
+  // searchParams and seeks the <video> to that timestamp on load.
   const buildResumeLink = (baseLink: string, seconds: number): string => {
     if (!Number.isFinite(seconds) || seconds <= 0) return baseLink;
     const [path, query = ''] = baseLink.split('?');
@@ -165,11 +164,6 @@ export function StreamList({
           metaSeeders,
           metaSize,
           metaProvider,
-          effectiveUrl,
-          externalStreaming,
-          externalWeb,
-          likelyPlayableInBrowser,
-          unplayableReason,
         } = row;
         const deepLinks = (stream as any).deepLinks as
           | {
@@ -189,7 +183,7 @@ export function StreamList({
         );
 
         return (
-          <div key={`${addonName}-${idx}`}>
+          <motion.div key={`${addonName}-${idx}`} variants={rowItem}>
             <button
             type="button"
             className={
@@ -201,39 +195,6 @@ export function StreamList({
             disabled={isDisabled}
             onClick={() => {
               if (!playerLink) return;
-
-              if (isIos()) {
-                const bestExternal = externalStreaming ?? externalWeb ?? effectiveUrl;
-                if (bestExternal) {
-                  onOpenIosPrompt({
-                    title: rightTitle,
-                    url: bestExternal,
-                    playerLink,
-                    metaLine,
-                    metaParts,
-                    itemInfo: {
-                      id,
-                      type,
-                      name: metaName || rightTitle,
-                      videoId: selectedVideoId ?? undefined,
-                    },
-                  });
-                  return;
-                }
-              }
-
-              if (!isElectronDesktopApp() && !isIos() && !onlyTorrentioRdResolve && !likelyPlayableInBrowser) {
-                const bestExternal = externalStreaming ?? externalWeb ?? effectiveUrl;
-                if (bestExternal) {
-                  onOpenExternalPrompt({
-                    title: rightTitle,
-                    url: bestExternal,
-                    reason: unplayableReason ?? 'This stream may not work in the web player.',
-                    internalPlayerLink: playerLink,
-                  });
-                  return;
-                }
-              }
 
               // Continue Watching row → pop the resume/start-over modal
               // first. For non-resume rows just open as usual.
@@ -293,7 +254,7 @@ export function StreamList({
                 <div className="mt-2 flex items-center gap-2 text-[10px] text-white/55">
                   <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10">
                     <div
-                      className="h-full bg-emerald-400 transition-[width]"
+                      className="h-full bg-[var(--bliss-accent)] transition-[width]"
                       style={{ width: `${p}%` }}
                     />
                   </div>
@@ -307,7 +268,7 @@ export function StreamList({
             </div>
             </button>
              {idx < displayRows.length - 1 ? <Separator className="my-1 bg-white/10" /> : null}
-           </div>
+           </motion.div>
          );
   };
 
@@ -340,20 +301,20 @@ export function StreamList({
   return (
     <div className="space-y-1">
       {grouped.lastPlayedRows.length > 0 ? (
-        <div className="space-y-1">
+        <motion.div className="space-y-1" variants={rowsStagger} initial="hidden" animate="show">
           <div className="px-3 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-white/55">
             Continue watching
           </div>
           {grouped.lastPlayedRows.map((row) => renderRow(row, indexOfRow.get(row) ?? 0))}
-        </div>
+        </motion.div>
       ) : null}
       {pinnedRows.length > 0 ? (
-        <div className="space-y-1">
+        <motion.div className="space-y-1" variants={rowsStagger} initial="hidden" animate="show">
           <div className="px-3 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-white/55">
             Top picks
           </div>
           {pinnedRows.map((row) => renderRow(row, indexOfRow.get(row) ?? 0))}
-        </div>
+        </motion.div>
       ) : null}
       <ResumeOrStartOverModal
         isOpen={resumePromptRow !== null}
@@ -409,9 +370,9 @@ export function StreamList({
                 </Accordion.Heading>
                 <Accordion.Panel>
                   <Accordion.Body className="px-0 pb-2 pt-1">
-                    <div className="space-y-1">
+                    <motion.div className="space-y-1" variants={rowsStagger} initial="hidden" animate="show">
                       {rows.map((row) => renderRow(row, indexOfRow.get(row) ?? 0))}
-                    </div>
+                    </motion.div>
                   </Accordion.Body>
                 </Accordion.Panel>
               </Accordion.Item>

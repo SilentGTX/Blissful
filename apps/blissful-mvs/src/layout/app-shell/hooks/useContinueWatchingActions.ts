@@ -1,11 +1,10 @@
 import type { Dispatch, SetStateAction } from 'react';
 import type { NavigateFunction } from 'react-router-dom';
-import type { LibraryItem } from '../../../lib/stremioApi';
-import { rewindLibraryItem } from '../../../lib/stremioApi';
+import type { LibraryItem } from '../../../lib/mediaTypes';
+import { normalizeStremioImage } from '../../../lib/mediaTypes';
+import { putBlissfulLibraryItem } from '../../../lib/blissfulAuthApi';
 import { getLastStreamSelection } from '../../../lib/streamHistory';
-import type { WhatToDoPrompt } from '../../../components/WhatToDoDrawer';
-import { getResumeSeconds, isIos, parsePromptTitleLines, splitMetaLine } from '../utils';
-import { normalizeStremioImage } from '../../../lib/stremioApi';
+import { getResumeSeconds } from '../utils';
 import { fetchMeta } from '../../../lib/stremioAddon';
 
 type UseContinueWatchingActionsParams = {
@@ -13,7 +12,6 @@ type UseContinueWatchingActionsParams = {
   navigate: NavigateFunction;
   setContinueWatching: Dispatch<SetStateAction<LibraryItem[]>>;
   setContinueSyncError: (value: string | null) => void;
-  setIosPlayPrompt: (value: WhatToDoPrompt) => void;
   /** Called when the stored stream URL is detected as a debrid DMCA
    *  placeholder (Real-Debrid serves a ~30s "file removed" video, <20MB).
    *  Caller is expected to surface a modal in the current context — we
@@ -27,7 +25,6 @@ export function useContinueWatchingActions({
   navigate,
   setContinueWatching,
   setContinueSyncError,
-  setIosPlayPrompt,
   onStreamUnavailable,
 }: UseContinueWatchingActionsParams) {
   const onOpenContinueItem = async (
@@ -73,51 +70,10 @@ export function useContinueWatchingActions({
       return cached;
     };
 
-    if (options?.source === 'mobile' && item.type === 'series' && typeof videoId === 'string') {
-      const base = `/detail/${encodeURIComponent(item.type)}/${encodeURIComponent(item._id)}`;
-      navigate(`${base}?videoId=${encodeURIComponent(videoId)}`);
-      return;
-    }
-
-    if (isIos() && stored?.url) {
-      const parsed = parsePromptTitleLines(stored.title ?? item.name);
-      const metaParts = (() => {
-        if (!parsed.meta) return undefined;
-        const parts = splitMetaLine(parsed.meta);
-        return [parts.seeders, parts.size, parts.provider].filter(
-          (v): v is string => typeof v === 'string' && v.length > 0
-        );
-      })();
-
-      const { logo, background } = await resolveMetaImages();
-      const qs = new URLSearchParams({
-        url: stored.url,
-        title: stored.title ?? item.name,
-        metaTitle: item.name,
-        type: item.type,
-        id: item._id,
-      });
-      if (logo) qs.set('logo', logo);
-      if (background) qs.set('background', background);
-      if (item.poster) {
-        const poster = normalizeStremioImage(item.poster);
-        if (poster) qs.set('poster', poster);
-      }
-      if (item.type === 'series' && typeof videoId === 'string') qs.set('videoId', videoId);
-      if (resumeSeconds && Number.isFinite(resumeSeconds) && resumeSeconds > 0) {
-        qs.set('t', String(resumeSeconds));
-      }
-      const playerLink = `/player?${qs.toString()}`;
-
-      setIosPlayPrompt({
-        title: parsed.primary,
-        url: stored.url,
-        playerLink,
-        metaLine: parsed.meta,
-        metaParts,
-      });
-      return;
-    }
+    // Mobile + iOS used to detour through a "Play in VLC / Play in
+    // Browser" drawer and (for series) bounce back to the detail
+    // page. Now that the web player is the single playback path on
+    // every platform, both branches just go straight to /player.
 
     if (stored?.url) {
       // Pre-flight HEAD probe — Real-Debrid serves a ~30 s "File was
@@ -199,8 +155,8 @@ export function useContinueWatchingActions({
     if (item.type === 'series' && typeof videoId === 'string') {
       qs.set('videoId', videoId);
     }
+    qs.set('autoplay', '1');
     if (resumeSeconds && resumeSeconds > 0) {
-      qs.set('autoplay', '1');
       qs.set('t', String(Math.floor(resumeSeconds)));
     }
     const query = qs.toString();
@@ -211,9 +167,22 @@ export function useContinueWatchingActions({
     setContinueWatching((prev) => prev.filter((x) => x._id !== item._id));
     if (!authKey) return;
     setContinueSyncError(null);
-    void rewindLibraryItem({ authKey, id: item._id }).catch((err: unknown) => {
+    // Zero out the progress fields but keep the row in the library —
+    // matches the prior "rewind" semantics (still bookmarked, just
+    // doesn't show up in Continue Watching anymore).
+    const wiped: LibraryItem = {
+      ...item,
+      state: {
+        ...(item.state ?? {}),
+        timeOffset: 0,
+        duration: 0,
+        timeWatched: 0,
+        lastWatched: '',
+      },
+    };
+    void putBlissfulLibraryItem(authKey, item._id, wiped).catch((err: unknown) => {
       console.error('Failed to sync continue-watching removal', err);
-      setContinueSyncError('Failed to sync removal with Stremio');
+      setContinueSyncError('Failed to update item');
       window.setTimeout(() => setContinueSyncError(null), 3000);
     });
   };

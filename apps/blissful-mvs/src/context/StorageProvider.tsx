@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -12,6 +13,7 @@ import {
   type BlissfulStorageState,
   type StoredProfile,
 } from '../lib/storageApi';
+import { updateCurrentBlissfulUser } from '../lib/blissfulAuthApi';
 import {
   applyStreamingServerCacheSize,
   DEFAULT_PLAYER_SETTINGS,
@@ -20,6 +22,7 @@ import {
   type PlayerSettings,
 } from '../lib/playerSettings';
 import type { HomeRowPrefs } from '../lib/homeRows';
+import type { UiStyle } from '../layout/app-shell/types';
 // HOME_PREFS_KEY removed (unused after provider refactor)
 import { useStoredStateSync } from '../layout/app-shell/hooks/useStoredStateSync';
 import { readStoredHomePrefs } from '../layout/app-shell/utils';
@@ -53,7 +56,7 @@ type StorageProviderProps = {
   savedAccounts: Array<{ authKey: string; displayName?: string; avatar?: string }>;
   isDark: boolean;
   setIsDark: (v: boolean) => void;
-  setUiStyle: (v: 'classic' | 'netflix') => void;
+  setUiStyle: (v: UiStyle) => void;
   setDarkGradientKey: (v: string) => void;
   setLightGradientKey: (v: string) => void;
   children: ReactNode;
@@ -143,6 +146,24 @@ export function StorageProvider({
     [persistStorageState, playerSettings.streamingServerCacheSizeBytes]
   );
 
+  // Apply the user's chosen accent color as the global `--bliss-accent`
+  // CSS variable. Every UI element using `var(--bliss-accent)` (progress
+  // bar fill, selected tab indicator, focus rings, loading spinner,
+  // logo strokes, …) picks the new color up at runtime — no rebuild
+  // needed. We also derive `--bliss-accent-glow` (the original was
+  // teal × 55% alpha) so glow shadows stay matched to the hue.
+  useEffect(() => {
+    const accent = playerSettings.accentColor ?? '#95a2ff';
+    const hex = /^#([0-9a-f]{6})$/i.test(accent) ? accent : '#95a2ff';
+    const cleaned = hex.replace('#', '');
+    const r = parseInt(cleaned.slice(0, 2), 16);
+    const g = parseInt(cleaned.slice(2, 4), 16);
+    const b = parseInt(cleaned.slice(4, 6), 16);
+    const root = document.documentElement;
+    root.style.setProperty('--bliss-accent', hex);
+    root.style.setProperty('--bliss-accent-glow', `rgba(${r}, ${g}, ${b}, 0.55)`);
+  }, [playerSettings.accentColor]);
+
   const userProfile: StoredProfile = useMemo(() => {
     const fromState = storageState?.profile;
     if (fromState?.displayName || fromState?.avatar) return fromState;
@@ -164,6 +185,20 @@ export function StorageProvider({
         },
       } as BlissfulStorageState;
       setStorageState(merged);
+      // Mirror to the auth user doc so `users.displayName` /
+      // `users.avatar` are the canonical source going forward — this
+      // is what /auth/me returns, what JWT consumers read, and what
+      // the migration prompt will see on subsequent logins. We keep
+      // writing to account_state.profile too so anything still reading
+      // the old shape doesn't break in the same deploy.
+      const updates: { displayName?: string; avatar?: string | null } = {};
+      if (typeof profile.displayName === 'string') updates.displayName = profile.displayName;
+      if (typeof profile.avatar === 'string') updates.avatar = profile.avatar;
+      if (Object.keys(updates).length > 0) {
+        await updateCurrentBlissfulUser(authKey, updates).catch((err: unknown) => {
+          console.warn('[auth] profile mirror to /auth/me failed:', err);
+        });
+      }
       await saveStoredState(authKey, merged);
     },
     [authKey, storageState]

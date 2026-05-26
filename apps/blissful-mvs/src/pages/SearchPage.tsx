@@ -292,7 +292,7 @@ export default function SearchPage() {
       <div className="board-content space-y-10">
         {!q ? (
           <div className="solid-surface rounded-[28px] bg-white/6 p-8">
-            <div className="font-[Fraunces] text-2xl font-semibold tracking-tight">Search anything</div>
+            <div className="font-[Instrument_Serif] text-2xl font-semibold tracking-tight">Search anything</div>
             <div className="mt-2 text-sm text-foreground/70">
               Movies, series, actors, or paste a link.
             </div>

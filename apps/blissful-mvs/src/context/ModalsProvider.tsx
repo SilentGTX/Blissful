@@ -22,8 +22,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type { LibraryItem } from '../lib/stremioApi';
-import type { WhatToDoPrompt } from '../components/WhatToDoDrawer';
+import type { LibraryItem } from '../lib/mediaTypes';
 
 export type ModalsContextValue = {
   // ---- account ----
@@ -71,9 +70,10 @@ export type ModalsContextValue = {
   openHomeSettings: () => void;
   closeHomeSettings: () => void;
 
-  // ---- iOS "what to do?" drawer (open in browser / open in VLC) ----
-  iosPlayPrompt: WhatToDoPrompt;
-  setIosPlayPrompt: (prompt: WhatToDoPrompt) => void;
+  // ---- join watch-party (paste a code to follow a host) ----
+  isJoinPartyOpen: boolean;
+  openJoinParty: () => void;
+  closeJoinParty: () => void;
 
   // ---- continue-watching resume/start-over decision ----
   resumeModalItem: LibraryItem | null;
@@ -107,7 +107,7 @@ export function ModalsProvider({ children }: { children: ReactNode }) {
   const [isAddAddonOpen, setIsAddAddonOpen] = useState(false);
   const [addonUrlDraft, setAddonUrlDraft] = useState('');
   const [isHomeSettingsOpen, setIsHomeSettingsOpen] = useState(false);
-  const [iosPlayPrompt, setIosPlayPrompt] = useState<WhatToDoPrompt>(null);
+  const [isJoinPartyOpen, setIsJoinPartyOpen] = useState(false);
   const [resumeModalItem, setResumeModalItem] = useState<LibraryItem | null>(null);
   const [unavailableItem, setUnavailableItem] = useState<LibraryItem | null>(null);
   const [pendingContinueItem, setPendingContinueItem] = useState<LibraryItem | null>(null);
@@ -155,6 +155,9 @@ export function ModalsProvider({ children }: { children: ReactNode }) {
   const openHomeSettings = useCallback(() => setIsHomeSettingsOpen(true), []);
   const closeHomeSettings = useCallback(() => setIsHomeSettingsOpen(false), []);
 
+  const openJoinParty = useCallback(() => setIsJoinPartyOpen(true), []);
+  const closeJoinParty = useCallback(() => setIsJoinPartyOpen(false), []);
+
   const value = useMemo<ModalsContextValue>(
     () => ({
       isAccountOpen,
@@ -184,8 +187,9 @@ export function ModalsProvider({ children }: { children: ReactNode }) {
       isHomeSettingsOpen,
       openHomeSettings,
       closeHomeSettings,
-      iosPlayPrompt,
-      setIosPlayPrompt,
+      isJoinPartyOpen,
+      openJoinParty,
+      closeJoinParty,
       resumeModalItem,
       setResumeModalItem,
       unavailableItem,
@@ -218,7 +222,9 @@ export function ModalsProvider({ children }: { children: ReactNode }) {
       isHomeSettingsOpen,
       openHomeSettings,
       closeHomeSettings,
-      iosPlayPrompt,
+      isJoinPartyOpen,
+      openJoinParty,
+      closeJoinParty,
       resumeModalItem,
       unavailableItem,
       pendingContinueItem,

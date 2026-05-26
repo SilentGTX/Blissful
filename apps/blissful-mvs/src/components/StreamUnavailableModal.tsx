@@ -85,7 +85,7 @@ export function StreamUnavailableModal({
                         onPickAnother();
                         onClose();
                       }}
-                      className="cursor-pointer rounded-xl bg-emerald-400/25 px-4 py-3 text-sm font-semibold text-emerald-100 ring-1 ring-emerald-400/40 transition hover:bg-emerald-400/40"
+                      className="cursor-pointer rounded-xl bg-[var(--bliss-accent)]/25 px-4 py-3 text-sm font-semibold text-[var(--bliss-accent)] ring-1 ring-[var(--bliss-accent)]/40 transition hover:bg-[var(--bliss-accent)]/40"
                     >
                       Pick a different stream
                     </button>

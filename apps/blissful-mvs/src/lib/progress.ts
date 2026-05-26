@@ -16,7 +16,7 @@
 // `h:mm:ss` instead of just a percent.
 
 import { getProgress, getProgressPercent } from './progressStore';
-import type { LibraryItem } from './stremioApi';
+import type { LibraryItem } from './mediaTypes';
 
 export type ResolvedProgress = {
   percent: number;

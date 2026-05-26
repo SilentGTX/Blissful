@@ -101,7 +101,7 @@ export const SubtitleMenuPopover = React.memo(function SubtitleMenuPopover({
               >
                 <span>Off</span>
                 {selectedSubKey === 'off' ? (
-                  <span className="h-2 w-2 rounded-full bg-emerald-300" />
+                  <span className="h-2 w-2 rounded-full bg-[var(--bliss-accent)]" />
                 ) : null}
               </button>
 
@@ -143,7 +143,7 @@ export const SubtitleMenuPopover = React.memo(function SubtitleMenuPopover({
                       ) : null}
                     </span>
                     {selectedSubLang === lang ? (
-                      <span className="h-2 w-2 rounded-full bg-emerald-300" />
+                      <span className="h-2 w-2 rounded-full bg-[var(--bliss-accent)]" />
                     ) : null}
                   </button>
                 );
@@ -189,7 +189,7 @@ export const SubtitleMenuPopover = React.memo(function SubtitleMenuPopover({
                         </div>
                       </span>
                       {selectedSubKey === v.key ? (
-                        <span className="mt-1 h-2 w-2 rounded-full bg-emerald-300" />
+                        <span className="mt-1 h-2 w-2 rounded-full bg-[var(--bliss-accent)]" />
                       ) : null}
                     </button>
                   ))

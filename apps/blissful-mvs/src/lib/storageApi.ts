@@ -13,7 +13,7 @@ export type BlissfulStorageState = {
   addons?: string[];
   darkGradient?: string;
   lightGradient?: string;
-  uiStyle?: 'classic' | 'netflix';
+  uiStyle?: 'classic' | 'netflix' | 'modern';
   profile?: StoredProfile;
 };
 
@@ -59,7 +59,7 @@ async function request<T>(
     ...options,
     headers: {
       'content-type': 'application/json',
-      'x-stremio-auth': authKey,
+      'authorization': `Bearer ${authKey}`,
       ...(options?.headers ?? {}),
     },
   });

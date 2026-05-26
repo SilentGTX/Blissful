@@ -62,7 +62,7 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
               <motion.div
                 className="mt-6 h-[2px] rounded-full"
                 style={{
-                  background: 'linear-gradient(90deg, transparent, #19f7d2, transparent)',
+                  background: 'linear-gradient(90deg, transparent, var(--bliss-accent), transparent)',
                 }}
                 initial={{ width: 0, opacity: 0 }}
                 animate={{ width: 120, opacity: 1 }}

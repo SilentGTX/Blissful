@@ -1,4 +1,3 @@
-import type { WhatToDoPrompt } from '../../../components/WhatToDoDrawer';
 import type { StreamRow } from '../streams';
 import { Spinner } from '@heroui/react';
 import { EpisodePanel } from './EpisodePanel';
@@ -22,8 +21,6 @@ type DetailStreamsPanelProps = {
   canNextSeason: boolean;
   onPrevSeason: () => void;
   onNextSeason: () => void;
-  episodeSearch: string;
-  onEpisodeSearchChange: (value: string) => void;
   videosForSeason: Array<{
     id: string;
     thumbnail?: string | null;
@@ -47,8 +44,6 @@ type DetailStreamsPanelProps = {
   addonSelectItems: Array<{ key: string; label: string }>;
   selectedAddon: string;
   onSelectAddon: (key: string) => void;
-  onlyTorrentioRdResolve: boolean;
-  onToggleWebReady: () => void;
   streamsLoading: boolean;
   streamRows: StreamRow[];
   type: string;
@@ -56,8 +51,6 @@ type DetailStreamsPanelProps = {
   metaName: string | null;
   metaPoster?: string | null;
   onNavigate: (playerLink: string) => void;
-  onOpenIosPrompt: (prompt: WhatToDoPrompt) => void;
-  onOpenExternalPrompt: (prompt: { title: string; url: string; reason: string; internalPlayerLink: string | null }) => void;
 };
 
 export function DetailStreamsPanel({
@@ -76,8 +69,6 @@ export function DetailStreamsPanel({
   canNextSeason,
   onPrevSeason,
   onNextSeason,
-  episodeSearch,
-  onEpisodeSearchChange,
   videosForSeason,
   onSelectEpisode,
   getEpisodeProgressInfo,
@@ -87,8 +78,6 @@ export function DetailStreamsPanel({
   addonSelectItems,
   selectedAddon,
   onSelectAddon,
-  onlyTorrentioRdResolve,
-  onToggleWebReady,
   streamsLoading,
   streamRows,
   type,
@@ -96,12 +85,9 @@ export function DetailStreamsPanel({
   metaName,
   metaPoster,
   onNavigate,
-  onOpenIosPrompt,
-  onOpenExternalPrompt,
 }: DetailStreamsPanelProps) {
   const isDesktop = variant === 'desktop';
   const seasonHeaderClassName = isDesktop ? 'p-4' : 'p-3';
-  const episodeSearchClassName = isDesktop ? 'px-4 pb-4' : 'px-3 pb-3';
   const episodeListClassName = isDesktop
     ? 'h-[calc(100%-10.75rem)] overflow-auto px-4 pb-4 hide-scrollbar'
     : 'max-h-[60vh] overflow-auto px-3 pb-3 hide-scrollbar';
@@ -135,16 +121,12 @@ export function DetailStreamsPanel({
 
       {isSeriesLike && rightMode === 'episodes' ? (
         <EpisodePanel
-          episodeSearch={episodeSearch}
-          onEpisodeSearchChange={onEpisodeSearchChange}
           videosForSeason={videosForSeason}
-          selectedVideoId={selectedVideoId}
           onSelectVideo={onSelectEpisode}
           getEpisodeProgressInfo={getEpisodeProgressInfo}
           normalizeImage={normalizeImage}
           formatDate={formatDate}
           getEpisodeTitle={getEpisodeTitle}
-          searchContainerClassName={episodeSearchClassName}
           listContainerClassName={episodeListClassName}
         />
       ) : (
@@ -154,11 +136,8 @@ export function DetailStreamsPanel({
             selectedAddon={selectedAddon}
             onSelectAddon={onSelectAddon}
             showAddonSelect={isDesktop}
-            onlyTorrentioRdResolve={onlyTorrentioRdResolve}
-            onToggleWebReady={onToggleWebReady}
             className={filterClassName}
             addonWidthClassName={isDesktop ? undefined : 'w-[120px]'}
-            showWebReadyToggle={isDesktop}
           />
 
            <div className={streamListContainerClassName}>
@@ -167,7 +146,7 @@ export function DetailStreamsPanel({
                  <Spinner
                    size="lg"
                    color="current"
-                   className="text-[var(--bliss-teal)] drop-shadow-[0_0_12px_var(--bliss-teal-glow)]"
+                   className="text-[var(--bliss-accent)] drop-shadow-[0_0_12px_var(--bliss-accent-glow)]"
                  />
                </div>
              ) : null}
@@ -184,11 +163,8 @@ export function DetailStreamsPanel({
               metaName={metaName}
               metaPoster={metaPoster ?? null}
               episodeLabel={selectedEpisodeLabel ?? null}
-              onlyTorrentioRdResolve={onlyTorrentioRdResolve}
               getEpisodeProgressInfo={getEpisodeProgressInfo}
               onNavigate={onNavigate}
-              onOpenIosPrompt={onOpenIosPrompt}
-              onOpenExternalPrompt={onOpenExternalPrompt}
             />
           </div>
         </>

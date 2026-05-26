@@ -8,10 +8,14 @@ import { useModals } from '../context/ModalsProvider';
 import { useStorage } from '../context/StorageProvider';
 import { PRESET_PROFILE_AVATARS, renderProfileAvatar } from '../lib/profileAvatars';
 import { notifyInfo } from '../lib/toastQueues';
+import type { SavedAccount } from '../lib/savedAccounts';
 
 export default function AccountsPage() {
-  const { authKey, savedAccounts, switchAccount, removeAccount, updateSavedAccountProfile } =
+  const { authKey, savedAccounts: rawSavedAccounts, switchAccount, removeAccount, updateSavedAccountProfile } =
     useAuth();
+  // Multi-account feature removed; savedAccounts is always empty (typed
+  // as never[]). Cast to SavedAccount[] so the existing JSX compiles.
+  const savedAccounts = rawSavedAccounts as unknown as SavedAccount[];
   const { updateUserProfile } = useStorage();
   const { openLogin } = useModals();
   const navigate = useNavigate();
@@ -70,7 +74,7 @@ export default function AccountsPage() {
                   key={account.authKey}
                   className={
                     'self-start rounded-2xl border bg-white/5 p-4 ' +
-                    (isCurrent ? 'border-[var(--bliss-teal)]' : 'border-white/10')
+                    (isCurrent ? 'border-[var(--bliss-accent)]' : 'border-white/10')
                   }
                 >
                   {/* Plain expandable card — replaces HeroUI Accordion
@@ -116,7 +120,7 @@ export default function AccountsPage() {
                             <Input
                               value={draftName}
                               onChange={(e) => setDraftName(e.target.value)}
-                              className="w-full rounded-xl bg-white/10 px-3 py-2 focus-within:!border-[var(--bliss-teal)] focus-within:!ring-1 focus-within:!ring-[var(--bliss-teal)]"
+                              className="w-full rounded-xl bg-white/10 px-3 py-2 focus-within:!border-[var(--bliss-accent)] focus-within:!ring-1 focus-within:!ring-[var(--bliss-accent)]"
                               placeholder="Profile name"
                             />
 

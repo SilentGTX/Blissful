@@ -1,12 +1,3 @@
-export function isIos(): boolean {
-  if (typeof navigator === 'undefined') return false;
-  const ua = navigator.userAgent || '';
-  if (/iPad|iPhone|iPod/i.test(ua)) return true;
-  const platform = (navigator as any).platform as string | undefined;
-  const maxTouchPoints = (navigator as any).maxTouchPoints as number | undefined;
-  return platform === 'MacIntel' && typeof maxTouchPoints === 'number' && maxTouchPoints > 1;
-}
-
 export function openInVlc(url: string): void {
   const encoded = encodeURIComponent(url);
   try {

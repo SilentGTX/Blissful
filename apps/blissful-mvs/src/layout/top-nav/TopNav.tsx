@@ -5,10 +5,9 @@ import { SearchIcon } from '../../icons/SearchIcon';
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { renderProfileAvatar } from '../../lib/profileAvatars';
 import type { StremioMetaPreview } from '../../lib/stremioAddon';
-import { desktop, isNativeShell } from '../../lib/desktop';
 
 type TopNavProps = {
-  userEmail?: string | null;
+  userHandle?: string | null;
   isLoggedIn: boolean;
   query: string;
   isSearchMenuOpen: boolean;
@@ -30,8 +29,6 @@ type TopNavProps = {
   onLogout: () => void;
   onNavigateSettings: () => void;
   onOpenHomeSettings: () => void;
-  onNavigateAddons: () => void;
-  onNavigateAccounts: () => void;
   onToggleFullscreen: () => void;
   setSearchMenuOpen: (open: boolean) => void;
   accountAvatar?: string;
@@ -40,7 +37,7 @@ type TopNavProps = {
 };
 
 export function TopNav({
-  userEmail,
+  userHandle,
   isLoggedIn,
   query,
   isSearchMenuOpen,
@@ -62,8 +59,6 @@ export function TopNav({
   onLogout,
   onNavigateSettings,
   onOpenHomeSettings,
-  onNavigateAddons,
-  onNavigateAccounts,
   onToggleFullscreen,
   setSearchMenuOpen,
   accountAvatar,
@@ -72,12 +67,7 @@ export function TopNav({
 }: TopNavProps) {
   const [isDesktopAccountMenuOpen, setIsDesktopAccountMenuOpen] = useState(false);
   const [isMobileAccountMenuOpen, setIsMobileAccountMenuOpen] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(() => {
-    // Inside the native shell, defer to the shell's reported state (which
-    // the useEffect below seeds). In the browser, take the current
-    // document.fullscreenElement state.
-    return isNativeShell() ? false : Boolean(document.fullscreenElement);
-  });
+  const [isFullscreen, setIsFullscreen] = useState(() => Boolean(document.fullscreenElement));
   const fsLockedRef = useRef(false);
   const accountMenuDisabled = isWhoWatchingOpen;
 
@@ -106,8 +96,6 @@ export function TopNav({
     }
     if (action === 'settings') onNavigateSettings();
     if (action === 'home') onOpenHomeSettings();
-    if (action === 'addons') onNavigateAddons();
-    if (action === 'accounts') onNavigateAccounts();
     if (action === 'fullscreen') {
       fsLockedRef.current = true;
       setIsDesktopAccountMenuOpen(false);
@@ -140,21 +128,8 @@ export function TopNav({
       setIsMobileAccountMenuOpen(false);
     };
     document.addEventListener('fullscreenchange', onFsChange);
-
-    // Native shell (Rust or legacy Electron): seed current fullscreen
-    // state + subscribe to changes pushed by the shell.
-    let unsubFs: (() => void) | undefined;
-    if (isNativeShell()) {
-      desktop.isFullscreen().then(setIsFullscreen).catch(() => {});
-      unsubFs = desktop.onFullscreenChanged((fs) => {
-        setIsFullscreen(fs);
-        setIsDesktopAccountMenuOpen(false);
-        setIsMobileAccountMenuOpen(false);
-      });
-    }
     return () => {
       document.removeEventListener('fullscreenchange', onFsChange);
-      unsubFs?.();
     };
   }, []);
 
@@ -366,24 +341,18 @@ export function TopNav({
                         </Avatar>
                         <div className="min-w-0 text-left">
                           <div className="truncate text-sm font-semibold">{safeDisplayName}</div>
-                          <div className="truncate text-xs text-white/60">{userEmail ?? 'Guest'}</div>
+                          <div className="truncate text-xs text-white/60">{userHandle ?? 'Guest'}</div>
                         </div>
                       </div>
                     </Dropdown.Item>
                     <Dropdown.Item id="fullscreen" textValue="Fullscreen" className="rounded-xl hover:bg-white/15 data-[hovered=true]:bg-white/15">
-                      <Label className="text-[#19f7d2]">{isFullscreen ? 'Exit full screen mode' : 'Enter full screen mode'}</Label>
+                      <Label className="text-[var(--bliss-accent)]">{isFullscreen ? 'Exit full screen mode' : 'Enter full screen mode'}</Label>
                     </Dropdown.Item>
                     <Dropdown.Item id="settings" textValue="Settings" className="rounded-xl hover:bg-white/15 data-[hovered=true]:bg-white/15">
                       <Label>Settings</Label>
                     </Dropdown.Item>
                     <Dropdown.Item id="home" textValue="Customize Home" className="rounded-xl hover:bg-white/15 data-[hovered=true]:bg-white/15">
                       <Label>Customize Home</Label>
-                    </Dropdown.Item>
-                    <Dropdown.Item id="addons" textValue="Addons" className="rounded-xl hover:bg-white/15 data-[hovered=true]:bg-white/15">
-                      <Label>Addons</Label>
-                    </Dropdown.Item>
-                    <Dropdown.Item id="accounts" textValue="Manage accounts" className="rounded-xl hover:bg-white/15 data-[hovered=true]:bg-white/15">
-                      <Label>Manage accounts</Label>
                     </Dropdown.Item>
                     <Separator className="my-1 bg-white/10" />
                     <Dropdown.Item id="auth" textValue={isLoggedIn ? 'Logout' : 'Login'} className="rounded-xl hover:bg-white/15 data-[hovered=true]:bg-white/15">
@@ -418,15 +387,12 @@ export function TopNav({
                       </Avatar>
                       <div className="min-w-0 text-left">
                         <div className="truncate text-sm font-semibold">{safeDisplayName}</div>
-                        <div className="truncate text-xs text-white/60">{userEmail ?? 'Guest'}</div>
+                        <div className="truncate text-xs text-white/60">{userHandle ?? 'Guest'}</div>
                       </div>
                     </div>
                   </Dropdown.Item>
                   <Dropdown.Item id="settings" textValue="Settings" className="rounded-xl hover:bg-white/15 data-[hovered=true]:bg-white/15">
                     <Label>Settings</Label>
-                  </Dropdown.Item>
-                  <Dropdown.Item id="accounts" textValue="Manage accounts" className="rounded-xl hover:bg-white/15 data-[hovered=true]:bg-white/15">
-                    <Label>Manage accounts</Label>
                   </Dropdown.Item>
                   <Separator className="my-1 bg-white/10" />
                   <Dropdown.Item id="auth" textValue={isLoggedIn ? 'Logout' : 'Login'} className="rounded-xl hover:bg-white/15 data-[hovered=true]:bg-white/15">

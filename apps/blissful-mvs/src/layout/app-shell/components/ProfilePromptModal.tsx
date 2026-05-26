@@ -33,7 +33,7 @@ export function ProfilePromptModal({ isOpen, initialName, onSave }: ProfilePromp
                   <Input
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
-                    className="mt-1 w-full rounded-xl bg-white/10 px-4 py-2 focus-within:!border-[var(--bliss-teal)] focus-within:!ring-1 focus-within:!ring-[var(--bliss-teal)]"
+                    className="mt-1 w-full rounded-xl bg-white/10 px-4 py-2 focus-within:!border-[var(--bliss-accent)] focus-within:!ring-1 focus-within:!ring-[var(--bliss-accent)]"
                     placeholder="Your profile name"
                   />
                 </div>

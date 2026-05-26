@@ -7,6 +7,10 @@ import { useStorage } from './StorageProvider';
 import { HomeCatalogProvider } from './HomeCatalogProvider';
 import { ModalsProvider } from './ModalsProvider';
 import { ContinueWatchingProvider } from './ContinueWatchingProvider';
+import { FriendsProvider } from './FriendsProvider';
+import { UserSocketProvider } from './UserSocketProvider';
+import { ActivePartiesProvider } from './ActivePartiesProvider';
+import { PlayerReadyProvider } from './PlayerReadyProvider';
 
 // ---------------------------------------------------------------------------
 // Inner component that reads StorageProvider to feed AddonsProvider
@@ -14,13 +18,14 @@ import { ContinueWatchingProvider } from './ContinueWatchingProvider';
 
 function AddonsGlue({ children }: { children: ReactNode }) {
   const { authKey } = useAuth();
-  const { storedAddonUrls, persistStorageState } = useStorage();
+  const { storedAddonUrls, persistStorageState, playerSettings } = useStorage();
 
   return (
     <AddonsProvider
       authKey={authKey}
       storedAddonUrls={storedAddonUrls}
       persistStorageState={persistStorageState}
+      realDebridApiKey={playerSettings.realDebridApiKey || undefined}
     >
       {children}
     </AddonsProvider>
@@ -48,7 +53,15 @@ export function ProvidersGlue({ children }: { children: ReactNode }) {
       <AddonsGlue>
         <ModalsProvider>
           <HomeCatalogProvider>
-            <ContinueWatchingProvider>{children}</ContinueWatchingProvider>
+            <ContinueWatchingProvider>
+              <UserSocketProvider>
+                <ActivePartiesProvider>
+                  <FriendsProvider>
+                    <PlayerReadyProvider>{children}</PlayerReadyProvider>
+                  </FriendsProvider>
+                </ActivePartiesProvider>
+              </UserSocketProvider>
+            </ContinueWatchingProvider>
           </HomeCatalogProvider>
         </ModalsProvider>
       </AddonsGlue>

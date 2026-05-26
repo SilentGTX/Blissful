@@ -3,6 +3,7 @@ import { ArrowLeftIcon } from '../../../icons/ArrowLeftIcon';
 import { ArrowRightIcon } from '../../../icons/ArrowRightIcon';
 import { ChevronLeftIcon } from '../../../icons/ChevronLeftIcon';
 import { ChevronRightIcon } from '../../../icons/ChevronRightIcon';
+import { SearchIcon } from '../../../icons/SearchIcon';
 
 type SeasonHeaderProps = {
   isSeriesLike: boolean;
@@ -19,6 +20,9 @@ type SeasonHeaderProps = {
   canNextSeason: boolean;
   onPrevSeason: () => void;
   onNextSeason: () => void;
+  /** Episode search query — only rendered in episodes mode. */
+  episodeSearch?: string;
+  onEpisodeSearchChange?: (value: string) => void;
   className?: string;
 };
 
@@ -37,6 +41,8 @@ export function SeasonHeader({
   canNextSeason,
   onPrevSeason,
   onNextSeason,
+  episodeSearch,
+  onEpisodeSearchChange,
   className,
 }: SeasonHeaderProps) {
   if (!isSeriesLike) {
@@ -69,7 +75,27 @@ export function SeasonHeader({
           </button>
         </div>
       ) : (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-end gap-2">
+          {/* Compact-by-default search; expands leftward when focused
+              (the season select group is flex-end aligned, so growth
+              eats empty space on the left rather than pushing the
+              select right). */}
+          {onEpisodeSearchChange ? (
+            <label
+              className="group/search flex items-center rounded-full border border-white/10 bg-white/10 text-white transition-[width] duration-200 ease-out w-9 focus-within:w-44 overflow-hidden"
+              aria-label="Search episodes"
+            >
+              <SearchIcon className="ml-2 h-4 w-4 shrink-0 text-white/70" />
+              <input
+                type="text"
+                value={episodeSearch ?? ''}
+                onChange={(e) => onEpisodeSearchChange(e.target.value)}
+                placeholder="Search episodes"
+                className="w-full bg-transparent px-2 py-1.5 text-sm text-white placeholder:text-white/40 outline-none"
+              />
+            </label>
+          ) : null}
+
           <Button
             isIconOnly
             size="sm"

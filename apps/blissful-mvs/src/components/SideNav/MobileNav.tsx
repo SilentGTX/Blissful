@@ -1,16 +1,19 @@
 import { useState, useRef, useCallback } from 'react';
-import type { LibraryItem } from '../../lib/stremioApi';
+import type { LibraryItem } from '../../lib/mediaTypes';
 import type { SideNavView, SideNavProps } from './types';
 import { ICONS } from './utils';
-import { MobileNavItem, MobileContinueItem } from './NavItem';
-import { normalizeStremioImage } from '../../lib/stremioApi';
+import { MobileNavItem, MobileContinueItem, MobileFriendsItem } from './NavItem';
+import { normalizeStremioImage } from '../../lib/mediaTypes';
 import { getContinueSubtitle } from './utils';
 import { TrashIcon } from '../../icons/TrashIcon';
 import BottomDrawer from '../BottomDrawer';
+import { FriendsAccordion } from '../Friends';
+import { useFriends } from '../../context/FriendsProvider';
+import { useAuth } from '../../context/AuthProvider';
 
 export type MobileNavProps = Pick<
   SideNavProps,
-  'active' | 'onChange' | 'onOpenLogin' | 'continueWatching' | 'continueSyncError' | 'userLabel' | 'onOpenContinueItem' | 'onRemoveContinueItem'
+  'active' | 'onChange' | 'onOpenLogin' | 'onOpenJoinParty' | 'continueWatching' | 'continueSyncError' | 'userLabel' | 'onOpenContinueItem' | 'onRemoveContinueItem'
 >;
 
 // Swipeable item with iOS-style swipe to delete
@@ -132,17 +135,22 @@ function SwipeableContinueItem({ item, onOpen, onRemove }: SwipeableItemProps) {
           </div>
           <div className="min-w-0 flex-1 pr-2">
             <div className="truncate text-sm font-medium text-foreground/90">{item.name}</div>
-            <div className="mt-1 text-xs">
+            <div className="mt-1 text-xs flex items-center gap-1.5 flex-wrap">
               {subtitle.epLabel && (
                 <span className="text-foreground/80">{subtitle.epLabel} · </span>
               )}
               <span className={subtitle.isExternal ? 'text-orange-400 font-semibold' : 'text-foreground/60'}>
                 {subtitle.text}
               </span>
+              {subtitle.source === 'stremio' ? (
+                <span className="rounded-md bg-purple-500/25 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-purple-200">
+                  Stremio
+                </span>
+              ) : null}
             </div>
             {progress !== null ? (
               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
-                <div className="h-full bg-emerald-400" style={{ width: `${progress}%` }} />
+                <div className="h-full bg-[var(--bliss-accent)]" style={{ width: `${progress}%` }} />
               </div>
             ) : null}
           </div>
@@ -154,6 +162,13 @@ function SwipeableContinueItem({ item, onOpen, onRemove }: SwipeableItemProps) {
 
 export function MobileNav(props: MobileNavProps) {
   const [isMobileContinueOpen, setIsMobileContinueOpen] = useState(false);
+  const [isMobileFriendsOpen, setIsMobileFriendsOpen] = useState(false);
+  // Surface unread / actionable count on the Friends pill — incoming
+  // friend requests are the standard "needs attention" signal.
+  const { incoming: friendsIncoming } = useFriends();
+  // userLabel falls back to 'Guest' upstream — check the raw token.
+  const { authKey } = useAuth();
+  const isSignedIn = Boolean(authKey);
 
   const handleNavChange = (view: SideNavView) => {
     props.onChange(view);
@@ -182,10 +197,20 @@ export function MobileNav(props: MobileNavProps) {
             onPress={() => handleNavChange('library')}
           />
           <MobileNavItem
-            label="Addons"
-            icon={ICONS.addons}
-            active={props.active === 'addons'}
-            onPress={() => handleNavChange('addons')}
+            label="Party"
+            icon={ICONS.watchParty}
+            active={false}
+            onPress={() => props.onOpenJoinParty()}
+          />
+          <MobileFriendsItem
+            count={friendsIncoming.length}
+            onPress={() => {
+              if (!isSignedIn) {
+                props.onOpenLogin();
+                return;
+              }
+              setIsMobileFriendsOpen(true);
+            }}
           />
           <MobileContinueItem
             count={props.continueWatching.length}
@@ -240,6 +265,29 @@ export function MobileNav(props: MobileNavProps) {
               </div>
             );
           })()
+        )}
+      </BottomDrawer>
+
+      <BottomDrawer
+        isOpen={isMobileFriendsOpen}
+        onClose={() => setIsMobileFriendsOpen(false)}
+        bodyClassName="pt-2 pb-4"
+        className="bg-white/6 px-6"
+      >
+        {/* Match the Continue Watching drawer shape: empty / logged-
+            out states are flat text, signed-in renders the
+            FriendsAccordion. `min-h-[260px]` only on the signed-in
+            branch because FriendsAccordion's `flex-1` layout
+            collapses to 0 without a parent height — without it, even
+            the accordion's own empty-state message disappears. */}
+        {isSignedIn ? (
+          <div className="flex min-h-[260px] max-h-[70vh] flex-col overflow-auto pr-1 hide-scrollbar">
+            <FriendsAccordion />
+          </div>
+        ) : (
+          <div className="text-sm text-foreground/70 pb-4">
+            Login to see and add friends
+          </div>
         )}
       </BottomDrawer>
     </>

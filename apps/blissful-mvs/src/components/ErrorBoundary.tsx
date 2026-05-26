@@ -73,7 +73,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             <div className="flex justify-center gap-3">
               <button
                 onClick={this.handleAction}
-                className="rounded-full bg-[var(--bliss-teal)] px-5 py-2 text-sm font-medium text-black transition hover:opacity-90"
+                className="rounded-full bg-[var(--bliss-accent)] px-5 py-2 text-sm font-medium text-black transition hover:opacity-90"
               >
                 {action === 'go-back' ? 'Go Back' : 'Return Home'}
               </button>
@@ -95,7 +95,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
         <p className="text-sm text-white/60">Failed to load this section.</p>
         <button
           onClick={this.handleReset}
-          className="mt-2 text-xs text-[var(--bliss-teal)] hover:underline"
+          className="mt-2 text-xs text-[var(--bliss-accent)] hover:underline"
         >
           Retry
         </button>
@@ -130,7 +130,7 @@ export function ErrorPage({ action = 'return-home', error }: { action?: 'go-back
             if (action === 'go-back') window.history.back();
             else window.location.href = '/';
           }}
-          className="rounded-full bg-[var(--bliss-teal)] px-5 py-2 text-sm font-medium text-black transition hover:opacity-90"
+          className="rounded-full bg-[var(--bliss-accent)] px-5 py-2 text-sm font-medium text-black transition hover:opacity-90"
         >
           {action === 'go-back' ? 'Go Back' : 'Return Home'}
         </button>

@@ -24,10 +24,27 @@ export type PlayerSettings = {
    *  on yet. Empty string = TMDB fallback disabled. Get a free key
    *  at https://www.themoviedb.org/settings/api. */
   tmdbApiKey: string;
+  /** Bitcine-style favorite server id. When set, PlayerPage tries
+   *  that server first when resolving Videasy sources. Cleared by
+   *  un-favoriting; only one favorite at a time. */
+  favoriteServer?: string | null;
+  /** Preferred quality label (e.g. "4K", "1080p"). When the resolved
+   *  source list contains this quality, PlayerPage seeds it as the
+   *  initial selection instead of the top-ranked default. Matched
+   *  case-insensitively so "4K" and "4k" are interchangeable. */
+  favoriteQuality?: string | null;
+  /** Site-wide accent color (the `--bliss-accent` CSS variable). Any UI
+   *  element using `var(--bliss-accent)` picks this up at runtime. Hex
+   *  string (e.g. "#95a2ff"). Default is the blissful sky-blue accent. */
+  accentColor?: string;
+  /** Real-Debrid API key. When set, the app auto-installs a Torrentio RD
+   *  addon and filters out non-RD Torrentio results. Get a key at
+   *  https://real-debrid.com/apitoken */
+  realDebridApiKey?: string;
 };
 
 export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
-  subtitlesLanguage: null,
+  subtitlesLanguage: 'English',
   subtitlesSizePx: 28,
   subtitlesTextColor: 'rgba(255, 255, 255, 1)',
   subtitlesBackgroundColor: 'rgba(0, 0, 0, 0)',
@@ -47,6 +64,10 @@ export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
   // torrents are streamed.
   streamingServerCacheSizeBytes: 107374182400,
   tmdbApiKey: '',
+  favoriteServer: null,
+  favoriteQuality: null,
+  accentColor: '#95a2ff',
+  realDebridApiKey: '',
 };
 
 export const STREAMING_CACHE_SIZE_OPTIONS: Array<{

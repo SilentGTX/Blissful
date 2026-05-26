@@ -1,214 +1,131 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useState,
-  type ReactNode,
-} from 'react';
-import { getUser, type StremioApiUser } from '../lib/stremioApi';
-import {
-  getSavedAccounts,
-  removeSavedAccount,
-  updateSavedAccountProfile as updateSavedAccountProfileLocal,
-  upsertSavedAccount,
-  type AccountProfile,
-  type SavedAccount,
-} from '../lib/savedAccounts';
-import { useUserSession } from '../layout/app-shell/hooks/useUserSession';
-import { notifyError, notifySuccess } from '../lib/toastQueues';
+// Compatibility shim that exposes the project's historical
+// `useAuth()` / `AuthProvider` API on top of the new Blissful JWT
+// auth. Keeps existing consumers compiling while the underlying
+// auth has been swapped over wholesale.
+//
+// Field mapping:
+//   - `authKey`               → Blissful JWT token
+//   - `user._id` / `user.id`  → Blissful user id
+//   - `user.fullname` / `user.displayName`
+//   - `user.email`, `user.avatar` — passed through
+//   - `savedAccounts`         → empty (multi-account is gone)
+//   - `login(email, password)` — new signature
+//   - `register(...)`         — new
+//   - `logout()`              — clears the JWT
+//   - `switchAccount`, `removeAccount`, `setAuthKey`, `setUser`,
+//     `setSavedAccounts`, `updateSavedAccountProfile` — no-op stubs
+//     so legacy call sites don't crash. They'll be cleaned up as the
+//     surrounding UI gets pruned.
 
-// ---------------------------------------------------------------------------
-// Context value
-// ---------------------------------------------------------------------------
+import { createContext, useContext, useMemo, type ReactNode } from 'react';
+import { BlissfulAuthProvider, useBlissfulAuth } from './BlissfulAuthProvider';
 
-type AuthContextValue = {
+// Mirror the old StremioApiUser shape just well enough to keep
+// existing code paths working. `_id`/`id` and
+// `fullname`/`displayName` are kept as aliases of each other.
+// `username` is the new primary login identifier; `email` may be
+// null on accounts created under the new flow (the field is kept
+// for legacy accounts).
+export type CompatUser = {
+  _id: string;
+  id: string;
+  username: string | null;
+  email: string | null;
+  fullname: string;
+  displayName: string;
+  avatar: string | null;
+};
+
+export type AuthContextValue = {
   authKey: string | null;
-  user: StremioApiUser | null;
-  savedAccounts: SavedAccount[];
-  login: (nextKey: string, nextUser: StremioApiUser) => void;
+  user: CompatUser | null;
+  savedAccounts: never[];
+  hydrating: boolean;
+  /** `identifier` is the username or (for legacy accounts) the email. */
+  login: (identifier: string, password: string) => Promise<{ token: string; user: CompatUser }>;
+  register: (args: {
+    username: string;
+    password: string;
+    displayName?: string;
+  }) => Promise<void>;
+  updateProfile: (updates: { username?: string; displayName?: string; avatar?: string | null }) => Promise<void>;
   logout: () => void;
+  // ---- Legacy no-op stubs (kept so old callers compile / run). ----
   switchAccount: (authKeyToUse: string) => Promise<void>;
   removeAccount: (authKeyToRemove: string) => void;
   setAuthKey: (value: string | null) => void;
-  setUser: (value: StremioApiUser | null) => void;
-  setSavedAccounts: (value: SavedAccount[]) => void;
-  /**
-   * Update displayName / avatar for a saved account in localStorage
-   * AND refresh the in-memory `savedAccounts` list so consumers see
-   * the change immediately. AccountsPage uses this for avatar edits;
-   * AppShell uses it during the post-login profile sync.
-   */
-  updateSavedAccountProfile: (authKey: string, profile: Partial<AccountProfile>) => void;
+  setUser: (value: unknown) => void;
+  setSavedAccounts: (value: never[]) => void;
+  updateSavedAccountProfile: (authKey: string, profile: unknown) => void;
 };
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
 
-// ---------------------------------------------------------------------------
-// Hook
-// ---------------------------------------------------------------------------
-
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!ctx) throw new Error('useAuth must be used within an AuthProvider');
   return ctx;
 }
 
-// ---------------------------------------------------------------------------
-// Provider
-// ---------------------------------------------------------------------------
+function AuthCompatBridge({ children }: { children: ReactNode }) {
+  const blissful = useBlissfulAuth();
 
-type AuthProviderProps = {
-  children: ReactNode;
-};
-
-export function AuthProvider({ children }: AuthProviderProps) {
-  // ---- state --------------------------------------------------------------
-
-  const [authKey, setAuthKey] = useState<string | null>(
-    () => localStorage.getItem('stremioAuthKey'),
-  );
-
-  const [user, setUser] = useState<StremioApiUser | null>(() => {
-    try {
-      const raw = localStorage.getItem('stremioUser');
-      if (!raw) return null;
-      return JSON.parse(raw) as StremioApiUser;
-    } catch {
-      return null;
-    }
-  });
-
-  const [savedAccounts, setSavedAccounts] = useState<SavedAccount[]>(
-    () => getSavedAccounts(),
-  );
-
-  // ---- session hook (validates authKey on mount / change) -----------------
-
-  useUserSession({ authKey, setAuthKey, setUser });
-
-  // ---- callbacks ----------------------------------------------------------
-
-  const login = useCallback(
-    (nextKey: string, nextUser: StremioApiUser) => {
-      localStorage.setItem('stremioAuthKey', nextKey);
-      localStorage.setItem('stremioUser', JSON.stringify(nextUser));
-      setAuthKey(nextKey);
-      setUser(nextUser);
-      upsertSavedAccount(nextKey, nextUser);
-      setSavedAccounts(getSavedAccounts());
-    },
-    [],
-  );
-
-  const logout = useCallback(() => {
-    localStorage.removeItem('stremioAuthKey');
-    localStorage.removeItem('stremioUser');
-    setAuthKey(null);
-    setUser(null);
-    notifySuccess('Logged out', 'Your session was cleared successfully.');
-  }, []);
-
-  const switchAccount = useCallback(
-    async (authKeyToUse: string) => {
-      const next = savedAccounts.find((a) => a.authKey === authKeyToUse);
-      if (!next) return;
-
-      try {
-        const freshUser = await getUser({ authKey: authKeyToUse });
-        localStorage.setItem('stremioAuthKey', authKeyToUse);
-        localStorage.setItem('stremioUser', JSON.stringify(freshUser));
-        setAuthKey(authKeyToUse);
-        setUser(freshUser);
-        upsertSavedAccount(authKeyToUse, freshUser, {
-          displayName: next.displayName,
-          avatar: next.avatar,
-        });
-        setSavedAccounts(getSavedAccounts());
-
-        if (freshUser._id !== next.userId) {
-          notifyError(
-            'Account mismatch',
-            'Saved session data changed. Refreshed account info.',
-          );
-        } else {
-          notifySuccess(
-            'Account switched',
-            `Now using ${freshUser.email ?? next.email}`,
-          );
+  const value = useMemo<AuthContextValue>(() => {
+    const userDisplayFallback = (u: { displayName: string | null; username: string | null; email: string | null }) =>
+      u.displayName || u.username || u.email || 'User';
+    const user: CompatUser | null = blissful.user
+      ? {
+          _id: blissful.user.id,
+          id: blissful.user.id,
+          username: blissful.user.username,
+          email: blissful.user.email,
+          fullname: userDisplayFallback(blissful.user),
+          displayName: userDisplayFallback(blissful.user),
+          avatar: blissful.user.avatar,
         }
-      } catch {
-        notifyError('Session expired', 'Please login again for this account.');
-      }
-    },
-    [savedAccounts],
-  );
+      : null;
 
-  const removeAccount = useCallback(
-    (authKeyToRemove: string) => {
-      const removed = savedAccounts.find((a) => a.authKey === authKeyToRemove);
-      removeSavedAccount(authKeyToRemove);
-      const nextAccounts = getSavedAccounts();
-      setSavedAccounts(nextAccounts);
-
-      if (authKey === authKeyToRemove) {
-        localStorage.removeItem('stremioAuthKey');
-        localStorage.removeItem('stremioUser');
-        setAuthKey(null);
-        setUser(null);
-      }
-
-      if (removed) {
-        notifySuccess(
-          'Account removed',
-          `${removed.email} was removed from quick switch.`,
-        );
-      }
-    },
-    [authKey, savedAccounts],
-  );
-
-  const updateSavedAccountProfile = useCallback(
-    (authKeyToUpdate: string, profile: Partial<AccountProfile>) => {
-      updateSavedAccountProfileLocal(authKeyToUpdate, profile);
-      setSavedAccounts(getSavedAccounts());
-    },
-    [],
-  );
-
-  // ---- memo ---------------------------------------------------------------
-
-  const value = useMemo<AuthContextValue>(
-    () => ({
-      authKey,
+    return {
+      authKey: blissful.token,
       user,
-      savedAccounts,
-      login,
-      logout,
-      switchAccount,
-      removeAccount,
-      setAuthKey,
-      setUser,
-      setSavedAccounts,
-      updateSavedAccountProfile,
-    }),
-    [
-      authKey,
-      user,
-      savedAccounts,
-      login,
-      logout,
-      switchAccount,
-      removeAccount,
-      updateSavedAccountProfile,
-    ],
-  );
+      savedAccounts: [],
+      hydrating: blissful.hydrating,
+      login: async (identifier, password) => {
+        const result = await blissful.login(identifier, password);
+        const compatUser: CompatUser = {
+          _id: result.user.id,
+          id: result.user.id,
+          username: result.user.username,
+          email: result.user.email,
+          fullname: userDisplayFallback(result.user),
+          displayName: userDisplayFallback(result.user),
+          avatar: result.user.avatar,
+        };
+        return { token: result.token, user: compatUser };
+      },
+      register: async (args) => {
+        await blissful.register(args);
+      },
+      updateProfile: blissful.updateProfile,
+      logout: blissful.logout,
+      // Legacy multi-account flow no longer exists — these stubs let
+      // any stragglers compile without crashing at runtime.
+      switchAccount: async () => {},
+      removeAccount: () => {},
+      setAuthKey: () => {},
+      setUser: () => {},
+      setSavedAccounts: () => {},
+      updateSavedAccountProfile: () => {},
+    };
+  }, [blissful]);
 
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
   return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
+    <BlissfulAuthProvider>
+      <AuthCompatBridge>{children}</AuthCompatBridge>
+    </BlissfulAuthProvider>
   );
 }

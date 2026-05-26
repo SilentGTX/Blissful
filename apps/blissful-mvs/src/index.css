@@ -3,14 +3,22 @@
 @source "./**/*.{ts,tsx,js,jsx,html}";
 @custom-variant dark (&:is(.dark *));
 
+@font-face {
+  font-family: "Mondwest";
+  src: url("/fonts/Mondwest-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 @layer base {
   :root {
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     --poster-shape-ratio: 1.464;
-    --bliss-teal: #19f7d2;
-    --bliss-teal-glow: rgba(25, 247, 210, 0.55);
+    --bliss-accent: #95a2ff;
+    --bliss-accent-glow: rgba(149, 162, 255, 0.55);
   }
 
   html,
@@ -133,7 +141,7 @@
   }
 
   .bliss-top-nav .bliss-nav-input:focus-within {
-    border-color: var(--bliss-teal);
+    border-color: var(--bliss-accent);
     box-shadow: 0 0 0 1px rgba(25, 247, 210, 0.55);
   }
 
@@ -408,37 +416,65 @@ html:not(.dark) .bliss-sidebar-link:hover {
 
 .bliss-sidebar-link.is-active {
   background: transparent;
-  color: var(--bliss-teal);
+  color: var(--bliss-accent);
   border-color: transparent;
 }
 
 .bliss-player-range,
 .bliss-player-volume {
-  background: rgba(255, 255, 255, 0.15);
   border-radius: 999px;
+  cursor: pointer;
+  background-repeat: no-repeat;
 }
 
+.bliss-player-range {
+  background-color: rgba(255, 255, 255, 0.25);
+  background-image: linear-gradient(to right, var(--bliss-accent), var(--bliss-accent));
+  background-size: var(--bliss-track-fill, 0%) 100%;
+}
+
+.bliss-player-volume {
+  background-color: transparent;
+  background-image:
+    linear-gradient(to right, var(--bliss-volume-fill, #ffffff), var(--bliss-volume-fill, #ffffff)),
+    linear-gradient(
+      to right,
+      rgba(255, 255, 255, 0.3) 0%,
+      rgba(255, 255, 255, 0.3) 50%,
+      rgba(250, 204, 21, 0.3) 62%,
+      rgba(249, 115, 22, 0.3) 80%,
+      rgba(239, 68, 68, 0.3) 100%
+    );
+  background-size: var(--bliss-track-fill, 0%) 100%, 100% 100%;
+}
+
+.bliss-player-range::-moz-range-progress,
+.bliss-player-volume::-moz-range-progress {
+  background: transparent;
+}
 
 .bliss-player-range::-webkit-slider-thumb,
 .bliss-player-volume::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 18px;
-  height: 18px;
+  width: 12px;
+  height: 12px;
   border-radius: 999px;
-  background: var(--bliss-teal);
-  box-shadow: 0 0 0 4px rgba(25, 247, 210, 0.25);
+  background: #ffffff;
+  cursor: pointer;
+  border: none;
+  box-shadow: none;
 }
-
 
 .bliss-player-range::-moz-range-thumb,
 .bliss-player-volume::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
+  width: 12px;
+  height: 12px;
   border-radius: 999px;
-  background: var(--bliss-teal);
+  background: #ffffff;
   border: none;
-  box-shadow: 0 0 0 4px rgba(25, 247, 210, 0.25);
+  cursor: pointer;
+  box-shadow: none;
 }
 
 
@@ -488,11 +524,41 @@ html:not(.dark) .bliss-sidebar-link:hover {
 }
 
 .bliss-player-icon-btn:hover {
-  color: var(--bliss-teal);
+  color: var(--bliss-accent);
 }
 
 .bliss-player-icon-btn:disabled {
   opacity: 0.4;
+}
+
+@keyframes bliss-player-enter {
+  from { opacity: 0; transform: scale(0.55); border-radius: 36px; }
+  to { opacity: 1; transform: scale(1); border-radius: 0; }
+}
+.bliss-player-enter {
+  animation: bliss-player-enter 0.5s cubic-bezier(0.4, 0, 0.2, 1) both;
+  transform-origin: center center;
+  will-change: transform, opacity;
+}
+
+@keyframes bliss-player-top-slide-in {
+  from { transform: translateY(-100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@keyframes bliss-player-bottom-slide-in {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.bliss-player-top-slide-in {
+  animation: bliss-player-top-slide-in 360ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+.bliss-player-bottom-slide-in {
+  animation: bliss-player-bottom-slide-in 360ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+@keyframes bliss-route-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @keyframes bliss-buffer-fade {
@@ -527,27 +593,86 @@ html:not(.dark) .bliss-sidebar-link:hover {
 
 .dark .bliss-sidebar-link.is-active {
   background: transparent;
-  color: var(--bliss-teal);
+  color: var(--bliss-accent);
   border-color: transparent;
 }
 
 html:not(.dark) .bliss-sidebar-link.is-active {
   background: transparent;
-  color: var(--bliss-teal);
+  color: var(--bliss-accent);
   border-color: transparent;
+}
+
+/* Dithered terminal cursor — the `repeating-conic-gradient(... 0 0 /
+   3px 3px)` is a 3×3 px checkerboard tile painted with the inherited
+   `currentColor`, which is `--bliss-accent` on the link. The cursor
+   blinks with a 1s step-end animation so it looks like a retro CRT
+   block cursor rather than a smooth pulse. */
+.bliss-sidebar-glitch-cursor {
+  display: none;
+  width: 0.6em;
+  height: 0.9em;
+  margin-left: 0.35em;
+  margin-bottom: 0;
+  vertical-align: middle;
+  background: repeating-conic-gradient(currentColor 0% 25%, transparent 0% 50%) 0 0 / 3px 3px;
+  color: var(--bliss-accent);
+  animation: bliss-glitch-cursor-blink 1s step-end infinite;
+}
+.bliss-sidebar-link:hover .bliss-sidebar-glitch-cursor,
+.bliss-sidebar-link:focus-visible .bliss-sidebar-glitch-cursor {
+  display: inline-block;
+}
+.bliss-sidebar-link.is-active .bliss-sidebar-glitch-cursor {
+  display: none !important;
+}
+
+@keyframes bliss-glitch-cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Scoped Mondwest for the sidebar labels — falls back to VT323, then
+   Courier. Mondwest carries the pixel-grid aesthetic that makes the
+   scramble glitch look like noisy decryption rather than random
+   garbage in a modern typeface. */
+.bliss-sidebar-label-text {
+  display: inline-block;
+  white-space: nowrap;
+  font-family: 'Mondwest', 'VT323', 'Courier New', monospace;
+  font-size: clamp(0.875rem, max(1.4vh, 0.85vw), 1.375rem);
+  letter-spacing: clamp(0.09375rem, max(0.25vh, 0.12vw), 0.25rem);
+  font-weight: 400;
+  line-height: 1;
 }
 
 .bliss-sidebar-label {
   display: block;
   overflow: hidden;
+  /* Gap between icon and label when the sidebar is expanded.
+     Animated alongside width/opacity so the label slides in/out
+     cleanly on collapse instead of jumping. */
+  margin-left: 0.75rem;
   transition:
     opacity 0.3s ease,
-    width 0.3s ease;
+    width 0.3s ease,
+    margin-left 0.3s ease;
 }
 
 .bliss-sidebar.closed .bliss-sidebar-label {
   opacity: 0;
   width: 0;
+  margin-left: 0;
+}
+
+/* Fixed-width icon "slot" used by NavItem rows. The width is the
+   SAME expression as the collapsed-sidebar button's INNER (content-
+   box) width: collapsed_sidebar - 2.5rem sidebar padding - 2rem
+   button mx - 2px button border. Without subtracting the border
+   the slot would be 2px wider than the content area, pushing the
+   centered icon 1px off-center. */
+.nav-icon-slot {
+  width: calc(clamp(128px, 7vw, 200px) - 4.5rem - 2px);
 }
 
 .bliss-sidebar .toggle {
@@ -690,6 +815,12 @@ html:not(.dark) .bliss-sidebar .toggle {
   object-fit: cover;
   object-position: top left;
   opacity: 0.3;
+  animation: detail-backdrop-dim 1.2s ease-out both;
+}
+
+@keyframes detail-backdrop-dim {
+  from { opacity: 1; }
+  to { opacity: 0.3; }
 }
 
 /* Meta preview (stremio-custom-like) */
@@ -705,14 +836,20 @@ html:not(.dark) .bliss-sidebar .toggle {
   height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 0 4rem 2rem 4rem;
-  padding-left: max(1rem, calc(4rem - var(--safe-area-inset-left, 0px)));
+  /* Fluid side-padding: 1rem on small viewports, scaling up to 4rem
+     on wide screens. Replaces the prior hard 4rem that wasted half
+     the screen on medium widths. */
+  padding: 0 clamp(1rem, 4vw, 4rem) clamp(1.5rem, 2vw, 2rem);
+  padding-left: max(clamp(1rem, 4vw, 4rem), calc(4rem - var(--safe-area-inset-left, 0px)));
 }
 
 .meta-info-container-ub8AH {
+  /* No internal scroll -- content flows naturally and the OUTER
+     MetaContent wrapper (overflow-auto) becomes the single scroll
+     viewport. Two nested scroll areas previously hid the bottom of
+     the Summary paragraph behind the action-buttons row. */
   flex: 1;
   align-self: stretch;
-  overflow-y: auto;
 }
 
 .meta-info-container-ub8AH:not(:hover) {
@@ -727,8 +864,12 @@ html:not(.dark) .bliss-sidebar .toggle {
 .logo-X3hTV {
   display: block;
   max-width: 100%;
-  height: 9rem;
-  margin-bottom: 2rem;
+  /* Fluid logo: 3rem on tiny phones up to 7rem on the widest
+     viewports. Smaller upper bound than before so wide wordmark
+     logos (OBSESSION etc.) stay proportionate to the meta panel
+     instead of dominating the page. */
+  height: clamp(3rem, 6vw, 7rem);
+  margin-bottom: clamp(0.75rem, 1.5vw, 1.5rem);
   object-fit: contain;
   object-position: center;
 }
@@ -739,13 +880,14 @@ html:not(.dark) .bliss-sidebar .toggle {
   align-items: center;
   flex-wrap: wrap;
   margin-top: 1rem;
+  gap: clamp(0.5rem, 1.5vw, 1rem) 0;
 }
 
 .runtime-label-ywyh7,
 .release-info-label-ywyh7 {
   flex: 0 1 auto;
-  margin-right: 3rem;
-  font-size: 1.25rem;
+  margin-right: clamp(1rem, 2.5vw, 3rem);
+  font-size: clamp(0.875rem, 1.4vw, 1.25rem);
   font-weight: 600;
   color: #fff;
 }
@@ -867,7 +1009,6 @@ html:not(.dark) .bliss-sidebar .toggle {
   }
 
   .logo-X3hTV {
-    height: 5rem;
     margin: 2rem auto;
   }
 
@@ -1852,5 +1993,39 @@ html[data-ui="netflix"] .netflix-detail .action-button-Pn4hZ.is-active {
     opacity: 1;
     transform: none;
     transition: none;
+  }
+}
+
+/* Liquid drop-in animation for notification toasts (top placement).
+   The toast slides down from above with a slight overshoot + settle
+   curve that reads as a fluid "drop" rather than a mechanical slide. */
+@keyframes bliss-toast-drop-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-100%) scaleY(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(6px) scaleY(1.02);
+  }
+  70% {
+    transform: translateY(-2px) scaleY(0.99);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+/* HeroUI Toast.Provider uses `[data-placement="top"]` on the toast
+   region. Target individual toast items inside it. */
+[data-placement="top"] [data-toast] {
+  animation: bliss-toast-drop-in 420ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  transform-origin: top center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-placement="top"] [data-toast] {
+    animation: none;
   }
 }

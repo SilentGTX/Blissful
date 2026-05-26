@@ -1,10 +1,14 @@
 import { Button } from '@heroui/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams, useLocation } from 'react-router-dom';
 import { useAddons } from '../context/AddonsProvider';
 import { useAuth } from '../context/AuthProvider';
 import { useUI } from '../context/UIProvider';
-import { datastorePutLibraryItems, normalizeStremioImage } from '../lib/stremioApi';
+import { normalizeStremioImage } from '../lib/mediaTypes';
+import { getLibraryEntry } from '../lib/libraryStore';
+import { useContinueWatchingContext } from '../context/ContinueWatchingProvider';
+import { showHeroTransition } from '../lib/heroTransition';
+import { consumeClickedPoster, metahubPosterToBackdrop } from '../lib/transitionPoster';
 import { getLastStreamSelection } from '../lib/streamHistory';
 import { useMetaDetails } from '../models/useMetaDetails';
 import { DesktopActionButtons, MobileActionButtons } from '../features/detail/components/ActionButtons';
@@ -14,13 +18,14 @@ import { DetailStreamsPanel } from '../features/detail/components/DetailStreamsP
 import { DetailModals } from '../features/detail/components/DetailModals';
 import { useEpisodeSelection } from '../features/detail/hooks/useEpisodeSelection';
 import { useStreamFilters } from '../features/detail/hooks/useStreamFilters';
-import { useExternalOpenPrompt } from '../features/detail/hooks/useExternalOpenPrompt';
-import { useIosPlayPrompt } from '../features/detail/hooks/useIosPlayPrompt';
 import { useLibraryState } from '../features/detail/hooks/useLibraryState';
-import { formatDate, getDisplayName, getEpisodeTitle, openInVlc, parseNumber } from '../features/detail/utils';
+import { formatDate, getEpisodeTitle, parseNumber } from '../features/detail/utils';
 import { buildStreamsView } from '../features/detail/streams';
-import { isElectronDesktopApp } from '../lib/platform';
 import { useImdbRating } from '../lib/useImdbRating';
+import { fetchTmdbId, type TmdbLookup } from '../lib/tmdb';
+import { UnreleasedEpisodeModal } from '../components/UnreleasedEpisodeModal';
+
+
 
 export default function DetailPage() {
   const { addons } = useAddons();
@@ -29,25 +34,39 @@ export default function DetailPage() {
   const params = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const location = useLocation();
+  const heroImageFromNav: string | undefined = (location.state as { heroImage?: string } | null)?.heroImage;
   const isNetflix = uiStyle === 'netflix';
 
   const type = (params.type ?? 'movie') as string;
   const id = params.id ? decodeURIComponent(params.id) : '';
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
+  // Click context captured from the MediaCard the user just clicked.
+  // `posterUrl` is the small card poster (last-resort fallback); `backdropUrl`
+  // is the deterministically-derived high-res landscape URL (metahub) that
+  // was already preloaded at click time. When this is null (e.g. back-nav
+  // from /player) the FLIP layer is suppressed — there's no card source to
+  // animate from.
+  const [flipClick] = useState(() => consumeClickedPoster(type, id));
+  const flipPoster = flipClick?.posterUrl ?? null;
+  const guessedBackdrop = flipClick?.backdropUrl ?? null;
+
+  // Prefetch the PlayerPage chunk as soon as the user lands on DetailPage —
+  // by the time they click Play, the lazy chunk is already in the browser
+  // cache so Suspense resolves on the first frame, leaving the
+  // `bliss-player-enter` scale animation as the only visible delay.
+  useEffect(() => {
+    void import('./PlayerPage');
+  }, []);
 
   const {
     selectedAddon,
     setSelectedAddon,
     streamSortKey,
-    onlyTorrentioRdResolve,
-    setOnlyTorrentioRdResolve,
   } = useStreamFilters();
-
-  const { externalOpenPrompt, openExternalPrompt, closeExternalPrompt } = useExternalOpenPrompt();
 
   const [logoFailed, setLogoFailed] = useState(false);
 
-  const { iosPlayPrompt, openIosPrompt, closeIosPrompt } = useIosPlayPrompt();
   const isSeriesLike = type === 'series' || type === 'anime';
 
   const lastStream = useMemo(() => {
@@ -76,8 +95,6 @@ export default function DetailPage() {
   const {
     season,
     setSeason,
-    episodeSearch,
-    setEpisodeSearch,
     rightMode,
     seasons,
     seasonIndex,
@@ -124,6 +141,9 @@ export default function DetailPage() {
           nextSeason: s,
           nextEpisode: e,
           nextThumbnail: nextEpisode.thumbnail ?? null,
+          nextReleased: typeof (nextEpisode as { released?: string }).released === 'string'
+            ? (nextEpisode as { released?: string }).released
+            : null,
         }),
       );
     } catch { /* sessionStorage may be unavailable */ }
@@ -146,18 +166,16 @@ export default function DetailPage() {
     () =>
       buildStreamsView(streamsByAddon, {
         selectedAddon,
-        onlyTorrentioRdResolve: isElectronDesktopApp() ? false : onlyTorrentioRdResolve,
         streamSortKey,
         lastStreamUrl: lastStream?.url ?? null,
       }),
-    [lastStream, onlyTorrentioRdResolve, selectedAddon, streamSortKey, streamsByAddon]
+    [lastStream, selectedAddon, streamSortKey, streamsByAddon]
   );
 
   const streamsViewMobile = useMemo(
     () =>
       buildStreamsView(streamsByAddon, {
         selectedAddon,
-        onlyTorrentioRdResolve: false,
         streamSortKey,
         lastStreamUrl: lastStream?.url ?? null,
       }),
@@ -166,14 +184,8 @@ export default function DetailPage() {
 
   const desktopRows = streamsViewDesktop.rows;
 
-  const mobileTorrentioRows = useMemo(
-    () => streamsViewMobile.rows.filter((row) => row.addonName === 'Torrentio RD'),
-    [streamsViewMobile.rows]
-  );
-
-  const handleToggleWebReady = useCallback(() => {
-    setOnlyTorrentioRdResolve((v) => !v);
-  }, [setOnlyTorrentioRdResolve]);
+  // Desktop app: show ALL addon streams, not just Torrentio RD.
+  const mobileTorrentioRows = streamsViewMobile.rows;
 
   const addonSelectItems = useMemo(() => {
     const items: Array<{ key: string; label: string }> = [{ key: 'ALL', label: 'All addons' }];
@@ -184,9 +196,72 @@ export default function DetailPage() {
     return items;
   }, [streamsByAddon]);
 
-  const background = normalizeStremioImage(meta?.meta?.background) ?? normalizeStremioImage(meta?.meta?.poster);
-  const poster = normalizeStremioImage(meta?.meta?.poster) ?? background;
+  // Fallback poster: when the addon meta doesn't ship a poster /
+  // background (rare but happens), reuse whatever the ResumeOrStart
+  // modal would have shown — i.e. the poster the user already saw
+  // in Continue Watching or in their local library. Keeps the page
+  // from being a black slab in that edge case.
+  const { continueWatching } = useContinueWatchingContext();
+  const fallbackPoster = useMemo(() => {
+    if (!id) return null;
+    const cw = continueWatching.find((it) => it._id === id && it.type === type)?.poster;
+    if (cw) return normalizeStremioImage(cw);
+    const lib = getLibraryEntry({ type, id })?.poster;
+    return lib ? normalizeStremioImage(lib) : null;
+  }, [continueWatching, id, type]);
+
+  // When meta is still loading on a fresh mount (e.g. back-nav from /player),
+  // the only image we have is the CW/library poster — which on metahub is the
+  // tiny `poster/small/...` URL stretched across the viewport. Derive the
+  // matching `background/medium/...` URL from it so the persistent backdrop
+  // renders high-res from frame 1 instead of a blurry small poster.
+  const fallbackBackdropFromUrl = metahubPosterToBackdrop(fallbackPoster);
+  const background =
+    normalizeStremioImage(meta?.meta?.background)
+    ?? normalizeStremioImage(meta?.meta?.poster)
+    ?? fallbackBackdropFromUrl
+    ?? fallbackPoster;
+  const poster =
+    normalizeStremioImage(meta?.meta?.poster)
+    ?? fallbackPoster
+    ?? background;
   const logo = normalizeStremioImage(meta?.meta?.logo);
+  // High-res landscape backdrop from addon meta (no low-res fallback).
+  // This is the image the FLIP layer should morph into — same URL the
+  // persistent `background-image-tSjYu` backdrop renders, so the layer's
+  // fade-out is a seamless handoff. Falls back to `meta.meta.poster` only
+  // if no background is provided by the addon.
+  const highResBackdrop =
+    normalizeStremioImage(meta?.meta?.background)
+    ?? normalizeStremioImage(meta?.meta?.poster);
+
+  // Preload the meta-supplied backdrop (network-warm the bitmap) so the
+  // persistent `.background-image-tSjYu` layer's dim-in animation has
+  // something to paint as soon as it mounts, rather than running on
+  // an empty `<img>` slot for the first few hundred ms.
+  useEffect(() => {
+    if (!flipPoster || !highResBackdrop || highResBackdrop === guessedBackdrop) {
+      return;
+    }
+    const img = new Image();
+    img.src = highResBackdrop;
+  }, [flipPoster, highResBackdrop, guessedBackdrop]);
+
+  useEffect(() => {
+    if (!heroImageFromNav) return;
+    const safety = setTimeout(() => showHeroTransition(null), 1500);
+    return () => clearTimeout(safety);
+  }, [heroImageFromNav]);
+  useEffect(() => {
+    if (!heroImageFromNav || !background) return;
+    const img = new Image();
+    img.src = background;
+    const clear = () => showHeroTransition(null);
+    if (img.complete) { clear(); return; }
+    img.onload = clear;
+    img.onerror = clear;
+    return () => { img.onload = null; img.onerror = null; };
+  }, [background, heroImageFromNav]);
 
   const streamsLoadingFiltered = useMemo(() => {
     if (!streamsLoading) return false;
@@ -209,7 +284,6 @@ export default function DetailPage() {
   const resolvedImdbRating = useImdbRating(imdbId, imdbRating);
   const genres: string[] = meta?.meta?.genres ?? meta?.meta?.genre ?? [];
   const cast: string[] = meta?.meta?.cast ?? [];
-  const displayName = getDisplayName(meta?.meta, id, type) ?? (metaLoading ? 'Loading…' : id);
   const logoTitle = meta?.meta?.name ?? '';
 
   void libraryVersion;
@@ -225,12 +299,96 @@ export default function DetailPage() {
     setIsShareOpen(true);
   }, []);
 
+  // Look up TMDB id for per-episode ratings. Cached in sessionStorage
+  // by lib/tmdb.ts. Null until lookup completes.
+  const [tmdbLookup, setTmdbLookup] = useState<TmdbLookup | null>(null);
+  useEffect(() => {
+    if (!imdbId) return;
+    let cancelled = false;
+    void fetchTmdbId(imdbId).then((result) => {
+      if (!cancelled) setTmdbLookup(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [imdbId]);
+
+  // Per-season TMDB metadata cache: { [season]: { [episodeNumber]: rating } }.
+  // Fetched when the user picks a season; powers the per-episode rating
+  // chip in EpisodePanel since Cinemeta's `rating` field is "0" for
+  // most episodes.
+  const [episodeRatingsBySeason, setEpisodeRatingsBySeason] = useState<
+    Record<number, Record<number, number>>
+  >({});
+  useEffect(() => {
+    if (!isSeriesLike) return;
+    const tid = tmdbLookup?.tmdbId;
+    if (!tid) return;
+    if (season == null) return;
+    if (episodeRatingsBySeason[season] != null) return;
+    let cancelled = false;
+    fetch(`/tmdb-season-info?tmdbId=${tid}&season=${season}`)
+      .then((r) => r.json())
+      .then(
+        (data: {
+          episodes?: Array<{ episode_number: number | null; vote_average: number | null }>;
+        }) => {
+          if (cancelled) return;
+          const map: Record<number, number> = {};
+          for (const e of data.episodes ?? []) {
+            if (e.episode_number != null && e.vote_average != null) {
+              map[e.episode_number] = e.vote_average;
+            }
+          }
+          setEpisodeRatingsBySeason((prev) => ({ ...prev, [season]: map }));
+        },
+      )
+      .catch(() => { /* non-fatal */ });
+    return () => {
+      cancelled = true;
+    };
+  }, [isSeriesLike, tmdbLookup?.tmdbId, season, episodeRatingsBySeason]);
+  const currentSeasonRatings = season != null ? episodeRatingsBySeason[season] : undefined;
+
   // Mobile hero poster (poster is preferred over background for clarity)
   const heroPoster = normalizeStremioImage(meta?.meta?.background) ?? normalizeStremioImage(meta?.meta?.poster);
+
+  // Modal shown when the user tries to play an episode that hasn't
+  // aired yet. Cinemeta lists every scheduled episode with a future
+  // `released` timestamp; trying to resolve a stream for it just
+  // burns the whole pipeline only to fail. Block it at the source
+  // and tell the user when it'll be available.
+  const [unreleasedEpisode, setUnreleasedEpisode] = useState<
+    {
+      season: number | null;
+      episode: number | null;
+      title: string | null;
+      released: string | null;
+      thumbnail: string | null;
+    } | null
+  >(null);
 
   const handleNavigateToPlayer = useCallback(
     (playerLink: string, options?: { replace?: boolean }) => {
       const url = new URL(playerLink, window.location.origin);
+      // Block playback of unreleased TV episodes. Only kicks in for
+      // /player URLs that target a series videoId we can look up in
+      // meta.videos.
+      const targetVideoId = url.searchParams.get('videoId');
+      if (targetVideoId && url.pathname === '/player') {
+        const vmeta = (meta?.meta?.videos ?? []).find((v) => v.id === targetVideoId);
+        const releasedAt = vmeta?.released ? Date.parse(vmeta.released) : NaN;
+        if (Number.isFinite(releasedAt) && releasedAt > Date.now()) {
+          setUnreleasedEpisode({
+            season: vmeta?.season ?? null,
+            episode: vmeta?.episode ?? null,
+            title: vmeta?.title ?? vmeta?.name ?? null,
+            released: vmeta?.released ?? null,
+            thumbnail: vmeta?.thumbnail ?? null,
+          });
+          return;
+        }
+      }
       if (poster && !url.searchParams.get('poster')) {
         url.searchParams.set('poster', poster);
       }
@@ -245,6 +403,12 @@ export default function DetailPage() {
       if (logo && !url.searchParams.get('logo')) {
         url.searchParams.set('logo', logo);
       }
+      // Carry the room code through so the player joins the party
+      // after picking a stream from the detail page.
+      const roomCode = searchParams.get('room');
+      if (roomCode && !url.searchParams.get('room')) {
+        url.searchParams.set('room', roomCode);
+      }
 
       // sessionStorage for next-episode is now written by useEffect above
 
@@ -252,7 +416,7 @@ export default function DetailPage() {
         replace: options?.replace === true,
       });
     },
-    [poster, background, meta?.meta?.name, logo, navigate]
+    [poster, background, meta, logo, navigate]
   );
 
   // Auto-resume from Continue Watching when there's no locally-stored
@@ -301,8 +465,7 @@ export default function DetailPage() {
       fallbackCleaned.delete('skip');
       const fallbackQs = fallbackCleaned.toString();
       navigate(
-        `/detail/${encodeURIComponent(type)}/${encodeURIComponent(id)}${
-          fallbackQs ? `?${fallbackQs}` : ''
+        `/detail/${encodeURIComponent(type)}/${encodeURIComponent(id)}${fallbackQs ? `?${fallbackQs}` : ''
         }`,
         { replace: true },
       );
@@ -324,8 +487,7 @@ export default function DetailPage() {
     cleaned.delete('skip');
     const cleanedQs = cleaned.toString();
     navigate(
-      `/detail/${encodeURIComponent(type)}/${encodeURIComponent(id)}${
-        cleanedQs ? `?${cleanedQs}` : ''
+      `/detail/${encodeURIComponent(type)}/${encodeURIComponent(id)}${cleanedQs ? `?${cleanedQs}` : ''
       }`,
       { replace: true },
     );
@@ -357,6 +519,8 @@ export default function DetailPage() {
 
   const sharedStreamsPanelProps = {
     isSeriesLike,
+    // Desktop: let the panel switch between episodes and streams
+    // so users can pick a torrent source after selecting an episode.
     rightMode,
     selectedVideoId,
     selectedEpisodeLabel,
@@ -376,9 +540,15 @@ export default function DetailPage() {
       if (!canNextSeason) return;
       setSeason(seasons[seasonIndex + 1] ?? null);
     },
-    episodeSearch,
-    onEpisodeSearchChange: setEpisodeSearch,
     videosForSeason,
+    showRuntime: (meta?.meta?.runtime as string | null | undefined) ?? null,
+    showRating: meta?.meta?.imdbRating ?? null,
+    showImdbId: /^tt\d{5,}$/.test(id) ? id : null,
+    episodeRatings: currentSeasonRatings,
+    allVideos: videos,
+    tmdbId: tmdbLookup?.tmdbId ?? null,
+    // Select an episode → switch to stream picker so the user can
+    // choose a torrent source. No auto-play.
     onSelectEpisode,
     getEpisodeProgressInfo,
     normalizeImage: normalizeStremioImage,
@@ -387,21 +557,22 @@ export default function DetailPage() {
     addonSelectItems,
     selectedAddon,
     onSelectAddon: handleSelectAddon,
-    onlyTorrentioRdResolve,
-    onToggleWebReady: handleToggleWebReady,
     streamsLoading: streamsLoadingFiltered,
     type,
     id,
     metaName: meta?.meta?.name ?? null,
     metaPoster: meta?.meta?.poster ?? null,
     onNavigate: handleNavigateToPlayer,
-    onOpenIosPrompt: openIosPrompt,
-    onOpenExternalPrompt: openExternalPrompt,
   } as const;
 
+  // Hide the mobile stream picker entirely for movies on web (Play
+  // button on detail page replaces it). Series keep the panel — it
+  // hosts the episode list — but its rightMode is locked to 'episodes'
+  // so the stream view never appears.
+  const hideMobileStreamPicker = false;
   const TorrentsContent = (
     <div className="block px-4 pb-6 lg:hidden">
-      {isSeriesLike || type === 'movie' || type === 'tv' || type === 'channel' ? (
+      {!hideMobileStreamPicker && (isSeriesLike || type === 'movie' || type === 'tv' || type === 'channel') ? (
         <div className="rounded-[20px] bg-transparent backdrop-blur-sm">
           <DetailStreamsPanel
             variant="mobile"
@@ -421,7 +592,6 @@ export default function DetailPage() {
         logoTitle={logoTitle}
         logoFailed={logoFailed}
         onLogoError={() => setLogoFailed(true)}
-        displayName={displayName}
         runtime={runtime}
         released={released}
         releaseInfo={releaseInfo}
@@ -437,6 +607,7 @@ export default function DetailPage() {
         cast={cast}
         onCastClick={(c) => navigate(`/search?search=${encodeURIComponent(c)}`)}
         description={meta?.meta?.description ?? null}
+        isLoading={metaLoading}
       />
       {TorrentsContent}
       <div className="mt-6 lg:mt-10" />
@@ -459,10 +630,13 @@ export default function DetailPage() {
     return (
       <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black">
         <div className="bliss-buffering-panel">
-          {logo || poster ? (
+          {/* Logo only — a vertical poster painted at logo dimensions
+              looks like the wrong image; titles without a meta logo
+              fall through to the "Loading" text. */}
+          {logo ? (
             <img
               className="bliss-buffering-loader"
-              src={logo ?? poster ?? undefined}
+              src={logo}
               alt=" "
             />
           ) : (
@@ -476,18 +650,29 @@ export default function DetailPage() {
   return (
     <div
       className={
-        'relative z-10 min-h-screen w-full overflow-x-hidden lg:h-screen lg:overflow-hidden' +
+        // dvh, not vh: iOS Safari's `100vh` is the LARGEST viewport
+        // (chrome hidden). With the URL/tab bar visible the wrapper
+        // ends up taller than the visible area and the page scrolls
+        // even though everything fits. `dvh` tracks the current visible
+        // viewport so the wrapper matches what the user actually sees.
+        'relative z-10 min-h-dvh w-full overflow-x-hidden lg:h-dvh lg:overflow-hidden' +
         (isNetflix ? ' netflix-detail' : '')
       }
     >
+      {/* FLIP shared-element morph removed — was causing weirdness on
+          /home → /detail (snappy, faster-than-intended morph) without
+          providing enough value over the route-level fade alone. The
+          "dim" effect users expect is now driven by a CSS animation on
+          the persistent `background-image-tSjYu` backdrop layer below
+          (see `detail-backdrop-dim` keyframe in index.css). */}
       {/* Desktop background image layer */}
-      {background ? (
+      {(background ?? heroImageFromNav) ? (
         <div className="background-image-layer-wJa90 hidden lg:block">
           <img
             className="background-image-tSjYu"
-            src={background}
+            src={background ?? heroImageFromNav}
             alt=" "
-            loading="lazy"
+            loading={heroImageFromNav ? 'eager' : 'lazy'}
           />
         </div>
       ) : null}
@@ -514,13 +699,16 @@ export default function DetailPage() {
           </Button>
         </div>
 
-        {/* Mobile action buttons - fixed top right on mobile, hidden on desktop */}
+        {/* Mobile action buttons - fixed top right on mobile, hidden on desktop.
+            Play button included as the primary teal CTA when web auto-play
+            is available (movies only — series use episode click). */}
         <MobileActionButtons
           inLibrary={inLibrary}
           hasTrailer={Boolean(firstTrailerId)}
           onToggleLibrary={handleToggleLibrary}
           onOpenTrailer={handleOpenTrailer}
           onShare={handleShare}
+          onPlay={null}
         />
 
         {/* Desktop: Content with sidebar, Mobile: Hero with content overlays */}
@@ -533,7 +721,6 @@ export default function DetailPage() {
               logoTitle={logoTitle}
               logoFailed={logoFailed}
               onLogoError={() => setLogoFailed(true)}
-              displayName={displayName}
             >
               {MetaContent}
             </MobileHero>
@@ -550,6 +737,7 @@ export default function DetailPage() {
                   onToggleLibrary={handleToggleLibrary}
                   onOpenTrailer={handleOpenTrailer}
                   onShare={handleShare}
+                  onPlay={null}
                 />
               </div>
             </div>{/* End of px-4 wrapper */}
@@ -558,12 +746,22 @@ export default function DetailPage() {
 
 
 
-          {/* Desktop sidebar - fixed position on right */}
-          {isSeriesLike || type === 'movie' || type === 'tv' || type === 'channel' ? (
-            <aside className="fixed inset-y-0 right-0 z-20 hidden h-screen w-[420px] lg:block">
+          {/* Desktop sidebar - fixed position on right. Hidden on web
+              for movies (Play button replaces it). Series keep the
+              aside for episode selection. */}
+          {!hideMobileStreamPicker && (isSeriesLike || type === 'movie' || type === 'tv' || type === 'channel') ? (
+            /* Panel sits inset from the viewport edges so it visually
+               lines up with the back button (top-5) and the action
+               buttons row (bottom matches via inset). Width scales
+               with the viewport, clamped to a comfortable min/max
+               instead of a 420px fixed value. */
+            <aside
+              className="fixed right-5 top-10 bottom-10 z-20 hidden lg:block"
+              style={{ width: 'clamp(360px, 28vw, 560px)' }}
+            >
               <div
                 key={`${type}-${id}`}
-                className="detail-streams-drawer h-full overflow-hidden rounded-none border-l border-white/10 bg-black/35 backdrop-blur"
+                className="detail-streams-drawer h-full overflow-hidden rounded-[28px] border border-white/10 bg-black/35 backdrop-blur"
               >
                 <DetailStreamsPanel
                   variant="desktop"
@@ -581,76 +779,25 @@ export default function DetailPage() {
           firstTrailerId={firstTrailerId}
           isShareOpen={isShareOpen}
           onShareOpenChange={(open) => setIsShareOpen(open)}
-          externalOpenPrompt={externalOpenPrompt}
-          onCloseExternalPrompt={closeExternalPrompt}
-          onOpenExternalPlayer={(streamUrl, title) => {
-            const safeTitle = title.replace(/[\\/:*?"<>|]+/g, '-').trim();
-            const body = `#EXTM3U\n#EXTINF:-1,${safeTitle}\n${streamUrl}\n`;
-            const blob = new Blob([body], { type: 'audio/x-mpegurl' });
-            const href = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = href;
-            a.download = `${safeTitle || 'stream'}.m3u`;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            window.setTimeout(() => URL.revokeObjectURL(href), 1000);
-            closeExternalPrompt();
-          }}
-          onTryWebPlayer={(playerLink) => {
-            if (playerLink) navigate(playerLink);
-            closeExternalPrompt();
-          }}
-          iosPlayPrompt={iosPlayPrompt}
-          onCloseIosPrompt={closeIosPrompt}
-          onPlayIosVlc={(url, itemInfo) => {
-            // Launch external app immediately to preserve iOS user-gesture context.
-            openInVlc(url);
-            closeIosPrompt();
+        />
 
-            if (itemInfo && authKey) {
-              void (async () => {
-                try {
-                  const nowIso = new Date().toISOString();
-                  await datastorePutLibraryItems({
-                    authKey,
-                    changes: [
-                      {
-                        _id: itemInfo.id,
-                        name: itemInfo.name,
-                        type: itemInfo.type,
-                        poster: meta?.meta?.poster ?? null,
-                        posterShape: 'poster',
-                        removed: false,
-                        temp: true,
-                        _ctime: nowIso,
-                        _mtime: nowIso,
-                        state: {
-                          timeOffset: 0,
-                          duration: 1,
-                          lastWatched: nowIso,
-                          timeWatched: 0,
-                          overallTimeWatched: 0,
-                          timesWatched: 0,
-                          flaggedWatched: 0,
-                          video_id: itemInfo.videoId ?? null,
-                          watched: null,
-                          lastVidReleased: null,
-                          noNotif: false,
-                        },
-                      },
-                    ],
-                  });
-                } catch {
-                  // ignore
-                }
-              })();
-            }
-          }}
-          onPlayIosWeb={(playerLink) => {
-            navigate(playerLink);
-            closeIosPrompt();
-          }}
+        {/* Unreleased-episode info modal — shared component with
+            the player's Episodes drawer so both surfaces show the
+            same dialog when a user clicks a future-dated episode. */}
+        <UnreleasedEpisodeModal
+          isOpen={unreleasedEpisode != null}
+          title={meta?.meta?.name ?? ''}
+          episodeLabel={
+            unreleasedEpisode
+              && unreleasedEpisode.season != null
+              && unreleasedEpisode.episode != null
+              ? `S${String(unreleasedEpisode.season).padStart(2, '0')}E${String(unreleasedEpisode.episode).padStart(2, '0')}`
+              + (unreleasedEpisode.title ? ` · ${unreleasedEpisode.title}` : '')
+              : null
+          }
+          poster={unreleasedEpisode?.thumbnail ?? poster ?? null}
+          releaseDate={unreleasedEpisode?.released ?? null}
+          onClose={() => setUnreleasedEpisode(null)}
         />
       </div>
     </div>

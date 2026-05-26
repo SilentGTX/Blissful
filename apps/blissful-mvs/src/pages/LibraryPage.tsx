@@ -6,11 +6,10 @@ import { useAuth } from '../context/AuthProvider';
 import { useModals } from '../context/ModalsProvider';
 import { CloseIcon } from '../icons/CloseIcon';
 import {
-  datastoreGetLibraryItems,
   normalizeStremioImage,
-  removeFromLibraryItem,
   type LibraryItem,
 } from '../lib/stremioApi';
+import { fetchBlissfulLibrary, putBlissfulLibraryItem } from '../lib/blissfulAuthApi';
 import { useErrorToast } from '../lib/useErrorToast';
 import type { MediaItem } from '../types/media';
 
@@ -80,7 +79,7 @@ export default function LibraryPage() {
       const showLoading = !hasLoadedOnceRef.current;
       if (showLoading) setLoading(true);
       setError(null);
-      datastoreGetLibraryItems({ authKey })
+      fetchBlissfulLibrary<LibraryItem>(authKey!)
         .then((result) => {
           if (cancelled) return;
           const next = result.filter((it) => !it.removed);
@@ -252,13 +251,13 @@ export default function LibraryPage() {
           <Spinner
             size="lg"
             color="current"
-            className="text-[var(--bliss-teal)] drop-shadow-[0_0_12px_var(--bliss-teal-glow)]"
+            className="text-[var(--bliss-accent)] drop-shadow-[0_0_12px_var(--bliss-accent-glow)]"
           />
         </div>
       ) : null}
 
 
-      <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(140px,1fr))]">
+      <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(clamp(160px,16vw,420px),1fr))]">
         {!loading && filtered.length === 0 ? (
           <div className="text-sm text-foreground/60">No library items found.</div>
         ) : null}
@@ -286,7 +285,7 @@ export default function LibraryPage() {
                   e.stopPropagation();
                   if (!authKey) return;
                   setItems((prev) => prev.filter((x) => x._id !== item._id));
-                  void removeFromLibraryItem({ authKey, id: item._id }).catch(() => {
+                  void putBlissfulLibraryItem(authKey, item._id, { ...item, removed: true }).catch(() => {
                     // ignore
                   });
                 }}

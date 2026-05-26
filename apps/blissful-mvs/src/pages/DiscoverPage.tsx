@@ -321,7 +321,11 @@ export default function DiscoverPage() {
             {discoverLoading && filteredItems.length === 0 ? (
               <SkeletonSearchGrid />
             ) : (
-              <div className="grid grid-cols-2 gap-5 p-1 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+              // Auto-fit grid: card min-width clamps with viewport so
+              // we keep ~5 columns at 1920w (matches the old fixed
+              // breakpoints) and get ~6-7 bigger cards at 4K instead
+              // of shrinking each card down to nothing.
+              <div className="grid gap-5 p-1 [grid-template-columns:repeat(auto-fit,minmax(clamp(160px,16vw,420px),1fr))]">
                 {filteredItems.map((item) => (
                   <MediaCard
                     key={item.id}
@@ -358,7 +362,7 @@ export default function DiscoverPage() {
                   <Spinner
                     size="sm"
                     color="current"
-                    className="text-[var(--bliss-teal)] drop-shadow-[0_0_12px_var(--bliss-teal-glow)]"
+                    className="text-[var(--bliss-accent)] drop-shadow-[0_0_12px_var(--bliss-accent-glow)]"
                   />
                   Loading details...
                 </div>

@@ -128,10 +128,13 @@ export function SkeletonDetailPanel() {
   );
 }
 
-/** Matches SearchPage results grid: 4-column grid of poster skeletons. */
+/** Matches the search/discover results grid: auto-fit columns
+ *  whose min-width clamps with viewport so cards stay reasonably-
+ *  sized on 4K TVs instead of collapsing into a 6+ column grid of
+ *  tiny posters. */
 export function SkeletonSearchGrid({ count = 12 }: { count?: number }) {
   return (
-    <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+    <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(clamp(160px,16vw,420px),1fr))]">
       {Array.from({ length: count }, (_, i) => (
         <SkeletonPoster key={i} />
       ))}

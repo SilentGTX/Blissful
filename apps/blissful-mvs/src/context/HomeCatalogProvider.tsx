@@ -12,7 +12,6 @@
 //   * removes ~30 lines + 5 useState calls from AppShell.
 
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react';
-import { datastorePutCollection } from '../lib/stremioApi';
 import {
   getHomeRowOptions,
   type HomeRowOption,
@@ -21,7 +20,6 @@ import {
 import { HOME_PREFS_KEY } from '../layout/app-shell/constants';
 import { useHomeCatalog, type HomeCatalog } from '../layout/app-shell/hooks/useHomeCatalog';
 import { useAddons } from './AddonsProvider';
-import { useAuth } from './AuthProvider';
 import { useStorage } from './StorageProvider';
 
 type HomeCatalogContextValue = HomeCatalog & {
@@ -42,7 +40,6 @@ export function useHomeCatalogContext(): HomeCatalogContextValue {
 export function HomeCatalogProvider({ children }: { children: ReactNode }) {
   const catalog = useHomeCatalog();
   const { addons } = useAddons();
-  const { authKey } = useAuth();
   const { setHomeRowPrefs, persistStorageState } = useStorage();
 
   const homeRowOptions = useMemo(() => getHomeRowOptions(addons), [addons]);
@@ -51,24 +48,12 @@ export function HomeCatalogProvider({ children }: { children: ReactNode }) {
     async (prefs: HomeRowPrefs) => {
       setHomeRowPrefs(prefs);
       localStorage.setItem(HOME_PREFS_KEY, JSON.stringify(prefs));
+      // `persistStorageState` writes to blissful-storage's account_state
+      // collection (authed via JWT); that's the canonical home for the
+      // user's home-row prefs now.
       persistStorageState({ homeRowPrefs: prefs });
-      if (!authKey) return;
-      try {
-        await datastorePutCollection<HomeRowPrefs>({
-          authKey,
-          collection: 'blissful_home',
-          items: [{ _id: 'home', data: prefs }],
-        });
-      } catch (err: unknown) {
-        // Some accounts have datastore sync disabled server-side — the
-        // local-only save above is still valid, just don't propagate
-        // the error to the toast queue.
-        const message = err instanceof Error ? err.message : '';
-        if (message.toLowerCase().includes('sync disabled')) return;
-        throw err;
-      }
     },
-    [authKey, persistStorageState, setHomeRowPrefs],
+    [persistStorageState, setHomeRowPrefs],
   );
 
   const value = useMemo<HomeCatalogContextValue>(

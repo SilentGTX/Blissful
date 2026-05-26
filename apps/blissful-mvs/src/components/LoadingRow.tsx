@@ -6,7 +6,7 @@ export default function LoadingRow() {
       <Spinner
         size="lg"
         color="current"
-        className="text-[var(--bliss-teal)] drop-shadow-[0_0_12px_var(--bliss-teal-glow)]"
+        className="text-[var(--bliss-accent)] drop-shadow-[0_0_12px_var(--bliss-accent-glow)]"
       />
     </div>
   );

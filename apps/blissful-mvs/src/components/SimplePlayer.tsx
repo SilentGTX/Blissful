@@ -951,6 +951,7 @@ export default function SimplePlayer(props: {
   addons: AddonDescriptor[];
   authKey: string | null;
   playerSettings: PlayerSettings;
+  savePlayerSettings?: (settings: PlayerSettings) => Promise<void>;
   nextEpisodeInfo?: NextEpisodeInfo | null;
 }) {
   const navigate = useNavigate();
@@ -2509,7 +2510,7 @@ export default function SimplePlayer(props: {
                 }}
               >
                 <span className="truncate">{track.label}</span>
-                {isSelected ? <span className="h-2 w-2 rounded-full bg-emerald-300" /> : null}
+                {isSelected ? <span className="h-2 w-2 rounded-full bg-[var(--bliss-accent)]" /> : null}
               </button>
             );
           })}
@@ -2542,7 +2543,7 @@ export default function SimplePlayer(props: {
                   }}
                 >
                   <span>Off</span>
-                  {selectedSubtitleKey === 'off' ? <span className="h-2 w-2 rounded-full bg-emerald-300" /> : null}
+                  {selectedSubtitleKey === 'off' ? <span className="h-2 w-2 rounded-full bg-[var(--bliss-accent)]" /> : null}
                 </button>
 
                 {subtitleLanguages.map((lang) => (
@@ -2564,7 +2565,7 @@ export default function SimplePlayer(props: {
                     }}
                   >
                     <span className="truncate">{subtitleLangLabel(lang)}</span>
-                    {selectedLanguage === lang ? <span className="h-2 w-2 rounded-full bg-emerald-300" /> : null}
+                    {selectedLanguage === lang ? <span className="h-2 w-2 rounded-full bg-[var(--bliss-accent)]" /> : null}
                   </button>
                 ))}
 
@@ -2603,7 +2604,7 @@ export default function SimplePlayer(props: {
                           <div className="truncate text-sm text-white/90">{subtitleLangLabel(t.lang)}</div>
                           <div className="truncate text-xs text-white/60">{t.origin}</div>
                         </span>
-                        {selectedSubtitleKey === t.key ? <span className="h-2 w-2 rounded-full bg-emerald-300" /> : null}
+                        {selectedSubtitleKey === t.key ? <span className="h-2 w-2 rounded-full bg-[var(--bliss-accent)]" /> : null}
                       </button>
                     ))
                   ) : (

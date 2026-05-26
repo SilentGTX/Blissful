@@ -1,4 +1,5 @@
 import { Button, Modal } from '@heroui/react';
+import { motion } from 'framer-motion';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ErrorBoundary, ErrorRow } from '../components/ErrorBoundary';
@@ -12,13 +13,13 @@ import { useHomeCatalogContext } from '../context/HomeCatalogProvider';
 import { useStorage } from '../context/StorageProvider';
 import { useUI } from '../context/UIProvider';
 import type { MediaItem, MediaType } from '../types/media';
-import type { AddonDescriptor } from '../lib/stremioApi';
+import type { AddonDescriptor } from '../lib/mediaTypes';
+import { normalizeStremioImage, type LibraryItem } from '../lib/mediaTypes';
 import {
-  addToLibraryItem,
-  datastoreGetLibraryItemById,
-  normalizeStremioImage,
-  removeFromLibraryItem,
-} from '../lib/stremioApi';
+  fetchBlissfulLibrary,
+  putBlissfulLibraryItem,
+} from '../lib/blissfulAuthApi';
+import { triggerStremioFullSync } from '../lib/stremioLinkApi';
 import { isInLibrary as isInLibraryStored, toggleLibrary } from '../lib/libraryStore';
 import {
   HOME_ROW_POPULAR_MOVIE,
@@ -28,6 +29,7 @@ import {
 import { NetflixRow } from '../features/home/components/NetflixRow';
 import { NetflixHero } from '../features/home/components/NetflixHero';
 import { NowPopular } from '../features/home/components/NowPopular';
+import { ModernHomePage } from '../features/home/components/ModernHomePage';
 import { isMobile, libraryProgressPercent, libraryItemToMediaItem } from '../features/home/utils';
 import { useAddonRows } from '../features/home/hooks/useAddonRows';
 import { useNetflixHero } from '../features/home/hooks/useNetflixHero';
@@ -44,7 +46,16 @@ export default function HomePage() {
   const { continueWatching } = useContinueWatchingContext();
   const navigate = useNavigate();
   const isNetflix = uiStyle === 'netflix';
+  const isModern = uiStyle === 'modern';
   const revealRootRef = useRef<HTMLDivElement | null>(null);
+
+  // Stremio sync trigger: every time the home page mounts, kick off a
+  // full sync so Continue Watching reflects progress made elsewhere
+  // (Stremio app, another device). Fire-and-forget; module-level
+  // cooldown in stremioLinkApi (60 s) coalesces rapid navigations.
+  useEffect(() => {
+    triggerStremioFullSync(authKey ?? null);
+  }, [authKey]);
   const [heroTrailerId, setHeroTrailerId] = useState<string | null>(null);
   const [heroInLibrary, setHeroInLibrary] = useState(false);
   const { hero, heroMeta, heroPrev, heroPrevMeta, heroIsFading, heroFadeIn } = useNetflixHero(
@@ -63,9 +74,10 @@ export default function HomePage() {
       return;
     }
     let cancelled = false;
-    datastoreGetLibraryItemById({ authKey, id: hero.id })
-      .then((item) => {
+    fetchBlissfulLibrary<LibraryItem>(authKey)
+      .then((items) => {
         if (cancelled) return;
+        const item = items.find((it) => it._id === hero.id);
         setHeroInLibrary(Boolean(item && !item.removed));
       })
       .catch(() => {
@@ -199,27 +211,33 @@ export default function HomePage() {
     }
 
     try {
-      const existing = await datastoreGetLibraryItemById({ authKey, id: hero.id });
+      const items = await fetchBlissfulLibrary<LibraryItem>(authKey);
+      const existing = items.find((it) => it._id === hero.id);
       const inLibrary =
-        Boolean(existing && !existing.removed) ||
-        isInLibraryStored({ type: hero.type, id: hero.id });
-      if (inLibrary) {
-        await removeFromLibraryItem({ authKey, id: hero.id });
-        setHeroInLibrary(false);
-      } else {
-        await addToLibraryItem({
-          authKey,
-          id: hero.id,
-          type: hero.type,
-          name,
-          poster: poster ?? null,
-        });
-        setHeroInLibrary(true);
-      }
+        Boolean(existing && !existing.removed)
+        || isInLibraryStored({ type: hero.type, id: hero.id });
+      // Soft-toggle by upserting `removed`: progress survives if the
+      // user re-adds later. New items get a minimal stub doc.
+      const base: Partial<LibraryItem> & { _id: string } = existing
+        ? { ...existing }
+        : { _id: hero.id, type: hero.type, name, poster: poster ?? null, state: {} };
+      base.removed = inLibrary;
+      await putBlissfulLibraryItem(authKey, hero.id, base);
+      setHeroInLibrary(!inLibrary);
     } catch {
       // ignore
     }
   };
+
+  if (isModern) {
+    return (
+      <ModernHomePage
+        rows={rowsToRender}
+        continueItems={continueItems}
+        onItemClick={(item) => navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`)}
+      />
+    );
+  }
 
   if (isNetflix) {
     const heroTrailer = heroMeta?.meta?.trailerStreams?.find((t) => t?.ytId)?.ytId ?? null;
@@ -331,9 +349,18 @@ export default function HomePage() {
             <SkeletonHomeRow />
           </div>
         ) : (
-          rowsToRender.map((row) => (
+          rowsToRender.map((row, rowIndex) => (
             <ErrorBoundary key={row.id} fallback={<ErrorRow />}>
-              <div className="board-row">
+              <motion.div
+                className="board-row"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  duration: 0.32,
+                  delay: Math.min(rowIndex, 6) * 0.06,
+                  ease: [0.4, 0, 0.2, 1],
+                }}
+              >
                 {isMobile() ? (
                   <MediaRailMobile
                     title={row.title}
@@ -377,7 +404,7 @@ export default function HomePage() {
                     }
                   />
                 )}
-              </div>
+              </motion.div>
             </ErrorBoundary>
           ))
         )}

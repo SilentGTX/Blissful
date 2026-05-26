@@ -64,6 +64,12 @@ export type StremioMetaDetail = {
       thumbnail?: string;
       overview?: string;
       description?: string;
+      /** Cinemeta exposes a per-episode rating as `rating` (string).
+       *  Older / non-Cinemeta addons sometimes ship `imdbRating`
+       *  instead — accept both. Cinemeta uses "0" as a "no rating"
+       *  placeholder, so callers must filter those out. */
+      rating?: string | number;
+      imdbRating?: string | number;
     }>;
   };
 };
@@ -131,7 +137,7 @@ setInterval(() => {
   }
 }, STALE_SWEEP_INTERVAL_MS);
 
-function normalizeAddonBaseUrl(baseUrl: string): string {
+export function normalizeAddonBaseUrl(baseUrl: string): string {
   let next = baseUrl.trim();
 
   if (next.startsWith('stremio://')) {

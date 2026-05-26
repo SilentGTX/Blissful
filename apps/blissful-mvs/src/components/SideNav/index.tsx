@@ -11,6 +11,7 @@ export default function SideNav(props: SideNavProps) {
         active={props.active}
         onChange={props.onChange}
         onOpenLogin={props.onOpenLogin}
+        onOpenJoinParty={props.onOpenJoinParty}
         continueWatching={props.continueWatching}
         continueSyncError={props.continueSyncError}
         userLabel={props.userLabel}
@@ -25,6 +26,7 @@ export default function SideNav(props: SideNavProps) {
       active={props.active}
       onChange={props.onChange}
       onOpenLogin={props.onOpenLogin}
+      onOpenJoinParty={props.onOpenJoinParty}
       collapsed={props.collapsed}
       onToggleCollapsed={props.onToggleCollapsed}
       continueWatching={props.continueWatching}
