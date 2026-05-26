@@ -7,9 +7,8 @@ type ActionButtonsProps = {
   onToggleLibrary: () => void;
   onOpenTrailer: () => void;
   onShare: () => void;
-  /** When provided, renders a primary accent Play button in the row.
-   *  Hidden otherwise (iOS, where the stream picker is the expected UX). */
   onPlay?: (() => void) | null;
+  isLoggedIn?: boolean;
 };
 
 export function MobileActionButtons({
@@ -19,6 +18,7 @@ export function MobileActionButtons({
   onOpenTrailer,
   onShare,
   onPlay,
+  isLoggedIn = true,
 }: ActionButtonsProps) {
   return (
     <div className="fixed right-4 top-4 z-50 flex items-center gap-2 lg:hidden">
@@ -45,17 +45,19 @@ export function MobileActionButtons({
           </svg>
         </button>
       ) : null}
-      <button
-        type="button"
-        className={`grid h-10 w-10 place-items-center rounded-full border border-white/20 bg-black/50 backdrop-blur transition-colors ${inLibrary ? 'text-[var(--bliss-accent)]' : 'text-white'}`}
-        onClick={onToggleLibrary}
-        aria-label={inLibrary ? 'Remove from library' : 'Add to library'}
-      >
-        <StremioIcon
-          name={inLibrary ? 'remove-from-library' : 'add-to-library'}
-          className="h-5 w-5"
-        />
-      </button>
+      {isLoggedIn ? (
+        <button
+          type="button"
+          className={`grid h-10 w-10 place-items-center rounded-full border border-white/20 bg-black/50 backdrop-blur transition-colors ${inLibrary ? 'text-[var(--bliss-accent)]' : 'text-white'}`}
+          onClick={onToggleLibrary}
+          aria-label={inLibrary ? 'Remove from library' : 'Add to library'}
+        >
+          <StremioIcon
+            name={inLibrary ? 'remove-from-library' : 'add-to-library'}
+            className="h-5 w-5"
+          />
+        </button>
+      ) : null}
 
       <button
         type="button"
@@ -86,6 +88,7 @@ export function DesktopActionButtons({
   onOpenTrailer,
   onShare,
   onPlay,
+  isLoggedIn = true,
 }: ActionButtonsProps) {
   return (
     <div className="hidden lg:block">
@@ -104,7 +107,7 @@ export function DesktopActionButtons({
           </button>
         ) : null}
 
-        <LibraryActionButton inLibrary={inLibrary} onToggleLibrary={onToggleLibrary} />
+        {isLoggedIn ? <LibraryActionButton inLibrary={inLibrary} onToggleLibrary={onToggleLibrary} /> : null}
 
         <button
           type="button"

@@ -57,7 +57,7 @@ import { desktop, type MpvTrack } from '../lib/desktop';
 import type { StremioIconName } from './PlayerControlIcons';
 import type { AddonDescriptor } from '../lib/stremioApi';
 import { setProgress } from '../lib/progressStore';
-import { addToLibraryItem, updateLibraryItemProgress } from '../lib/stremioApi';
+import { updateLibraryItemProgress } from '../lib/stremioApi';
 import { updateBlissfulLibraryProgress } from '../lib/blissfulAuthApi';
 import { fetchSubtitles, fetchOpenSubHash } from '../lib/stremioAddon';
 import { getLastStreamSelection, setLastStreamSelection } from '../lib/streamHistory';
@@ -1780,31 +1780,6 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     const unsub = desktop.onFullscreenChanged(setIsFullscreen);
     return unsub;
   }, []);
-
-  // Library bootstrap — add this title to the Stremio library on mount
-  // so Continue Watching can attach progress to it. SimplePlayer does the
-  // same; without this, updateLibraryItemProgress is silently rejected
-  // because there's no library row to update.
-  useEffect(() => {
-    if (!props.authKey || !props.id || !props.type) return;
-    const baseName =
-      (props.metaTitle && props.metaTitle.trim().length > 0
-        ? props.metaTitle
-        : props.title && props.title.trim().length > 0
-          ? props.title.split('\n')[0]
-          : null) ?? props.id;
-    const normalizedType: 'movie' | 'series' =
-      (props.type as string) === 'anime' ? 'series' : (props.type as 'movie' | 'series');
-    void addToLibraryItem({
-      authKey: props.authKey,
-      id: props.id,
-      type: normalizedType,
-      name: baseName,
-      poster: props.poster ?? null,
-    }).catch(() => {
-      // ignore library bootstrap failures
-    });
-  }, [props.authKey, props.id, props.metaTitle, props.poster, props.title, props.type]);
 
   // Periodic progress save — every ~5s while playing. Reads latest
   // timePos/duration/paused via refs so the interval doesn't get

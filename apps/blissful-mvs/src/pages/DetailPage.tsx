@@ -708,6 +708,7 @@ export default function DetailPage() {
           onToggleLibrary={handleToggleLibrary}
           onOpenTrailer={handleOpenTrailer}
           onShare={handleShare}
+          isLoggedIn={Boolean(authKey)}
           onPlay={null}
         />
 
@@ -737,6 +738,7 @@ export default function DetailPage() {
                   onToggleLibrary={handleToggleLibrary}
                   onOpenTrailer={handleOpenTrailer}
                   onShare={handleShare}
+                  isLoggedIn={Boolean(authKey)}
                   onPlay={null}
                 />
               </div>
