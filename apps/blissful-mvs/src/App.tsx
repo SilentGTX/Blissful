@@ -21,7 +21,10 @@ const AccountsPage = lazy(() => import('./pages/AccountsPage'));
 const DetailPage = lazy(() => import('./pages/DetailPage'));
 const DiscoverPage = lazy(() => import('./pages/DiscoverPage'));
 const LibraryPage = lazy(() => import('./pages/LibraryPage'));
-const PlayerPage = lazy(() => import('./pages/PlayerPage'));
+// Eagerly imported — no Suspense boundary needed. The chunk is
+// prefetched from DetailPage anyway, and Suspense's reconnect cycle
+// in React 19 caused a visible flash on every player open.
+import PlayerPage from './pages/PlayerPage';
 const SearchPage = lazy(() => import('./pages/SearchPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const InvitePage = lazy(() => import('./pages/InvitePage'));
@@ -87,15 +90,13 @@ export default function App() {
                   path="player"
                   element={
                     <ErrorBoundary fallback={<ErrorPage action="go-back" />}>
-                      {/* Plain black cover instead of <LoadingRow /> —
-                          which used to flash a HeroUI Spinner on the
-                          first navigation to /player while the lazy
-                          chunk loaded. Solid black matches the
-                          autoplay overlay coming from DetailPage, so
-                          the transition between them is invisible. */}
-                      <Suspense fallback={<div className="fixed inset-0 z-[60] bg-black" />}>
-                        <PlayerPage />
-                      </Suspense>
+                      {/* No Suspense — the chunk is prefetched from
+                          DetailPage so it's already cached by the time
+                          the user clicks a stream. Suspense's reconnect
+                          cycle caused a visible flash on every player
+                          open (React 19 fires effects twice during
+                          Suspense resolution). */}
+                      <PlayerPage />
                     </ErrorBoundary>
                   }
                 />

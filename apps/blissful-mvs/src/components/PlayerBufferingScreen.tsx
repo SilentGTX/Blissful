@@ -40,9 +40,7 @@ export function PlayerBufferingScreen() {
               loading="eager"
               fetchPriority="high"
             />
-          ) : (
-            <div className="bliss-buffering-fallback">Buffering</div>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

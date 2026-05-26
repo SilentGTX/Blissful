@@ -272,10 +272,42 @@ export async function updateBlissfulLibraryProgress(token: string, params: {
   videoId?: string | null;
   timeSeconds: number;
   durationSeconds?: number;
+  name?: string | null;
+  poster?: string | null;
+  streamUrl?: string | null;
+  streamTitle?: string | null;
 }): Promise<void> {
   const all = await fetchBlissfulLibrary<Record<string, unknown> & { _id: string }>(token);
   const existing = all.find((it) => it._id === params.id);
-  if (!existing) return;
+  if (!existing) {
+    // Auto-create a minimal entry so Continue Watching picks it up.
+    // This is NOT the same as "Add to library" — that's an explicit
+    // user action. This just tracks playback progress.
+    const nowIso = new Date().toISOString();
+    const normalizedType = params.type === 'anime' ? 'series' : params.type;
+    const timeOffset = Math.max(0, Math.round(params.timeSeconds * 1000));
+    const duration =
+      typeof params.durationSeconds === 'number' && Number.isFinite(params.durationSeconds) && params.durationSeconds > 0
+        ? Math.max(0, Math.round(params.durationSeconds * 1000))
+        : 0;
+    await putBlissfulLibraryItem(token, params.id, {
+      _id: params.id,
+      type: normalizedType,
+      name: params.name ?? params.id,
+      poster: params.poster ?? null,
+      posterShape: 'poster',
+      _mtime: nowIso,
+      _blissStreamUrl: params.streamUrl ?? null,
+      _blissStreamTitle: params.streamTitle ?? null,
+      state: {
+        lastWatched: nowIso,
+        timeOffset,
+        duration,
+        video_id: normalizedType === 'series' ? (params.videoId ?? null) : null,
+      },
+    });
+    return;
+  }
   const nowIso = new Date().toISOString();
   const normalizedType = params.type === 'anime' ? 'series' : params.type;
   const timeOffset = Math.max(0, Math.round(params.timeSeconds * 1000));
@@ -295,8 +327,8 @@ export async function updateBlissfulLibraryProgress(token: string, params: {
       video_id: normalizedType === 'series' ? (params.videoId ?? null) : null,
     },
   };
-  // Progress now originated in Blissful, so clear the "from Stremio"
-  // badge if the prior row was Stremio-sourced.
-  delete next._blissProgressSource;
+  next._blissProgressSource = 'app';
+  if (params.streamUrl) next._blissStreamUrl = params.streamUrl;
+  if (params.streamTitle) next._blissStreamTitle = params.streamTitle;
   await putBlissfulLibraryItem(token, params.id, next);
 }

@@ -25,13 +25,15 @@ function usePlaybackClock(): number {
   return useSyncExternalStore(playbackClock.subscribe, playbackClock.get);
 }
 
-function formatTime(secs: number | undefined): string {
-  if (secs == null || !Number.isFinite(secs) || secs < 0) return '0:00';
+function formatTime(secs: number | undefined, duration: number): string {
+  if (secs == null || !Number.isFinite(secs) || secs < 0 || duration <= 0) {
+    return duration >= 3600 ? '--:--:--' : '--:--';
+  }
   const s = Math.floor(secs);
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const ss = s % 60;
-  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+  if (h > 0 || duration >= 3600) return `${h}:${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
   return `${m}:${String(ss).padStart(2, '0')}`;
 }
 
@@ -149,7 +151,7 @@ export function BottomControls(props: BottomControlsProps) {
       }
     >
       <div className="pointer-events-auto flex items-center gap-4 bg-gradient-to-t from-black/85 via-black/55 to-transparent px-5 pb-1.5 pt-10 text-xs font-mono tabular-nums text-white">
-        <span className="min-w-[56px] text-left">{formatTime(currentTime)}</span>
+        <span className="min-w-[56px] text-left">{formatTime(currentTime, duration)}</span>
         <div className="relative flex-1">
           {tooltipTime != null && tooltipPx != null ? (
             <div
@@ -157,7 +159,7 @@ export function BottomControls(props: BottomControlsProps) {
               style={{ left: `${tooltipPx}px`, bottom: '24px' }}
             >
               <div className="rounded-md border border-white/15 bg-black/85 px-2 py-1 text-xs font-mono tabular-nums text-white shadow-lg backdrop-blur">
-                {formatTime(tooltipTime)}
+                {formatTime(tooltipTime, duration)}
               </div>
             </div>
           ) : null}
@@ -207,7 +209,7 @@ export function BottomControls(props: BottomControlsProps) {
             aria-label="Seek"
           />
         </div>
-        <span className="min-w-[56px] text-right">{formatTime(duration)}</span>
+        <span className="min-w-[56px] text-right">{formatTime(duration, duration)}</span>
       </div>
 
       <div className="pointer-events-auto flex items-center justify-between gap-3 bg-black/85 px-4 py-2 backdrop-blur">

@@ -57,7 +57,6 @@ import { desktop, type MpvTrack } from '../lib/desktop';
 import type { StremioIconName } from './PlayerControlIcons';
 import type { AddonDescriptor } from '../lib/stremioApi';
 import { setProgress } from '../lib/progressStore';
-import { updateLibraryItemProgress } from '../lib/stremioApi';
 import { updateBlissfulLibraryProgress } from '../lib/blissfulAuthApi';
 import { fetchSubtitles, fetchOpenSubHash } from '../lib/stremioAddon';
 import { getLastStreamSelection, setLastStreamSelection } from '../lib/streamHistory';
@@ -259,6 +258,8 @@ interface NativeMpvPlayerProps {
   description?: string;
   /** Show-level IMDb rating for the PauseOverlay. */
   imdbRating?: string;
+  /** Release info string (e.g. "2022" or "2022-03-04") for the PauseOverlay. */
+  releaseInfo?: string;
   /** Episode video list for the PauseOverlay per-episode metadata. */
   videos?: Array<{
     id: string;
@@ -445,15 +446,48 @@ function buildTorrentStreamUrl(
 
 export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   const navigate = useNavigate();
+  // PlayerReady — mount/unmount ONLY. No prop deps so it never
+  // re-fires mid-lifecycle (which would flash the buffering screen).
   const { setReady: setPlayerReady } = usePlayerReady();
   useEffect(() => {
     setPlayerReady(true);
-    triggerStremioItemSync(props.authKey ?? null, props.id ?? null);
+    return () => setPlayerReady(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Stremio sync — on mount + unmount. Uses refs for the final
+  // progress write so the cleanup captures the latest values without
+  // needing prop deps that would re-fire the effect.
+  const propsRef = useRef(props);
+  propsRef.current = props;
+  useEffect(() => {
+    triggerStremioItemSync(propsRef.current.authKey ?? null, propsRef.current.id ?? null);
     return () => {
-      setPlayerReady(false);
-      triggerStremioItemSync(props.authKey ?? null, props.id ?? null);
+      const p = propsRef.current;
+      const t = timePosRef.current;
+      const d = durationRef.current;
+      if (p.authKey && t > 0 && d > 0) {
+        void updateBlissfulLibraryProgress(p.authKey, {
+          id: p.id,
+          type: p.type,
+          videoId: p.videoId ?? null,
+          timeSeconds: t,
+          durationSeconds: d,
+          name: p.metaTitle ?? p.title ?? null,
+          poster: p.poster ?? null,
+          streamUrl: p.url ?? null,
+          streamTitle: p.title ?? null,
+        }).then(() => {
+          triggerStremioItemSync(p.authKey ?? null, p.id ?? null);
+        }).catch(() => {
+          triggerStremioItemSync(p.authKey ?? null, p.id ?? null);
+        });
+      } else {
+        triggerStremioItemSync(p.authKey ?? null, p.id ?? null);
+      }
     };
-  }, [setPlayerReady, props.authKey, props.id]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [timePos, setTimePos] = useState(0);
   // Last wall-clock time we wrote `timePos` through React state. Used
   // by the time-pos handler to skip setState calls that would land
@@ -516,6 +550,12 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('subtitles');
   // Addon-fetched subtitles + 3-column picker modal (mirrors SimplePlayer).
   const [addonSubs, setAddonSubs] = useState<AddonSubtitleTrack[]>([]);
+  const addonUrlsKey = useMemo(
+    () => props.addons.map((a) => a.transportUrl).join('|'),
+    [props.addons]
+  );
+  const addonsRef = useRef(props.addons);
+  addonsRef.current = props.addons;
   const [selectedSubLang, setSelectedSubLang] = useState<string | null>(null);
   // `embedded:<id>` for in-torrent tracks, `addon:<key>` for fetched, `off` for none.
   const [selectedSubKey, setSelectedSubKey] = useState<string>('off');
@@ -1166,6 +1206,9 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         playbackStartedRef.current = false;
         observedBufferingTrueRef.current = false;
         setBuffering(true);
+        playbackClock.set(0);
+        setTimePos(0);
+        setDuration(0);
         const opts = startTarget > 0 ? `start=${startTarget}` : '';
         await desktop.mpv.command('loadfile', resolved, 'replace', '-1', opts);
         if (cancelled) return;
@@ -1288,16 +1331,18 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         case 'pause':
           if (typeof value === 'boolean') {
             setPaused(value);
-            if (value) {
-              // Paused — show controls and keep them visible
+            // Only show/lock controls when the USER explicitly paused
+            // (via togglePlay). Buffering causes rapid pause/unpause
+            // that would flash the controls.
+            if (value && userPausedRef.current) {
               setControlsVisible(true);
               setInstantHideControls(false);
               if (controlsHideTimerRef.current != null) {
                 window.clearTimeout(controlsHideTimerRef.current);
                 controlsHideTimerRef.current = null;
               }
-            } else {
-              // Resumed — start the 3s auto-hide timer
+            } else if (!value && userPausedRef.current) {
+              userPausedRef.current = false;
               if (controlsHideTimerRef.current != null) {
                 window.clearTimeout(controlsHideTimerRef.current);
               }
@@ -1817,28 +1862,17 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         // ignore
       }
       if (props.authKey) {
-        updateLibraryItemProgress({
-          authKey: props.authKey,
-          id: props.id,
-          type: props.type,
-          videoId: props.videoId ?? null,
-          timeSeconds: t,
-          durationSeconds: d,
-        })
-          .then(() => {
-            window.dispatchEvent(new Event('blissful:progress'));
-          })
-          .catch(() => {
-            // ignore — next tick will retry
-          });
-        // Also write progress to the Blissful backend so it persists
-        // across devices and shows up in Continue Watching immediately.
+        // Write to Blissful backend (primary progress store).
         void updateBlissfulLibraryProgress(props.authKey, {
           id: props.id,
           type: props.type,
           videoId: props.videoId ?? null,
           timeSeconds: t,
           durationSeconds: d,
+          name: props.metaTitle ?? props.title ?? null,
+          poster: props.poster ?? null,
+          streamUrl: props.url ?? null,
+          streamTitle: props.title ?? null,
         }).catch(() => {
           // throttled writes will catch up next session
         });
@@ -1857,25 +1891,13 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   // the current dead URL — DetailPage uses this list to exclude streams
   // we've already proven dead, otherwise auto-pick would re-select the
   // same row and bounce us right back here in a loop.
-  const autoFallbackFiredRef = useRef(false);
+  // No auto-fallback. If a stream fails, the player stays put — the
+  // user presses Back and picks a different stream. The old auto-
+  // fallback navigated to detail→player in a loop, causing repeated
+  // unmounts and console error floods from dead addons.
   const autoFallbackToNextStream = useCallback(() => {
-    if (autoFallbackFiredRef.current) return;
-    autoFallbackFiredRef.current = true;
-    const base = `/detail/${encodeURIComponent(props.type)}/${encodeURIComponent(props.id)}`;
-    const qs = new URLSearchParams();
-    if (props.type === 'series' && props.videoId) {
-      qs.set('videoId', props.videoId);
-    }
-    qs.set('autoplay', '1');
-    const seconds = props.startTimeSeconds && props.startTimeSeconds > 0 ? props.startTimeSeconds : 0;
-    if (seconds > 0) qs.set('t', String(Math.floor(seconds)));
-    const incoming = new URLSearchParams(window.location.search);
-    for (const prev of incoming.getAll('skip')) qs.append('skip', prev);
-    if (props.url) qs.append('skip', props.url);
-    // `replace` so the dead-stream player URL is removed from history —
-    // back from the next /player lands on /detail, not on the broken URL.
-    navigate(`${base}?${qs.toString()}`, { replace: true });
-  }, [navigate, props.type, props.id, props.videoId, props.startTimeSeconds, props.url]);
+    // no-op — disabled
+  }, []);
 
   // Auto-hide controls after 3s of mouse inactivity.
   const showControls = useCallback(() => {
@@ -1884,7 +1906,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     if (controlsHideTimerRef.current != null) {
       window.clearTimeout(controlsHideTimerRef.current);
     }
-    if (!pausedRef.current) {
+    if (!userPausedRef.current) {
       controlsHideTimerRef.current = window.setTimeout(() => setControlsVisible(false), 3000);
     }
   }, []);
@@ -1894,7 +1916,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   // outside the window immediately dismisses the controls bar, no
   // fade timer). Cancels the pending 3s auto-hide so we don't fight it.
   const hideControlsNow = useCallback(() => {
-    if (pausedRef.current) return;
+    if (userPausedRef.current) return;
     if (controlsHideTimerRef.current != null) {
       window.clearTimeout(controlsHideTimerRef.current);
       controlsHideTimerRef.current = null;
@@ -1925,11 +1947,14 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     }
   }, [navigate, props.type, props.id, props.videoId]);
 
+  const userPausedRef = useRef(false);
   const togglePlay = useCallback(() => {
     if (paused) {
+      userPausedRef.current = false;
       desktop.play().catch(() => {});
       watchParty.broadcastPlay();
     } else {
+      userPausedRef.current = true;
       desktop.pause().catch(() => {});
       watchParty.broadcastPause();
     }
@@ -2089,7 +2114,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       if (name.includes('opensubtitles') || url.includes('opensubtitles')) return 3;
       return 0;
     };
-    const candidates = props.addons
+    const candidates = addonsRef.current
       .filter((addon) => {
         const resources = addon.manifest?.resources;
         if (!resources || resources.length === 0) return true;
@@ -2129,7 +2154,8 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     };
     void (async () => {
       let hashInfo: { hash: string; size: number } | null = null;
-      if (props.url) {
+      const isRealUrl = props.url && /^https?:\/\/|^magnet:/i.test(props.url);
+      if (isRealUrl) {
         const hashUrl = resolveHashUrl(props.url);
         const deadline = Date.now() + 10000;
         while (!cancelled && Date.now() < deadline) {
@@ -2192,7 +2218,12 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       controller.abort();
       if (flushTimer) window.clearTimeout(flushTimer);
     };
-  }, [props.addons, props.id, props.type, props.videoId, props.url]);
+  // Stringify addon URLs so the effect only re-fires when the actual
+  // URL list changes, not when manifest hydration creates new object
+  // references (which was triggering repeated subtitle fetches +
+  // 500/502 error floods).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addonUrlsKey, props.id, props.type, props.videoId, props.url]);
 
   // HTML subtitle render loop — mirrors Stremio's withHTMLSubtitles:
   // a requestAnimationFrame loop that extrapolates the current play
@@ -2844,6 +2875,9 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   // is still useful elsewhere (Continue Watching prompts), but the
   // back-button pill should just say what you're watching.
   const headerPrimary = props.metaTitle ?? props.title ?? 'Playing';
+  // Don't show controls until the movie has loaded (duration > 0).
+  // During initial buffering the scrub bar shows --:-- and the
+  // auto-hide timer causes rapid flash cycling.
   const controlsOpacity = controlsVisible ? 'opacity-100' : 'opacity-0';
 
   // Map props.videos to the PauseOverlayVideo shape for the enriched
@@ -2954,6 +2988,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         imdbId={props.id.startsWith('tt') ? props.id : null}
         imdbRating={props.imdbRating ?? null}
         duration={duration}
+        releaseInfo={props.releaseInfo ?? null}
       />
 
       {/* Up-next overlay -- auto-advance card with thumbnail, countdown

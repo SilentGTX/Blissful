@@ -639,9 +639,7 @@ export default function DetailPage() {
               src={logo}
               alt=" "
             />
-          ) : (
-            <div className="bliss-buffering-fallback">Loading</div>
-          )}
+          ) : null}
         </div>
       </div>
     );

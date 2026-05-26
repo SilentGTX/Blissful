@@ -214,6 +214,7 @@ export default function PlayerPage() {
         nextEpisodeInfo={nextEpisodeInfo}
         description={meta?.meta?.description ?? undefined}
         imdbRating={meta?.meta?.imdbRating != null ? String(meta.meta.imdbRating) : undefined}
+        releaseInfo={(meta?.meta as Record<string, unknown>)?.releaseInfo as string ?? (meta?.meta as Record<string, unknown>)?.year as string ?? undefined}
         videos={meta?.meta?.videos}
         roomCode={roomCode}
       />

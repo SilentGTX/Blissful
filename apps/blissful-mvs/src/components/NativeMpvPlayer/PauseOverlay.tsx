@@ -28,6 +28,7 @@ export type PauseOverlayProps = {
   imdbId?: string | null;
   imdbRating?: string | null;
   duration: number;
+  releaseInfo?: string | null;
 };
 
 function formatRuntime(totalSeconds: number): string | null {
@@ -40,7 +41,7 @@ function formatRuntime(totalSeconds: number): string | null {
 
 export function PauseOverlay({
   isPlaying, hasPlayedOnce, forceShow, metaTitle, title, description,
-  type, videoId, videos, logo, imdbId, imdbRating, duration,
+  type, videoId, videos, logo, imdbId, imdbRating, duration, releaseInfo,
 }: PauseOverlayProps) {
   if (!hasPlayedOnce && !forceShow) return null;
   if (isPlaying || (!metaTitle && !title && !description)) return null;
@@ -52,7 +53,9 @@ export function PauseOverlay({
   const episodeDescription = currentEp?.description ?? null;
   const seasonNum = currentEp?.season ?? null;
   const episodeNum = currentEp?.episode ?? null;
-  const showMetaLine = currentEp && (seasonNum != null || episodeNum != null || runtime);
+  const showMetaLine = currentEp
+    ? (seasonNum != null || episodeNum != null || runtime)
+    : Boolean(runtime || releaseInfo);
   const episodeRating = currentEp?.rating ?? null;
   const fallbackRating = !episodeRating && imdbRating ? imdbRating : null;
   const ratingText = episodeRating ?? fallbackRating;
@@ -76,25 +79,42 @@ export function PauseOverlay({
             {metaTitle ?? title}
           </div>
         )}
-        {showMetaLine ? (
-          <div className="flex flex-wrap items-center gap-3 text-white/80 drop-shadow"
-            style={{ fontSize: 'clamp(0.875rem, 1.05vw, 1.5rem)', marginBottom: 'clamp(0.25rem, 0.4vw, 0.75rem)' }}>
-            <span>{[seasonNum != null ? `Season ${seasonNum}` : null, episodeNum != null ? `Episode ${episodeNum}` : null, runtime].filter(Boolean).join(' · ')}</span>
-          </div>
-        ) : null}
-        {(currentEp && episodeTitle) || ratingText ? (
-          <div className="flex flex-wrap items-center gap-3 font-semibold text-white drop-shadow"
-            style={{ fontSize: 'clamp(1.125rem, 1.6vw, 2.25rem)', marginBottom: 'clamp(0.25rem, 0.4vw, 0.75rem)' }}>
-            {currentEp && episodeTitle ? <span>{episodeTitle}</span> : null}
-            {ratingText || imdbId ? (
-              <Rating
-                imdbId={imdbId}
-                initialRating={ratingText}
-                className="gap-1.5 rounded-full bg-black/45 pl-2.5 pr-1.5 py-0.5 text-[0.75em] font-semibold text-white backdrop-blur"
-                iconClassName="h-[1.5em] w-[1.5em]" />
+        {currentEp ? (
+          <>
+            {showMetaLine ? (
+              <div className="flex flex-wrap items-center gap-3 text-white/80 drop-shadow"
+                style={{ fontSize: 'clamp(0.875rem, 1.05vw, 1.5rem)', marginBottom: 'clamp(0.25rem, 0.4vw, 0.75rem)' }}>
+                <span>{[seasonNum != null ? `Season ${seasonNum}` : null, episodeNum != null ? `Episode ${episodeNum}` : null, runtime].filter(Boolean).join(' · ')}</span>
+              </div>
             ) : null}
-          </div>
-        ) : null}
+            {episodeTitle || ratingText ? (
+              <div className="flex flex-wrap items-center gap-3 font-semibold text-white drop-shadow"
+                style={{ fontSize: 'clamp(1.125rem, 1.6vw, 2.25rem)', marginBottom: 'clamp(0.25rem, 0.4vw, 0.75rem)' }}>
+                {episodeTitle ? <span>{episodeTitle}</span> : null}
+                {ratingText || imdbId ? (
+                  <Rating imdbId={imdbId} initialRating={ratingText}
+                    className="gap-1.5 rounded-full bg-black/45 pl-2.5 pr-1.5 py-0.5 text-[0.75em] font-semibold text-white backdrop-blur"
+                    iconClassName="h-[1.5em] w-[1.5em]" />
+                ) : null}
+              </div>
+            ) : null}
+          </>
+        ) : (
+          (releaseInfo || ratingText || imdbId || runtime) ? (
+            <div className="flex flex-wrap items-center gap-2 text-white/80 drop-shadow"
+              style={{ fontSize: 'clamp(0.875rem, 1.05vw, 1.5rem)', marginBottom: 'clamp(0.25rem, 0.4vw, 0.75rem)' }}>
+              {releaseInfo ? <span>{releaseInfo}</span> : null}
+              {releaseInfo && (ratingText || imdbId) ? <span className="text-white/40">·</span> : null}
+              {ratingText || imdbId ? (
+                <Rating imdbId={imdbId} initialRating={ratingText}
+                  className="gap-1.5 rounded-full bg-black/45 pl-2.5 pr-1.5 py-0.5 text-[0.85em] font-semibold text-white backdrop-blur"
+                  iconClassName="h-[1.3em] w-[1.3em]" />
+              ) : null}
+              {(ratingText || imdbId) && runtime ? <span className="text-white/40">·</span> : null}
+              {runtime ? <span>{runtime}</span> : null}
+            </div>
+          ) : null
+        )}
         {(currentEp ? episodeDescription : description) ? (
           <div className="line-clamp-4 text-white/70 drop-shadow"
             style={{ fontSize: 'clamp(0.75rem, 0.95vw, 1.25rem)', maxWidth: 'clamp(18rem, 28vw, 36rem)' }}>

@@ -41,12 +41,49 @@ export function useContinueWatchingActions({
     // the legacy behavior (start at the saved offset).
     const resumeSeconds = options?.mode === 'start-over' ? 0 : getResumeSeconds(item);
 
-    const stored = getLastStreamSelection({
+    // Try localStorage first (fastest), then fall back to the server-
+    // stored stream URL from the library entry (persists across devices).
+    // Only accept URLs that mpv can actually play (http/https/magnet) —
+    // web-only URLs (vidking:, iframe:, etc.) from the web version are
+    // useless for the desktop player.
+    const isPlayableUrl = (url: string | unknown): url is string =>
+      typeof url === 'string' && /^(https?:|magnet:)/i.test(url);
+    // If the progress came from the web version or Stremio, skip
+    // straight to the detail page so the user picks a torrent. Web
+    // streams (Videasy/iframe) can't play in mpv.
+    const progressSource = (item as Record<string, unknown>)._blissProgressSource as string | undefined;
+    const isWebProgress = progressSource === 'web' || progressSource === 'stremio'
+      || (!(item as Record<string, unknown>)._blissStreamUrl && !getLastStreamSelection({
+        authKey, type: item.type, id: item._id,
+        videoId: typeof videoId === 'string' ? videoId : null,
+      }));
+
+    if (isWebProgress) {
+      const base = `/detail/${encodeURIComponent(item.type)}/${encodeURIComponent(item._id)}`;
+      const qs = new URLSearchParams();
+      if (item.type === 'series' && typeof videoId === 'string') qs.set('videoId', videoId);
+      if (resumeSeconds && resumeSeconds > 0) qs.set('t', String(Math.floor(resumeSeconds)));
+      const query = qs.toString();
+      navigate(query ? `${base}?${query}` : base);
+      return;
+    }
+
+    const localStored = getLastStreamSelection({
       authKey,
       type: item.type,
       id: item._id,
       videoId: typeof videoId === 'string' ? videoId : null,
     });
+    const serverUrl = (item as Record<string, unknown>)._blissStreamUrl;
+    const stored = (localStored && isPlayableUrl(localStored.url) ? localStored : null)
+      ?? (isPlayableUrl(serverUrl)
+        ? {
+            url: serverUrl,
+            title: ((item as Record<string, unknown>)._blissStreamTitle as string) ?? null,
+            logo: null,
+          }
+        : null
+    );
 
     // Resolve logo AND background in a single meta fetch — the player's
     // buffering veil uses `background` (16:9 hero) for the loading

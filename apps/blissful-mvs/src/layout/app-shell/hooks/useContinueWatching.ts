@@ -23,7 +23,7 @@ export function useContinueWatching(authKey: string | null) {
         .then((items) => {
           if (cancelled) return;
           const inProgress = items
-            .filter((item) => (!item.removed || item.temp) && typeof item.state?.timeOffset === 'number')
+            .filter((item) => typeof item.state?.timeOffset === 'number')
             .filter((item) => {
               const timeOffset = item.state?.timeOffset ?? 0;
               const duration = item.state?.duration ?? 0;

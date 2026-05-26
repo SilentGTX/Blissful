@@ -53,9 +53,29 @@ import { notifySuccess } from '../lib/toastQueues';
 import { usePresenceHeartbeat } from '../lib/usePresenceHeartbeat';
 import { PartyInviteListener } from './PartyInviteListener';
 
+const MIGRATION_KEY = 'bliss:migrated:tagOldItemsWeb';
+
 export default function AppShell() {
   usePresenceHeartbeat();
   const { updateReady, isInstalling, installNow, dismissUpdate } = useDesktopUpdater();
+
+  // One-time migration: tag all untagged library items as 'web'.
+  const { authKey: migAuthKey } = useAuth();
+  useEffect(() => {
+    if (!migAuthKey) return;
+    if (localStorage.getItem(MIGRATION_KEY)) return;
+    void (async () => {
+      try {
+        const { fetchBlissfulLibrary, putBlissfulLibraryItem } = await import('../lib/blissfulAuthApi');
+        const items = await fetchBlissfulLibrary<Record<string, unknown> & { _id: string }>(migAuthKey);
+        const untagged = items.filter((it) => !it._blissProgressSource && it.state);
+        for (const item of untagged) {
+          await putBlissfulLibraryItem(migAuthKey, item._id, { ...item, _blissProgressSource: 'web' });
+        }
+        localStorage.setItem(MIGRATION_KEY, '1');
+      } catch { /* ignore — will retry next launch */ }
+    })();
+  }, [migAuthKey]);
 
   // ---------- read from providers ------------------------------------------
   const {

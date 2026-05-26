@@ -29,7 +29,7 @@ export function getContinueSubtitle(item: LibraryItem): {
   epLabel?: string | null;
   /** When set, this row's current state came from a Stremio sync (not
    *  from local Blissful playback). The renderer shows a small badge. */
-  source?: 'stremio' | null;
+  source?: 'stremio' | 'web' | 'app' | null;
 } {
   const timeOffsetMs = Math.max(0, item.state?.timeOffset ?? 0);
   const durationMs = item.state?.duration ?? 0;
@@ -39,7 +39,12 @@ export function getContinueSubtitle(item: LibraryItem): {
 
   const videoId = (item.state as any)?.videoId ?? (item.state as any)?.video_id;
   const epLabel = item.type === 'series' ? parseEpisodeLabel(typeof videoId === 'string' ? videoId : null) : null;
-  const source = item._blissProgressSource === 'stremio' ? 'stremio' : null;
+  const rawSource = (item as Record<string, unknown>)._blissProgressSource;
+  const source: 'stremio' | 'web' | 'app' | null =
+    rawSource === 'stremio' ? 'stremio'
+    : rawSource === 'web' ? 'web'
+    : rawSource === 'app' ? 'app'
+    : null;
 
   if (isExternalPlayer) {
     return { epLabel, text: 'External progress', isExternal: true, source };

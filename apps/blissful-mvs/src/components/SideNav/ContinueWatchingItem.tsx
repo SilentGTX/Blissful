@@ -70,7 +70,17 @@ export function ContinueWatchingItem({ item, onOpen, onRemove, compact = false }
             {subtitle.source === 'stremio' ? (
               <>
                 <span className="text-foreground/80 shrink-0">·</span>
-                <StremioLogo size={12} className="shrink-0" />
+                <span className="shrink-0 rounded bg-purple-600 px-1 py-px text-[9px] font-bold uppercase tracking-wider text-white" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>STREM</span>
+              </>
+            ) : subtitle.source === 'web' ? (
+              <>
+                <span className="text-foreground/80 shrink-0">·</span>
+                <span className="shrink-0 rounded bg-blue-500 px-1 py-px text-[9px] font-bold uppercase tracking-wider text-white" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>WEB</span>
+              </>
+            ) : subtitle.source === 'app' ? (
+              <>
+                <span className="text-foreground/80 shrink-0">·</span>
+                <span className="shrink-0 rounded bg-yellow-600 px-1 py-px text-[9px] font-bold uppercase tracking-wider text-white" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>APP</span>
               </>
             ) : null}
           </div>
