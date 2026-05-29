@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { InfoIcon } from '../icons/InfoIcon';
 import { ImdbIcon } from '../icons/ImdbIcon';
 import { PlayIcon } from '../icons/PlayIcon';
+import { TruncatedText } from './TruncatedText';
 import { useImdbRating } from '../lib/useImdbRating';
 
 type MediaCardProps = {
@@ -200,9 +201,10 @@ export default function MediaCard({
             height × 2 = 2.5rem) so card height stays constant whether the
             title wraps to 1 or 2 lines — prevents row reflow as titles
             load asynchronously across the grid. */}
-        <div className="mt-3 min-h-[2.5rem] text-center text-sm font-medium text-foreground/90 line-clamp-2 transition-colors duration-500 ease-out group-hover/poster:text-[var(--bliss-accent)]">
-          {item.title}
-        </div>
+        <TruncatedText
+          content={item.title}
+          className="mt-3 min-h-[2.5rem] text-center text-sm font-medium text-foreground/90 line-clamp-2 transition-colors duration-500 ease-out group-hover/poster:text-[var(--bliss-accent)]"
+        />
       </div>
     );
   }
@@ -251,7 +253,7 @@ export default function MediaCard({
 
           <div className="mt-3 flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <div className="truncate text-sm font-semibold">{item.title}</div>
+              <TruncatedText content={item.title} className="truncate text-sm font-semibold" />
               {subtitle ? <div className="mt-0.5 text-xs text-foreground/60">{subtitle}</div> : null}
             </div>
             <Chip size="sm" variant="soft" className="shrink-0 capitalize">

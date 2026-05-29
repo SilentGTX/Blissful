@@ -2,6 +2,7 @@ import { normalizeStremioImage } from '../../lib/stremioApi';
 import type { LibraryItem } from '../../lib/stremioApi';
 import { getContinueSubtitle } from './utils';
 import { CloseIcon } from '../../icons/CloseIcon';
+import { TruncatedText } from '../TruncatedText';
 
 
 export type ContinueWatchingItemProps = {
@@ -59,7 +60,7 @@ export function ContinueWatchingItem({ item, onOpen, onRemove, compact = false }
           {poster ? <img src={poster} alt="" className="h-full w-full object-cover" /> : null}
         </div>
         <div className="min-w-0 flex-1">
-          <div className={`truncate font-medium text-foreground/90 ${compact ? 'text-[clamp(12px,1.6vh,15px)] leading-tight' : 'text-sm'}`}>{item.name}</div>
+          <TruncatedText content={item.name} placement="right" className={`truncate font-medium text-foreground/90 ${compact ? 'text-[clamp(12px,1.6vh,15px)] leading-tight' : 'text-sm'}`} />
           <div className={`${compact ? 'mt-[clamp(0.125rem,0.5vh,0.375rem)] text-[clamp(10px,1.3vh,12px)]' : 'mt-1 text-xs'} flex items-center gap-1.5 min-w-0`}>
             {subtitle.epLabel && (
               <span className="text-foreground/80 shrink-0">{subtitle.epLabel} · </span>

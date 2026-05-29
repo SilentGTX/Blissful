@@ -2,10 +2,11 @@
 // Positioned bottom-right of the video area, above the controls bar.
 // Memoised so the parent's mpv time-pos ticks don't re-render it.
 //
-// Visibility is driven by the parent — when `useChapterSkip` returns
-// a non-null payload, render this; on null, render nothing. The fade
-// is handled here so the button slides in/out smoothly on chapter
-// transitions instead of popping.
+// Visibility is driven by the parent — when the active skip source
+// returns a non-null payload, render this; on null, render nothing. The
+// button stays visible for the WHOLE skip window regardless of whether
+// the player controls are showing (it must always be reachable, like
+// Netflix's Skip Intro), so it does NOT fade with the controls bar.
 
 import React, { useEffect, useState } from 'react';
 import type { ChapterSkipKind } from './useChapterSkip';
@@ -14,15 +15,11 @@ export type SkipChapterButtonProps = {
   kind: ChapterSkipKind;
   label: string;
   onSkip: () => void;
-  /** CSS visibility class — fades the whole button group with the
-   *  rest of the player controls when the user is idle. */
-  controlsOpacity: string;
 };
 
 export const SkipChapterButton = React.memo(function SkipChapterButton({
   label,
   onSkip,
-  controlsOpacity,
 }: SkipChapterButtonProps) {
   // Per-mount fade-in: button slides up + fades over 350 ms on first
   // paint so an intro/recap detection feels like a deliberate UI
@@ -34,12 +31,7 @@ export const SkipChapterButton = React.memo(function SkipChapterButton({
   }, []);
 
   return (
-    <div
-      className={
-        'pointer-events-none absolute right-6 bottom-28 z-20 transition-opacity duration-300 ' +
-        controlsOpacity
-      }
-    >
+    <div className="pointer-events-none absolute right-6 bottom-28 z-20">
       <button
         type="button"
         onClick={onSkip}

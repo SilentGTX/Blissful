@@ -712,6 +712,21 @@ html:not(.dark) .bliss-sidebar-link.is-active {
   }
 }
 
+/* BlissTooltip pop-in — quick fade. Pure CSS so the portal node needs
+   no animation library. */
+@keyframes bliss-tooltip-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.bliss-tooltip-pop {
+  animation: bliss-tooltip-in 120ms ease-out;
+}
+
 @keyframes detail-drawer-enter {
   0% {
     opacity: 0.84;

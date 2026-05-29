@@ -320,35 +320,60 @@ export default function DetailPage() {
   const [episodeRatingsBySeason, setEpisodeRatingsBySeason] = useState<
     Record<number, Record<number, number>>
   >({});
+  const [episodeStillsBySeason, setEpisodeStillsBySeason] = useState<
+    Record<number, Record<number, string>>
+  >({});
   useEffect(() => {
     if (!isSeriesLike) return;
     const tid = tmdbLookup?.tmdbId;
     if (!tid) return;
     if (season == null) return;
-    if (episodeRatingsBySeason[season] != null) return;
+    if (episodeStillsBySeason[season] != null) return;
+    const s = season;
     let cancelled = false;
-    fetch(`/tmdb-season-info?tmdbId=${tid}&season=${season}`)
-      .then((r) => r.json())
-      .then(
-        (data: {
-          episodes?: Array<{ episode_number: number | null; vote_average: number | null }>;
-        }) => {
-          if (cancelled) return;
-          const map: Record<number, number> = {};
-          for (const e of data.episodes ?? []) {
-            if (e.episode_number != null && e.vote_average != null) {
-              map[e.episode_number] = e.vote_average;
-            }
-          }
-          setEpisodeRatingsBySeason((prev) => ({ ...prev, [season]: map }));
-        },
-      )
-      .catch(() => { /* non-fatal */ });
+    type TmdbEp = { episode_number: number | null; vote_average: number | null; still?: string | null };
+    const fetchSeason = (n: number): Promise<TmdbEp[]> =>
+      fetch(`/tmdb-season-info?tmdbId=${tid}&season=${n}`)
+        .then((r) => r.json())
+        .then((d: { episodes?: TmdbEp[] }) => d.episodes ?? [])
+        .catch(() => []);
+    void (async () => {
+      let eps = await fetchSeason(s);
+      // Many anime are listed on TMDB as a single absolute-numbered
+      // season, so a per-season request for S2+ comes back empty. Detect
+      // that, refetch season 1 (absolute), and shift episode numbers by
+      // the count of earlier Cinemeta episodes so the maps stay keyed by
+      // the in-season episode number EpisodePanel looks up.
+      let offset = 0;
+      if (eps.length === 0 && s > 1) {
+        offset = videos.filter(
+          (v) => typeof v.season === 'number' && v.season > 0 && v.season < s,
+        ).length;
+        eps = await fetchSeason(1);
+      }
+      if (cancelled) return;
+      const map: Record<number, number> = {};
+      const stills: Record<number, string> = {};
+      for (const e of eps) {
+        if (e.episode_number == null) continue;
+        const ep = e.episode_number - offset;
+        if (ep < 1) continue;
+        if (e.vote_average != null) map[ep] = e.vote_average;
+        if (e.still) stills[ep] = e.still;
+      }
+      setEpisodeRatingsBySeason((prev) => ({ ...prev, [s]: map }));
+      setEpisodeStillsBySeason((prev) => ({ ...prev, [s]: stills }));
+    })();
     return () => {
       cancelled = true;
     };
-  }, [isSeriesLike, tmdbLookup?.tmdbId, season, episodeRatingsBySeason]);
+  }, [isSeriesLike, tmdbLookup?.tmdbId, season, videos, episodeStillsBySeason]);
   const currentSeasonRatings = season != null ? episodeRatingsBySeason[season] : undefined;
+  const currentSeasonStills = season != null ? episodeStillsBySeason[season] : undefined;
+  // True while the season's TMDB still fetch is still in flight, so the
+  // episode cards keep a skeleton up instead of flashing the show poster.
+  const episodeStillsPending =
+    isSeriesLike && !!tmdbLookup?.tmdbId && season != null && episodeStillsBySeason[season] == null;
 
   // Mobile hero poster (poster is preferred over background for clarity)
   const heroPoster = normalizeStremioImage(meta?.meta?.background) ?? normalizeStremioImage(meta?.meta?.poster);
@@ -545,6 +570,9 @@ export default function DetailPage() {
     showRating: meta?.meta?.imdbRating ?? null,
     showImdbId: /^tt\d{5,}$/.test(id) ? id : null,
     episodeRatings: currentSeasonRatings,
+    episodeStills: currentSeasonStills,
+    episodeStillsPending,
+    fallbackPoster,
     allVideos: videos,
     tmdbId: tmdbLookup?.tmdbId ?? null,
     // Select an episode → switch to stream picker so the user can
@@ -641,6 +669,38 @@ export default function DetailPage() {
             />
           ) : null}
         </div>
+      </div>
+    );
+  }
+
+  // Graceful empty state. Some ids exist on IMDB but have no entry in
+  // any of our meta sources (Cinemeta only indexes titles above a
+  // popularity threshold; fringe/niche titles — often reached via a
+  // stale link or a leftover Kitsu Continue-Watching row — return `{}`).
+  // Without this guard the page renders its full layout against a null
+  // `meta` and the user sees a black void with no way out. Only triggers
+  // once loading is done AND there's no fallback poster to paint (so a
+  // known title mid-load still shows its backdrop).
+  if (!metaLoading && !meta?.meta && !fallbackPoster) {
+    return (
+      <div className="relative z-10 flex min-h-dvh w-full flex-col items-center justify-center gap-4 bg-black px-6 text-center">
+        <div className="font-[Instrument_Serif] text-2xl font-semibold text-white">
+          Title unavailable
+        </div>
+        <div className="max-w-md text-sm text-foreground/60">
+          We couldn&rsquo;t find details for this title. It may be too obscure for
+          our metadata sources, or the link may be out of date.
+        </div>
+        <Button
+          variant="ghost"
+          className="mt-2 rounded-full bg-white/10 text-white"
+          onPress={() => {
+            const safeBack = sessionStorage.getItem('bliss:safe-back') ?? '/';
+            navigate(safeBack);
+          }}
+        >
+          Back
+        </Button>
       </div>
     );
   }

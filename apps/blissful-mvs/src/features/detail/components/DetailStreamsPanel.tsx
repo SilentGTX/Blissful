@@ -41,6 +41,14 @@ type DetailStreamsPanelProps = {
   normalizeImage: (value?: string | null) => string | null | undefined;
   formatDate: (value?: string) => string | null;
   getEpisodeTitle: (video: { title?: string; name?: string; id: string }) => string;
+  /** Episode-card metadata forwarded to EpisodePanel. */
+  episodeRatings?: Record<number, number> | undefined;
+  episodeStills?: Record<number, string> | undefined;
+  episodeStillsPending?: boolean;
+  fallbackPoster?: string | null;
+  showRuntime?: string | null;
+  showRating?: number | string | null;
+  showImdbId?: string | null;
   addonSelectItems: Array<{ key: string; label: string }>;
   selectedAddon: string;
   onSelectAddon: (key: string) => void;
@@ -75,6 +83,13 @@ export function DetailStreamsPanel({
   normalizeImage,
   formatDate,
   getEpisodeTitle,
+  episodeRatings,
+  episodeStills,
+  episodeStillsPending,
+  fallbackPoster,
+  showRuntime,
+  showRating,
+  showImdbId,
   addonSelectItems,
   selectedAddon,
   onSelectAddon,
@@ -128,6 +143,13 @@ export function DetailStreamsPanel({
           formatDate={formatDate}
           getEpisodeTitle={getEpisodeTitle}
           listContainerClassName={episodeListClassName}
+          episodeRatings={episodeRatings}
+          episodeStills={episodeStills}
+          episodeStillsPending={episodeStillsPending}
+          fallbackPoster={fallbackPoster}
+          showRuntime={showRuntime}
+          showRating={showRating}
+          showImdbId={showImdbId}
         />
       ) : (
         <>

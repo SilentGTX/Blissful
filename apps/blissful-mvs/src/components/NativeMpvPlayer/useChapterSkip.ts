@@ -28,7 +28,7 @@
 // Western TV are spottier. Files without markers silently get no skip
 // button — no failure mode, just feature-absent.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { desktop, type MpvChapter } from '../../lib/desktop';
 
 export type ChapterSkipKind = 'intro' | 'recap' | 'outro';
@@ -85,11 +85,6 @@ const LABELS: Record<ChapterSkipKind, string> = {
 export function useChapterSkip(duration: number): ChapterSkipState | null {
   const [chapters, setChapters] = useState<MpvChapter[]>([]);
   const [currentIdx, setCurrentIdx] = useState<number>(-1);
-  // After the user manually dismisses (presses skip), don't re-show
-  // the button for the SAME chapter index even if mpv re-fires the
-  // chapter event (e.g., a stray prop-change during the seek). Cleared
-  // on file-loaded (new file → reset all suppressions).
-  const dismissedRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -130,7 +125,6 @@ export function useChapterSkip(duration: number): ChapterSkipState | null {
 
     const unsubLifecycle = desktop.onMpvEvent((e) => {
       if (e.type === 'FileLoaded') {
-        dismissedRef.current.clear();
         setCurrentIdx(-1);
         void refreshChapters();
       }
@@ -156,21 +150,17 @@ export function useChapterSkip(duration: number): ChapterSkipState | null {
     };
   }, []);
 
-  const onSkip = useCallback(
-    (idx: number, endTime: number) => {
-      dismissedRef.current.add(idx);
-      // Absolute seek; the shell's `seek` IPC handler appends `+exact`
-      // so we land on the precise frame at chapter start, not the
-      // prior keyframe (matters for long-GOP encodes where keyframes
-      // can be 10+ s apart).
-      desktop.seek(endTime, 'absolute').catch(() => {});
-    },
-    [],
-  );
+  const onSkip = useCallback((endTime: number) => {
+    // Absolute seek; the shell's `seek` IPC handler appends `+exact`
+    // so we land on the precise frame at chapter start, not the prior
+    // keyframe (matters for long-GOP encodes where keyframes can be
+    // 10+ s apart). No sticky dismissal — seeking back into the intro
+    // chapter shows the button again.
+    desktop.seek(endTime, 'absolute').catch(() => {});
+  }, []);
 
   const state = useMemo<ChapterSkipState | null>(() => {
     if (currentIdx < 0 || currentIdx >= chapters.length) return null;
-    if (dismissedRef.current.has(currentIdx)) return null;
     const current = chapters[currentIdx];
     const kind = classifyChapter(current?.title);
     if (!kind) return null;
@@ -190,7 +180,7 @@ export function useChapterSkip(duration: number): ChapterSkipState | null {
       kind,
       label: LABELS[kind],
       endTime,
-      onSkip: () => onSkip(currentIdx, endTime),
+      onSkip: () => onSkip(endTime),
     };
   }, [chapters, currentIdx, duration, onSkip]);
 

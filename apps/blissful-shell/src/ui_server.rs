@@ -82,6 +82,11 @@ fn vite_dev_origin() -> &'static str {
 const ADDON_PROXY_UPSTREAM: &str = "https://blissful.budinoff.com/addon-proxy";
 const STORAGE_UPSTREAM: &str = "https://blissful.budinoff.com/storage";
 const STREMIO_UPSTREAM: &str = "https://www.strem.io";
+// TMDB season metadata (episode stills + ratings). The renderer fetches
+// `/tmdb-season-info?tmdbId=..&season=..` same-origin; we forward it to the
+// blissful backend which holds the TMDB API key. Fixed host + path, only
+// the query string is passed through.
+const TMDB_UPSTREAM: &str = "https://blissful.budinoff.com/tmdb-season-info";
 
 static HTTP_CLIENT: OnceCell<Client> = OnceCell::new();
 static STATIC_ROOT: OnceCell<Option<PathBuf>> = OnceCell::new();
@@ -225,6 +230,11 @@ async fn handle_request(
         (_, p) if p.starts_with("/stremio/") => {
             let suffix = p["/stremio".len()..].to_string();
             forward_request(req, STREMIO_UPSTREAM, &suffix).await
+        }
+
+        // ---- /tmdb-season-info?tmdbId=..&season=.. ----
+        (&Method::GET, "/tmdb-season-info") => {
+            forward_request(req, TMDB_UPSTREAM, "").await
         }
 
         // ---- everything else: React app (static or Vite proxy) ----

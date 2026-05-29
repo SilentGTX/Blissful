@@ -49,6 +49,7 @@ import { UpNextOverlay } from './NativeMpvPlayer/UpNextOverlay';
 import { SettingsPanel, type SettingsTab } from './NativeMpvPlayer/SettingsPanel';
 import { SkipChapterButton } from './NativeMpvPlayer/SkipChapterButton';
 import { useChapterSkip } from './NativeMpvPlayer/useChapterSkip';
+import { useSkipSegments } from './NativeMpvPlayer/useSkipSegments';
 import { subtitleLangLabel } from './NativeMpvPlayer/subtitleHelpers';
 import { EpisodesDrawer, type EpisodeVideo, type DrawerSeasonInfo } from './NativeMpvPlayer/EpisodesDrawer';
 import { useNavigate } from 'react-router-dom';
@@ -1906,7 +1907,11 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     if (controlsHideTimerRef.current != null) {
       window.clearTimeout(controlsHideTimerRef.current);
     }
-    if (!userPausedRef.current) {
+    // Don't start the idle auto-hide until the first frame has rendered.
+    // While a torrent is still loading (timePos === 0) the controls stay
+    // pinned so the user can always reach Back. Mid-stream rebuffers keep
+    // timePos > 0, so they're unaffected — preserving the no-flash fix.
+    if (!userPausedRef.current && timePosRef.current > 0) {
       controlsHideTimerRef.current = window.setTimeout(() => setControlsVisible(false), 3000);
     }
   }, []);
@@ -1916,7 +1921,9 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   // outside the window immediately dismisses the controls bar, no
   // fade timer). Cancels the pending 3s auto-hide so we don't fight it.
   const hideControlsNow = useCallback(() => {
-    if (userPausedRef.current) return;
+    // Keep controls pinned before the first frame (torrent still loading)
+    // even if the cursor leaves the window — otherwise Back is unreachable.
+    if (userPausedRef.current || timePosRef.current === 0) return;
     if (controlsHideTimerRef.current != null) {
       window.clearTimeout(controlsHideTimerRef.current);
       controlsHideTimerRef.current = null;
@@ -1932,6 +1939,14 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       }
     };
   }, [showControls]);
+
+  // Once the first frame lands, begin the normal mouse-idle auto-hide.
+  // Until then `showControls`/`hideControlsNow` keep the controls pinned
+  // (see above) so Back stays reachable while the torrent buffers.
+  const hasFirstFrame = timePos > 0;
+  useEffect(() => {
+    if (hasFirstFrame) showControls();
+  }, [hasFirstFrame, showControls]);
 
   // Back from the player always lands on the movie/episode's detail
   // page — never `navigate(-1)`, which would walk through whatever
@@ -2532,6 +2547,27 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     return out;
   }, [tracks, addonSubs]);
 
+  // Canonical language of the subtitle track that is ACTUALLY active,
+  // derived from `selectedSubKey`. The picker highlights the language row
+  // that matches this — NOT `selectedSubLang`, which is only the
+  // browse/drill cursor. The two diverge when the playing track isn't the
+  // preselected language (e.g. the preferred language has no loadable
+  // variant so mpv falls back to an embedded track in another language);
+  // the highlight must follow what's on screen, not the preselect guess.
+  const activeSubLang = useMemo<string | null>(() => {
+    if (selectedSubKey === 'off') return null;
+    if (selectedSubKey.startsWith('embedded:')) {
+      const id = Number.parseInt(selectedSubKey.slice('embedded:'.length), 10);
+      if (!Number.isFinite(id)) return null;
+      return tracks.find((t) => t.kind === 'sub' && t.id === id)?.lang ?? null;
+    }
+    if (selectedSubKey.startsWith('addon:')) {
+      const k = selectedSubKey.slice('addon:'.length);
+      return addonSubs.find((s) => s.key === k)?.lang ?? null;
+    }
+    return null;
+  }, [selectedSubKey, tracks, addonSubs]);
+
   // Per-canonical-lang variant count (embedded + addon). Used by the
   // SettingsPanel to display "N VARIANTS" next to each language row.
   const variantCountByLang = useMemo(() => {
@@ -2917,6 +2953,17 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   // of the intro/recap/outro regexes, or when the file has no
   // chapters — in which case `<SkipChapterButton>` renders nothing.
   const chapterSkip = useChapterSkip(duration);
+  // Fallback for files WITHOUT mpv chapter markers: external skip
+  // segments — AniSkip (anime OP/ED) then TheIntroDB (live-action TV +
+  // film, and anime backfill). Chapter markers take precedence; this only
+  // fills the gap when `chapterSkip` is null.
+  const segmentSkip = useSkipSegments({
+    id: props.id,
+    videoId: props.videoId,
+    duration,
+    currentTime: timePos,
+  });
+  const skip = chapterSkip ?? segmentSkip;
 
   // (Audio-track button gating removed -- the unified SettingsPanel
   // shows/hides the audio tab based on track count internally.)
@@ -3015,6 +3062,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         selectAudio={selectAudio}
         selectedSubKey={selectedSubKey}
         selectedSubLang={selectedSubLang}
+        activeSubLang={activeSubLang}
         setSelectedSubLang={setSelectedSubLang}
         combinedSubLanguages={combinedSubLanguages}
         variantsForLanguage={variantsForLanguage}
@@ -3189,12 +3237,11 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
 
       {/* Skip Intro / Recap / Credits -- floats bottom-right above the
           controls strip. */}
-      {chapterSkip ? (
+      {skip ? (
         <SkipChapterButton
-          kind={chapterSkip.kind}
-          label={chapterSkip.label}
-          onSkip={chapterSkip.onSkip}
-          controlsOpacity={controlsOpacity}
+          kind={skip.kind}
+          label={skip.label}
+          onSkip={skip.onSkip}
         />
       ) : null}
 

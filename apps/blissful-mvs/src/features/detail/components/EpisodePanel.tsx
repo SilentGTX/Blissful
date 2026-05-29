@@ -1,27 +1,73 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Rating } from '../../../components/Rating';
+import { SkeletonBox } from '../../../components/Skeleton';
 
-// Cinemeta returns metahub URLs for future episodes that don't
-// yet have artwork. The URL is technically valid but 404s. This
-// component swaps to the show poster on load error so we never
-// leave a blank gray rectangle.
-function EpisodeThumb({ src, fallback }: { src?: string | null; fallback?: string | null }) {
-  const [failed, setFailed] = useState(false);
-  const effective = !failed && src ? src : fallback || null;
-  if (!effective) {
-    return <div className="absolute inset-0 bg-white/5" />;
-  }
+// Episode-card artwork with a graceful loading state. Tries the real
+// episode images in order — metahub thumbnail, then the TMDB still — and
+// shows a shimmer skeleton while one is loading OR while the TMDB still
+// fetch is still in flight. Only once every real image is exhausted (and
+// nothing is still pending) do we drop to the show poster, so the viewer
+// never sees the generic poster flash before the actual still resolves.
+// (Cinemeta hands out metahub URLs for episodes with no artwork; they
+// 404, which advances us to the next candidate.)
+function EpisodeThumb({
+  thumb,
+  still,
+  poster,
+  stillPending,
+}: {
+  thumb?: string | null;
+  still?: string | null;
+  poster?: string | null;
+  stillPending?: boolean;
+}) {
+  const candidates = useMemo(
+    () => [thumb, still].filter((x): x is string => !!x),
+    [thumb, still],
+  );
+  const [idx, setIdx] = useState(0);
+  const [loaded, setLoaded] = useState(false);
+  // No reset effect: the parent keys this component by `thumb`, so a
+  // card reused for a different episode remounts with fresh state. A
+  // late-arriving TMDB still keeps the same `thumb` key, so it does NOT
+  // remount — it just extends the candidate list.
+
+  const current = idx < candidates.length ? candidates[idx] : null;
+  const exhausted = idx >= candidates.length;
+  const showSkeleton = (current != null && !loaded) || (exhausted && !!stillPending);
+  const showPoster = exhausted && !stillPending && !!poster;
+
   return (
-    <img
-      src={effective}
-      alt=""
-      className="absolute inset-0 h-full w-full object-cover"
-      loading="lazy"
-      decoding="async"
-      onError={() => {
-        if (!failed) setFailed(true);
-      }}
-    />
+    <>
+      {current != null ? (
+        <img
+          key={current}
+          src={current}
+          alt=""
+          className={
+            'absolute inset-0 h-full w-full object-cover transition-opacity duration-200 ' +
+            (loaded ? 'opacity-100' : 'opacity-0')
+          }
+          loading="lazy"
+          decoding="async"
+          onLoad={() => setLoaded(true)}
+          onError={() => {
+            setLoaded(false);
+            setIdx((i) => i + 1);
+          }}
+        />
+      ) : null}
+      {showPoster ? (
+        <img
+          src={poster as string}
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover"
+          loading="lazy"
+          decoding="async"
+        />
+      ) : null}
+      {showSkeleton ? <SkeletonBox className="absolute inset-0" /> : null}
+    </>
   );
 }
 
@@ -55,6 +101,13 @@ type EpisodePanelProps = {
    *  `{ [episodeNumber]: vote_average }`. Used as a fallback when
    *  Cinemeta's per-episode `rating` field is "0" / missing. */
   episodeRatings?: Record<number, number> | undefined;
+  /** Per-episode TMDB still URLs for the current season:
+   *  `{ [episodeNumber]: url }`. Used as the thumbnail fallback (before
+   *  the show poster) when the metahub episode thumbnail 404s. */
+  episodeStills?: Record<number, string> | undefined;
+  /** True while the season's TMDB still fetch is in flight — keeps the
+   *  skeleton up instead of flashing the show poster. */
+  episodeStillsPending?: boolean;
   onSelectVideo: (id: string) => void;
   getEpisodeProgressInfo: (id: string) => { percent: number; hasProgress: boolean; watched: boolean };
   normalizeImage: (value?: string | null) => string | null | undefined;
@@ -81,6 +134,8 @@ export function EpisodePanel({
   showRating: _showRating,
   showImdbId: _showImdbId,
   episodeRatings,
+  episodeStills,
+  episodeStillsPending,
 }: EpisodePanelProps) {
   return (
     <>
@@ -130,7 +185,13 @@ export function EpisodePanel({
                   className="relative w-full overflow-hidden bg-white/5"
                   style={{ aspectRatio: '16 / 9' }}
                 >
-                  <EpisodeThumb src={thumb} fallback={fallbackPoster} />
+                  <EpisodeThumb
+                    key={thumb ?? 'no-thumb'}
+                    thumb={thumb}
+                    still={episodeNumber != null ? episodeStills?.[episodeNumber] ?? null : null}
+                    poster={fallbackPoster}
+                    stillPending={episodeStillsPending}
+                  />
 
                   {/* Rating top-left over the poster — matches the
                       MetaPanel style: no pill wrapper, just text + IMDB

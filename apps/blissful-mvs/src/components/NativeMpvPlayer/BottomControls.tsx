@@ -10,7 +10,7 @@
 // onVolumeChange callback instead of videoRef.
 
 import { useState, useCallback, useRef, useSyncExternalStore } from 'react';
-import { Tooltip } from '@heroui/react';
+import { BlissTooltip } from '../BlissTooltip';
 import { playbackClock } from './playbackClock';
 import {
   PlayerControlIcon as StremioIcon,
@@ -265,36 +265,27 @@ export function BottomControls(props: BottomControlsProps) {
                 })
               : null;
             const isDisabled = isUnreleased;
-            const tooltipText = releaseDateLabel
-              ? `Next episode airs ${releaseDateLabel}`
-              : 'Next episode hasn\'t aired yet';
-            const button = (
-              <button
-                type="button"
-                className={
-                  'bliss-player-icon-btn flex h-10 w-10 items-center justify-center rounded-full' +
-                  (isDisabled ? ' cursor-not-allowed opacity-40' : '')
-                }
-                onClick={isDisabled ? undefined : advanceToNextEpisode}
-                aria-label="Next episode"
-                aria-disabled={isDisabled || undefined}
-                disabled={isDisabled}
-                title={isDisabled ? undefined : 'Next episode'}
-              >
-                <StremioIcon name="skip-forward" className="h-5 w-5" />
-              </button>
-            );
-            if (!isDisabled) return button;
+            const tooltipText = isDisabled
+              ? releaseDateLabel
+                ? `Next episode airs ${releaseDateLabel}`
+                : 'Next episode hasn\'t aired yet'
+              : 'Next episode';
             return (
-              <Tooltip>
-                <Tooltip.Trigger>{button}</Tooltip.Trigger>
-                <Tooltip.Content
-                  placement="top"
-                  className="bg-white/10 text-white px-3 py-2 rounded-xl text-sm font-medium backdrop-blur-md"
+              <BlissTooltip content={tooltipText} placement="top">
+                <button
+                  type="button"
+                  className={
+                    'bliss-player-icon-btn flex h-10 w-10 items-center justify-center rounded-full' +
+                    (isDisabled ? ' cursor-not-allowed opacity-40' : '')
+                  }
+                  onClick={isDisabled ? undefined : advanceToNextEpisode}
+                  aria-label="Next episode"
+                  aria-disabled={isDisabled || undefined}
+                  disabled={isDisabled}
                 >
-                  {tooltipText}
-                </Tooltip.Content>
-              </Tooltip>
+                  <StremioIcon name="skip-forward" className="h-5 w-5" />
+                </button>
+              </BlissTooltip>
             );
           })()}
           {/* Episodes drawer (series only). */}
@@ -310,37 +301,43 @@ export function BottomControls(props: BottomControlsProps) {
               <span className="hidden md:inline">Episodes</span>
             </button>
           ) : null}
-          <button
-            type="button"
-            className="bliss-player-icon-btn flex h-10 w-10 items-center justify-center rounded-full"
-            onClick={() => openSettings('subtitles')}
-            aria-label="Subtitles"
-            title="Subtitles"
+          <BlissTooltip content="Subtitles" placement="top">
+            <button
+              type="button"
+              className="bliss-player-icon-btn flex h-10 w-10 items-center justify-center rounded-full"
+              onClick={() => openSettings('subtitles')}
+              aria-label="Subtitles"
+            >
+              <StremioIcon name="subtitles" className="h-5 w-5" />
+            </button>
+          </BlissTooltip>
+          <BlissTooltip content="Audio tracks" placement="top">
+            <button
+              type="button"
+              className="bliss-player-icon-btn flex h-10 w-10 items-center justify-center rounded-full"
+              onClick={() => openSettings('audio')}
+              aria-label="Audio tracks"
+            >
+              <StremioIcon name="audio-tracks" className="h-5 w-5" />
+            </button>
+          </BlissTooltip>
+          <BlissTooltip
+            content={isFullscreen ? 'Exit full screen mode' : 'Enter full screen mode'}
+            placement="top"
           >
-            <StremioIcon name="subtitles" className="h-5 w-5" />
-          </button>
-          <button
-            type="button"
-            className="bliss-player-icon-btn flex h-10 w-10 items-center justify-center rounded-full"
-            onClick={() => openSettings('audio')}
-            aria-label="Audio tracks"
-            title="Audio tracks"
-          >
-            <StremioIcon name="audio-tracks" className="h-5 w-5" />
-          </button>
-          <button
-            type="button"
-            className="bliss-player-icon-btn flex h-10 w-10 items-center justify-center rounded-full"
-            onClick={onToggleFullscreen}
-            aria-label={isFullscreen ? 'Exit full screen mode' : 'Enter full screen mode'}
-            title={isFullscreen ? 'Exit full screen mode' : 'Enter full screen mode'}
-          >
-            {isFullscreen ? (
-              <StremioIcon name="minimize" className="h-5 w-5" />
-            ) : (
-              <StremioIcon name="maximize" className="h-5 w-5" />
-            )}
-          </button>
+            <button
+              type="button"
+              className="bliss-player-icon-btn flex h-10 w-10 items-center justify-center rounded-full"
+              onClick={onToggleFullscreen}
+              aria-label={isFullscreen ? 'Exit full screen mode' : 'Enter full screen mode'}
+            >
+              {isFullscreen ? (
+                <StremioIcon name="minimize" className="h-5 w-5" />
+              ) : (
+                <StremioIcon name="maximize" className="h-5 w-5" />
+              )}
+            </button>
+          </BlissTooltip>
         </div>
       </div>
     </div>

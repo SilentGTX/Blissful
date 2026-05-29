@@ -43,6 +43,11 @@ export type SettingsPanelProps = {
   // Subtitles list
   selectedSubKey: string;
   selectedSubLang: string | null;
+  /** Canonical language of the track that is actually playing (derived
+   *  from `selectedSubKey`). Drives which language row is highlighted, so
+   *  the highlight follows what's on screen rather than the browse cursor
+   *  (`selectedSubLang`). */
+  activeSubLang: string | null;
   setSelectedSubLang: (lang: string | null) => void;
   combinedSubLanguages: string[];
   variantsForLanguage: SubtitleVariant[];
@@ -88,7 +93,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
     audioId,
     selectAudio,
     selectedSubKey,
-    selectedSubLang,
+    activeSubLang,
     setSelectedSubLang,
     combinedSubLanguages,
     variantsForLanguage,
@@ -250,10 +255,14 @@ export function SettingsPanel(props: SettingsPanelProps) {
                         );
                         // Total variant count from the parent's precomputed map
                         const totalVariants = variantCountByLang?.[rowCanon] ?? 0;
-                        // Check if any track for this lang is currently selected
+                        // Highlight the language whose track is actually
+                        // playing (activeSubLang, derived from the active
+                        // sid), not the browse cursor (selectedSubLang) —
+                        // otherwise the picker can mark a language that
+                        // isn't the one on screen.
                         const isSelectedInLang =
-                          selectedSubLang != null &&
-                          subtitleLangLabel(selectedSubLang) === rowCanon;
+                          activeSubLang != null &&
+                          subtitleLangLabel(activeSubLang) === rowCanon;
                         return (
                           <button
                             key={lang}

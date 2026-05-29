@@ -4,6 +4,7 @@
 // so the user knows which torrent provider is serving the current file.
 
 import React from 'react';
+import { BlissTooltip } from '../BlissTooltip';
 
 export type PlayerHdrBadgesProps = {
   videoGamma: string | null;
@@ -15,6 +16,15 @@ export type PlayerHdrBadgesProps = {
 
 const BADGE_CLASS =
   'rounded-md border border-white/15 bg-black/45 px-2 py-1 text-[10px] font-bold tracking-wider text-white/80 backdrop-blur';
+
+// Full names for the short source codes, shown in the badge tooltip.
+const SOURCE_LABELS: Record<string, string> = {
+  RD: 'Real-Debrid',
+  'TPB+': 'ThePirateBay+',
+  AD: 'AllDebrid',
+  PM: 'Premiumize',
+  Local: 'Local stream',
+};
 
 function detectSource(url: string | null): string | null {
   if (!url) return null;
@@ -44,19 +54,27 @@ export const PlayerHdrBadges = React.memo(function PlayerHdrBadges({
   return (
     <div className="flex items-center gap-2">
       {source ? (
-        <div className={BADGE_CLASS} title={source}>
+        <BlissTooltip
+          content={SOURCE_LABELS[source] ?? source}
+          placement="bottom"
+          triggerClassName={BADGE_CLASS}
+        >
           {source}
-        </div>
+        </BlissTooltip>
       ) : null}
       {is4K ? (
-        <div className={BADGE_CLASS} title="Ultra High Definition">
+        <BlissTooltip content="Ultra High Definition" placement="bottom" triggerClassName={BADGE_CLASS}>
           4K
-        </div>
+        </BlissTooltip>
       ) : null}
       {isHdr ? (
-        <div className={BADGE_CLASS} title={videoGamma === 'pq' ? 'HDR10' : 'HLG'}>
+        <BlissTooltip
+          content={videoGamma === 'pq' ? 'HDR10' : 'HLG'}
+          placement="bottom"
+          triggerClassName={BADGE_CLASS}
+        >
           HDR
-        </div>
+        </BlissTooltip>
       ) : null}
       {error ? (
         <div className="rounded-full bg-red-500/20 px-3 py-1 text-xs text-red-200 backdrop-blur">
