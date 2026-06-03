@@ -1,11 +1,16 @@
 import type { MediaItem } from '../types/media';
 import { Card, Chip } from '@heroui/react';
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { InfoIcon } from '../icons/InfoIcon';
 import { ImdbIcon } from '../icons/ImdbIcon';
 import { PlayIcon } from '../icons/PlayIcon';
 import { TruncatedText } from './TruncatedText';
+import { setFocus } from '@noriginmedia/norigin-spatial-navigation';
 import { useImdbRating } from '../lib/useImdbRating';
+import { useTvFocusable } from '../spatial/useTvFocusable';
+import { MediaCardMenu } from './MediaCardMenu';
+import { isTvMode } from '../lib/platform';
+import { tvPosterUrl } from '../lib/tvPosterUrl';
 
 type MediaCardProps = {
   item: MediaItem;
@@ -13,9 +18,23 @@ type MediaCardProps = {
   selected?: boolean;
   progress?: number | null;
   onPress?: () => void;
+  /** Stable alternative to `onPress`: receives the item, so the rail can pass
+   *  ONE stable function instead of a fresh `() => onItemPress(item)` closure
+   *  per card per render. With React.memo this lets a rail-level re-render
+   *  (Norigin saveLastFocusedChild fires one on every focus move) skip every
+   *  card except the two whose focus actually changed — the core TV nav win. */
+  onItemPress?: (item: MediaItem) => void;
   showHoverActions?: boolean;
   onPlay?: () => void;
   onInfo?: () => void;
+  /** Claim D-pad focus on mount (route-entry first card) on TV. */
+  autoFocusTv?: boolean;
+  /** TV: focusKey to jump to when pressing UP from this card (e.g. the hero
+   *  "Watch now" from the top home rail, which geometry otherwise misses). */
+  upFocusKey?: string;
+  /** Fired when the card gains D-pad/keyboard focus or mouse hover — used by
+   *  Discover to live-preview the focused title in the side panel. */
+  onFocus?: () => void;
 };
 
 function formatRating(rating?: number) {
@@ -23,18 +42,56 @@ function formatRating(rating?: number) {
   return rating.toFixed(1);
 }
 
-export default function MediaCard({
+function MediaCard({
   item,
   variant = 'details',
   selected = false,
   progress,
-  onPress,
+  onPress: onPressProp,
+  onItemPress,
   showHoverActions = false,
   onPlay,
   onInfo,
+  autoFocusTv,
+  upFocusKey,
+  onFocus,
 }: MediaCardProps) {
-  const imdbId = /^tt\d{5,}$/.test(item.id) ? item.id : null;
+  // Resolve a single press handler. Prefer explicit `onPress`; else build it
+  // from the stable item-based `onItemPress` (so the rail passes ONE stable
+  // function and React.memo can skip non-focused cards). All `onPress`
+  // references below are unchanged.
+  const onPress = onPressProp ?? (onItemPress ? () => onItemPress(item) : undefined);
+  // TV: do NOT lazy-scrape IMDB ratings per card. On the home screen that
+  // fires a burst of dozens of proxied imdb.com/Cinemeta fetches (one per
+  // card with no addon-supplied rating) the instant the grid mounts, each
+  // resolving with a setState re-render — a network + render storm competing
+  // with poster decode on a weak TV. Neutralize the id on TV (hook still
+  // called unconditionally — Rules of Hooks); the pill still shows for cards
+  // whose addon meta already carried a rating.
+  const imdbId = !isTvMode() && /^tt\d{5,}$/.test(item.id) ? item.id : null;
   const resolvedRating = useImdbRating(imdbId, item.rating ?? null);
+  // TV D-pad focus (inert on desktop/browser — mouse onClick still works).
+  const [menuOpen, setMenuOpen] = useState(false);
+  const { ref: tvRef } = useTvFocusable({
+    onPress,
+    onFocus,
+    // TV: holding OK opens a quick-actions menu (Open / Library / mark watched);
+    // a short tap still fires onPress (navigate). Only for interactive cards.
+    onLongPress: onPress ? () => setMenuOpen(true) : undefined,
+    focusable: Boolean(onPress),
+    autoFocus: Boolean(autoFocusTv),
+    onArrowPress: upFocusKey
+      ? (dir) => {
+          // Force UP onto the hero; return false to skip Norigin's geometric
+          // move (which would land on the wide pinned search bar instead).
+          if (dir === 'up') {
+            setFocus(upFocusKey);
+            return false;
+          }
+          return true;
+        }
+      : undefined,
+  });
   const rating = formatRating(resolvedRating ?? undefined);
   const subtitle = [item.year, item.runtime].filter(Boolean).join(' \u00b7 ');
 
@@ -80,11 +137,18 @@ export default function MediaCard({
     return () => window.clearTimeout(timer);
   }, [item.posterUrl, imgLoaded, imgError, retryNonce]);
 
-  const posterSrc = item.posterUrl
+  // On TV, downscale metahub posters to the "small" variant (pixel-matched to the
+  // ~144px card, ~10x fewer decoded bytes) — big graphics-memory win on low-end
+  // GLES2 TVs. No-op on desktop / for non-metahub URLs.
+  const basePosterUrl = isTvMode() ? tvPosterUrl(item.posterUrl) : item.posterUrl;
+  const posterSrc = basePosterUrl
     ? retryNonce > 0
-      ? `${item.posterUrl}${item.posterUrl.includes('?') ? '&' : '?'}_r=${retryNonce}`
-      : item.posterUrl
+      ? `${basePosterUrl}${basePosterUrl.includes('?') ? '&' : '?'}_r=${retryNonce}`
+      : basePosterUrl
     : null;
+  // Lazy-load posters on TV so off-screen / hidden rail cards don't all decode up
+  // front into the constrained RAM. Desktop keeps eager for instant hover.
+  const posterLoading = isTvMode() ? 'lazy' : 'eager';
   const posterGaveUp = imgError && retryNonce >= POSTER_MAX_RETRIES;
 
   const handlePlay = () => {
@@ -103,16 +167,23 @@ export default function MediaCard({
     if (onPress) onPress();
   };
 
+  // Hold-OK quick-actions menu (TV only; portaled, so placement is irrelevant).
+  const cardMenu = menuOpen ? (
+    <MediaCardMenu item={item} onClose={() => setMenuOpen(false)} />
+  ) : null;
+
   if (variant === 'poster') {
     const p = typeof progress === 'number' && Number.isFinite(progress) ? Math.min(100, Math.max(0, progress)) : null;
     return (
       <div className="group/poster w-full">
         <div
+          ref={tvRef}
           className={
-            'cursor-pointer touch-manipulation ' +
+            'cursor-pointer touch-manipulation tv-focusable-card ' +
             (showHoverActions ? 'netflix-card-wrap' : '')
           }
           onClick={onPress}
+          onMouseEnter={onFocus}
           onTouchStart={(e) => {
             e.currentTarget.style.transform = 'scale(0.98)';
           }}
@@ -137,7 +208,7 @@ export default function MediaCard({
                     src={posterSrc}
                     alt={`${item.title} poster`}
                     className="h-full w-full rounded-2xl object-cover transition-transform duration-300 group-hover:scale-110"
-                    loading="eager"
+                    loading={posterLoading}
                     decoding="async"
                     onLoad={() => setImgLoaded(true)}
                     onError={() => setImgError(true)}
@@ -148,7 +219,7 @@ export default function MediaCard({
                   </div>
                 )}
                 {rating ? (
-                  <div className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full bg-black/45 px-3 py-1 text-sm font-semibold text-white backdrop-blur">
+                  <div className="media-card-imdb absolute left-3 top-3 inline-flex items-center gap-2 rounded-full bg-black/45 px-3 py-1 text-sm font-semibold text-white backdrop-blur">
                     <span>{rating}</span>
                     <ImdbIcon className="h-6 w-6 text-[#f5c518]" />
                   </div>
@@ -203,15 +274,17 @@ export default function MediaCard({
             load asynchronously across the grid. */}
         <TruncatedText
           content={item.title}
-          className="mt-3 min-h-[2.5rem] text-center text-sm font-medium text-foreground/90 line-clamp-2 transition-colors duration-500 ease-out group-hover/poster:text-[var(--bliss-accent)]"
+          className="tv-card-title mt-3 min-h-[2.5rem] text-center text-sm font-medium text-foreground/90 line-clamp-2 transition-colors duration-500 ease-out group-hover/poster:text-[var(--bliss-accent)]"
         />
+        {cardMenu}
       </div>
     );
   }
 
   return (
     <div
-      className={onPress ? 'cursor-pointer' : ''}
+      ref={tvRef}
+      className={(onPress ? 'cursor-pointer ' : '') + 'tv-focusable-card'}
       onClick={onPress}
       role="button"
       tabIndex={onPress ? 0 : undefined}
@@ -233,7 +306,7 @@ export default function MediaCard({
                 src={posterSrc}
                 alt={`${item.title} poster`}
                 className="h-[260px] w-full object-cover transition-transform duration-300 group-hover:scale-110"
-                loading="eager"
+                loading={posterLoading}
                 decoding="async"
                 onLoad={() => setImgLoaded(true)}
                 onError={() => setImgError(true)}
@@ -274,6 +347,14 @@ export default function MediaCard({
           ) : null}
         </Card.Content>
       </Card>
+      {cardMenu}
     </div>
   );
 }
+
+// Memoized: with stable props (notably the item-based `onItemPress` the rails
+// now pass) a rail-level re-render — Norigin fires one on every focus move via
+// saveLastFocusedChild — skips every card except the two whose focus changed,
+// instead of re-rendering all ~14 heavy cards in the rail. Default shallow
+// prop compare is correct here (item is a stable ref, handlers are stable).
+export default memo(MediaCard);

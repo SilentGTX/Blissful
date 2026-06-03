@@ -135,7 +135,7 @@ export function PersonActionsRow({
       >
         {rowInner}
       </Button>
-      <Dropdown.Popover className="solid-surface min-w-[180px] rounded-2xl bg-white/10 p-1 text-white shadow-xl">
+      <Dropdown.Popover className="solid-surface bliss-glass min-w-[180px] rounded-2xl p-1 text-white">
         <Dropdown.Menu
           onAction={(key) => {
             const action = String(key);

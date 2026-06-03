@@ -67,7 +67,7 @@ export function AccountModal({
     <div className="fixed inset-0 z-50 bg-black/45 backdrop-blur-md">
       <div
         ref={panelRef}
-        className="absolute right-4 solid-surface w-[320px] rounded-[24px] bg-white/20 p-5"
+        className="absolute right-4 solid-surface bliss-glass w-[320px] rounded-[24px] p-5"
         style={{ top: 'calc(var(--horizontal-nav-bar-size) + var(--horizontal-nav-margin) * 2 + env(safe-area-inset-top) + 0.25rem)' }}
       >
         <div className="flex items-center gap-3">

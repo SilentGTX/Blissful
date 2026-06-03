@@ -1,10 +1,13 @@
-import { Button, ListBox, Select, Spinner } from '@heroui/react';
+import { Spinner } from '@heroui/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import MediaCard from '../components/MediaCard';
 import { useAuth } from '../context/AuthProvider';
 import { useModals } from '../context/ModalsProvider';
 import { CloseIcon } from '../icons/CloseIcon';
+import { FocusableButton } from '../spatial/FocusableButton';
+import { TvSelect } from '../spatial/TvSelect';
+import { isTvMode } from '../lib/platform';
 import {
   normalizeStremioImage,
   type LibraryItem,
@@ -170,9 +173,9 @@ export default function LibraryPage() {
           <div className="font-[Fraunces] text-2xl font-semibold">Library</div>
           <div className="mt-1 text-sm text-foreground/60">Login to see your Stremio library.</div>
           <div className="mt-5">
-            <Button className="rounded-full bg-white text-black" onPress={openLogin}>
+            <FocusableButton className="rounded-full bg-white text-black" onPress={openLogin} autoFocusTv>
               Login
-            </Button>
+            </FocusableButton>
           </div>
         </div>
       </div>
@@ -183,28 +186,14 @@ export default function LibraryPage() {
     <div className="mt-4 space-y-6">
       <div className="mt-5 flex flex-nowrap items-center gap-3 overflow-x-auto hide-scrollbar">
         <div className="flex-none">
-          <Select
-            aria-label="Type"
-            selectedKey={typeFilter}
-            onSelectionChange={(key) => {
-              if (typeof key === 'string') setTypeFilter(key);
-            }}
+          <TvSelect
+            ariaLabel="Type"
+            value={typeFilter}
+            onChange={(key) => setTypeFilter(key)}
+            options={typeOptions.map((t) => ({ key: t, label: t === 'all' ? 'All' : typeLabel(t) }))}
             className="w-[160px]"
-          >
-            <Select.Trigger className="bg-white/6 border border-white/10 rounded-full h-11 text-foreground">
-              <Select.Value />
-              <Select.Indicator />
-            </Select.Trigger>
-            <Select.Popover>
-              <ListBox>
-                {typeOptions.map((t) => (
-                  <ListBox.Item key={t} id={t} textValue={t === 'all' ? 'All' : typeLabel(t)}>
-                    {t === 'all' ? 'All' : typeLabel(t)}
-                  </ListBox.Item>
-                ))}
-              </ListBox>
-            </Select.Popover>
-          </Select>
+            triggerClassName="bg-white/6 border border-white/10 rounded-full h-11 text-foreground"
+          />
         </div>
 
         <div className="flex flex-nowrap gap-2">
@@ -214,34 +203,32 @@ export default function LibraryPage() {
             { key: 'za', label: 'Z-A' },
             { key: 'most_watched', label: 'Most watched' },
           ] as const).map((chip) => (
-            <button
+            <FocusableButton
               key={chip.key}
-              type="button"
               className={
                 'cursor-pointer whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold tracking-tight transition ' +
                 (sortMode === chip.key ? 'bg-white text-black' : 'bg-white/10 text-white/90 hover:bg-white/15')
               }
-              onClick={() => setSortMode(chip.key)}
+              onPress={() => setSortMode(chip.key)}
             >
               {chip.label}
-            </button>
+            </FocusableButton>
           ))}
 
           {([
             { key: 'watched', label: 'Watched' },
             { key: 'not_watched', label: 'Not watched' },
           ] as const).map((chip) => (
-            <button
+            <FocusableButton
               key={chip.key}
-              type="button"
               className={
                 'cursor-pointer whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold tracking-tight transition ' +
                 (watchedFilter === chip.key ? 'bg-white text-black' : 'bg-white/10 text-white/90 hover:bg-white/15')
               }
-              onClick={() => setWatchedFilter((prev) => (prev === chip.key ? 'all' : chip.key))}
+              onPress={() => setWatchedFilter((prev) => (prev === chip.key ? 'all' : chip.key))}
             >
               {chip.label}
-            </button>
+            </FocusableButton>
           ))}
         </div>
       </div>
@@ -262,7 +249,7 @@ export default function LibraryPage() {
           <div className="text-sm text-foreground/60">No library items found.</div>
         ) : null}
 
-        {filtered.map((item) => {
+        {filtered.map((item, index) => {
           const poster = normalizeStremioImage(item.poster);
           const progress = percentProgress(item);
           const videoId = item.type === 'series' ? item.state?.video_id ?? null : null;
@@ -276,27 +263,32 @@ export default function LibraryPage() {
 
           return (
             <div key={item._id} className="relative">
-              <button
-                type="button"
-                className="absolute right-3 top-3 z-20 cursor-pointer rounded-full bg-black/35 p-2 text-white/70 backdrop-blur hover:bg-black/45 hover:text-white"
-                aria-label="Remove from library"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (!authKey) return;
-                  setItems((prev) => prev.filter((x) => x._id !== item._id));
-                  void putBlissfulLibraryItem(authKey, item._id, { ...item, removed: true }).catch(() => {
-                    // ignore
-                  });
-                }}
-              >
-                <CloseIcon size={16} />
-              </button>
+              {/* On TV, gate out the Remove-X so the cell has a single focus stop
+                  (the card). It stays on desktop where it's mouse-driven. */}
+              {!isTvMode() ? (
+                <button
+                  type="button"
+                  className="absolute right-3 top-3 z-20 cursor-pointer rounded-full bg-black/35 p-2 text-white/70 backdrop-blur hover:bg-black/45 hover:text-white"
+                  aria-label="Remove from library"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (!authKey) return;
+                    setItems((prev) => prev.filter((x) => x._id !== item._id));
+                    void putBlissfulLibraryItem(authKey, item._id, { ...item, removed: true }).catch(() => {
+                      // ignore
+                    });
+                  }}
+                >
+                  <CloseIcon size={16} />
+                </button>
+              ) : null}
 
               <MediaCard
                 item={mediaItem}
                 variant="poster"
                 progress={progress}
+                autoFocusTv={index === 0}
                 onPress={() => {
                   const base = `/detail/${encodeURIComponent(item.type)}/${encodeURIComponent(item._id)}`;
                   const href = item.type === 'series' && typeof videoId === 'string'

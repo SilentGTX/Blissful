@@ -37,6 +37,14 @@ export type PlayerSettings = {
    *  element using `var(--bliss-accent)` picks this up at runtime. Hex
    *  string (e.g. "#95a2ff"). Default is the blissful sky-blue accent. */
   accentColor?: string;
+  /** Site-wide surface (glass) color. Tints the faked-glass recipe used by
+   *  the nav rail, search pill, menus, dropdowns, popovers and modals via
+   *  the `--bliss-surface` CSS variable (plus the derived `--bliss-surface-2`
+   *  darker shade, the `--bliss-glass-top` / `--bliss-glass-bottom` rgba
+   *  gradient stops, and `--bliss-surface-solid` flat fill). Hex string
+   *  (e.g. "#282f40"). Default `#282f40` reproduces the current dark glass
+   *  exactly, so nothing changes unless the user picks a color. */
+  surfaceColor?: string;
   /** Real-Debrid API key. When set, the app auto-installs a Torrentio RD
    *  addon and filters out non-RD Torrentio results. Get a key at
    *  https://real-debrid.com/apitoken */
@@ -67,6 +75,7 @@ export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
   favoriteServer: null,
   favoriteQuality: null,
   accentColor: '#95a2ff',
+  surfaceColor: '#282f40',
   realDebridApiKey: '',
 };
 

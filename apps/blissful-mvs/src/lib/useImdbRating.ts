@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { readStoredPlayerSettings } from './playerSettings';
+import { proxyUrl } from './proxyBase';
 
 // In-memory rating cache for the current session. Keyed by IMDB ID.
 // Successful lookups also write through to sessionStorage so a
@@ -63,7 +64,7 @@ async function fetchRatingFromCinemeta(imdbId: string): Promise<number | null> {
   ];
   for (const url of bases) {
     try {
-      const response = await fetch(`/addon-proxy?url=${encodeURIComponent(url)}`);
+      const response = await fetch(proxyUrl(`/addon-proxy?url=${encodeURIComponent(url)}`));
       if (!response.ok) continue;
       const data = (await response.json()) as { meta?: { imdbRating?: string | number } };
       const raw = data?.meta?.imdbRating;
@@ -90,7 +91,7 @@ async function fetchRatingFromTmdb(imdbId: string): Promise<number | null> {
 
   const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${encodeURIComponent(apiKey)}&external_source=imdb_id`;
   try {
-    const response = await fetch(`/addon-proxy?url=${encodeURIComponent(url)}`);
+    const response = await fetch(proxyUrl(`/addon-proxy?url=${encodeURIComponent(url)}`));
     if (!response.ok) return null;
     const data = (await response.json()) as {
       movie_results?: Array<{ vote_average?: number }>;
@@ -135,7 +136,7 @@ async function fetchImdbRating(imdbId: string): Promise<number | null> {
   // upstream proxy's hop). Use the canonical www host directly.
   try {
     const url = `https://www.imdb.com/title/${imdbId}/`;
-    const response = await fetch(`/addon-proxy?url=${encodeURIComponent(url)}`);
+    const response = await fetch(proxyUrl(`/addon-proxy?url=${encodeURIComponent(url)}`));
     if (response.ok) {
       const html = await response.text();
       const rating = parseRatingFromHtml(html);

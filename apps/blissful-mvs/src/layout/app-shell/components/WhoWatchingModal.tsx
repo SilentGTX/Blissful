@@ -5,8 +5,11 @@
 // feels familiar.
 
 import { Avatar, Button, Modal } from '@heroui/react';
+import { useFocusable, FocusContext } from '@noriginmedia/norigin-spatial-navigation';
 import { useAuth } from '../../../context/AuthProvider';
 import { renderProfileAvatar } from '../../../lib/profileAvatars';
+import { useTvFocusable } from '../../../spatial/useTvFocusable';
+import { isTvMode } from '../../../lib/platform';
 
 type WhoWatchingModalProps = {
   isOpen: boolean;
@@ -29,6 +32,19 @@ export function WhoWatchingModal({
   onSignOut,
 }: WhoWatchingModalProps) {
   const { user, logout } = useAuth();
+
+  // TV: wrap the tiles + sign-out in a focus boundary so the D-pad stays inside
+  // the modal; each interactive item is its own Norigin focusable. Inert on
+  // desktop. Hooks run unconditionally, before the isOpen early return.
+  const tv = isTvMode();
+  const { ref: gridRef, focusKey: gridFocusKey } = useFocusable({
+    focusable: tv,
+    isFocusBoundary: tv,
+    focusBoundaryDirections: ['up', 'down', 'left', 'right'],
+    saveLastFocusedChild: true,
+    trackChildren: true,
+  });
+
   if (!isOpen) return null;
 
   const label = (profileDisplayName ?? user?.displayName ?? user?.username ?? user?.email ?? 'Guest').trim() || 'Guest';
@@ -41,6 +57,57 @@ export function WhoWatchingModal({
   };
 
   return (
+    <WhoWatchingModalContent
+      gridRef={gridRef}
+      gridFocusKey={gridFocusKey}
+      isOpen={isOpen}
+      onOpenChange={onOpenChange}
+      label={label}
+      avatar={avatar}
+      onEditProfile={onEditProfile}
+      handleSignOut={handleSignOut}
+    />
+  );
+}
+
+// Body extracted so the three interactive items can each host a `useTvFocusable`
+// node (the current-user tile auto-focuses). Rendered only when the modal is
+// open, so these hooks are stable.
+type WhoWatchingModalContentProps = {
+  gridRef: React.RefObject<HTMLDivElement | null>;
+  gridFocusKey: string;
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+  label: string;
+  avatar: ReturnType<typeof renderProfileAvatar>;
+  onEditProfile?: () => void;
+  handleSignOut: () => void;
+};
+
+function WhoWatchingModalContent({
+  gridRef,
+  gridFocusKey,
+  isOpen,
+  onOpenChange,
+  label,
+  avatar,
+  onEditProfile,
+  handleSignOut,
+}: WhoWatchingModalContentProps) {
+  const { ref: currentTileRef } = useTvFocusable({
+    onPress: () => onOpenChange(false),
+    autoFocus: true,
+  });
+  const { ref: editTileRef } = useTvFocusable({
+    onPress: () => {
+      onOpenChange(false);
+      onEditProfile?.();
+    },
+    focusable: Boolean(onEditProfile),
+  });
+  const { ref: signOutRef } = useTvFocusable({ onPress: handleSignOut });
+
+  return (
     <Modal>
       <Modal.Backdrop isOpen={isOpen} onOpenChange={onOpenChange} variant="blur" className="bg-black/60">
         <Modal.Container placement="center" size="lg">
@@ -49,14 +116,17 @@ export function WhoWatchingModal({
               <Modal.Heading>Who's watching?</Modal.Heading>
             </Modal.Header>
             <Modal.Body className="px-0">
-              <div className="solid-surface mx-auto w-full max-w-3xl rounded-[28px] bg-white/10 p-6 md:p-8">
+              <div className="solid-surface bliss-glass mx-auto w-full max-w-3xl rounded-[28px] p-6 md:p-8">
                 <div className="text-center font-[Instrument_Serif] text-4xl font-semibold tracking-tight">
                   Who's watching?
                 </div>
 
+                <FocusContext.Provider value={gridFocusKey}>
+                  <div ref={gridRef}>
                 <div className="mt-8 flex flex-wrap items-start justify-center gap-x-8 gap-y-10">
                   {/* Current user tile — click closes the modal and lands in the app. */}
                   <button
+                    ref={currentTileRef}
                     type="button"
                     className="group flex w-[7rem] cursor-pointer flex-col items-center opacity-100 transition"
                     onClick={() => onOpenChange(false)}
@@ -82,6 +152,7 @@ export function WhoWatchingModal({
                   {/* Edit profile (display name + avatar). */}
                   {onEditProfile ? (
                     <button
+                      ref={editTileRef}
                       type="button"
                       className="group flex w-[7rem] cursor-pointer flex-col items-center"
                       onClick={() => {
@@ -99,6 +170,7 @@ export function WhoWatchingModal({
 
                 <div className="mt-8 flex justify-center">
                   <Button
+                    ref={signOutRef}
                     variant="ghost"
                     className="rounded-full bg-white/10"
                     onPress={handleSignOut}
@@ -106,6 +178,8 @@ export function WhoWatchingModal({
                     Sign out
                   </Button>
                 </div>
+                  </div>
+                </FocusContext.Provider>
               </div>
             </Modal.Body>
           </Modal.Dialog>

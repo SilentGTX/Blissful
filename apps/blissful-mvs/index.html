@@ -10,6 +10,23 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // Android TV WebView (Tauri, served from tauri.localhost) reports a
+      // density-scaled viewport — a 1920px panel at density 2.0 gives only 960
+      // CSS px, so the 1920-designed UI renders ~2x too big. Pin a fixed 1920
+      // layout viewport there (the WebView, with useWideViewPort+overviewMode,
+      // scales 1920 -> the panel). Windows shell (127.0.0.1) and the browser
+      // (localhost) are untouched and keep width=device-width. Runs in <head>
+      // before first layout.
+      (function () {
+        try {
+          if (location.hostname === 'tauri.localhost') {
+            var vp = document.querySelector('meta[name=viewport]');
+            if (vp) vp.setAttribute('content', 'width=1440, viewport-fit=cover');
+          }
+        } catch (e) {}
+      })();
+    </script>
     <title>Blissful</title>
     <script>
       (function () {

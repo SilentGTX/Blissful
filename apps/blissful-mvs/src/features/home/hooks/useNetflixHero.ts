@@ -92,7 +92,7 @@ export function useNetflixHero(
       }, 1600);
     };
 
-    const interval = window.setInterval(pickNext, 8000);
+    const interval = window.setInterval(pickNext, 11000);
     return () => window.clearInterval(interval);
   }, [heroCandidates, heroMeta, isNetflix]);
 

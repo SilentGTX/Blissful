@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthProvider';
+import { FocusableButton } from '../spatial/FocusableButton';
+import { TvTextInput } from '../spatial/TvTextInput';
 import { StremioLogo } from '../icons/StremioLogo';
-import { pollFacebookCredentials } from '../lib/stremioFacebook';
 import {
   exchangeStremioCredentialsForAuthKey,
   fetchStremioLinkStatus,
@@ -14,24 +15,17 @@ import {
 // "Linked Accounts -> Stremio" panel for the Settings page. Backed by
 // /stremio/{link-token,unlink,status,sync} on blissful-storage; the server
 // runs a 15-min cron that mirrors Stremio's library <-> Blissful's library
-// so progress from the official Stremio app shows up in Continue
-// Watching, and vice versa.
+// so progress + per-episode watched (the WatchedBitField) from the official
+// Stremio app show up here, and vice versa.
 //
-// Sign-in flow: opens /link-stremio in a popup. Two paths from there:
-//
-//   - Email/password -- the popup runs the exchange itself, posts the
-//     resulting authKey to /stremio/link-token, postMessages us
-//     `bliss:stremio-linked` and auto-closes.
-//
-//   - Facebook -- the popup postMessages us `bliss:fb-init` with a state
-//     token, then navigates ITSELF to www.strem.io/login-fb/<state>
-//     (URL bar shows strem.io). We poll Stremio from this tab, convert
-//     the FB token to a Stremio authKey via api.strem.io/api/login
-//     (browser-direct, password-free), store it via /stremio/link-token,
-//     and close the popup.
-
-const POPUP_WIDTH = 480;
-const POPUP_HEIGHT = 640;
+// Linking: an INLINE email/password form (no popup). The credentials go
+// browser-direct to api.strem.io/api/login via
+// exchangeStremioCredentialsForAuthKey — the password NEVER reaches the
+// Blissful backend; only the resulting Stremio authKey is posted to
+// /stremio/link-token. This replaces the old window.open('/link-stremio')
+// popup, which (a) has no page in this build and (b) can't work on a TV box
+// (no popup windows / cross-window text entry). The inline form is D-pad +
+// IME friendly via TvTextInput / FocusableButton.
 
 function relativeTime(ms: number | null): string {
   if (!ms) return 'never';
@@ -52,7 +46,9 @@ export function SettingsStremioPanel() {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionInfo, setActionInfo] = useState<string | null>(null);
-  const popupRef = useRef<Window | null>(null);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
 
   const refreshStatus = useCallback(async () => {
     if (!authKey) {
@@ -74,90 +70,43 @@ export function SettingsStremioPanel() {
     void refreshStatus();
   }, [refreshStatus]);
 
-  // Drive the FB flow from this tab: poll Stremio for the FB
-  // credentials, convert them to a Stremio authKey browser-direct, push
-  // only the authKey to blissful-storage, then close the popup window
-  // (which is by now sitting on strem.io's login page).
-  const completeFacebookFlow = useCallback(
-    async (state: string) => {
-      if (!authKey) return;
-      setBusy(true);
-      setActionError(null);
-      setActionInfo('Waiting for you to finish on Stremio...');
-      // If the user closes the popup mid-flow, abort polling instead of
-      // waiting out the ~2-min timeout. We can read popupRef.current.closed
-      // even across origins (after the popup navigates to strem.io) -- it's
-      // one of the few cross-origin Window properties browsers allow.
-      const controller = new AbortController();
-      const closedTicker = window.setInterval(() => {
-        if (popupRef.current?.closed) {
-          controller.abort();
-          window.clearInterval(closedTicker);
-        }
-      }, 1000);
-      try {
-        const fbCreds = await pollFacebookCredentials(state, { signal: controller.signal });
-        const creds = await exchangeStremioCredentialsForAuthKey({
-          email: fbCreds.email,
-          password: fbCreds.fbLoginToken,
-          facebook: true,
-        });
-        await linkStremioWithToken(authKey, { authKey: creds.authKey, email: creds.email });
-        setActionInfo(`Linked as ${creds.email}.`);
-        if (popupRef.current && !popupRef.current.closed) {
-          try { popupRef.current.close(); } catch { /* cross-origin or already gone */ }
-        }
-        await refreshStatus();
-      } catch (err: unknown) {
-        setActionError(err instanceof Error ? err.message : 'Facebook sign-in failed');
-      } finally {
-        window.clearInterval(closedTicker);
-        setBusy(false);
-      }
-    },
-    [authKey, refreshStatus],
-  );
-
-  // Listen for the popup's messages. Same-origin check is critical: without
-  // it, any other tab on the web could postMessage us and trigger a false
-  // "linked" state.
-  //   `bliss:stremio-linked`  -- email/password path finished in the popup
-  //   `bliss:fb-init`         -- popup is about to navigate to strem.io;
-  //                              we drive the rest from here
-  useEffect(() => {
-    function onMessage(event: MessageEvent) {
-      if (event.origin !== window.location.origin) return;
-      const data = event.data as { type?: string; email?: string; state?: string } | null;
-      if (!data) return;
-      if (data.type === 'bliss:stremio-linked') {
-        setActionInfo(`Linked as ${data.email ?? 'your Stremio account'}.`);
-        setActionError(null);
-        void refreshStatus();
-      } else if (data.type === 'bliss:fb-init' && typeof data.state === 'string') {
-        void completeFacebookFlow(data.state);
-      }
-    }
-    window.addEventListener('message', onMessage);
-    return () => window.removeEventListener('message', onMessage);
-  }, [refreshStatus, completeFacebookFlow]);
-
-  const openLinkPopup = () => {
-    if (!authKey) return;
-    setActionError(null);
-    setActionInfo(null);
-    const left = Math.max(0, Math.round((window.screen.availWidth - POPUP_WIDTH) / 2));
-    const top = Math.max(0, Math.round((window.screen.availHeight - POPUP_HEIGHT) / 2));
-    const features = `width=${POPUP_WIDTH},height=${POPUP_HEIGHT},left=${left},top=${top},resizable=yes,scrollbars=yes`;
-    // Path is /link-stremio (not /stremio-link): Vite dev proxy and
-    // Traefik prod both catch /stremio* and forward to www.strem.io,
-    // so a /stremio-* path 404s on the Stremio site.
-    const win = window.open('/link-stremio', 'bliss-stremio-link', features);
-    if (!win) {
-      setActionError('Pop-up blocked. Allow pop-ups for this site and try again.');
+  // Email/password -> Stremio authKey (browser-direct to api.strem.io) ->
+  // store the authKey on blissful-storage -> sync immediately so watched +
+  // progress show without waiting for the 15-min cron.
+  const handleLink = async () => {
+    if (!authKey || busy) return;
+    const emailTrimmed = email.trim();
+    if (!emailTrimmed || !password) {
+      setActionError('Enter your Stremio email and password.');
       return;
     }
-    popupRef.current = win;
-    try { win.focus(); } catch { /* ignore */ }
+    setBusy(true);
+    setActionError(null);
+    setActionInfo(null);
+    try {
+      const creds = await exchangeStremioCredentialsForAuthKey({
+        email: emailTrimmed,
+        password,
+        facebook: false,
+      });
+      await linkStremioWithToken(authKey, { authKey: creds.authKey, email: creds.email });
+      setLinkOpen(false);
+      setPassword('');
+      setActionInfo(`Linked as ${creds.email}. Syncing…`);
+      await refreshStatus();
+      // Immediate first sync so the user doesn't have to wait for the cron.
+      try {
+        const result = await syncStremioNow(authKey);
+        setActionInfo(`Linked as ${creds.email}. Pulled ${result.pulled}, pushed ${result.pushed}.`);
+        await refreshStatus();
+      } catch {
+        /* the 15-min cron heals; status still shows linked */
+      }
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : 'Stremio sign-in failed');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleUnlink = async () => {
@@ -176,15 +125,14 @@ export function SettingsStremioPanel() {
     }
   };
 
-  // Anti-spam cooldown for the manual "Sync now" button. Independent
-  // from the module-level cooldown in stremioLinkApi (which gates the
-  // home-page auto-trigger) so a recent auto-sync doesn't lock the user
-  // out of an explicit click.
+  // Anti-spam cooldown for the manual "Sync now" button. Independent from the
+  // module-level cooldown in stremioLinkApi (which gates the home-page
+  // auto-trigger) so a recent auto-sync doesn't lock the user out of a click.
   const SYNC_BUTTON_COOLDOWN_MS = 30_000;
   const [syncCooldownUntil, setSyncCooldownUntil] = useState(0);
-  const [tickMs, setTickMs] = useState(() => Date.now());
+  const [tickMs, setTickMs] = useState(0);
   useEffect(() => {
-    if (syncCooldownUntil <= Date.now()) return;
+    if (syncCooldownUntil <= 0) return;
     const id = window.setInterval(() => setTickMs(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, [syncCooldownUntil]);
@@ -207,15 +155,17 @@ export function SettingsStremioPanel() {
       setActionError(err instanceof Error ? err.message : 'Sync failed');
     } finally {
       setBusy(false);
-      setSyncCooldownUntil(Date.now() + SYNC_BUTTON_COOLDOWN_MS);
+      const now = Date.now();
+      setTickMs(now);
+      setSyncCooldownUntil(now + SYNC_BUTTON_COOLDOWN_MS);
     }
   };
 
-  // Dark glassy pill button -- matches the linked-accounts row mockup
-  // (subtle border, no Blissful accent). Keeps the row reading as
-  // "service + action" rather than a Blissful CTA.
+  // Dark glassy pill button — matches the linked-accounts row mockup.
   const pillBtnClass =
     'rounded-full border border-white/10 bg-white/[0.06] px-5 py-2 text-sm font-medium text-white transition hover:bg-white/[0.12] disabled:opacity-50';
+  const fieldClass =
+    'w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder:text-white/40 outline-none focus:border-white/30';
 
   if (!authKey) {
     return (
@@ -229,10 +179,6 @@ export function SettingsStremioPanel() {
     );
   }
 
-  // Compact single-row layout:
-  //   [logo] Stremio Sync                     [Authenticate]      (unlinked)
-  //   [logo] Stremio Sync . foo@bar . 2m ago  [Sync now] [Unlink] (linked)
-  // Errors / info banners drop below the row.
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -252,11 +198,11 @@ export function SettingsStremioPanel() {
         <div className="ml-auto flex flex-wrap gap-2">
           {loadingStatus ? null : status?.linked ? (
             <>
-              <button
-                type="button"
+              <FocusableButton
                 className={pillBtnClass}
-                onClick={() => void handleSync()}
+                onPress={() => void handleSync()}
                 disabled={busy || syncOnCooldown}
+                focusableTv={!(busy || syncOnCooldown)}
                 title={syncOnCooldown ? `Try again in ${syncCooldownSecondsLeft}s` : undefined}
               >
                 {busy
@@ -264,23 +210,66 @@ export function SettingsStremioPanel() {
                   : syncOnCooldown
                     ? `Wait ${syncCooldownSecondsLeft}s`
                     : 'Sync now'}
-              </button>
-              <button
-                type="button"
+              </FocusableButton>
+              <FocusableButton
                 className={pillBtnClass}
-                onClick={() => void handleUnlink()}
+                onPress={() => void handleUnlink()}
                 disabled={busy}
+                focusableTv={!busy}
               >
                 Unlink
-              </button>
+              </FocusableButton>
             </>
           ) : (
-            <button type="button" className={pillBtnClass} onClick={openLinkPopup}>
-              Authenticate
-            </button>
+            <FocusableButton
+              className={pillBtnClass}
+              onPress={() => {
+                setActionError(null);
+                setLinkOpen((v) => !v);
+              }}
+            >
+              {linkOpen ? 'Cancel' : 'Authenticate'}
+            </FocusableButton>
           )}
         </div>
       </div>
+
+      {/* Inline Stremio sign-in (only when not linked + opened). */}
+      {!loadingStatus && !status?.linked && linkOpen ? (
+        <div className="mt-3 flex flex-col gap-2">
+          <div className="text-xs text-foreground/55">
+            Sign in with your Stremio account. Your password is sent straight to Stremio —
+            it never touches Blissful&rsquo;s servers.
+          </div>
+          <TvTextInput
+            value={email}
+            onChange={setEmail}
+            type="email"
+            placeholder="Stremio email"
+            ariaLabel="Stremio email"
+            inputClassName={fieldClass}
+          />
+          <TvTextInput
+            value={password}
+            onChange={setPassword}
+            type="password"
+            placeholder="Stremio password"
+            ariaLabel="Stremio password"
+            inputClassName={fieldClass}
+            onSubmit={() => void handleLink()}
+          />
+          <div className="flex gap-2">
+            <FocusableButton
+              className={pillBtnClass}
+              onPress={() => void handleLink()}
+              disabled={busy}
+              focusableTv={!busy}
+            >
+              {busy ? 'Linking…' : 'Link account'}
+            </FocusableButton>
+          </div>
+        </div>
+      ) : null}
 
       {!loadingStatus && status?.linked && status.lastSyncError ? (
         <div className="mt-3 rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200">

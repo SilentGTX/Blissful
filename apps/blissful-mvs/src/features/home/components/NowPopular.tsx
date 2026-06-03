@@ -1,7 +1,9 @@
 import type { MediaItem } from '../../../types/media';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { LibraryActionButton } from '../../../components/LibraryActionButton';
 import StremioIcon from '../../../components/StremioIcon';
+import { FocusableButton } from '../../../spatial/FocusableButton';
+import { isTvMode } from '../../../lib/platform';
 import type { StremioMetaDetail } from '../../../lib/stremioAddon';
 import { normalizeStremioImage } from '../../../lib/mediaTypes';
 import { GenreChips } from '../../detail/components/GenreChips';
@@ -13,6 +15,9 @@ type NowPopularProps = {
   onWatch: () => void;
   onAddToList: () => void;
   onGenreClick: (genre: string) => void;
+  /** TV: stable focusKey on the "Watch now" button so the top rail can route
+   *  UP back onto it. */
+  watchFocusKey?: string;
 };
 
 export function NowPopular({
@@ -22,19 +27,32 @@ export function NowPopular({
   onWatch,
   onAddToList,
   onGenreClick,
+  watchFocusKey,
 }: NowPopularProps) {
   const [lockedBg, setLockedBg] = useState('');
+  // On TV the hero auto-rotates (every ~11s); we keep the outgoing background
+  // as a second layer so it can cross-fade out while the new one fades in +
+  // Ken-Burns — same motion as the Netflix hero, on the classic billboard.
+  const [prevBg, setPrevBg] = useState('');
+  const curBgRef = useRef('');
+  const tv = isTvMode();
 
   useEffect(() => {
     if (!hero?.id) {
       setLockedBg('');
+      setPrevBg('');
+      curBgRef.current = '';
     }
   }, [hero?.id]);
 
   useEffect(() => {
     const raw = normalizeStremioImage(heroMeta?.meta?.background) ?? '';
     const next = raw.startsWith('http://') ? raw.replace(/^http:\/\//, 'https://') : raw;
-    if (next) setLockedBg(next);
+    if (next && next !== curBgRef.current) {
+      if (curBgRef.current) setPrevBg(curBgRef.current);
+      curBgRef.current = next;
+      setLockedBg(next);
+    }
   }, [heroMeta?.meta?.background]);
 
   const hasBg = Boolean(lockedBg);
@@ -99,13 +117,32 @@ export function NowPopular({
   );
 
   return (
-    <div className="@container solid-surface relative overflow-hidden rounded-[36px] bg-[#0f1115]/85">
+    <div className="now-popular-hero @container solid-surface relative overflow-hidden rounded-[36px] bg-[#0f1115]/85">
       {/* Card grows with viewport at wide container widths, but at
           narrow card widths uses a flat min-height so chips+title+CTAs
           fit. Background image keeps `h-full w-full object-cover`,
           which now sizes against whichever the content drives.       */}
-      <div className="relative w-full min-h-[280px] @md:min-h-[360px] @xl:min-h-[420px] @xl:h-[50dvh]">
-        {hasBg ? (
+      <div className="now-popular-hero-inner relative w-full min-h-[280px] @md:min-h-[360px] @xl:min-h-[420px] @xl:h-[50dvh]">
+        {tv ? (
+          <>
+            {prevBg ? (
+              <div
+                key={`prev-${prevBg}`}
+                className="now-popular-bg-layer is-prev"
+                style={{ backgroundImage: `url(${prevBg})` }}
+              />
+            ) : null}
+            {lockedBg ? (
+              <div
+                key={`cur-${lockedBg}`}
+                className="now-popular-bg-layer is-current"
+                style={{ backgroundImage: `url(${lockedBg})` }}
+              />
+            ) : (
+              <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-white/5 to-transparent" />
+            )}
+          </>
+        ) : hasBg ? (
           <img
             src={lockedBg}
             alt=""
@@ -114,14 +151,14 @@ export function NowPopular({
         ) : (
           <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-white/5 to-transparent" />
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-black/10" />
+        <div className="now-popular-scrim absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-black/10" />
 
-        <div className="absolute inset-0 p-4 @md:p-6">
+        <div className="now-popular-content absolute inset-0 p-4 @md:p-6">
           <div className="flex h-full flex-col min-h-0">
             <div className="text-[10px] @md:text-sm font-semibold uppercase tracking-[0.35em] text-white/70 cursor-default">
               🔥 Now Popular
             </div>
-            <div className="mt-auto min-h-0 space-y-2 @md:space-y-3 cursor-default overflow-hidden">
+            <div className="now-popular-detail-stack mt-auto min-h-0 space-y-2 @md:space-y-3 cursor-default overflow-hidden">
               <GenreChips
                 genres={hero?.genres ?? []}
                 onGenreClick={onGenreClick}
@@ -129,7 +166,7 @@ export function NowPopular({
                 className="flex flex-wrap gap-2"
                 buttonClassName="glass-surface rounded-full bg-white/12 px-3 py-1 text-xs font-semibold text-white/90 backdrop-blur hover:bg-white/20 transition-colors cursor-pointer"
               />
-              <div className="text-xl @sm:text-2xl @md:text-3xl font-semibold text-white break-words max-w-full @md:max-w-[420px] line-clamp-2">
+              <div className="tv-hero-title text-xl @sm:text-2xl @md:text-3xl font-semibold text-white break-words max-w-full @md:max-w-[420px] line-clamp-2">
                 {hero?.title ?? 'Pick something to watch'}
               </div>
               {hero?.blurb ? (
@@ -141,12 +178,34 @@ export function NowPopular({
                   {hero.blurb}
                 </p>
               ) : null}
-              <div className="hidden @md:flex flex-wrap gap-3 pt-2">
-                {actionButtonsText}
-              </div>
-              <div className="flex @md:hidden gap-2 pt-1">
-                {actionButtonsIcons}
-              </div>
+              {tv ? (
+                <div className="flex flex-wrap gap-3 pt-3">
+                  <FocusableButton
+                    className="action-button-Pn4hZ mb-0 cursor-pointer !border-0 !bg-[#19f7d2] !text-[#05070a] hover:!bg-[#15d9b8] !h-14 !px-7 !text-base"
+                    onPress={onWatch}
+                    autoFocusTv
+                    focusKeyTv={watchFocusKey}
+                    aria-label="Watch now"
+                  >
+                    <StremioIcon name="play" className="icon" />
+                    <span className="text !text-[#05070a]">Watch now</span>
+                  </FocusableButton>
+                  <LibraryActionButton
+                    inLibrary={inLibrary}
+                    onToggleLibrary={onAddToList}
+                    className="mb-0 cursor-pointer !h-14 !px-7 !text-base"
+                  />
+                </div>
+              ) : (
+                <>
+                  <div className="hidden @md:flex flex-wrap gap-3 pt-2">
+                    {actionButtonsText}
+                  </div>
+                  <div className="flex @md:hidden gap-2 pt-1">
+                    {actionButtonsIcons}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

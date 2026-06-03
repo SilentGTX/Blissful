@@ -10,6 +10,7 @@ import { useContinueWatchingContext } from '../context/ContinueWatchingProvider'
 import { showHeroTransition } from '../lib/heroTransition';
 import { consumeClickedPoster, metahubPosterToBackdrop } from '../lib/transitionPoster';
 import { getLastStreamSelection } from '../lib/streamHistory';
+import { proxyUrl } from '../lib/proxyBase';
 import { useMetaDetails } from '../models/useMetaDetails';
 import { DesktopActionButtons, MobileActionButtons } from '../features/detail/components/ActionButtons';
 import { MetaPanel } from '../features/detail/components/MetaPanel';
@@ -24,8 +25,40 @@ import { buildStreamsView } from '../features/detail/streams';
 import { useImdbRating } from '../lib/useImdbRating';
 import { fetchTmdbId, type TmdbLookup } from '../lib/tmdb';
 import { UnreleasedEpisodeModal } from '../components/UnreleasedEpisodeModal';
+import { StreamUnavailableModal } from '../components/StreamUnavailableModal';
+import { useTvFocusable } from '../spatial/useTvFocusable';
+import { useFocusable, FocusContext } from '@noriginmedia/norigin-spatial-navigation';
+import { isAndroidTv, isTvMode } from '../lib/platform';
+import { isAndroidPlayableUrl, RD_REQUIRED_MESSAGE } from '../lib/androidPlayable';
+import { TvDetailLayout } from '../features/detail/tv/TvDetailLayout';
+import { computeNextToWatch } from '../features/detail/nextToWatch';
 
 
+
+// Back control, extracted so it can own a TV focus node without adding a hook
+// to DetailPage's large (conditional-return) body. Reachable via D-pad Up from
+// the action row; also responds to the global Esc/Back handler.
+function DetailBackButton() {
+  const navigate = useNavigate();
+  const goBack = () => {
+    // Never navigate(-1) — use the tracked safe-back route (AppShell sets it),
+    // which avoids landing on /player when arriving from the player back button.
+    const safeBack = sessionStorage.getItem('bliss:safe-back') ?? '/';
+    navigate(safeBack);
+  };
+  const { ref } = useTvFocusable({ onPress: goBack });
+  return (
+    <div ref={ref} className="fixed left-4 top-4 z-50 lg:absolute lg:left-5 lg:top-5 lg:z-20">
+      <Button
+        variant="ghost"
+        className="rounded-full bg-black/50 text-white backdrop-blur lg:bg-white/10"
+        onPress={goBack}
+      >
+        Back
+      </Button>
+    </div>
+  );
+}
 
 export default function DetailPage() {
   const { addons } = useAddons();
@@ -69,6 +102,17 @@ export default function DetailPage() {
 
   const isSeriesLike = type === 'series' || type === 'anime';
 
+  // The TV layout (full-bleed + stream popup) is a separate component below; the
+  // desktop layout keeps its right aside. This boundary is inert now (TV uses
+  // TvDetailLayout, desktop doesn't run Norigin) but the ref/key are still
+  // referenced by the desktop aside JSX.
+  const tvMode = isTvMode();
+  const { ref: asideFocusRef, focusKey: asideFocusKey } = useFocusable({
+    focusable: false,
+    saveLastFocusedChild: true,
+    trackChildren: true,
+  });
+
   const lastStream = useMemo(() => {
     if (!type || !id) return null;
     const vid = isSeriesLike ? (selectedVideoId ?? null) : null;
@@ -91,6 +135,58 @@ export default function DetailPage() {
   });
 
   const videos = meta?.meta?.videos ?? [];
+
+  // Stremio WatchedBitField is indexed by each video's position in the
+  // ordered meta `videos` list, so feed those ids (native order, not
+  // re-sorted) into the library hook for decoding. Memoized so its identity
+  // is stable across renders that don't change the episode list.
+  const orderedVideoIds = useMemo(() => videos.map((v) => v.id), [videos]);
+
+  const {
+    inLibrary,
+    handleToggleLibrary,
+    getEpisodeProgressInfo,
+    libraryVersion,
+    watchedVideoIds,
+    watchedDecoded,
+    stremioLibraryItem,
+  } = useLibraryState({
+    authKey,
+    id,
+    type,
+    metaName: meta?.meta?.name ?? null,
+    metaPoster: meta?.meta?.poster ?? null,
+    orderedVideoIds,
+  });
+
+  // The last-played episode id, from the cloud/Blissful library state — the
+  // same field useContinueWatchingActions reads. Drives the resume-vs-advance
+  // "next to watch" decision below.
+  const lastPlayedVideoId =
+    ((stremioLibraryItem?.state as { video_id?: string | null } | undefined)?.video_id ??
+      (stremioLibraryItem?.behaviorHints?.defaultVideoId ?? null)) ||
+    null;
+
+  // The library decode (watchedVideoIds) is async; gate any consumption of
+  // `nextToWatch` on BOTH the library item having loaded AND the WatchedBitField
+  // having actually decoded — otherwise computeNextToWatch sees an empty watched
+  // set, transiently picks episode 1, and latches the wrong season (breaking the
+  // next-to-watch landing for cross-season shows + causing a focus flash).
+  const watchedReady = stremioLibraryItem !== null && watchedDecoded;
+
+  const nextToWatch = useMemo(() => {
+    if (!isSeriesLike) return null;
+    if (!watchedReady) return null;
+    const lp = lastPlayedVideoId ? getEpisodeProgressInfo(lastPlayedVideoId) : null;
+    return computeNextToWatch({
+      videos,
+      watchedIds: watchedVideoIds,
+      lastPlayedVideoId,
+      lastPlayedProgress: lp
+        ? { timeSeconds: lp.timeSeconds, durationSeconds: lp.durationSeconds }
+        : null,
+    });
+  }, [isSeriesLike, watchedReady, videos, watchedVideoIds, lastPlayedVideoId, getEpisodeProgressInfo]);
 
   const {
     season,
@@ -149,18 +245,30 @@ export default function DetailPage() {
     } catch { /* sessionStorage may be unavailable */ }
   }, [isSeriesLike, id, type, nextEpisode]);
 
-  const {
-    inLibrary,
-    handleToggleLibrary,
-    getEpisodeProgressInfo,
-    libraryVersion,
-  } = useLibraryState({
-    authKey,
-    id,
-    type,
-    metaName: meta?.meta?.name ?? null,
-    metaPoster: meta?.meta?.poster ?? null,
-  });
+  // TV: when a series is opened WITHOUT an explicit ?videoId (from a poster, or
+  // the Continue-Watching "advance" flow when there's no meaningful resume),
+  // land the episodes rail on the next-to-watch episode's SEASON. We do NOT set
+  // selectedVideoId (that would force the stream popup open) — TvDetailLayout
+  // then focuses the next-to-watch card in the bottom rail. TV-gated; desktop
+  // untouched.
+  const nextSeason = useMemo(() => {
+    if (!nextToWatch) return null;
+    const v = videos.find((x) => x.id === nextToWatch.videoId);
+    return typeof v?.season === 'number' ? v.season : null;
+  }, [nextToWatch, videos]);
+  // Keyed by id (not a bare boolean) so navigating detail->detail (e.g. a
+  // similar-titles press, which reuses this DetailPage instance — the route has
+  // no key) re-applies the next-to-watch season for the NEW series instead of
+  // staying latched on the previous one.
+  const defaultSeasonAppliedForRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!tvMode || !isSeriesLike) return;
+    if (defaultSeasonAppliedForRef.current === id) return;
+    if (selectedVideoId || searchParams.get('videoId')) return;
+    if (nextSeason == null) return;
+    defaultSeasonAppliedForRef.current = id;
+    setSeason(nextSeason);
+  }, [tvMode, isSeriesLike, selectedVideoId, searchParams, nextSeason, setSeason, id]);
 
   const streamsViewDesktop = useMemo(
     () =>
@@ -333,7 +441,7 @@ export default function DetailPage() {
     let cancelled = false;
     type TmdbEp = { episode_number: number | null; vote_average: number | null; still?: string | null };
     const fetchSeason = (n: number): Promise<TmdbEp[]> =>
-      fetch(`/tmdb-season-info?tmdbId=${tid}&season=${n}`)
+      fetch(proxyUrl(`/tmdb-season-info?tmdbId=${tid}&season=${n}`))
         .then((r) => r.json())
         .then((d: { episodes?: TmdbEp[] }) => d.episodes ?? [])
         .catch(() => []);
@@ -393,9 +501,28 @@ export default function DetailPage() {
     } | null
   >(null);
 
+  // RD-ONLY Android: shown when the user taps a stream that needs the
+  // (absent) local torrent server — i.e. a magnet or /stremio-server URL.
+  const [rdRequired, setRdRequired] = useState(false);
+
   const handleNavigateToPlayer = useCallback(
-    (playerLink: string, options?: { replace?: boolean }) => {
+    // Returns true if it actually navigated to the player, false if it bailed
+    // to a modal (RD-required / unreleased). The TV stream popup uses this to
+    // decide whether to close itself: closing navigates to /detail with
+    // `replace`, which would clobber a just-issued /player push and bounce the
+    // user straight back — so it must only close on the bail paths.
+    (playerLink: string, options?: { replace?: boolean }): boolean => {
       const url = new URL(playerLink, window.location.origin);
+      // RD-ONLY Android: block magnet / local-server streams that cannot
+      // play without the (absent) torrent server. Desktop/browser are
+      // unaffected (isAndroidTv() === false → guard skipped entirely).
+      if (isAndroidTv()) {
+        const targetUrl = url.searchParams.get('url');
+        if (!isAndroidPlayableUrl(targetUrl)) {
+          setRdRequired(true);
+          return false;
+        }
+      }
       // Block playback of unreleased TV episodes. Only kicks in for
       // /player URLs that target a series videoId we can look up in
       // meta.videos.
@@ -411,7 +538,7 @@ export default function DetailPage() {
             released: vmeta?.released ?? null,
             thumbnail: vmeta?.thumbnail ?? null,
           });
-          return;
+          return false;
         }
       }
       if (poster && !url.searchParams.get('poster')) {
@@ -440,6 +567,7 @@ export default function DetailPage() {
       navigate(`${url.pathname}?${url.searchParams.toString()}`, {
         replace: options?.replace === true,
       });
+      return true;
     },
     [poster, background, meta, logo, navigate]
   );
@@ -705,6 +833,116 @@ export default function DetailPage() {
     );
   }
 
+  // TV: full-bleed 10-foot layout (hero + bottom episodes/similar row + stream
+  // popup). Rendered AFTER the autoplay + empty-state early returns so those
+  // still fire. Desktop keeps the existing layout below.
+  if (tvMode) {
+    return (
+      <TvDetailLayout
+        background={background ?? null}
+        logo={logo ?? null}
+        logoTitle={logoTitle}
+        logoFailed={logoFailed}
+        onLogoError={() => setLogoFailed(true)}
+        runtime={runtime}
+        released={released}
+        releaseInfo={releaseInfo}
+        resolvedImdbRating={resolvedImdbRating}
+        genres={genres}
+        onGenreClick={(g) => {
+          setQuery('');
+          const qs = new URLSearchParams({ genre: g });
+          navigate(
+            `/discover/${encodeURIComponent('https://v3-cinemeta.strem.io/manifest.json')}/${type}/top?${qs.toString()}`
+          );
+        }}
+        cast={cast}
+        onCastClick={(c) => navigate(`/search?search=${encodeURIComponent(c)}`)}
+        description={meta?.meta?.description ?? null}
+        type={type}
+        id={id}
+        isSeriesLike={isSeriesLike}
+        metaName={meta?.meta?.name ?? null}
+        metaPoster={meta?.meta?.poster ?? null}
+        inLibrary={inLibrary}
+        onToggleLibrary={handleToggleLibrary}
+        isLoggedIn={Boolean(authKey)}
+        hasTrailer={Boolean(firstTrailerId)}
+        onOpenTrailer={handleOpenTrailer}
+        onShare={handleShare}
+        onBack={() => navigate(sessionStorage.getItem('bliss:safe-back') ?? '/')}
+        streamRows={desktopRows}
+        streamsLoading={streamsLoadingFiltered}
+        addonSelectItems={addonSelectItems}
+        selectedAddon={selectedAddon}
+        onSelectAddon={handleSelectAddon}
+        selectedVideoId={selectedVideoId}
+        selectedEpisodeLabel={selectedEpisodeLabel}
+        onBackToEpisodes={onBackToEpisodes}
+        onNavigate={handleNavigateToPlayer}
+        getEpisodeProgressInfo={getEpisodeProgressInfo}
+        season={season}
+        seasonSelectItems={seasonSelectItems}
+        onSeasonChange={(next) => setSeason(next)}
+        canPrevSeason={canPrevSeason}
+        canNextSeason={canNextSeason}
+        onPrevSeason={() => {
+          if (canPrevSeason) setSeason(seasons[seasonIndex - 1] ?? null);
+        }}
+        onNextSeason={() => {
+          if (canNextSeason) setSeason(seasons[seasonIndex + 1] ?? null);
+        }}
+        videosForSeason={videosForSeason}
+        autoFocusVideoId={nextToWatch?.videoId ?? null}
+        episodeRatings={currentSeasonRatings}
+        episodeStills={currentSeasonStills}
+        episodeStillsPending={episodeStillsPending}
+        fallbackPoster={fallbackPoster}
+        showRuntime={(meta?.meta?.runtime as string | null | undefined) ?? null}
+        normalizeImage={normalizeStremioImage}
+        formatDate={formatDate}
+        getEpisodeTitle={getEpisodeTitle}
+        onSelectEpisode={onSelectEpisode}
+        onSimilarPress={(item) => navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`)}
+        modals={
+          <>
+            <DetailModals
+              isTrailerOpen={isTrailerOpen}
+              onTrailerOpenChange={(open) => setIsTrailerOpen(open)}
+              firstTrailerId={firstTrailerId}
+              isShareOpen={isShareOpen}
+              onShareOpenChange={(open) => setIsShareOpen(open)}
+            />
+            <UnreleasedEpisodeModal
+              isOpen={unreleasedEpisode != null}
+              title={meta?.meta?.name ?? ''}
+              episodeLabel={
+                unreleasedEpisode &&
+                unreleasedEpisode.season != null &&
+                unreleasedEpisode.episode != null
+                  ? `S${String(unreleasedEpisode.season).padStart(2, '0')}E${String(unreleasedEpisode.episode).padStart(2, '0')}` +
+                    (unreleasedEpisode.title ? ` · ${unreleasedEpisode.title}` : '')
+                  : null
+              }
+              poster={unreleasedEpisode?.thumbnail ?? poster ?? null}
+              releaseDate={unreleasedEpisode?.released ?? null}
+              onClose={() => setUnreleasedEpisode(null)}
+            />
+            <StreamUnavailableModal
+              isOpen={rdRequired}
+              title={meta?.meta?.name ?? ''}
+              episodeLabel={selectedEpisodeLabel ?? null}
+              poster={meta?.meta?.poster ?? null}
+              message={RD_REQUIRED_MESSAGE}
+              onPickAnother={() => setRdRequired(false)}
+              onClose={() => setRdRequired(false)}
+            />
+          </>
+        }
+      />
+    );
+  }
+
   return (
     <div
       className={
@@ -739,23 +977,7 @@ export default function DetailPage() {
 
       <div className="relative z-[2] min-h-full lg:h-full">
         {/* Back button - visible on all sizes */}
-        <div className="fixed left-4 top-4 z-50 lg:absolute lg:left-5 lg:top-5 lg:z-20">
-          <Button
-            variant="ghost"
-            className="rounded-full bg-black/50 text-white backdrop-blur lg:bg-white/10"
-            onPress={() => {
-              // Never `navigate(-1)` — that walks history and would land
-              // on /player when the user came from the player back
-              // button. AppShell tracks the most recent non-player,
-              // non-detail route in sessionStorage; use that as the
-              // back target. Falls back to "/" on a fresh open.
-              const safeBack = sessionStorage.getItem('bliss:safe-back') ?? '/';
-              navigate(safeBack);
-            }}
-          >
-            Back
-          </Button>
-        </div>
+        <DetailBackButton />
 
         {/* Mobile action buttons - fixed top right on mobile, hidden on desktop.
             Play button included as the primary teal CTA when web auto-play
@@ -819,16 +1041,19 @@ export default function DetailPage() {
               className="fixed right-5 top-10 bottom-10 z-20 hidden lg:block"
               style={{ width: 'clamp(360px, 28vw, 560px)' }}
             >
-              <div
-                key={`${type}-${id}`}
-                className="detail-streams-drawer h-full overflow-hidden rounded-[28px] border border-white/10 bg-black/35 backdrop-blur"
-              >
-                <DetailStreamsPanel
-                  variant="desktop"
-                  streamRows={desktopRows}
-                  {...sharedStreamsPanelProps}
-                />
-              </div>
+              <FocusContext.Provider value={asideFocusKey}>
+                <div
+                  ref={asideFocusRef}
+                  key={`${type}-${id}`}
+                  className="detail-streams-drawer h-full overflow-hidden rounded-[28px] border border-white/10 bg-black/35 backdrop-blur"
+                >
+                  <DetailStreamsPanel
+                    variant="desktop"
+                    streamRows={desktopRows}
+                    {...sharedStreamsPanelProps}
+                  />
+                </div>
+              </FocusContext.Provider>
             </aside>
           ) : null}
         </div>
@@ -858,6 +1083,20 @@ export default function DetailPage() {
           poster={unreleasedEpisode?.thumbnail ?? poster ?? null}
           releaseDate={unreleasedEpisode?.released ?? null}
           onClose={() => setUnreleasedEpisode(null)}
+        />
+
+        {/* RD-only Android: shown when a magnet / local-server stream is
+            tapped (it cannot play without the absent torrent server).
+            Inert on desktop/browser — rdRequired only ever becomes true
+            under isAndroidTv(). */}
+        <StreamUnavailableModal
+          isOpen={rdRequired}
+          title={meta?.meta?.name ?? ''}
+          episodeLabel={selectedEpisodeLabel ?? null}
+          poster={meta?.meta?.poster ?? null}
+          message={RD_REQUIRED_MESSAGE}
+          onPickAnother={() => setRdRequired(false)}
+          onClose={() => setRdRequired(false)}
         />
       </div>
     </div>

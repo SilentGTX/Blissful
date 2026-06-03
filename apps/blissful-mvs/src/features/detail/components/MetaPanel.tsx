@@ -2,6 +2,7 @@ import { Skeleton } from '@heroui/react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Rating } from '../../../components/Rating';
 import { GenreChips } from './GenreChips';
+import { FocusableButton } from '../../../spatial/FocusableButton';
 
 type MetaPanelProps = {
   logo: string | null;
@@ -129,7 +130,7 @@ export function MetaPanel({
           >
             {genres.length ? (
               <motion.div className="mt-6" variants={sectionItem}>
-                <div className="text-xs font-semibold uppercase tracking-wide text-white/60">Genres</div>
+                <div className="detail-section-label text-xs font-semibold uppercase tracking-wide text-white/60">Genres</div>
                 <GenreChips
                   genres={genres}
                   onGenreClick={onGenreClick}
@@ -140,17 +141,16 @@ export function MetaPanel({
 
             {cast.length ? (
               <motion.div className="mt-6" variants={sectionItem}>
-                <div className="text-xs font-semibold uppercase tracking-wide text-white/60">Cast</div>
+                <div className="detail-section-label text-xs font-semibold uppercase tracking-wide text-white/60">Cast</div>
                 <div className="mt-3 flex flex-wrap gap-3">
                   {cast.slice(0, 12).map((c) => (
-                    <button
+                    <FocusableButton
                       key={c}
-                      type="button"
                       className="rounded-full bg-white/10 px-4 py-2 text-sm font-semibold tracking-tight text-white/90 transition-transform hover:bg-white/15 active:scale-95"
-                      onClick={() => onCastClick(c)}
+                      onPress={() => onCastClick(c)}
                     >
                       {c}
-                    </button>
+                    </FocusableButton>
                   ))}
                 </div>
               </motion.div>
@@ -158,8 +158,8 @@ export function MetaPanel({
 
             {description ? (
               <motion.div className="mt-6 max-w-3xl" variants={sectionItem}>
-                <div className="text-xs font-semibold uppercase tracking-wide text-white/60">Summary</div>
-                <p className="mt-2 text-sm leading-relaxed text-white/80">{description}</p>
+                <div className="detail-section-label text-xs font-semibold uppercase tracking-wide text-white/60">Summary</div>
+                <p className="detail-summary mt-2 text-sm leading-relaxed text-white/80">{description}</p>
               </motion.div>
             ) : null}
           </motion.div>

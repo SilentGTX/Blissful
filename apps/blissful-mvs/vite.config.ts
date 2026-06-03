@@ -3,12 +3,23 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
+// The Tauri (Android TV) build sets TAURI_ENV_PLATFORM during its
+// beforeBuildCommand. Disable the PWA service worker for that build: under
+// tauri.localhost the SW's app-shell precache + NetworkFirst caching of
+// /addon-proxy|storage|stremio interferes with the on-device loopback proxy
+// (see apps/blissful-tv-shell/SPEC.md). Web + the Windows shell (which run a
+// plain `npm run build` with no TAURI_ENV_* vars) keep the PWA unchanged.
+// `disable` (vs dropping the plugin) keeps the `virtual:pwa-register` module
+// resolvable as a no-op, so no import breaks.
+const disablePwa = !!process.env.TAURI_ENV_PLATFORM
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
     VitePWA({
+      disable: disablePwa,
       registerType: 'autoUpdate',
       manifest: {
         name: 'Blissful',
@@ -195,6 +206,33 @@ export default defineConfig({
         secure: true,
         rewrite: (path) => path.replace(/^\/stremio/, ''),
       },
+      // Trakt.tv API proxy (same-origin mandate — Trakt doesn't reliably allow
+      // browser CORS). The renderer hits the relative '/trakt' base
+      // (src/lib/traktApi.ts TRAKT_BASE) and we forward to api.trakt.tv with
+      // the '/trakt' prefix stripped, mirroring the '/stremio' rewrite above.
+      // NOTE: the production Tauri proxy (src-tauri/src/proxy.rs) and the
+      // Windows shell (apps/blissful-shell/src/ui_server.rs) would EACH need a
+      // matching '/trakt' -> https://api.trakt.tv route added (Rust, out of
+      // scope here). The browser ?tv=1 test path works today via this Vite
+      // dev proxy.
+      '/trakt': {
+        target: 'https://api.trakt.tv',
+        changeOrigin: true,
+        secure: true,
+        rewrite: (path) => path.replace(/^\/trakt/, ''),
+      },
+      // blissful-storage backend (auth, state, friends, watch-party REST). The
+      // browser TV test (?tv=1) uses the relative '/storage' base; proxy it to
+      // the real backend so login/requests work without a local server or CORS.
+      '/storage': {
+        target: 'https://blissful.budinoff.com',
+        changeOrigin: true,
+        secure: true,
+      },
+      // TMDB + addon-proxy helper routes the renderer hits relative.
+      '/tmdb-season-info': { target: 'https://blissful.budinoff.com', changeOrigin: true, secure: true },
+      '/tmdb-find': { target: 'https://blissful.budinoff.com', changeOrigin: true, secure: true },
+      '/resolve-url': { target: 'https://blissful.budinoff.com', changeOrigin: true, secure: true },
     },
   },
 })

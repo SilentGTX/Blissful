@@ -1,26 +1,44 @@
 import { Tooltip } from '@heroui/react';
 import { motion } from 'framer-motion';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ContinueIcon } from '../../icons/ContinueIcon';
 import { FriendsIcon } from '../../icons/FriendsIcon';
 import { StrokeIcon } from '../../icons/StrokeIcon';
 import { useGlitchText } from '../../lib/useGlitchText';
+import { useTvFocusable } from '../../spatial/useTvFocusable';
 
 type NavItemProps = {
   label: string;
-  icon: string;
+  /** Single-path icon (most nav items). Ignored when `iconNode` is set. */
+  icon?: string;
+  /** Multi-element icon (e.g. the Friends silhouette). Overrides `icon`. */
+  iconNode?: ReactNode;
+  /** Optional count bubble on the icon (e.g. incoming friend requests). */
+  badge?: number;
   active: boolean;
   collapsed: boolean;
   onPress: () => void;
+  /** TV: report focus enter/leave so the rail can expand-on-focus. */
+  onRailFocus?: (focused: boolean) => void;
+  /** TV: stable Norigin focusKey so the rail container can name this item as its
+   *  preferredChildFocusKey (deterministic drill on first LEFT-from-content). */
+  focusKey?: string;
 };
 
 export function NavItem(props: NavItemProps) {
   const [isTooltipOpen, setIsTooltipOpen] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
   const displayLabel = useGlitchText(props.label, isHovering && !props.active);
+  const { ref: tvRef, tv } = useTvFocusable({
+    onPress: props.onPress,
+    focusKey: props.focusKey,
+    onFocus: () => props.onRailFocus?.(true),
+    onBlur: () => props.onRailFocus?.(false),
+  });
 
   const button = (
     <button
+      ref={tvRef}
       type="button"
       onClick={props.onPress}
       onMouseEnter={() => {
@@ -55,7 +73,7 @@ export function NavItem(props: NavItemProps) {
           element across all NavItems so when `active` flips from one
           row to another the pill slides between them with a spring,
           rather than the active background instant-cutting. */}
-      {props.active ? (
+      {props.active && !tv ? (
         <motion.div
           layoutId="nav-active-desktop"
           className="absolute inset-0 rounded-2xl bg-white/[0.08] ring-1 ring-white/10"
@@ -71,7 +89,14 @@ export function NavItem(props: NavItemProps) {
           center — no horizontal jump during collapse/expand.
           `relative z-10` keeps the icon ABOVE the motion pill. */}
       <div className="nav-icon-slot relative z-10 flex h-full shrink-0 items-center justify-center">
-        <StrokeIcon path={props.icon} className="h-[clamp(1.25rem,1.1vw,2rem)] w-[clamp(1.25rem,1.1vw,2rem)]" />
+        {props.iconNode ?? (
+          <StrokeIcon path={props.icon ?? ''} className="h-[clamp(1.25rem,1.1vw,2rem)] w-[clamp(1.25rem,1.1vw,2rem)]" />
+        )}
+        {props.badge && props.badge > 0 ? (
+          <span className="absolute -right-1 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-[var(--bliss-accent)] px-1 text-[9px] font-bold leading-none text-black">
+            {props.badge > 99 ? '99+' : props.badge}
+          </span>
+        ) : null}
       </div>
       <span className="bliss-sidebar-label relative z-10 font-semibold">
         <span className="bliss-sidebar-label-text">{displayLabel}</span>
@@ -82,7 +107,12 @@ export function NavItem(props: NavItemProps) {
 
   return (
     <li className="relative">
-      {props.collapsed ? (
+      {/* On TV the rail expands on focus to show labels, so the hover tooltip is
+          redundant — and HeroUI's Tooltip.Trigger wraps the button in an
+          inline-block element that breaks the collapsed full-width flex
+          centering (the button shrinks to content and the icon hugs left).
+          Render the bare button on TV so the centering rule applies. */}
+      {props.collapsed && !tv ? (
         <Tooltip isOpen={isTooltipOpen} delay={0} closeDelay={0}>
           <Tooltip.Trigger>
             {button}

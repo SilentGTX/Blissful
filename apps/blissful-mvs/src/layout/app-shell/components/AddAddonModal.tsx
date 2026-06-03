@@ -31,7 +31,7 @@ export function AddAddonModal({
           <Modal.Dialog className="bg-transparent shadow-none">
             <Modal.Header className="sr-only"><Modal.Heading>Add addon</Modal.Heading></Modal.Header>
             <Modal.Body className="px-0">
-              <div className="solid-surface mx-auto w-full max-w-md rounded-[24px] bg-white/20 p-6">
+              <div className="solid-surface bliss-glass mx-auto w-full max-w-md rounded-[24px] p-6">
                 <div className="text-lg font-semibold">Add addon</div>
                 <div className="mt-1 text-sm text-foreground/60">
                   Paste a manifest URL to install.

@@ -30,6 +30,13 @@ apps/blissful-shell/installer/*.exe
 # Local-only zips packaged for vendor-binaries-* GitHub release uploads
 vendor-binaries/
 
+# Android TV shell build outputs. gen/android + src-tauri/target are ignored by
+# their own nested .gitignore files; the built/signed APK (a large GPL-bundling
+# binary) is a build artifact and must never be tracked.
+*.apk
+*.apk.idsig
+apps/blissful-tv-shell/*.apk
+
 # Editor / OS
 .DS_Store
 .idea/

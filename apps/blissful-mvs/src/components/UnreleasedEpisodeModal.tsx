@@ -10,8 +10,9 @@
 
 import { Modal } from '@heroui/react';
 import { motion, type PanInfo } from 'framer-motion';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CloseIcon } from '../icons/CloseIcon';
+import { useTvOverlay } from '../spatial/useTvOverlay';
 
 export type UnreleasedEpisodeModalProps = {
   isOpen: boolean;
@@ -64,6 +65,15 @@ export function UnreleasedEpisodeModal({
   onClose,
 }: UnreleasedEpisodeModalProps) {
   const isMobile = useIsMobile();
+  // TV: drive the modal's button with the D-pad (auto-focus "Got it",
+  // Back closes). Inert on desktop.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { onKeyDown } = useTvOverlay({
+    open: isOpen,
+    containerRef,
+    onClose,
+    autoFocusSelector: '[data-autofocus]',
+  });
   if (!isOpen) return null;
 
   const releaseLabel = formatReleaseDate(releaseDate);
@@ -114,6 +124,7 @@ export function UnreleasedEpisodeModal({
         <div className="mt-5">
           <button
             type="button"
+            data-autofocus
             onClick={onClose}
             className="w-full cursor-pointer rounded-xl bg-white/10 px-4 py-3 text-sm font-semibold text-white/85 ring-1 ring-white/10 transition hover:bg-white/15"
           >
@@ -142,7 +153,7 @@ export function UnreleasedEpisodeModal({
           initial={{ y: 180, opacity: 0.94 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ type: 'spring', stiffness: 220, damping: 24, mass: 0.85 }}
-          className="solid-surface pointer-events-auto relative w-full max-w-[520px] overflow-hidden rounded-t-[28px] bg-[#101116] text-white shadow-2xl"
+          className="solid-surface bliss-glass pointer-events-auto relative w-full max-w-[520px] overflow-hidden rounded-t-[28px] text-white shadow-2xl"
           onClick={(e) => e.stopPropagation()}
           style={{ touchAction: 'none' }}
         >
@@ -169,7 +180,11 @@ export function UnreleasedEpisodeModal({
               <Modal.Heading>Episode not released yet</Modal.Heading>
             </Modal.Header>
             <Modal.Body className="px-0">
-              <div className="solid-surface relative mx-auto max-h-[90vh] w-full max-w-[420px] overflow-hidden rounded-[20px] bg-[#101116]">
+              <div
+                ref={containerRef}
+                onKeyDown={onKeyDown}
+                className="solid-surface bliss-glass relative mx-auto max-h-[90vh] w-full max-w-[420px] overflow-hidden rounded-[20px]"
+              >
                 {bodyContent}
               </div>
             </Modal.Body>

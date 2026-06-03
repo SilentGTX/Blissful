@@ -1,6 +1,26 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Rating } from '../../../components/Rating';
 import { SkeletonBox } from '../../../components/Skeleton';
+import { useTvFocusable } from '../../../spatial/useTvFocusable';
+
+// Focusable episode-card shell (hooks can't run in a .map). D-pad reachable on
+// TV; the `tv-focusable-card` class gives it the shared focus ring/scale.
+function EpisodeCardButton({
+  onPress,
+  className,
+  children,
+}: {
+  onPress: () => void;
+  className: string;
+  children: ReactNode;
+}) {
+  const { ref } = useTvFocusable({ onPress });
+  return (
+    <button ref={ref} type="button" className={className} onClick={onPress}>
+      {children}
+    </button>
+  );
+}
 
 // Episode-card artwork with a graceful loading state. Tries the real
 // episode images in order — metahub thumbnail, then the TMDB still — and
@@ -10,7 +30,7 @@ import { SkeletonBox } from '../../../components/Skeleton';
 // never sees the generic poster flash before the actual still resolves.
 // (Cinemeta hands out metahub URLs for episodes with no artwork; they
 // 404, which advances us to the next candidate.)
-function EpisodeThumb({
+export function EpisodeThumb({
   thumb,
   still,
   poster,
@@ -173,13 +193,12 @@ export function EpisodePanel({
 
             const isWatched = info.hasProgress || info.watched;
             return (
-              <button
+              <EpisodeCardButton
                 key={v.id}
-                type="button"
                 className={
-                  'block w-[90%] mx-auto cursor-pointer overflow-hidden rounded-xl text-left transition-transform duration-200 ease-out hover:scale-[1.03]'
+                  'tv-focusable-card block w-[90%] mx-auto cursor-pointer overflow-hidden rounded-xl text-left transition-transform duration-200 ease-out hover:scale-[1.03]'
                 }
-                onClick={() => onSelectVideo(v.id)}
+                onPress={() => onSelectVideo(v.id)}
               >
                 <div
                   className="relative w-full overflow-hidden bg-white/5"
@@ -238,7 +257,7 @@ export function EpisodePanel({
                     ) : null}
                   </div>
                 </div>
-              </button>
+              </EpisodeCardButton>
             );
           })}
         </div>

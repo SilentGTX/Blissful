@@ -59,6 +59,7 @@ import type { StremioIconName } from './PlayerControlIcons';
 import type { AddonDescriptor } from '../lib/stremioApi';
 import { setProgress } from '../lib/progressStore';
 import { updateBlissfulLibraryProgress } from '../lib/blissfulAuthApi';
+import { useTraktScrobble } from '../lib/useTraktScrobble';
 import { fetchSubtitles, fetchOpenSubHash } from '../lib/stremioAddon';
 import { getLastStreamSelection, setLastStreamSelection } from '../lib/streamHistory';
 import { notifyError, notifyInfo, notifySuccess } from '../lib/toastQueues';
@@ -80,6 +81,9 @@ import {
   type WatchPartyRoomInfo,
 } from '../lib/watchParty';
 import { useStorage } from '../context/StorageProvider';
+import { proxyUrl } from '../lib/proxyBase';
+import { isAndroidTv, isTvMode } from '../lib/platform';
+import { pause as pauseSpatial, resume as resumeSpatial } from '@noriginmedia/norigin-spatial-navigation';
 import type { NextEpisodeInfo } from '../pages/PlayerPage';
 
 // ── Color helpers (mirrors SimplePlayer 1:1) ───────────────────────────
@@ -247,7 +251,11 @@ interface NativeMpvPlayerProps {
   background?: string;
   logo?: string;
   startTimeSeconds?: number;
-  type: 'movie' | 'series';
+  // 'anime' is threaded through unchanged (NOT normalized to 'series') so the
+  // LOCAL progressStore key stays `anime::id::videoId`, matching the read side
+  // in useMetaDetails — normalizing here would silently break anime resume.
+  // Treated series-like only for the two UI gates below (onBack, Episodes btn).
+  type: 'movie' | 'series' | 'anime';
   id: string;
   videoId: string | null;
   addons: AddonDescriptor[];
@@ -461,6 +469,16 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   // needing prop deps that would re-fire the effect.
   const propsRef = useRef(props);
   propsRef.current = props;
+
+  // Trakt scrobble (shared with SimplePlayer). Fully inert unless Trakt is
+  // configured AND connected; all calls are fire-and-forget and can never
+  // affect playback. Held in a ref so the mpv prop/event listeners and the
+  // periodic-progress interval (registered in effects / read via refs) can
+  // call it without re-subscribing. The controls are referentially stable.
+  const trakt = useTraktScrobble({ type: props.type, id: props.id, videoId: props.videoId });
+  const traktRef = useRef(trakt);
+  traktRef.current = trakt;
+
   useEffect(() => {
     triggerStremioItemSync(propsRef.current.authKey ?? null, propsRef.current.id ?? null);
     return () => {
@@ -549,6 +567,14 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   // Unified settings panel state.
   const [settingsPanelOpen, setSettingsPanelOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('subtitles');
+  // TV: transport-row focus model (driven by the keyboard effect below).
+  // Pressing OK/Up while watching lights up the play button; Left/Right then
+  // walk the row and OK activates the focused control. Lives here because
+  // Norigin is paused in-player and the WebView's own arrow-focus would
+  // otherwise jump DOM focus to the native scrub <input> — the "seek overlay"
+  // the user explicitly didn't want Up to land on.
+  const [tvControlsFocused, setTvControlsFocused] = useState(false);
+  const [tvControlIndex, setTvControlIndex] = useState(0);
   // Addon-fetched subtitles + 3-column picker modal (mirrors SimplePlayer).
   const [addonSubs, setAddonSubs] = useState<AddonSubtitleTrack[]>([]);
   const addonUrlsKey = useMemo(
@@ -1166,18 +1192,44 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         if (/^https:\/\//i.test(resolved)) {
           try {
             const probe = await fetch(
-              `/resolve-url?url=${encodeURIComponent(resolved)}`,
+              // proxyUrl() prefixes the loopback proxy origin on Android
+              // (PROXY_BASE === '' on desktop/browser, so unchanged there).
+              proxyUrl(`/resolve-url?url=${encodeURIComponent(resolved)}`),
               { signal: ac.signal },
             );
             if (probe.ok) {
               const data = (await probe.json()) as {
                 contentLength?: number;
                 status?: number;
+                url?: string;
               };
               const len = data.contentLength ?? 0;
               if (len > 0 && len < 20 * 1024 * 1024) {
                 autoFallbackToNextStream();
                 return;
+              }
+              // RD-ONLY Android: hand mpv the FINAL redirected URL — the
+              // direct debrid CDN link — not the addon's `/resolve/...`
+              // redirect endpoint. mpv's ffmpeg can't issue HTTP Range
+              // requests across the addon's 302 (an MKV's header/cues sit at
+              // EOF and need a seek-to-end), so the redirect URL demuxes to a
+              // "Seek failed" hang. The resolved CDN URL supports Range and
+              // plays. Desktop is unaffected — its in-process libmpv follows
+              // the redirect fine, and isAndroidTv() === false skips this.
+              if (
+                isAndroidTv() &&
+                typeof data.url === 'string' &&
+                /^https:\/\//i.test(data.url)
+              ) {
+                // Stream the debrid CDN URL THROUGH the local Rust proxy
+                // (/stream) rather than handing mpv the raw CDN URL. mpv's
+                // bundled ffmpeg has no Happy-Eyeballs, so a direct CDN connect
+                // pays a ~14 s IPv6 timeout and the demuxer starves/stalls on
+                // every reconnect. Pointed at 127.0.0.1 it connects instantly,
+                // while reqwest (Happy-Eyeballs + pooled keep-alive) does the
+                // real fetch once and reuses it across the MKV-EOF range seek —
+                // fixes both the slow startup and the mid-playback stall.
+                resolved = proxyUrl(`/stream?url=${encodeURIComponent(data.url)}`);
               }
             }
           } catch {
@@ -1309,8 +1361,20 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
             if (initialSeekRef.current === null) {
               initialSeekRef.current = value;
             } else if (value > initialSeekRef.current + 0.5) {
-              playbackStartedRef.current = true;
-              setHasShownVideo(true);
+              if (!playbackStartedRef.current) {
+                playbackStartedRef.current = true;
+                setHasShownVideo(true);
+                // Fallback veil-dismiss. On Android libmpv a fast debrid-CDN
+                // load can begin playback WITHOUT ever emitting a
+                // paused-for-cache=true edge, so the paused-for-cache/seeking
+                // machine below never latches observedBufferingTrueRef and the
+                // loading spinner lingers over the playing video. Playback has
+                // demonstrably advanced past the start target here, so we are
+                // not buffering — drop the veil once, on this transition.
+                // Genuine mid-playback rebuffering is still raised/cleared by
+                // the paused-for-cache handler (which latches the ref first).
+                setBuffering(false);
+              }
             }
           }
           break;
@@ -1332,6 +1396,14 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         case 'pause':
           if (typeof value === 'boolean') {
             setPaused(value);
+            // Trakt: report pause/resume edges (no-op when inert). progress
+            // from the latest timePos/duration; the hook always lets a state
+            // change through its dedup gate.
+            {
+              const pct = duration > 0 ? Math.max(0, Math.min(100, (timePos / duration) * 100)) : 0;
+              if (value) traktRef.current.pause(pct);
+              else traktRef.current.start(pct);
+            }
             // Only show/lock controls when the USER explicitly paused
             // (via togglePlay). Buffering causes rapid pause/unpause
             // that would flash the controls.
@@ -1589,6 +1661,11 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       // (stop = user-initiated or loadfile replacing the current file).
       const reason = (e.reason ?? '').toLowerCase();
       if (reason !== 'eof') return;
+      // Trakt: report stop at natural end-of-file. eof => fully watched, so
+      // send 100 (>=80 marks watched). Placed before the next-episode guard
+      // below so movies (which have no nextEpisodeInfo) are also reported.
+      // No-op when Trakt isn't configured/connected.
+      traktRef.current.stop(100);
       if (upNextFiredRef.current) return;
       if (!props.nextEpisodeInfo) return;
       if (!showUpNext && !upNextCancelledRef.current) {
@@ -1851,6 +1928,11 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       const t = timePosRef.current;
       const d = durationRef.current;
       if (pausedRef.current || d <= 0 || t <= 0) return;
+      // Trakt: heartbeat the current progress while playing (this interval is
+      // ~1s, matching the hook's debounce). No-op when Trakt isn't
+      // configured/connected. Runs before the 4.5s progress-save throttle
+      // below so Trakt gets its own cadence.
+      traktRef.current.start(Math.max(0, Math.min(100, (t / d) * 100)));
       const now = performance.now();
       if (now - lastProgressSaveRef.current < 4500) return;
       lastProgressSaveRef.current = now;
@@ -1955,7 +2037,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   // so the detail page opens on the right episode.
   const onBack = useCallback(() => {
     const base = `/detail/${encodeURIComponent(props.type)}/${encodeURIComponent(props.id)}`;
-    if (props.type === 'series' && props.videoId) {
+    if ((props.type === 'series' || props.type === 'anime') && props.videoId) {
       navigate(`${base}?videoId=${encodeURIComponent(props.videoId)}`);
     } else {
       navigate(base);
@@ -2489,9 +2571,16 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
           // failure — the SRT is still usable for English/UTF-8.
           const streamingProxy =
             `${STREAMING_SERVER_URL}/subtitles.vtt?from=${encodeURIComponent(sub.url)}`;
-          const proxiedSubUrl = `/addon-proxy?url=${encodeURIComponent(streamingProxy)}`;
-          const fallbackUrl = `/addon-proxy?url=${encodeURIComponent(sub.url)}`;
-          let resp = await fetch(proxiedSubUrl).catch(() => null);
+          // proxyUrl() prefixes the loopback proxy origin on Android
+          // (PROXY_BASE === '' on desktop/browser, so unchanged there).
+          const proxiedSubUrl = proxyUrl(`/addon-proxy?url=${encodeURIComponent(streamingProxy)}`);
+          const fallbackUrl = proxyUrl(`/addon-proxy?url=${encodeURIComponent(sub.url)}`);
+          // On the RD-only Android APK the bundled stremio-service (port
+          // 11470) does not exist, so the streamingProxy leg is dead — go
+          // straight to the direct-addon fallback through /addon-proxy.
+          let resp = isAndroidTv()
+            ? await fetch(fallbackUrl).catch(() => null)
+            : await fetch(proxiedSubUrl).catch(() => null);
           if (!resp || !resp.ok) {
             resp = await fetch(fallbackUrl);
           }
@@ -2873,37 +2962,292 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     }
   }, [markSeekStart, props.playerSettings.seekTimeDurationMs, watchParty]);
 
-  // Keyboard shortcuts: space=pause, ArrowLeft/Right=seek, F=fullscreen.
+  // TV: hand keyboard control to the player while it's mounted. The Norigin
+  // spatial-nav engine otherwise swallows the D-pad arrows (trying to move
+  // focus) so seek never fires, and routes OK to a focusable instead of
+  // toggling play. Pause it on mount, resume on unmount so the detail page we
+  // return to is navigable again. (Norigin is only initialised in TV mode.)
+  useEffect(() => {
+    if (!isTvMode()) return;
+    pauseSpatial();
+    return () => resumeSpatial();
+  }, []);
+
+  // Accumulator + debounce timer for coalesced D-pad seeking (see the keyboard
+  // effect below). Component-scope so they survive the effect re-running when
+  // play/pause toggles mid-seek-spam.
+  const seekAccumRef = useRef(0);
+  const seekTimerRef = useRef<number | null>(null);
+  // Throttle play/pause so a held/spammed OK can't churn mpv faster than ~300ms
+  // (single presses always pass) — defence-in-depth for the rapid-op VO race.
+  const lastPlayToggleRef = useRef(0);
+
+  // --- TV transport-row navigation model ---------------------------------
+  // Ordered list of D-pad-navigable controls in the bottom bar. The volume
+  // slider, mute and fullscreen are intentionally left out on TV: volume/mute
+  // are on the remote and the app is always fullscreen. Episodes is omitted
+  // for now too — the drawer has no D-pad handler yet, so surfacing it here
+  // would be a dead-end (tracked as a follow-up); the Up-next overlay and the
+  // detail page still cover episode switching.
+  const tvControlList: { id: string; run: () => void }[] = [
+    { id: 'play', run: togglePlay },
+    { id: 'subtitles', run: () => openSettings('subtitles') },
+    { id: 'audio', run: () => openSettings('audio') },
+  ];
+  // Refs the (closure-stable) keyboard handler reads so it never goes stale
+  // without having to re-subscribe the window listener on every focus move.
+  const tvControlListRef = useRef(tvControlList);
+  tvControlListRef.current = tvControlList;
+  const tvControlsFocusedRef = useRef(tvControlsFocused);
+  tvControlsFocusedRef.current = tvControlsFocused;
+  const tvControlIndexRef = useRef(tvControlIndex);
+  tvControlIndexRef.current = tvControlIndex;
+  // While any right-side overlay owns the D-pad, the player handler stands
+  // down (returns early WITHOUT consuming the key) so the overlay's own
+  // capture-phase listener — registered later, so it runs after us — can act.
+  const settingsPanelOpenRef = useRef(settingsPanelOpen);
+  settingsPanelOpenRef.current = settingsPanelOpen;
+  const episodesOpenRef = useRef(episodesOpen);
+  episodesOpenRef.current = episodesOpen;
+  const watchPartyOpenRef = useRef(watchPartyOpen);
+  watchPartyOpenRef.current = watchPartyOpen;
+  // The control id currently lit up (only while the row is focused on TV).
+  const tvFocusedControlId =
+    isTvMode() && tvControlsFocused
+      ? tvControlList[tvControlIndex]?.id ?? null
+      : null;
+  // Set both the ref (read synchronously by the handler) and the state (drives
+  // the highlight) so rapid presses before a re-render still navigate cleanly.
+  const setTvRowFocus = useCallback((focused: boolean, index?: number) => {
+    tvControlsFocusedRef.current = focused;
+    setTvControlsFocused(focused);
+    if (index != null) {
+      tvControlIndexRef.current = index;
+      setTvControlIndex(index);
+    }
+  }, []);
+
+  // Keyboard / D-pad / remote shortcuts: OK/Space/▶❚❚ = play/pause,
+  // ←/→ + ⏪/⏩ = seek, F = fullscreen, Esc/Back = leave player.
   useEffect(() => {
     const seekSec = Math.max(
       1,
       Math.round(props.playerSettings.seekTimeDurationMs / 1000),
     );
+    // COALESCE rapid seek presses into ONE absolute seek. Firing a fresh mpv
+    // seek on every D-pad press (10s apart) makes mpv reconfigure the VO
+    // repeatedly in quick succession, which on this weak Mali-470 GPU races its
+    // GL render thread and SIGSEGVs (FORTIFY destroyed-mutex). A single spaced
+    // seek is stable; the crash only appears under rapid taps. So we accumulate
+    // the delta and issue ONE absolute seek ~350ms after the last press — also
+    // the standard 10-foot-player "tap N times then jump" feel.
+    const flushSeek = () => {
+      const delta = seekAccumRef.current;
+      seekAccumRef.current = 0;
+      seekTimerRef.current = null;
+      if (!delta) return;
+      markSeekStart();
+      const target = Math.max(0, playbackClock.get() + delta);
+      desktop.seek(target, 'absolute').catch(() => {});
+      watchParty.broadcastSeek(target);
+    };
+    const queueSeek = (sec: number) => {
+      seekAccumRef.current += sec;
+      showControls();
+      if (seekTimerRef.current != null) window.clearTimeout(seekTimerRef.current);
+      seekTimerRef.current = window.setTimeout(flushSeek, 350);
+    };
+    const seekBack = () => queueSeek(-seekSec);
+    const seekFwd = () => queueSeek(seekSec);
     const handler = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
-      if (e.code === 'Space') {
+      // Range inputs (the scrub + volume sliders): let the browser's native
+      // Left/Right value-nudge run and skip our seek (avoids a double-seek,
+      // since this capture-phase handler fires before the slider's own
+      // onKeyDown). But do NOT blanket-return for ALL keys on ALL inputs — the
+      // old code did, which meant if focus ever landed on a slider the entire
+      // player froze (OK/Up/Down/Back dead too). On TV the sliders are now
+      // tabIndex=-1 so focus can't reach them, but keep this narrow guard as
+      // defense-in-depth and for the desktop slider's native nudge.
+      const tgt = e.target as HTMLElement | null;
+      if (
+        tgt?.tagName === 'INPUT' &&
+        (tgt as HTMLInputElement).type === 'range' &&
+        (e.key === 'ArrowLeft' || e.key === 'ArrowRight' ||
+          e.code === 'ArrowLeft' || e.code === 'ArrowRight')
+      ) {
+        return;
+      }
+      const tv = isTvMode();
+      // While a right-side overlay (settings / episodes / watch party) owns the
+      // D-pad, the player stands down — return WITHOUT consuming the key so the
+      // overlay's own capture-phase listener (registered later → runs after us)
+      // can act on it.
+      if (
+        tv &&
+        (settingsPanelOpenRef.current ||
+          episodesOpenRef.current ||
+          watchPartyOpenRef.current)
+      ) {
+        return;
+      }
+      const k = e.key;
+      // OK / Enter / Space / DPAD_CENTER / dedicated Play-Pause media key.
+      const isOk =
+        e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter' ||
+        k === 'Enter' || k === ' ' || k === 'MediaPlayPause' || k === 'MediaPlay' || k === 'MediaPause' ||
+        e.keyCode === 13 || e.keyCode === 23 || e.keyCode === 66 || e.keyCode === 85 || e.keyCode === 126 || e.keyCode === 127;
+      const isRew = e.code === 'ArrowLeft' || k === 'ArrowLeft' || k === 'MediaRewind' || k === 'MediaTrackPrevious' || e.keyCode === 89;
+      const isFwd = e.code === 'ArrowRight' || k === 'ArrowRight' || k === 'MediaFastForward' || k === 'MediaTrackNext' || e.keyCode === 90;
+      const isUp = e.code === 'ArrowUp' || k === 'ArrowUp' || e.keyCode === 19;
+      const isDown = e.code === 'ArrowDown' || k === 'ArrowDown' || e.keyCode === 20;
+      const isBack = e.code === 'Escape' || k === 'Escape' || k === 'GoBack' || k === 'BrowserBack' || e.keyCode === 10009;
+
+      // === TV: transport-row navigation ===============================
+      // Once the row is focused, the D-pad walks it (Left/Right) and OK
+      // activates the lit control. Seeking is only available in plain
+      // playback (below), so the two modes never fight over Left/Right.
+      if (tv && tvControlsFocusedRef.current) {
+        const controls = tvControlListRef.current;
+        if (isRew) {
+          e.preventDefault();
+          e.stopPropagation();
+          setTvRowFocus(true, Math.max(0, tvControlIndexRef.current - 1));
+          showControls();
+        } else if (isFwd) {
+          e.preventDefault();
+          e.stopPropagation();
+          setTvRowFocus(true, Math.min(controls.length - 1, tvControlIndexRef.current + 1));
+          showControls();
+        } else if (isOk) {
+          e.preventDefault();
+          e.stopPropagation();
+          const now = Date.now();
+          if (now - lastPlayToggleRef.current < 300) return;
+          lastPlayToggleRef.current = now;
+          const ctrl = controls[tvControlIndexRef.current];
+          // OK on any control fires its action and steps out of the row:
+          // 'play' resumes playback; the others open a panel that then owns
+          // the D-pad (the overlay-bail above keeps us out of its way).
+          setTvRowFocus(false);
+          ctrl?.run();
+          showControls();
+        } else if (isUp) {
+          // No-op inside the row — but swallowed so the WebView can't shift
+          // DOM focus onto the scrub-bar <input> ("seek overlay").
+          e.preventDefault();
+          e.stopPropagation();
+        } else if (isDown || isBack) {
+          // Step out of the row back to plain playback. Back here does NOT
+          // leave the player — a second Back (row dismissed) does.
+          e.preventDefault();
+          e.stopPropagation();
+          setTvRowFocus(false);
+        }
+        return;
+      }
+
+      // === Plain playback =============================================
+      if (isOk) {
         e.preventDefault();
-        togglePlay();
+        e.stopPropagation();
+        const now = Date.now();
+        if (now - lastPlayToggleRef.current < 300) return; // swallow rapid repeats
+        lastPlayToggleRef.current = now;
+        if (tv) {
+          if (pausedRef.current) {
+            // Already paused and not in the row (e.g. just closed a panel) —
+            // OK simply resumes, no row.
+            togglePlay();
+          } else {
+            // Watching: pause and light up the play button, dropping into the
+            // transport row so Right reaches episodes / subtitles / audio.
+            togglePlay();
+            setTvRowFocus(true, 0);
+          }
+        } else {
+          togglePlay();
+        }
         showControls();
-      } else if (e.code === 'ArrowLeft') {
-        markSeekStart();
-        desktop.seek(-seekSec).catch(() => {});
-        watchParty.broadcastSeek(Math.max(0, playbackClock.get() - seekSec));
+      } else if (tv && isUp) {
+        // Up while watching: reveal controls + focus the row at the play
+        // button — never the scrub bar (preventDefault blocks the WebView's
+        // default arrow-focus from grabbing the native <input>).
+        e.preventDefault();
+        e.stopPropagation();
+        setTvRowFocus(true, 0);
         showControls();
-      } else if (e.code === 'ArrowRight') {
-        markSeekStart();
-        desktop.seek(seekSec).catch(() => {});
-        watchParty.broadcastSeek(playbackClock.get() + seekSec);
+      } else if (tv && isDown) {
+        // Down while watching: just (re)reveal the controls. Swallowed so it
+        // can't move DOM focus to the scrub / volume sliders either.
+        e.preventDefault();
+        e.stopPropagation();
         showControls();
+      } else if (isRew) {
+        e.preventDefault();
+        e.stopPropagation();
+        seekBack();
+      } else if (isFwd) {
+        e.preventDefault();
+        e.stopPropagation();
+        seekFwd();
       } else if (e.code === 'KeyF') {
         desktop.toggleFullscreen().catch(() => {});
-      } else if (e.code === 'Escape') {
+      } else if (isBack) {
+        e.preventDefault();
+        e.stopPropagation();
         onBack();
       }
     };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [togglePlay, showControls, onBack, markSeekStart, props.playerSettings.seekTimeDurationMs, watchParty]);
+    // Capture phase so we win even if anything else listens (Norigin is paused
+    // on TV, but the global focus-recovery watchdog also runs in capture).
+    window.addEventListener('keydown', handler, true);
+    return () => {
+      // ONLY remove the listener. Do NOT clear/flush the coalesce timer here:
+      // this effect re-runs whenever play/pause toggles (togglePlay dep), and
+      // flushing on every toggle defeated the coalescing (interleaved OK presses
+      // forced each accumulated seek to fire → the rapid-reconfig crash). The
+      // timer lives on a component-scope ref and fires on its own ~350ms after
+      // the last seek press, reading the current refs — so it survives re-runs.
+      window.removeEventListener('keydown', handler, true);
+    };
+  }, [togglePlay, showControls, onBack, markSeekStart, props.playerSettings.seekTimeDurationMs, watchParty, setTvRowFocus]);
+
+  // TV: own the hardware BACK key while the player is mounted. The Android
+  // System WebView swallows BACK in its native onKeyDown (goBack over the SPA
+  // history) before any JS keydown fires, so Back inside an overlay would jump
+  // the whole route back. The native plugin (BlissfulMpvPlugin) intercepts BACK
+  // via an OnKeyListener and calls this — we close the topmost layer (settings
+  // / episodes / watch-party / the transport row) and, with nothing left, leave
+  // the player via the clean detail route. Returning `true` tells the native
+  // side we consumed it (skip its default goBack). Defined only while mounted,
+  // so every other screen keeps the WebView's default back behaviour.
+  useEffect(() => {
+    if (!isTvMode()) return;
+    const w = window as unknown as { __blissOnBack?: () => boolean };
+    w.__blissOnBack = () => {
+      if (settingsPanelOpenRef.current) {
+        setSettingsPanelOpen(false);
+        return true;
+      }
+      if (episodesOpenRef.current) {
+        setEpisodesOpen(false);
+        return true;
+      }
+      if (watchPartyOpenRef.current) {
+        setWatchPartyOpen(false);
+        return true;
+      }
+      if (tvControlsFocusedRef.current) {
+        setTvRowFocus(false);
+        return true;
+      }
+      onBack();
+      return true;
+    };
+    return () => {
+      if (w.__blissOnBack) delete w.__blissOnBack;
+    };
+  }, [onBack, setTvRowFocus]);
 
   // Prefer the clean movie/episode name from meta over the verbose
   // stream title (which embeds resolution + seeders + size like
@@ -3267,8 +3611,9 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         nextEpisodeInfo={props.nextEpisodeInfo}
         advanceToNextEpisode={advanceToNextEpisode}
         openSettings={openSettings}
-        isSeriesLike={props.type === 'series'}
+        isSeriesLike={props.type === 'series' || props.type === 'anime'}
         toggleEpisodes={toggleEpisodes}
+        tvFocusedControl={tvFocusedControlId}
       />
     </div>
   );

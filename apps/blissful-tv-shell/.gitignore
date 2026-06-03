@@ -1,0 +1,16 @@
+# Node
+node_modules/
+
+# Rust / Tauri
+src-tauri/target/
+
+# Tauri-generated mobile projects. `tauri android init` regenerates these from
+# tauri.conf.json + the templates; they are not hand-edited except for the
+# documented manifest patch (see src-tauri/gen/android/MANIFEST_PATCH.md), which
+# is applied after init. Keep them out of source control to avoid drift.
+src-tauri/gen/
+
+# Signing material — never commit
+*.keystore
+*.jks
+keystore.properties

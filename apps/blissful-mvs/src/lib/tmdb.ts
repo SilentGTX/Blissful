@@ -5,6 +5,7 @@
 // title across navigations.
 
 import { readStoredPlayerSettings } from './playerSettings';
+import { proxyUrl } from './proxyBase';
 
 const memoryCache = new Map<string, TmdbLookup>();
 
@@ -41,7 +42,7 @@ export async function fetchTmdbId(imdbId: string): Promise<TmdbLookup | null> {
     let result: TmdbLookup | null = null;
     if (apiKey) {
       const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${encodeURIComponent(apiKey)}&external_source=imdb_id`;
-      const response = await fetch(`/addon-proxy?url=${encodeURIComponent(url)}`);
+      const response = await fetch(proxyUrl(`/addon-proxy?url=${encodeURIComponent(url)}`));
       if (!response.ok) return null;
       const data = (await response.json()) as {
         movie_results?: Array<{ id?: number }>;
@@ -55,7 +56,7 @@ export async function fetchTmdbId(imdbId: string): Promise<TmdbLookup | null> {
         result = { tmdbId: tvId, mediaType: 'tv' };
       }
     } else {
-      const response = await fetch(`/tmdb-find?imdbId=${encodeURIComponent(imdbId)}`);
+      const response = await fetch(proxyUrl(`/tmdb-find?imdbId=${encodeURIComponent(imdbId)}`));
       if (!response.ok) return null;
       result = (await response.json()) as TmdbLookup | null;
       if (result && (typeof result.tmdbId !== 'number' || !result.mediaType)) {

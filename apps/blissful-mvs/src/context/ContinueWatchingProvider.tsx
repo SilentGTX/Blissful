@@ -16,22 +16,22 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import type { LibraryItem } from '../lib/mediaTypes';
-import { getResumeSeconds } from '../layout/app-shell/utils';
+import { hasMeaningfulResume } from '../layout/app-shell/utils';
 import { useContinueWatching } from '../layout/app-shell/hooks/useContinueWatching';
 import { useContinueWatchingActions } from '../layout/app-shell/hooks/useContinueWatchingActions';
 import { useAuth } from './AuthProvider';
 import { useModals } from './ModalsProvider';
 
 type ContinueOpenOptions = { source?: 'mobile' | 'desktop' };
-type ContinueRunOptions = ContinueOpenOptions & { mode?: 'resume' | 'start-over' };
+type ContinueRunOptions = ContinueOpenOptions & {
+  mode?: 'resume' | 'start-over' | 'advance';
+};
 
 type ContinueWatchingContextValue = {
   continueWatching: LibraryItem[];
@@ -60,11 +60,10 @@ export function useContinueWatchingContext(): ContinueWatchingContextValue {
 export function ContinueWatchingProvider({ children }: { children: ReactNode }) {
   const { authKey } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
   const {
     setResumeModalItem,
     setUnavailableItem,
-    setPendingContinueItem,
+    setUnavailableReason,
   } = useModals();
 
   const { continueWatching, setContinueWatching } = useContinueWatching(authKey);
@@ -76,58 +75,60 @@ export function ContinueWatchingProvider({ children }: { children: ReactNode }) 
       navigate,
       setContinueWatching,
       setContinueSyncError,
-      onStreamUnavailable: (item) => setUnavailableItem(item),
+      onStreamUnavailable: (item) => {
+        // The only caller today is the RD-only Android resume guard, so
+        // flag the reason before opening the global modal — the mount in
+        // AppShell reads it to swap in the Real-Debrid-specific copy.
+        setUnavailableReason('rd-required');
+        setUnavailableItem(item);
+      },
     });
 
-  // Pending-overlay path tracking. We clear the black veil only after
-  // React commits the new route — clearing on `navigate()` return
-  // gives a paint of the old page before the new one mounts.
-  const continueOverlayPathRef = useRef(location.pathname);
-  useEffect(() => {
-    if (continueOverlayPathRef.current !== location.pathname) {
-      continueOverlayPathRef.current = location.pathname;
-      setPendingContinueItem(null);
-    }
-  }, [location.pathname, setPendingContinueItem]);
-
+  // Simplified: navigate straight to the destination. The old code raised a
+  // full-screen black "pending" veil here (+ a route-change effect + a 10s
+  // timeout backstop that could strand a black screen if you re-opened the
+  // route you were already on). The destination already renders its own
+  // loading state — the player's mpv-buffering screen, the detail autoplay
+  // overlay — so the veil only masked a sub-second flash at the cost of a real
+  // stuck-screen failure mode. Dropped entirely; just navigate.
   const runContinue = useCallback(
     async (item: LibraryItem, options?: ContinueRunOptions) => {
-      setPendingContinueItem(item);
-      try {
-        await navigateContinueItem(item, options);
-      } catch {
-        // Navigation itself can't throw today, but if it ever does the
-        // overlay-clear timeout below acts as a backstop.
-      }
-      // Safety net for "we navigated to the route we're already on" —
-      // the route-change effect would never fire, so the overlay would
-      // get stuck until next navigation. 10s is long enough for the
-      // slowest plausible load.
-      window.setTimeout(() => setPendingContinueItem(null), 10000);
+      await navigateContinueItem(item, options);
     },
-    [navigateContinueItem, setPendingContinueItem],
+    [navigateContinueItem],
   );
 
   const onOpenContinueItem = useCallback(
     (item: LibraryItem, options?: ContinueOpenOptions) => {
-      const seconds = getResumeSeconds(item);
-      if (!seconds || seconds <= 0) {
-        void runContinue(item, { ...options, mode: 'start-over' });
-        return;
-      }
-      // Inside a watch party (current URL carries ?room=…), skip
-      // the Resume / Start-over modal entirely — the party's video
-      // is host-driven and we don't want a per-user resume seek
-      // fighting the room's timeline. Just start the new show from
-      // the beginning. Navigation here drops ?room= so the user
-      // also cleanly leaves the party in the process.
+      const isSeries = item.type === 'series' || item.type === 'anime';
+      // Only offer Resume for GENUINE mid-watch progress on the last-played
+      // episode/movie: a sub-15s leftover (would render "Resume 0:00") or a
+      // basically-finished item (offset > 95% of duration) is NOT resumable.
+      const meaningfulResume = hasMeaningfulResume(item);
+
+      // Inside a watch party (current URL carries ?room=…), skip the
+      // Resume / Start-over modal entirely — the party's video is
+      // host-driven and we don't want a per-user resume seek fighting the
+      // room's timeline. Just start the new show from the beginning;
+      // navigation drops ?room= so the user cleanly leaves the party.
       if (typeof window !== 'undefined' && /[?&]room=/.test(window.location.search)) {
         void runContinue(item, { ...options, mode: 'start-over' });
         return;
       }
-      // Has a saved offset — bounce through the Resume/Start-over
-      // modal first.
-      setResumeModalItem(item);
+
+      if (meaningfulResume) {
+        // Case (a): real partial progress — bounce through the
+        // Resume / Start-over modal first.
+        setResumeModalItem(item);
+        return;
+      }
+
+      // Case (b): no meaningful progress. A series opens the detail page and
+      // lands the bottom EPISODES rail on the next-to-watch episode (focused, no
+      // autoplay, no stale `t=`/videoId) WITHOUT opening the stream-selection
+      // popup — the detail page computes the target from the watched bitfield.
+      // A movie just starts over.
+      void runContinue(item, { ...options, mode: isSeries ? 'advance' : 'start-over' });
     },
     [runContinue, setResumeModalItem],
   );

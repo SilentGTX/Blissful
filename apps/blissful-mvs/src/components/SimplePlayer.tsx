@@ -14,6 +14,7 @@ import { addToLibraryItem, updateLibraryItemProgress } from '../lib/stremioApi';
 import { getLastStreamSelection, setLastStreamSelection } from '../lib/streamHistory';
 import { isElectronDesktopApp } from '../lib/platform';
 import { notifyError, notifyInfo, notifySuccess } from '../lib/toastQueues';
+import { useTraktScrobble } from '../lib/useTraktScrobble';
 
 type SubtitleTrack = {
   key: string;
@@ -995,6 +996,21 @@ export default function SimplePlayer(props: {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+
+  // Trakt scrobble (shared with NativeMpvPlayer). Fully inert unless Trakt is
+  // configured AND connected; all calls are fire-and-forget and can never
+  // affect playback. Held in a ref so the play/pause/timeupdate/ended event
+  // listeners (registered in effects with narrow dep arrays) can call it
+  // without re-subscribing. The controls are referentially stable.
+  const trakt = useTraktScrobble({ type: props.type, id: props.id, videoId: props.videoId });
+  const traktRef = useRef(trakt);
+  traktRef.current = trakt;
+  // Compute progress 0-100 from the <video> element for a scrobble call.
+  const traktPct = useCallback((video: HTMLVideoElement): number => {
+    const t = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+    const d = Number.isFinite(video.duration) ? video.duration : 0;
+    return d > 0 ? Math.max(0, Math.min(100, (t / d) * 100)) : 0;
+  }, []);
   const [volume, setVolume] = useState(0.2);
   const [muted, setMuted] = useState(false);
   const [showControls, setShowControls] = useState(true);
@@ -1554,10 +1570,14 @@ export default function SimplePlayer(props: {
     const onPlay = () => {
       setIsPlaying(true);
       setIsBuffering(false);
+      // Trakt: report play / resume / seek-while-playing (no-op when inert).
+      traktRef.current.start(traktPct(video));
     };
     const onPause = () => {
       setIsPlaying(false);
       flushNow(); // Flush progress to localStorage immediately on pause
+      // Trakt: report pause (no-op when inert).
+      traktRef.current.pause(traktPct(video));
     };
     const onTime = () => setCurrentTime(video.currentTime || 0);
     const onDuration = () => setDuration(video.duration || 0);
@@ -2122,6 +2142,13 @@ export default function SimplePlayer(props: {
       const d = Number.isFinite(video.duration) ? video.duration : 0;
       setProgress({ type: props.type!, id: props.id!, videoId: props.videoId ?? undefined }, { time: t, duration: d });
 
+      // Trakt: heartbeat the current progress while playing. The hook
+      // debounces (>=1s + >0.5% change) so this only POSTs occasionally, and
+      // is a no-op entirely when Trakt isn't configured/connected.
+      if (!video.paused && d > 0) {
+        traktRef.current.start(Math.max(0, Math.min(100, (t / d) * 100)));
+      }
+
       if (!props.authKey) return;
       if (!Number.isFinite(t) || t <= 0) return;
 
@@ -2237,6 +2264,9 @@ export default function SimplePlayer(props: {
     // Ended event: always fires as fallback so binge-watching works even if
     // notification is disabled (0) or the time-based trigger was cancelled.
     const onEnded = () => {
+      // Trakt: report stop at end-of-file. progress is ~100 here, so Trakt
+      // marks the item watched. No-op when inert.
+      traktRef.current.stop(traktPct(video));
       if (upNextFiredRef.current) return;
       if (!showUpNextRef.current && !upNextCancelledRef.current) {
         setShowUpNext(true);

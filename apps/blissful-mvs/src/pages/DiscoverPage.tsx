@@ -1,10 +1,4 @@
-import {
-  ListBox,
-  Modal,
-  Select,
-  Spinner,
-  Tooltip,
-} from '@heroui/react';
+import { Spinner } from '@heroui/react';
 import { useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import BottomDrawer from '../components/BottomDrawer';
@@ -14,16 +8,19 @@ import StremioIcon from '../components/StremioIcon';
 import { useAddons } from '../context/AddonsProvider';
 import { useUI } from '../context/UIProvider';
 import { ImdbIcon } from '../icons/ImdbIcon';
+import { ContentTypeIcon, SortIcon, GenreIcon, YearIcon } from '../icons/DiscoverFilterIcons';
 import { useDiscoverCatalogData } from '../features/discover/hooks/useDiscoverCatalogData';
 import { useDiscoverSelection } from '../features/discover/hooks/useDiscoverSelection';
 import { formatDate } from '../features/discover/utils';
 import { isInLibrary as isInLibraryStored, toggleLibrary } from '../lib/libraryStore';
 import { useImdbRating } from '../lib/useImdbRating';
+import { TvSelect } from '../spatial/TvSelect';
+import { FocusableButton } from '../spatial/FocusableButton';
 import type { MediaItem, MediaType } from '../types/media';
 
 export default function DiscoverPage() {
   const { addons } = useAddons();
-  const { query, isDark, setQuery } = useUI();
+  const { query, setQuery } = useUI();
   const params = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -40,7 +37,6 @@ export default function DiscoverPage() {
     return Array.isArray(seed) ? seed : [];
   }, [location.state]);
   const [libraryVersion, setLibraryVersion] = useState(0);
-  const [isTrailerOpen, setIsTrailerOpen] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [mobileDrawerType, setMobileDrawerType] = useState<'type' | 'catalog' | 'genre' | null>(null);
 
@@ -141,20 +137,19 @@ export default function DiscoverPage() {
   const bg = selected?.background || selected?.poster;
   void libraryVersion;
   const selectedInLibrary = selected ? isInLibraryStored({ type: discoverType, id: selected.id }) : false;
-  const trailerStreams = ((selected as any)?.trailerStreams ?? []) as Array<{ ytId?: string }>;
-  const trailers = ((selected as any)?.trailers ?? []) as Array<{ source?: string }>;
-  const firstTrailerId = trailerStreams[0]?.ytId ?? trailers[0]?.source ?? null;
 
   return (
     <div className="catalog-container">
       <div className="lg:mr-[360px]">
         <div className="h-full overflow-hidden">
-          {/* Desktop: Select dropdowns */}
+          {/* Desktop / TV: filter dropdowns (horizontal row above the grid) */}
           <div className="hidden sm:flex flex-wrap gap-3">
-            <Select
-              aria-label="Type"
-              selectedKey={selectedTypeKeys[0] ?? undefined}
-              onSelectionChange={(key) => {
+            <TvSelect
+              ariaLabel="Type"
+              leftIcon={<ContentTypeIcon className="h-4 w-4" />}
+              value={selectedTypeKeys[0] ?? null}
+              options={typeItems}
+              onChange={(key) => {
                 const keyStr = String(key);
                 const first = addons
                   .flatMap((addon) =>
@@ -179,26 +174,15 @@ export default function DiscoverPage() {
                 );
               }}
               className="w-40"
-            >
-              <Select.Trigger className="solid-surface bg-white/10 border border-white/10 rounded-full">
-                <Select.Value />
-                <Select.Indicator />
-              </Select.Trigger>
-              <Select.Popover>
-                <ListBox>
-                  {typeItems.map((item) => (
-                    <ListBox.Item key={item.key} id={item.key} textValue={item.label}>
-                      {item.label}
-                    </ListBox.Item>
-                  ))}
-                </ListBox>
-              </Select.Popover>
-            </Select>
+              triggerClassName="solid-surface bg-white/10 border border-white/10 rounded-full"
+            />
 
-            <Select
-              aria-label="Catalog"
-              selectedKey={selectedCatalogKeys[0] ?? undefined}
-              onSelectionChange={(key) => {
+            <TvSelect
+              ariaLabel="Catalog"
+              leftIcon={<SortIcon className="h-4 w-4" />}
+              value={selectedCatalogKeys[0] ?? null}
+              options={catalogItems}
+              onChange={(key) => {
                 const keyStr = String(key);
                 const [addonTransportUrl, catalogId] = keyStr.split('::');
                 if (!addonTransportUrl || !catalogId) return;
@@ -217,26 +201,15 @@ export default function DiscoverPage() {
                 );
               }}
               className="w-48"
-            >
-              <Select.Trigger className="solid-surface bg-white/10 border border-white/10 rounded-full">
-                <Select.Value />
-                <Select.Indicator />
-              </Select.Trigger>
-              <Select.Popover>
-                <ListBox>
-                  {catalogItems.map((item) => (
-                    <ListBox.Item key={item.key} id={item.key} textValue={item.label}>
-                      {item.label}
-                    </ListBox.Item>
-                  ))}
-                </ListBox>
-              </Select.Popover>
-            </Select>
+              triggerClassName="solid-surface bg-white/10 border border-white/10 rounded-full"
+            />
 
-            <Select
-              aria-label="Genre"
-              selectedKey={selectedFilterKeys[0] ?? undefined}
-              onSelectionChange={(key) => {
+            <TvSelect
+              ariaLabel="Genre"
+              leftIcon={discoverCatalog === 'year' ? <YearIcon className="h-4 w-4" /> : <GenreIcon className="h-4 w-4" />}
+              value={selectedFilterKeys[0] ?? null}
+              options={filterItems}
+              onChange={(key) => {
                 const keyStr = String(key);
                 const nextParams = new URLSearchParams(searchParams);
                 if (discoverCatalog === 'year') {
@@ -262,21 +235,8 @@ export default function DiscoverPage() {
                 );
               }}
               className="w-44"
-            >
-              <Select.Trigger className="solid-surface bg-white/10 border border-white/10 rounded-full">
-                <Select.Value />
-                <Select.Indicator />
-              </Select.Trigger>
-              <Select.Popover>
-                <ListBox>
-                  {filterItems.map((item) => (
-                    <ListBox.Item key={item.key} id={item.key} textValue={item.label}>
-                      {item.label}
-                    </ListBox.Item>
-                  ))}
-                </ListBox>
-              </Select.Popover>
-            </Select>
+              triggerClassName="solid-surface bg-white/10 border border-white/10 rounded-full"
+            />
           </div>
 
           {/* Mobile: Filter buttons that open bottom drawer */}
@@ -326,21 +286,17 @@ export default function DiscoverPage() {
               // breakpoints) and get ~6-7 bigger cards at 4K instead
               // of shrinking each card down to nothing.
               <div className="grid gap-5 p-1 [grid-template-columns:repeat(auto-fit,minmax(clamp(160px,16vw,420px),1fr))]">
-                {filteredItems.map((item) => (
+                {filteredItems.map((item, index) => (
                   <MediaCard
                     key={item.id}
                     item={item}
                     variant="poster"
                     selected={selectedId === item.id}
-                    onPress={() => {
-                      // On mobile, navigate to detail page directly
-                      // On desktop, show the sidebar preview
-                      if (window.innerWidth < 1024) {
-                        navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`);
-                      } else {
-                        setSelectedId(item.id);
-                      }
-                    }}
+                    autoFocusTv={index === 0}
+                    // Focus / hover live-previews the title in the side panel;
+                    // OK / click opens the detail page we built (TvDetailLayout).
+                    onFocus={() => setSelectedId(item.id)}
+                    onPress={() => navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`)}
                   />
                 ))}
               </div>
@@ -351,10 +307,16 @@ export default function DiscoverPage() {
         <aside className="fixed right-3 top-25 h-[calc(100vh-6rem)] w-[360px] hidden lg:block px-3 py-5">
           <div className="solid-surface relative flex h-full flex-col overflow-hidden rounded-[32px] bg-white/6">
             {bg ? (
-              <div
-                className="absolute inset-0 bg-cover bg-center opacity-35 blur-lg "
-
-              />
+              <>
+                <div
+                  className="absolute inset-0 bg-cover bg-center opacity-60 blur-md"
+                  style={{ backgroundImage: `url(${bg})` }}
+                />
+                {/* Legibility scrim: darkens the top (title/meta) and bottom
+                    (CTA buttons) where white text sits, while leaving the
+                    middle band of the backdrop bright enough to read. */}
+                <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/30 to-black/80" />
+              </>
             ) : null}
             <div className="relative z-10 flex h-full flex-col p-6">
               {selectedLoading ? (
@@ -392,18 +354,17 @@ export default function DiscoverPage() {
                         </div>
                         <div className="mt-3 flex flex-wrap gap-3">
                           {selected.genres.slice(0, 6).map((g) => (
-                            <button
+                            <FocusableButton
                               key={g}
-                              type="button"
                               className="rounded-full bg-white/10 px-4 py-2 text-sm font-semibold tracking-tight text-white/90 hover:bg-white/15"
-                              onClick={() => {
+                              onPress={() => {
                                 setQuery('');
                                 const qs = new URLSearchParams({ genre: g });
                                 navigate(`/discover/${encodeURIComponent('https://v3-cinemeta.strem.io/manifest.json')}/${discoverType}/top?${qs.toString()}`);
                               }}
                             >
                               {g}
-                            </button>
+                            </FocusableButton>
                           ))}
                         </div>
                       </div>
@@ -416,16 +377,15 @@ export default function DiscoverPage() {
                         </div>
                         <div className="mt-3 flex flex-wrap gap-3">
                           {selected.cast.slice(0, 6).map((c) => (
-                            <button
+                            <FocusableButton
                               key={c}
-                              type="button"
                               className="rounded-full bg-white/10 px-4 py-2 text-sm font-semibold tracking-tight text-white/90 hover:bg-white/15"
-                              onClick={() => {
+                              onPress={() => {
                                 navigate(`/search?search=${encodeURIComponent(c)}`);
                               }}
                             >
                               {c}
-                            </button>
+                            </FocusableButton>
                           ))}
                         </div>
                       </div>
@@ -438,84 +398,47 @@ export default function DiscoverPage() {
                         </div>
                         <div className="mt-3 flex flex-wrap gap-3">
                           {selected.director.slice(0, 3).map((d) => (
-                            <button
+                            <FocusableButton
                               key={d}
-                              type="button"
                               className="rounded-full bg-white/10 px-4 py-2 text-sm font-semibold tracking-tight text-white/90 hover:bg-white/15"
-                              onClick={() => {
+                              onPress={() => {
                                 navigate(`/search?search=${encodeURIComponent(d)}`);
                               }}
                             >
                               {d}
-                            </button>
+                            </FocusableButton>
                           ))}
                         </div>
                       </div>
                     ) : null}
                   </div>
 
-                  <div className="mt-6 flex items-center justify-between gap-3">
-                    <Tooltip>
-                      <Tooltip.Trigger>
-                        <button
-                          type="button"
-                          className="grid h-12 w-12 place-items-center rounded-full border border-white/10 bg-white/10 text-white hover:bg-white/15"
-                          aria-label={selectedInLibrary ? 'Remove from library' : 'Add to library'}
-                          onClick={() => {
-                            toggleLibrary({ type: discoverType, id: selected.id, name: selected.name, poster: selected.poster ?? undefined });
-                            setLibraryVersion((v) => v + 1);
-                          }}
-                        >
-                          <StremioIcon
-                            name={selectedInLibrary ? 'remove-from-library' : 'add-to-library'}
-                            className="h-6 w-6"
-                          />
-                        </button>
-                      </Tooltip.Trigger>
-                      <Tooltip.Content placement="top">
-                        {selectedInLibrary ? 'Remove from library' : 'Add to library'}
-                      </Tooltip.Content>
-                    </Tooltip>
+                  <div className="mt-6 flex flex-col gap-3">
+                    {/* Primary CTA: Play -> opens the detail page (TvDetailLayout),
+                        where the stream picker / Watch lives. Replaces the old
+                        "Watch Trailer" button per the redesign. */}
+                    <FocusableButton
+                      className="flex w-full items-center justify-center gap-2 rounded-2xl border border-[var(--bliss-accent)]/70 bg-[var(--bliss-accent)]/18 px-4 py-3 text-base font-semibold text-white shadow-[0_0_24px_var(--bliss-accent-glow)] transition-colors hover:bg-[var(--bliss-accent)]/30"
+                      onPress={() => navigate(`/detail/${discoverType}/${encodeURIComponent(selected.id)}`)}
+                    >
+                      <StremioIcon name="play" className="h-5 w-5" />
+                      <span>Play</span>
+                    </FocusableButton>
 
-                    <Tooltip>
-                      <Tooltip.Trigger>
-                        <button
-                          type="button"
-                          className={
-                            'grid h-12 w-12 place-items-center rounded-full border border-white/10 bg-white/10 text-white hover:bg-white/15 ' +
-                            (!firstTrailerId ? 'opacity-40 cursor-not-allowed' : '')
-                          }
-                          aria-label="Trailer"
-                          onClick={() => {
-                            if (!firstTrailerId) return;
-                            setIsTrailerOpen(true);
-                          }}
-                        >
-                          <StremioIcon name="trailer" className="h-6 w-6" />
-                        </button>
-                      </Tooltip.Trigger>
-                      <Tooltip.Content placement="top">Trailer</Tooltip.Content>
-                    </Tooltip>
-
-                    <button
-                      type="button"
-                      className={
-                        'group flex h-12 flex-1 items-center justify-center gap-2 rounded-full border font-semibold transition-colors ' +
-                        (isDark
-                          ? 'border-white/10 bg-white/10 text-white hover:bg-white hover:text-black'
-                          : 'border-black/10 bg-black/10 text-black hover:bg-black hover:text-white')
-                      }
-                      onClick={() => navigate(`/detail/${discoverType}/${encodeURIComponent(selected.id)}`)}
+                    <FocusableButton
+                      className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/8 px-4 py-3 text-base font-semibold text-white/90 transition-colors hover:bg-white/15"
+                      aria-label={selectedInLibrary ? 'Remove from library' : 'Add to library'}
+                      onPress={() => {
+                        toggleLibrary({ type: discoverType, id: selected.id, name: selected.name, poster: selected.poster ?? undefined });
+                        setLibraryVersion((v) => v + 1);
+                      }}
                     >
                       <StremioIcon
-                        name="play"
-                        className={
-                          'h-6 w-6 transition-colors ' +
-                          (isDark ? 'text-white group-hover:text-black' : 'text-black group-hover:text-white')
-                        }
+                        name={selectedInLibrary ? 'remove-from-library' : 'add-to-library'}
+                        className="h-5 w-5"
                       />
-                      <span>Show</span>
-                    </button>
+                      <span>{selectedInLibrary ? 'Remove from Library' : 'Add to Library'}</span>
+                    </FocusableButton>
                   </div>
                 </div>
               ) : (
@@ -524,36 +447,6 @@ export default function DiscoverPage() {
             </div>
           </div>
         </aside>
-
-        <Modal>
-          <Modal.Backdrop
-            isOpen={isTrailerOpen}
-            onOpenChange={(open) => setIsTrailerOpen(open)}
-            variant="blur"
-            className="bg-black/60"
-          >
-            <Modal.Container placement="center" size="cover">
-              <Modal.Dialog className="bg-transparent shadow-none">
-                <Modal.Header className="sr-only"><Modal.Heading>Trailer</Modal.Heading></Modal.Header>
-                <Modal.Body className="px-0">
-                  <div className="overflow-hidden rounded-[28px] bg-black">
-                    {firstTrailerId ? (
-                      <iframe
-                        title="Trailer"
-                        className="h-[70vh] w-[min(1000px,92vw)]"
-                        src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(firstTrailerId)}?autoplay=1`}
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowFullScreen
-                      />
-                    ) : (
-                      <div className="p-6 text-sm text-white/70">No trailer.</div>
-                    )}
-                  </div>
-                </Modal.Body>
-              </Modal.Dialog>
-            </Modal.Container>
-          </Modal.Backdrop>
-        </Modal>
 
         {/* Mobile filter drawer (same bottom-sheet style as Continue Watching) */}
         <BottomDrawer

@@ -1,6 +1,9 @@
 import type { HomeRowPrefs } from './homeRows';
 import type { PlayerSettings } from './playerSettings';
-import { isElectronDesktopApp } from './platform';
+// STORAGE_URL is the single source of truth in storageBaseUrl.ts (which carries
+// the Android/Tauri proxy branch). Import it rather than re-deriving it here —
+// the old local copy missed the Tauri case and silently went cross-origin.
+import { STORAGE_URL } from './storageBaseUrl';
 export type StoredProfile = {
   displayName?: string;
   avatar?: string;
@@ -16,14 +19,6 @@ export type BlissfulStorageState = {
   uiStyle?: 'classic' | 'netflix' | 'modern';
   profile?: StoredProfile;
 };
-
-const DEFAULT_STORAGE_URL = import.meta.env.DEV
-  ? 'http://localhost:8787'
-  : 'https://blissful.budinoff.com/storage';
-
-// In Electron we serve the UI from a local origin (127.0.0.1). Use a same-origin
-// relative base so the desktop app can proxy to the real storage server without CORS.
-const STORAGE_URL = isElectronDesktopApp() ? '/storage' : import.meta.env.VITE_STORAGE_URL ?? DEFAULT_STORAGE_URL;
 
 // Per-key rejection cache. Once the storage server returns 401 for a
 // given auth key (Stremio account that hasn't been registered with our

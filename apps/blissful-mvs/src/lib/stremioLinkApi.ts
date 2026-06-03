@@ -139,6 +139,9 @@ export function triggerStremioItemSync(token: string | null, id: string | null):
 
 export function triggerStremioFullSync(token: string | null): void {
   if (!token) return;
-  if (!maybeRunSyncCooldown('all', 60_000)) return;
+  // Coalesce to roughly once per hour. AppShell drives this on app launch and on
+  // an hourly interval; any Home visits in between are absorbed by this cooldown
+  // (55 min — just under the hourly interval so the interval itself always passes).
+  if (!maybeRunSyncCooldown('all', 55 * 60_000)) return;
   void syncStremioNow(token).catch(() => { /* cron will heal */ });
 }

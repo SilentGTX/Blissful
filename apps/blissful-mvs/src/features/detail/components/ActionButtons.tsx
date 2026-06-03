@@ -1,5 +1,6 @@
 import StremioIcon from '../../../components/StremioIcon';
 import { LibraryActionButton } from '../../../components/LibraryActionButton';
+import { FocusableButton } from '../../../spatial/FocusableButton';
 
 type ActionButtonsProps = {
   inLibrary: boolean;
@@ -90,39 +91,62 @@ export function DesktopActionButtons({
   onPlay,
   isLoggedIn = true,
 }: ActionButtonsProps) {
+  // On TV the route-entry focus lands on the first available action so the
+  // detail screen opens with the D-pad already "inside" the actions.
+  const primary: 'play' | 'library' | 'trailer' | 'share' = onPlay
+    ? 'play'
+    : isLoggedIn
+      ? 'library'
+      : hasTrailer
+        ? 'trailer'
+        : 'share';
+
   return (
     <div className="hidden lg:block">
       <div className="action-buttons-container-Pn4hZ">
         <div className="label">Actions</div>
 
         {onPlay ? (
-          <button
-            type="button"
+          <FocusableButton
             className="action-button-Pn4hZ is-play"
-            onClick={onPlay}
+            onPress={onPlay}
+            autoFocusTv={primary === 'play'}
             aria-label="Play"
           >
             <StremioIcon name="play" className="icon" />
             <span className="text">Play</span>
-          </button>
+          </FocusableButton>
         ) : null}
 
-        {isLoggedIn ? <LibraryActionButton inLibrary={inLibrary} onToggleLibrary={onToggleLibrary} /> : null}
+        {isLoggedIn ? (
+          <LibraryActionButton
+            inLibrary={inLibrary}
+            onToggleLibrary={onToggleLibrary}
+            autoFocusTv={primary === 'library'}
+          />
+        ) : null}
 
-        <button
-          type="button"
+        <FocusableButton
           className={'action-button-Pn4hZ' + (!hasTrailer ? ' is-disabled' : '')}
-          onClick={onOpenTrailer}
+          onPress={onOpenTrailer}
+          focusableTv={hasTrailer}
+          disabled={!hasTrailer}
+          autoFocusTv={primary === 'trailer'}
           aria-label="Trailer"
         >
           <StremioIcon name="trailer" className="icon" />
           <span className="text">Trailer</span>
-        </button>
+        </FocusableButton>
 
-        <button type="button" className="action-button-Pn4hZ" onClick={onShare} aria-label="Share">
+        <FocusableButton
+          className="action-button-Pn4hZ"
+          onPress={onShare}
+          autoFocusTv={primary === 'share'}
+          aria-label="Share"
+        >
           <StremioIcon name="share" className="icon" />
           <span className="text">Share</span>
-        </button>
+        </FocusableButton>
       </div>
     </div>
   );

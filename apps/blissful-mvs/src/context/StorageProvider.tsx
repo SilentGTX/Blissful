@@ -164,6 +164,55 @@ export function StorageProvider({
     root.style.setProperty('--bliss-accent-glow', `rgba(${r}, ${g}, ${b}, 0.55)`);
   }, [playerSettings.accentColor]);
 
+  // Apply the user's chosen surface color as the global `--bliss-surface`
+  // family. Every faked-glass surface (nav rail, search pill, menus,
+  // dropdowns, popovers, modals) and every flat `.solid-surface` panel is
+  // built from these vars in index.css, so a single hex retints the whole
+  // app at runtime. The default `#282f40` IS today's look, so when the
+  // value is unset or still the default we deliberately do NOT write the
+  // vars — the :root literals in index.css already carry the exact current
+  // gradient (and keep flat panels their original #2c2c2c gray), so the
+  // default path is pixel-identical to before this feature existed.
+  useEffect(() => {
+    const root = document.documentElement;
+    const SURFACE_VARS = [
+      '--bliss-surface',
+      '--bliss-surface-2',
+      '--bliss-surface-solid',
+      '--bliss-glass-top',
+      '--bliss-glass-bottom',
+    ];
+    const surface = playerSettings.surfaceColor;
+    // Default / unset / invalid → REMOVE any inline overrides so the :root
+    // literals (the original dark glass) take back over. Just returning here
+    // would leave a previously-picked color stuck on the element — that was
+    // the "can't get the original transparency back" bug; Reset now restores it.
+    if (!surface || surface.toLowerCase() === '#282f40' || !/^#([0-9a-f]{6})$/i.test(surface)) {
+      SURFACE_VARS.forEach((v) => root.style.removeProperty(v));
+      return;
+    }
+    const cleaned = surface.replace('#', '');
+    const sr = parseInt(cleaned.slice(0, 2), 16);
+    const sg = parseInt(cleaned.slice(2, 4), 16);
+    const sb = parseInt(cleaned.slice(4, 6), 16);
+    // Darker variant for the bottom of the glass gradient — ~0.42x each
+    // channel, the ratio the original rgba(17,21,31)/rgba(40,47,64) base
+    // used. Clamped to 0-255 via toHex.
+    const r2 = Math.round(sr * 0.42);
+    const g2 = Math.round(sg * 0.42);
+    const b2 = Math.round(sb * 0.42);
+    const toHex = (n: number) =>
+      Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0');
+    root.style.setProperty('--bliss-surface', surface);
+    root.style.setProperty('--bliss-surface-2', `#${toHex(r2)}${toHex(g2)}${toHex(b2)}`);
+    // Flat panels (.solid-surface) tint to the chosen hue too.
+    root.style.setProperty('--bliss-surface-solid', surface);
+    // Near-opaque rgba gradient stops for the faked-glass recipe — keep the
+    // original 0.97 / 0.985 alphas so the glass stays legible over content.
+    root.style.setProperty('--bliss-glass-top', `rgba(${sr}, ${sg}, ${sb}, 0.97)`);
+    root.style.setProperty('--bliss-glass-bottom', `rgba(${r2}, ${g2}, ${b2}, 0.985)`);
+  }, [playerSettings.surfaceColor]);
+
   const userProfile: StoredProfile = useMemo(() => {
     const fromState = storageState?.profile;
     if (fromState?.displayName || fromState?.avatar) return fromState;

@@ -1,12 +1,14 @@
 import { Tooltip } from '@heroui/react';
 import { motion } from 'framer-motion';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useFocusable, FocusContext } from '@noriginmedia/norigin-spatial-navigation';
 import type { SideNavView, SideNavProps } from './types';
 import { ICONS } from './utils';
 import { NavItem } from './NavItem';
 import { ContinueWatchingDrawer } from './ContinueWatchingDrawer';
 import { ContinueWatchingItem } from './ContinueWatchingItem';
 import { FriendsDrawer } from './FriendsDrawer';
+import { TvFriendsRail } from './TvFriendsRail';
 import { CollapseIcon } from '../../icons/CollapseIcon';
 import { ContinueIcon } from '../../icons/ContinueIcon';
 import { FriendsIcon } from '../../icons/FriendsIcon';
@@ -15,6 +17,7 @@ import { useFriends } from '../../context/FriendsProvider';
 import { useAuth } from '../../context/AuthProvider';
 import { desktop, isNativeShell } from '../../lib/desktop';
 import { useFooterAccordionHeights } from './useFooterAccordionHeights';
+import { isTvMode } from '../../lib/platform';
 
 export type DesktopNavProps = Pick<
   SideNavProps,
@@ -32,7 +35,57 @@ export type DesktopNavProps = Pick<
 >;
 
 export function DesktopNav(props: DesktopNavProps) {
-  const { collapsed } = props;
+  const tv = isTvMode();
+  // TV: the rail is MINIMIZED (icons only) by default and EXPANDS to show labels
+  // — overlaying content, not pushing it (see index.css) — only while D-pad
+  // focus is inside the rail. Heavy footer accordions stay hidden on TV
+  // (Continue Watching is a home rail; social gets a dedicated panel later).
+  const focusCountRef = useRef(0);
+  const [railFocused, setRailFocused] = useState(false);
+  // TV: treat the whole rail as a focus boundary so D-pad Up/Down stay WITHIN
+  // the nav items (Down no longer jumps sideways into the movie rails). Right
+  // still exits to content; Left from content re-enters the rail. Children
+  // register under this container via the FocusContext.Provider below.
+  // focusable:tv (not false) so the rail is a real ROOT-level target: pressing
+  // LEFT from content lands on this container, and Norigin drills it down into
+  // the last-focused nav item (saveLastFocusedChild) — the container itself
+  // never rests as focus, so it never shows a ring. The up/down boundary still
+  // keeps vertical D-pad inside the rail; RIGHT exits back to content.
+  const onRailFocus = useCallback((focused: boolean) => {
+    focusCountRef.current = Math.max(0, focusCountRef.current + (focused ? 1 : -1));
+    setRailFocused(focusCountRef.current > 0);
+  }, []);
+  // Stable focusKey for the first nav item (Home) so the rail container can name
+  // a DETERMINISTIC drill target. On a first LEFT-from-content entry the
+  // container's lastFocusedChildKey is still null; without a preferredChildFocusKey
+  // the drill falls back to geometry and (in the window where a NavItem leaf isn't
+  // measured/participating yet) focus can REST on the boundary CONTAINER — which
+  // has no focus ring and never fires onRailFocus, so the rail neither expands nor
+  // accepts arrows. preferredChildFocusKey + an onFocus/onBlur fallback fix both.
+  const HOME_NAV_KEY = 'tv-nav-home';
+  const { ref: navContainerRef, focusKey: navFocusKey } = useFocusable({
+    focusable: tv,
+    trackChildren: true,
+    saveLastFocusedChild: true,
+    preferredChildFocusKey: tv ? HOME_NAV_KEY : undefined,
+    isFocusBoundary: tv,
+    focusBoundaryDirections: ['up', 'down'],
+    // Fallback: if focus ever lands on the container itself (drill miss), still
+    // expand the rail so it isn't a dead, ring-less, un-arrowable state.
+    onFocus: tv ? () => onRailFocus(true) : undefined,
+    onBlur: tv ? () => onRailFocus(false) : undefined,
+  });
+  const collapsed = tv ? !railFocused : props.collapsed;
+
+  // TV: while D-pad focus is inside the rail, mark the document so the CSS can
+  // dim the rest of the screen (a focus scrim) — the nav pops, nothing else.
+  useEffect(() => {
+    if (!tv) return;
+    const el = document.documentElement;
+    if (railFocused) el.setAttribute('data-rail-focused', 'true');
+    else el.removeAttribute('data-rail-focused');
+    return () => el.removeAttribute('data-rail-focused');
+  }, [tv, railFocused]);
   const [isContinueOpen, setIsContinueOpen] = useState(false);
   const [isContinueTooltipOpen, setIsContinueTooltipOpen] = useState(false);
   const [continueExpanded, setContinueExpanded] = useState<boolean>(true);
@@ -109,9 +162,13 @@ export function DesktopNav(props: DesktopNavProps) {
   }, [isFriendsOpen]);
 
   return (
-    <div className={'rounded-[28px] bliss-sidebar relative h-full w-full overflow-visible' + (collapsed ? ' closed' : '')}>
-      <div className="solid-surface relative flex h-full w-full flex-col overflow-hidden rounded-[28px] bg-white/6 shadow-xl antialiased">
-        <div className="mx-4 my-[clamp(0.5rem,1.2vh,1rem)] flex shrink-0 items-center">
+    <FocusContext.Provider value={navFocusKey}>
+    <div
+      data-rail-expanded={tv && railFocused ? 'true' : undefined}
+      className={'rounded-[28px] bliss-sidebar relative h-full w-full overflow-visible' + (collapsed ? ' closed' : '')}
+    >
+      <div ref={navContainerRef} className="solid-surface relative flex h-full w-full flex-col overflow-hidden rounded-[28px] bg-white/6 shadow-xl antialiased">
+        <div className="nav-logo-row mx-4 my-[clamp(0.5rem,1.2vh,1rem)] flex shrink-0 items-center">
           <div className="nav-icon-slot flex shrink-0 items-center justify-center">
             <button
               type="button"
@@ -146,6 +203,8 @@ export function DesktopNav(props: DesktopNavProps) {
               icon={ICONS.home}
               active={props.active === 'home'}
               collapsed={collapsed}
+              focusKey={tv ? HOME_NAV_KEY : undefined}
+              onRailFocus={tv ? onRailFocus : undefined}
               onPress={() => handleNavChange('home')}
             />
             <NavItem
@@ -153,6 +212,7 @@ export function DesktopNav(props: DesktopNavProps) {
               icon={ICONS.discover}
               active={props.active === 'discover'}
               collapsed={collapsed}
+              onRailFocus={tv ? onRailFocus : undefined}
               onPress={() => handleNavChange('discover')}
             />
             <NavItem
@@ -160,6 +220,7 @@ export function DesktopNav(props: DesktopNavProps) {
               icon={ICONS.library}
               active={props.active === 'library'}
               collapsed={collapsed}
+              onRailFocus={tv ? onRailFocus : undefined}
               onPress={() => handleNavChange('library')}
             />
             <NavItem
@@ -167,6 +228,7 @@ export function DesktopNav(props: DesktopNavProps) {
               icon={ICONS.addons}
               active={props.active === 'addons'}
               collapsed={collapsed}
+              onRailFocus={tv ? onRailFocus : undefined}
               onPress={() => handleNavChange('addons')}
             />
             <NavItem
@@ -174,6 +236,7 @@ export function DesktopNav(props: DesktopNavProps) {
               icon={ICONS.watchParty}
               active={false}
               collapsed={collapsed}
+              onRailFocus={tv ? onRailFocus : undefined}
               onPress={() => props.onOpenJoinParty()}
             />
             <NavItem
@@ -181,12 +244,22 @@ export function DesktopNav(props: DesktopNavProps) {
               icon={ICONS.settings}
               active={props.active === 'settings'}
               collapsed={collapsed}
+              onRailFocus={tv ? onRailFocus : undefined}
               onPress={() => handleNavChange('settings')}
             />
           </ul>
         </nav>
 
-        {!collapsed ? (
+        {tv ? (
+          // TV: Friends lives INSIDE the rail (accordion), not a popup — see
+          // TvFriendsRail. It fills the space below the nav items.
+          <TvFriendsRail
+            collapsed={collapsed}
+            isSignedIn={isSignedIn}
+            onOpenLogin={props.onOpenLogin}
+            onRailFocus={onRailFocus}
+          />
+        ) : !collapsed ? (
           <div
             ref={footerRef}
             className="footer flex min-h-0 flex-1 flex-col justify-end gap-1.5 px-3 pb-3"
@@ -393,15 +466,19 @@ export function DesktopNav(props: DesktopNavProps) {
         )}
       </div>
 
-      <button
-        type="button"
-        id="sidebar-toggle"
-        className="toggle transition duration-500 flex w-8 h-8 items-center justify-center absolute rounded-full top-7 -right-3 z-10 cursor-pointer solid-surface shadow"
-        aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        onClick={props.onToggleCollapsed}
-      >
-        <CollapseIcon collapsed={collapsed} className="h-[18px] w-[18px] cursor-pointer" />
-      </button>
+      {!tv && (
+        <button
+          type="button"
+          id="sidebar-toggle"
+          className="toggle transition duration-500 flex w-8 h-8 items-center justify-center absolute rounded-full top-7 -right-3 z-10 cursor-pointer solid-surface shadow"
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          onClick={props.onToggleCollapsed}
+        >
+          <CollapseIcon collapsed={collapsed} className="h-[18px] w-[18px] cursor-pointer" />
+        </button>
+      )}
+
     </div>
+    </FocusContext.Provider>
   );
 }

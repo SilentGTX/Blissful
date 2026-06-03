@@ -9,6 +9,7 @@ import { useStorage } from '../context/StorageProvider';
 import { PRESET_PROFILE_AVATARS, renderProfileAvatar } from '../lib/profileAvatars';
 import { notifyInfo } from '../lib/toastQueues';
 import type { SavedAccount } from '../lib/savedAccounts';
+import { FocusableButton } from '../spatial/FocusableButton';
 
 export default function AccountsPage() {
   const { authKey, savedAccounts: rawSavedAccounts, switchAccount, removeAccount, updateSavedAccountProfile } =
@@ -48,12 +49,12 @@ export default function AccountsPage() {
             <div className="mt-1 text-sm text-foreground/60">{subtitle}</div>
           </div>
           <div className="flex items-center gap-2">
-            <Button className="rounded-full bg-white/10" variant="ghost" onPress={() => navigate(-1)}>
+            <FocusableButton className="rounded-full bg-white/10" onPress={() => navigate(-1)}>
               Back
-            </Button>
-            <Button className="rounded-full bg-white text-black" onPress={openLogin}>
+            </FocusableButton>
+            <FocusableButton className="rounded-full bg-white text-black" onPress={openLogin} autoFocusTv>
               Add account
-            </Button>
+            </FocusableButton>
           </div>
         </div>
 

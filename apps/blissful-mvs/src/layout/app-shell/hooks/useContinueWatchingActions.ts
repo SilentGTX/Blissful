@@ -6,17 +6,23 @@ import { putBlissfulLibraryItem } from '../../../lib/blissfulAuthApi';
 import { getLastStreamSelection } from '../../../lib/streamHistory';
 import { getResumeSeconds } from '../utils';
 import { fetchMeta } from '../../../lib/stremioAddon';
+import { proxyUrl } from '../../../lib/proxyBase';
+import { isAndroidTv } from '../../../lib/platform';
+import { isAndroidPlayableUrl } from '../../../lib/androidPlayable';
 
 type UseContinueWatchingActionsParams = {
   authKey: string | null;
   navigate: NavigateFunction;
   setContinueWatching: Dispatch<SetStateAction<LibraryItem[]>>;
   setContinueSyncError: (value: string | null) => void;
-  /** Called when the stored stream URL is detected as a debrid DMCA
-   *  placeholder (Real-Debrid serves a ~30s "file removed" video, <20MB).
-   *  Caller is expected to surface a modal in the current context — we
-   *  do NOT navigate anywhere when this fires, so the user can pick a
-   *  different stream from where they already are. */
+  /** Called when the stored stream cannot be played from where the user
+   *  is and we therefore refuse to navigate. Today this fires only for
+   *  the RD-only Android (Tauri TV) case: a stored magnet: / local
+   *  stremio-server URL that needs the absent torrent server. (The
+   *  signature is also kept available for the debrid DMCA-placeholder
+   *  flow, which currently transparently auto-falls-back instead.)
+   *  Caller surfaces a modal in the current context — we do NOT navigate
+   *  when this fires, so the user can pick a different stream in place. */
   onStreamUnavailable?: (item: LibraryItem) => void;
 };
 
@@ -29,8 +35,21 @@ export function useContinueWatchingActions({
 }: UseContinueWatchingActionsParams) {
   const onOpenContinueItem = async (
     item: LibraryItem,
-    options?: { source?: 'mobile' | 'desktop'; mode?: 'resume' | 'start-over' }
+    options?: { source?: 'mobile' | 'desktop'; mode?: 'resume' | 'start-over' | 'advance' }
   ) => {
+    // SERIES "advance" — no meaningful resume on the last-played episode. Open
+    // the detail page and let it land on the next-to-watch episode in the bottom
+    // EPISODES rail (TV: switch to its season + focus its card) WITHOUT opening
+    // the stream-selection popup. The detail page computes next-to-watch from its
+    // OWN decoded watched set + meta; we deliberately pass NO videoId (passing it
+    // would select the episode and force the popup open), NO autoplay, NO `t`.
+    // Returns before all resume/stored-stream logic, so the movie + genuine-resume
+    // paths are unchanged.
+    if (options?.mode === 'advance' && (item.type === 'series' || item.type === 'anime')) {
+      navigate(`/detail/${encodeURIComponent(item.type)}/${encodeURIComponent(item._id)}`);
+      return;
+    }
+
     const videoId =
       (item.state as any)?.videoId ??
       (item.state as any)?.video_id ??
@@ -62,6 +81,11 @@ export function useContinueWatchingActions({
       const base = `/detail/${encodeURIComponent(item.type)}/${encodeURIComponent(item._id)}`;
       const qs = new URLSearchParams();
       if (item.type === 'series' && typeof videoId === 'string') qs.set('videoId', videoId);
+      // On the RD-only Android build there is no local/web player to fall back to —
+      // pressing Resume/Play from Continue Watching means "watch it now". So auto-pick
+      // the top (Real-Debrid) stream on the detail page and play, instead of silently
+      // dumping the user on the detail page. `t` resumes at the saved offset.
+      if (isAndroidTv()) qs.set('autoplay', '1');
       if (resumeSeconds && resumeSeconds > 0) qs.set('t', String(Math.floor(resumeSeconds)));
       const query = qs.toString();
       navigate(query ? `${base}?${query}` : base);
@@ -123,7 +147,7 @@ export function useContinueWatchingActions({
       if (/^https:\/\//i.test(stored.url)) {
         try {
           const probe = await fetch(
-            `/resolve-url?url=${encodeURIComponent(stored.url)}`,
+            proxyUrl(`/resolve-url?url=${encodeURIComponent(stored.url)}`),
           );
           if (probe.ok) {
             const data = (await probe.json()) as { contentLength?: number };
@@ -142,13 +166,6 @@ export function useContinueWatchingActions({
               // doesn't reselect the very same stream we just probed dead.
               fbQs.append('skip', stored.url);
               navigate(`${base}?${fbQs.toString()}`);
-              if (onStreamUnavailable) {
-                // intentionally unused now; kept in signature so
-                // callers don't break and so the modal infra remains
-                // available for future use (e.g. when ALL alternative
-                // streams are also unavailable).
-                void onStreamUnavailable;
-              }
               return;
             }
           }
@@ -157,6 +174,17 @@ export function useContinueWatchingActions({
           // player handle it. NativeMpvPlayer has the same probe + the
           // duration-based safety net as a second line of defense.
         }
+      }
+
+      // RD-ONLY Android: this is the one path that hands a stored URL
+      // straight to /player without DetailPage.handleNavigateToPlayer's
+      // guard. If the stored stream needs the (absent) local torrent
+      // server (magnet: / /stremio-server/...), surface the RD-required
+      // modal WHERE THE USER IS and do NOT navigate. Desktop/browser are
+      // unaffected (isAndroidTv() === false).
+      if (isAndroidTv() && !isAndroidPlayableUrl(stored.url)) {
+        if (onStreamUnavailable) onStreamUnavailable(item);
+        return;
       }
 
       const { logo, background } = await resolveMetaImages();

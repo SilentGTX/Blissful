@@ -224,7 +224,7 @@ export function EpisodesDrawer(props: EpisodesDrawerProps) {
                       setSeasonSelectKey((prev) => prev + 1);
                     }}
                   >
-                    <Select.Trigger className="flex h-8 min-h-0 cursor-pointer items-center gap-1 rounded-full border border-white/10 bg-transparent px-2.5 text-[12px] font-medium text-white transition-all hover:bg-white/10 md:text-[13px]">
+                    <Select.Trigger className="flex h-8 min-h-0 cursor-pointer items-center !justify-start gap-1 rounded-full border border-white/10 bg-transparent px-2.5 text-[12px] font-medium text-white transition-all hover:bg-white/10 md:text-[13px]">
                       <Select.Value>
                         {() => (
                           <span className="whitespace-nowrap">

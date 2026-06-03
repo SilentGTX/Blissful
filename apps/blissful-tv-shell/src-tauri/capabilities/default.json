@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Core capability for the Blissful TV main window. Grants the default core APIs (incl. event listen/emit used by the window.blissfulDesktop adapter). The app-defined `bridge` command does not require a permission entry — only plugin/core commands do.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default"
+  ]
+}

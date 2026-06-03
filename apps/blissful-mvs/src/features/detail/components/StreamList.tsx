@@ -1,10 +1,33 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { motion } from 'framer-motion';
 import { resolveProgress, formatTimecode } from '../../../lib/progress';
 import type { StreamRow } from '../streams';
 import { PlayCircleIcon } from '../../../icons/PlayCircleIcon';
 import { Accordion, Separator } from '@heroui/react';
 import { ResumeOrStartOverModal } from '../../../components/ResumeOrStartOverModal';
+import { useTvFocusable } from '../../../spatial/useTvFocusable';
+import { isTvMode } from '../../../lib/platform';
+
+// Focusable stream-row shell (hooks can't run in renderRow). D-pad reachable on
+// TV unless the row is disabled (no resolvable player link).
+function StreamRowButton({
+  onPress,
+  disabled,
+  className,
+  children,
+}: {
+  onPress: () => void;
+  disabled: boolean;
+  className: string;
+  children: ReactNode;
+}) {
+  const { ref } = useTvFocusable({ onPress, focusable: !disabled });
+  return (
+    <button ref={ref} type="button" className={className} disabled={disabled} onClick={onPress}>
+      {children}
+    </button>
+  );
+}
 
 const rowsStagger = {
   hidden: { opacity: 0 },
@@ -139,9 +162,12 @@ export function StreamList({
     return { lastPlayedRows, buckets };
   }, [displayRows]);
 
-  // HeroUI Accordion's expandedKeys API — Set of bucket names currently
-  // expanded. Multiple buckets can be open simultaneously.
-  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
+  // Bucket expanded-state (Set of bucket names). Drives both the desktop HeroUI
+  // Accordion and the TV custom collapsible buckets below. Starts EMPTY — all
+  // resolution buckets (4K/1080p/720p/SD/Other) collapsed; "Top picks" + "Continue
+  // watching" above are always shown. On TV each bucket header is a focusable
+  // button that toggles its key here on OK.
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(() => new Set());
 
   // Continue Watching click pops the shared ResumeOrStartOverModal so the
   // user can pick "Resume hh:mm:ss" or "Start over" before navigating.
@@ -184,21 +210,29 @@ export function StreamList({
 
         return (
           <motion.div key={`${addonName}-${idx}`} variants={rowItem}>
-            <button
-            type="button"
+            <StreamRowButton
+            disabled={isDisabled}
             className={
               rowClassName +
               (isDisabled
                 ? 'cursor-not-allowed bg-white/3 opacity-60'
                 : 'cursor-pointer bg-white/0 hover:bg-white/10 focus-visible:bg-white/10')
             }
-            disabled={isDisabled}
-            onClick={() => {
+            onPress={() => {
               if (!playerLink) return;
 
-              // Continue Watching row → pop the resume/start-over modal
-              // first. For non-resume rows just open as usual.
+              // Continue Watching row → pop the resume/start-over modal first.
+              // For non-resume rows just open as usual.
               if (row.isLastPlayed && progressInfo.timeSeconds > 0) {
+                // TV: do NOT show a second resume prompt here. The home
+                // Continue-Watching popup already offered Resume / Start-over;
+                // re-asking inside the stream picker is the duplicate the user
+                // hit "in the player". Clicking the Continue-watching row just
+                // resumes directly. Desktop keeps the modal.
+                if (isTvMode()) {
+                  onNavigate(buildResumeLink(playerLink, progressInfo.timeSeconds));
+                  return;
+                }
                 setResumePromptRow(row);
                 return;
               }
@@ -266,7 +300,7 @@ export function StreamList({
                 </div>
               ) : null}
             </div>
-            </button>
+            </StreamRowButton>
              {idx < displayRows.length - 1 ? <Separator className="my-1 bg-white/10" /> : null}
            </motion.div>
          );
@@ -346,39 +380,95 @@ export function StreamList({
         onClose={() => setResumePromptRow(null)}
       />
       {bucketsToRender.length > 0 ? (
-        <Accordion
-          expandedKeys={expandedKeys}
-          onExpandedChange={(keys) => {
-            setExpandedKeys(new Set(Array.from(keys, String)));
-          }}
-          className="px-0"
-        >
-          {bucketsToRender.map((bucket) => {
-            const rows = filteredBuckets[bucket];
-            return (
-              <Accordion.Item key={bucket} id={bucket}>
-                <Accordion.Heading>
-                  <Accordion.Trigger className="px-3 py-2 hover:bg-white/5">
-                    <div className="mr-auto flex items-center gap-2">
-                      <span className="text-sm font-semibold text-white/90">{bucket}</span>
-                      <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/60">
-                        {rows.length}
-                      </span>
-                    </div>
-                    <Accordion.Indicator className="ml-auto" />
-                  </Accordion.Trigger>
-                </Accordion.Heading>
-                <Accordion.Panel>
-                  <Accordion.Body className="px-0 pb-2 pt-1">
+        isTvMode() ? (
+          // TV: custom COLLAPSIBLE buckets (HeroUI's Accordion trigger isn't
+          // D-pad-toggleable). Each bucket header is a focusable button; OK
+          // toggles its expanded state. Rows render ONLY when expanded, so
+          // useTvOverlay's focusable enumeration reaches exactly the visible
+          // rows. Buckets start collapsed; the user expands the resolutions
+          // they want ("Top picks" above is always shown).
+          <div className="space-y-1">
+            {bucketsToRender.map((bucket) => {
+              const rows = filteredBuckets[bucket];
+              const isExpanded = expandedKeys.has(bucket);
+              return (
+                <div key={bucket} className="space-y-1">
+                  <StreamRowButton
+                    disabled={false}
+                    className="tv-stream-bucket flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left hover:bg-white/5"
+                    onPress={() =>
+                      setExpandedKeys((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(bucket)) next.delete(bucket);
+                        else next.add(bucket);
+                        return next;
+                      })
+                    }
+                  >
+                    <span className="text-sm font-semibold text-white/90">{bucket}</span>
+                    <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/60">
+                      {rows.length}
+                    </span>
+                    <svg
+                      className={
+                        'ml-auto h-4 w-4 shrink-0 opacity-70 transition-transform duration-200 ' +
+                        (isExpanded ? 'rotate-180' : '')
+                      }
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  </StreamRowButton>
+                  {isExpanded ? (
                     <motion.div className="space-y-1" variants={rowsStagger} initial="hidden" animate="show">
                       {rows.map((row) => renderRow(row, indexOfRow.get(row) ?? 0))}
                     </motion.div>
-                  </Accordion.Body>
-                </Accordion.Panel>
-              </Accordion.Item>
-            );
-          })}
-        </Accordion>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <Accordion
+            expandedKeys={expandedKeys}
+            onExpandedChange={(keys) => {
+              setExpandedKeys(new Set(Array.from(keys, String)));
+            }}
+            className="px-0"
+          >
+            {bucketsToRender.map((bucket) => {
+              const rows = filteredBuckets[bucket];
+              return (
+                <Accordion.Item key={bucket} id={bucket}>
+                  <Accordion.Heading>
+                    <Accordion.Trigger className="px-3 py-2 hover:bg-white/5">
+                      <div className="mr-auto flex items-center gap-2">
+                        <span className="text-sm font-semibold text-white/90">{bucket}</span>
+                        <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/60">
+                          {rows.length}
+                        </span>
+                      </div>
+                      <Accordion.Indicator className="ml-auto" />
+                    </Accordion.Trigger>
+                  </Accordion.Heading>
+                  <Accordion.Panel>
+                    <Accordion.Body className="px-0 pb-2 pt-1">
+                      <motion.div className="space-y-1" variants={rowsStagger} initial="hidden" animate="show">
+                        {rows.map((row) => renderRow(row, indexOfRow.get(row) ?? 0))}
+                      </motion.div>
+                    </Accordion.Body>
+                  </Accordion.Panel>
+                </Accordion.Item>
+              );
+            })}
+          </Accordion>
+        )
       ) : null}
     </div>
   );

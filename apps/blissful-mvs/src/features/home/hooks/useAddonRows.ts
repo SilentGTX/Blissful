@@ -3,6 +3,7 @@ import type { MediaItem, MediaType } from '../../../types/media';
 import type { AddonDescriptor } from '../../../lib/stremioApi';
 import { buildAddonRowId } from '../../../lib/homeRows';
 import { mapTransportUrl, parseRating } from '../utils';
+import { proxyUrl } from '../../../lib/proxyBase';
 
 export type AddonRowData = {
   title: string;
@@ -40,7 +41,7 @@ export function useAddonRows(addons: AddonDescriptor[], maxRowItems: number) {
           const transportUrl = mapTransportUrl(addon.transportUrl);
           const baseUrl = transportUrl.replace(/manifest\.json$/, '').replace(/\/$/, '/');
           const url = `${baseUrl}catalog/${catalog.type}/${catalog.id}.json`;
-          const proxied = `/addon-proxy?url=${encodeURIComponent(url)}`;
+          const proxied = proxyUrl(`/addon-proxy?url=${encodeURIComponent(url)}`);
           const resp = await fetch(proxied, { signal: controller.signal });
           if (!resp.ok) continue;
           const data = (await resp.json()) as {

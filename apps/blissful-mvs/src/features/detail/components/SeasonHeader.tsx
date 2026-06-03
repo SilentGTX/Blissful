@@ -1,9 +1,10 @@
-import { Button, ListBox, Select } from '@heroui/react';
+import { TvSelect } from '../../../spatial/TvSelect';
 import { ArrowLeftIcon } from '../../../icons/ArrowLeftIcon';
 import { ArrowRightIcon } from '../../../icons/ArrowRightIcon';
 import { ChevronLeftIcon } from '../../../icons/ChevronLeftIcon';
 import { ChevronRightIcon } from '../../../icons/ChevronRightIcon';
 import { SearchIcon } from '../../../icons/SearchIcon';
+import { FocusableButton } from '../../../spatial/FocusableButton';
 
 type SeasonHeaderProps = {
   isSeriesLike: boolean;
@@ -53,26 +54,25 @@ export function SeasonHeader({
     <div className={className ?? ''}>
       {rightMode === 'streams' && selectedVideoId ? (
         <div className="flex items-center gap-3">
-          <button
-            type="button"
+          <FocusableButton
             className="grid h-10 w-10 place-items-center rounded-full bg-white/10 text-white hover:bg-white/15"
-            onClick={onBackToEpisodes}
+            onPress={onBackToEpisodes}
             aria-label="Back"
           >
             <ArrowLeftIcon className="h-6 w-6" />
-          </button>
+          </FocusableButton>
           <div className="min-w-0 flex-1 truncate text-sm font-semibold text-white/85">
             {selectedEpisodeLabel ?? ''}
           </div>
-          <button
-            type="button"
+          <FocusableButton
             className="grid h-10 w-10 place-items-center rounded-full bg-white/10 text-white hover:bg-white/15 disabled:opacity-40 disabled:cursor-not-allowed"
-            onClick={onNextEpisode}
+            onPress={onNextEpisode}
             disabled={!nextEpisode}
+            focusableTv={Boolean(nextEpisode)}
             aria-label="Next episode"
           >
             <ArrowRightIcon className="h-6 w-6" />
-          </button>
+          </FocusableButton>
         </div>
       ) : (
         <div className="flex items-center justify-end gap-2">
@@ -96,55 +96,37 @@ export function SeasonHeader({
             </label>
           ) : null}
 
-          <Button
-            isIconOnly
-            size="sm"
-            variant="ghost"
-            className="rounded-full bg-white/10 text-white"
-            isDisabled={!canPrevSeason}
+          <FocusableButton
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/10 text-white hover:bg-white/15 disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={!canPrevSeason}
+            focusableTv={canPrevSeason}
             onPress={onPrevSeason}
             aria-label="Previous season"
           >
             <ChevronLeftIcon className="h-[18px] w-[18px]" />
-          </Button>
+          </FocusableButton>
 
           <div className="flex-1">
-            <Select
-              aria-label="Season"
-              selectedKey={season === null ? undefined : String(season)}
-              onSelectionChange={(key) => {
-                if (key === null) return;
+            <TvSelect
+              ariaLabel="Season"
+              value={season === null ? undefined : String(season)}
+              options={seasonSelectItems}
+              onChange={(key) => {
                 const n = Number.parseInt(String(key), 10);
                 if (Number.isFinite(n)) onSeasonChange(n);
               }}
-            >
-              <Select.Trigger className="bg-white/10 border border-white/10 rounded-full">
-                <Select.Value />
-                <Select.Indicator />
-              </Select.Trigger>
-              <Select.Popover>
-                <ListBox>
-                  {seasonSelectItems.map((item) => (
-                    <ListBox.Item key={item.key} id={item.key} textValue={item.label}>
-                      {item.label}
-                    </ListBox.Item>
-                  ))}
-                </ListBox>
-              </Select.Popover>
-            </Select>
+            />
           </div>
 
-          <Button
-            isIconOnly
-            size="sm"
-            variant="ghost"
-            className="rounded-full bg-white/10 text-white"
-            isDisabled={!canNextSeason}
+          <FocusableButton
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/10 text-white hover:bg-white/15 disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={!canNextSeason}
+            focusableTv={canNextSeason}
             onPress={onNextSeason}
             aria-label="Next season"
           >
             <ChevronRightIcon className="h-[18px] w-[18px]" />
-          </Button>
+          </FocusableButton>
         </div>
       )}
     </div>

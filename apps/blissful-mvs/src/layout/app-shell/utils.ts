@@ -1,6 +1,7 @@
 import type { MediaItem, MediaType } from '../../types/media';
 import type { HomeRowPrefs } from '../../lib/homeRows';
 import type { LibraryItem } from '../../lib/mediaTypes';
+import { MAX_RESUME_FRACTION, MIN_RESUME_SECONDS } from '../../features/detail/nextToWatch';
 import {
   GRADIENT_OPTIONS,
   HOME_PREFS_KEY,
@@ -17,6 +18,33 @@ export function getResumeSeconds(item: LibraryItem): number | null {
     (typeof dur === 'number' && Number.isFinite(dur) && dur >= 10_000) || rawOffset >= 10_000;
 
   return looksLikeMs ? rawOffset / 1000 : rawOffset;
+}
+
+/** Duration in seconds, applying the same ms/seconds heuristic as
+ *  getResumeSeconds so the two are always on the same scale. Returns
+ *  null when the row carries no usable duration. */
+export function getResumeDurationSeconds(item: LibraryItem): number | null {
+  const rawDur = item.state?.duration;
+  if (typeof rawDur !== 'number' || !Number.isFinite(rawDur) || rawDur <= 0) return null;
+  const rawOffset = item.state?.timeOffset;
+  const looksLikeMs =
+    rawDur >= 10_000 ||
+    (typeof rawOffset === 'number' && Number.isFinite(rawOffset) && rawOffset >= 10_000);
+  return looksLikeMs ? rawDur / 1000 : rawDur;
+}
+
+/** True only when the saved offset represents genuine mid-watch progress:
+ *  present, >= MIN_RESUME_SECONDS, and (when the duration is known) not past
+ *  MAX_RESUME_FRACTION of the runtime. When false the caller must NOT offer
+ *  Resume / must not pass a stale `t=` — it should advance to the next episode
+ *  (series) or start over (movie). Mirrors computeNextToWatch's case-(a) test
+ *  so the sidebar gate and the detail-page default agree. */
+export function hasMeaningfulResume(item: LibraryItem): boolean {
+  const seconds = getResumeSeconds(item);
+  if (seconds == null || seconds < MIN_RESUME_SECONDS) return false;
+  const duration = getResumeDurationSeconds(item);
+  if (duration != null && seconds > duration * MAX_RESUME_FRACTION) return false;
+  return true;
 }
 
 export function extractImdbId(value: string): string | null {

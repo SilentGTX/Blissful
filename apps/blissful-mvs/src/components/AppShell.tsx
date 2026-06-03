@@ -51,12 +51,18 @@ import { useTorrentioCloneSync } from '../layout/app-shell/hooks/useTorrentioClo
 import { useErrorToast } from '../lib/useErrorToast';
 import { notifySuccess } from '../lib/toastQueues';
 import { usePresenceHeartbeat } from '../lib/usePresenceHeartbeat';
+import { triggerStremioFullSync } from '../lib/stremioLinkApi';
+import { useTvBackHandler } from '../lib/useTvBack';
+import { isTvMode } from '../lib/platform';
+import { RD_REQUIRED_MESSAGE } from '../lib/androidPlayable';
+import { TvTopBar } from '../layout/TvTopBar';
 import { PartyInviteListener } from './PartyInviteListener';
 
 const MIGRATION_KEY = 'bliss:migrated:tagOldItemsWeb';
 
 export default function AppShell() {
   usePresenceHeartbeat();
+  useTvBackHandler(); // TV: Esc/Back closes overlays or goes to safe-back
   const { updateReady, isInstalling, installNow, dismissUpdate } = useDesktopUpdater();
 
   // One-time migration: tag all untagged library items as 'web'.
@@ -223,6 +229,13 @@ export default function AppShell() {
     sessionStorage.setItem('bliss:safe-back', path + location.search);
   }, [location.pathname, location.search]);
 
+  // The Resume / Continue-Watching modal must never linger into the player. Its
+  // open state can outlive the navigation that started playback; clear it on
+  // entering /player so it can't reappear "on the player screen".
+  useEffect(() => {
+    if (location.pathname.startsWith('/player')) modals.setResumeModalItem(null);
+  }, [location.pathname, modals]);
+
   // (Previously fetched /storage/settings here on every /settings page
   // mount to "refresh" the player settings. Removed: useStoredStateSync
   // already loads the canonical state from /storage/state on auth, and
@@ -252,6 +265,20 @@ export default function AppShell() {
   }, [authKey, location.pathname, setHomeRowPrefs]);
 
   useTorrentioCloneSync(authKey, addons, addonsLoading, savedAccounts);
+
+  // Stremio library sync cadence: pull the linked Stremio account's
+  // library/progress/watched into Blissful on app LAUNCH and then once per
+  // hour (this effect persists across all routes). The blissful-storage backend
+  // also runs a 15-min mirror cron, so this just makes launch immediate and
+  // keeps it fresh without re-syncing on every Home visit (the per-Home trigger
+  // is now coalesced by a 55-min cooldown). Per-title syncs (player/detail)
+  // still refresh the specific title you're viewing. No-op until Stremio linked.
+  useEffect(() => {
+    if (!authKey) return;
+    triggerStremioFullSync(authKey);
+    const id = window.setInterval(() => triggerStremioFullSync(authKey), 60 * 60 * 1000);
+    return () => window.clearInterval(id);
+  }, [authKey]);
 
   // ---------- error toasts -------------------------------------------------
   useErrorToast(catalogError, 'Catalog error');
@@ -450,6 +477,20 @@ export default function AppShell() {
                   </div>
                 </aside>
 
+                {isTvMode() && (
+                  <TvTopBar
+                    displayName={displayName}
+                    userHandle={user?.username ?? user?.email ?? null}
+                    avatar={userProfile.avatar}
+                    isLoggedIn={Boolean(user)}
+                    onSettings={() => navigate('/settings')}
+                    onCustomizeHome={modals.openHomeSettings}
+                    onLogin={modals.openLogin}
+                    onLogout={handleLogout}
+                    onToggleFullscreen={handleToggleFullscreen}
+                  />
+                )}
+                {!isTvMode() && (
                 <TopNav
                   userHandle={user?.username ?? user?.email ?? null}
                   isLoggedIn={Boolean(user)}
@@ -491,6 +532,7 @@ export default function AppShell() {
                   accountDisplayName={displayName}
                   isWhoWatchingOpen={modals.isWhoWatchingOpen}
                 />
+                )}
 
                 {isSearchMenuOpen ? (
                   <div
@@ -580,7 +622,10 @@ export default function AppShell() {
           </div>
         ) : null}
 
-        {!modals.isWhoWatchingOpen ? (
+        {/* AccountModal is a desktop-only overlay (opened by the desktop
+            TopNav / home avatar). Gate the mount on !isTvMode() so a stray
+            open() can't render an overlay that captures D-pad focus on TV. */}
+        {!isTvMode() && !modals.isWhoWatchingOpen ? (
           <AccountModal
             isOpen={modals.isAccountOpen}
             onOpenChange={modals.setIsAccountOpen}
@@ -661,6 +706,9 @@ export default function AppShell() {
               : null
           }
           poster={modals.unavailableItem ? normalizeStremioImage(modals.unavailableItem.poster) ?? null : null}
+          message={
+            modals.unavailableReason === 'rd-required' ? RD_REQUIRED_MESSAGE : undefined
+          }
           onPickAnother={() => {
             const item = modals.unavailableItem;
             if (!item) return;
@@ -675,11 +723,16 @@ export default function AppShell() {
                 : base,
             );
           }}
-          onClose={() => modals.setUnavailableItem(null)}
+          onClose={() => {
+            modals.setUnavailableItem(null);
+            // Reset so a later real DMCA placeholder still shows DMCA copy,
+            // not the RD-required wording from this open.
+            modals.setUnavailableReason('dmca');
+          }}
         />
 
         <ResumeOrStartOverModal
-          isOpen={modals.resumeModalItem !== null}
+          isOpen={modals.resumeModalItem !== null && !location.pathname.startsWith('/player')}
           title={modals.resumeModalItem?.name ?? ''}
           episodeLabel={
             modals.resumeModalItem?.type === 'series'
@@ -698,6 +751,10 @@ export default function AppShell() {
           onStartOver={() => {
             if (modals.resumeModalItem) runStartOver(modals.resumeModalItem);
           }}
+          onGoToDetail={() => {
+            const it = modals.resumeModalItem;
+            if (it) navigate(`/detail/${encodeURIComponent(it.type)}/${encodeURIComponent(it._id)}`);
+          }}
           onClose={() => modals.setResumeModalItem(null)}
         />
 
@@ -706,23 +763,6 @@ export default function AppShell() {
           onOpenChange={(open) => { if (!open) modals.closeJoinParty(); }}
         />
 
-        {/* Continue-watching loading veil — identical to DetailPage's
-            autoplay short-circuit return: full-screen solid black, the
-            movie's pulsing logo (or poster fallback) centered, NO
-            backdrop image. Identical look means when the navigation
-            chain ends on /detail?autoplay=1 or /player's mpv-buffering
-            screen, the visual is one continuous loading state with no
-            flash between routes. */}
-        {modals.pendingContinueItem ? (
-          // Plain black cover. No spinner / pill — the click-to-route
-          // delay is short enough that any indicator just flashes
-          // briefly and looks worse than nothing. The overlay's only
-          // job is to hide the previous page so it doesn't peek
-          // through during navigation; the route we're heading to
-          // (player's mpv-buffering veil, or /detail's autoplay
-          // overlay) renders its own loading state once mounted.
-          <div className="fixed inset-0 z-[9998] bg-black" />
-        ) : null}
       </div>
 
       {/* Desktop auto-update toast */}

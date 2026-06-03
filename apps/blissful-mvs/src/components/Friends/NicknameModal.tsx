@@ -52,7 +52,7 @@ export function NicknameModal({ friend, onClose, onSave }: Props) {
               <Modal.Heading>Set nickname</Modal.Heading>
             </Modal.Header>
             <Modal.Body className="px-0">
-              <div className="solid-surface mx-auto w-full max-w-md rounded-[28px] bg-white/10 p-6">
+              <div className="solid-surface bliss-glass mx-auto w-full max-w-md rounded-[28px] p-6">
                 <div className="font-[Instrument_Serif] text-2xl font-semibold tracking-tight">
                   Nickname
                 </div>

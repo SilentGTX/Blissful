@@ -82,6 +82,12 @@ export type ModalsContextValue = {
   // ---- stream-unavailable fallback prompt ----
   unavailableItem: LibraryItem | null;
   setUnavailableItem: (item: LibraryItem | null) => void;
+  /** Why the stream-unavailable modal is showing, so the global mount can
+   *  pick the right copy: 'dmca' (default debrid placeholder wording) vs
+   *  'rd-required' (RD-only Android: stored stream needs the absent local
+   *  server). Reset to 'dmca' when the modal closes. */
+  unavailableReason: 'dmca' | 'rd-required';
+  setUnavailableReason: (reason: 'dmca' | 'rd-required') => void;
 
   // ---- pending-navigation black veil during continue-watching open ----
   pendingContinueItem: LibraryItem | null;
@@ -110,6 +116,7 @@ export function ModalsProvider({ children }: { children: ReactNode }) {
   const [isJoinPartyOpen, setIsJoinPartyOpen] = useState(false);
   const [resumeModalItem, setResumeModalItem] = useState<LibraryItem | null>(null);
   const [unavailableItem, setUnavailableItem] = useState<LibraryItem | null>(null);
+  const [unavailableReason, setUnavailableReason] = useState<'dmca' | 'rd-required'>('dmca');
   const [pendingContinueItem, setPendingContinueItem] = useState<LibraryItem | null>(null);
 
   const openAccount = useCallback(() => setIsAccountOpen(true), []);
@@ -194,6 +201,8 @@ export function ModalsProvider({ children }: { children: ReactNode }) {
       setResumeModalItem,
       unavailableItem,
       setUnavailableItem,
+      unavailableReason,
+      setUnavailableReason,
       pendingContinueItem,
       setPendingContinueItem,
     }),
@@ -227,6 +236,7 @@ export function ModalsProvider({ children }: { children: ReactNode }) {
       closeJoinParty,
       resumeModalItem,
       unavailableItem,
+      unavailableReason,
       pendingContinueItem,
     ],
   );

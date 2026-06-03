@@ -46,7 +46,18 @@ export function useEpisodeSelection({
   useEffect(() => {
     if (!isSeriesLike) return;
     const qpVideoId = searchParams.get('videoId');
-    if (!qpVideoId) return;
+    if (!qpVideoId) {
+      // The URL carries no videoId — keep selection (and therefore the TV
+      // stream popup's open state, which is `selectedVideoId !== null`) in
+      // sync with it. This is the load-bearing case for the hardware Back
+      // button: Tauri routes Back to history.back(), which pops the ?videoId
+      // off the URL via popstate; without clearing here the popup stayed open
+      // over a videoId-less URL (Back appeared to do nothing / "reopen" it).
+      // Safe on desktop too — the streams panel should revert to episodes when
+      // the URL no longer points at an episode.
+      setSelectedVideoId(null);
+      return;
+    }
     const decoded = decodeURIComponent(qpVideoId);
     // Exact match first — happens when both Blissful's catalog and the
     // source agree on the videoId shape (typical for Cinemeta).
@@ -101,7 +112,18 @@ export function useEpisodeSelection({
 
   const videosForSeason = useMemo(() => {
     if (!isSeriesLike) return [] as EpisodeVideo[];
-    const filtered = season === null ? videos : videos.filter((v) => v.season === season);
+    const inSeason = season === null ? videos : videos.filter((v) => v.season === season);
+    // Dedupe by id, keeping first occurrence. Some addons ship duplicate video
+    // ids; rendered episode cards key off id (React key + the Norigin focusKey
+    // `tv-ep-<id>`), and a duplicate focusKey corrupts the spatial-nav registry
+    // (dead D-pad). The bitfield decode uses the un-deduped native order
+    // (orderedVideoIds in DetailPage) so positional indices stay correct.
+    const seen = new Set<string>();
+    const filtered = inSeason.filter((v) => {
+      if (seen.has(v.id)) return false;
+      seen.add(v.id);
+      return true;
+    });
     return filtered
       .slice()
       .sort((a, b) => (a.episode ?? 0) - (b.episode ?? 0))

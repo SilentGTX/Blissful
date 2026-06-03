@@ -5,25 +5,42 @@
 // picker for this specific item.
 
 import { Modal } from '@heroui/react';
+import { useRef } from 'react';
 import { CloseIcon } from '../icons/CloseIcon';
+import { useTvOverlay } from '../spatial/useTvOverlay';
 
 export type StreamUnavailableModalProps = {
   isOpen: boolean;
   title: string;
   episodeLabel?: string | null;
   poster?: string | null;
+  /** Body copy. Defaults to the debrid DMCA-placeholder wording. */
+  message?: string;
   onPickAnother: () => void;
   onClose: () => void;
 };
+
+const DEFAULT_MESSAGE =
+  'This file was removed from the debrid service. Most other variants from the same release usually still work.';
 
 export function StreamUnavailableModal({
   isOpen,
   title,
   episodeLabel,
   poster,
+  message,
   onPickAnother,
   onClose,
 }: StreamUnavailableModalProps) {
+  // TV: drive the modal's button with the D-pad (auto-focus the primary
+  // action, Back closes). Inert on desktop.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { onKeyDown } = useTvOverlay({
+    open: isOpen,
+    containerRef,
+    onClose,
+    autoFocusSelector: '[data-autofocus]',
+  });
   if (!isOpen) return null;
   return (
     <Modal>
@@ -41,7 +58,11 @@ export function StreamUnavailableModal({
               <Modal.Heading>Stream unavailable</Modal.Heading>
             </Modal.Header>
             <Modal.Body className="px-0">
-              <div className="solid-surface relative mx-auto max-h-[90vh] w-full max-w-[420px] overflow-hidden rounded-[20px] bg-[#101116]">
+              <div
+                ref={containerRef}
+                onKeyDown={onKeyDown}
+                className="solid-surface bliss-glass relative mx-auto max-h-[90vh] w-full max-w-[420px] overflow-hidden rounded-[20px]"
+              >
                 {poster ? (
                   <>
                     <div
@@ -74,13 +95,13 @@ export function StreamUnavailableModal({
                     <div className="mt-1 text-sm font-medium text-white/75">{episodeLabel}</div>
                   ) : null}
                   <div className="mt-3 text-sm leading-snug text-white/65">
-                    This file was removed from the debrid service. Most other
-                    variants from the same release usually still work.
+                    {message ?? DEFAULT_MESSAGE}
                   </div>
 
                   <div className="mt-5 flex flex-col gap-2">
                     <button
                       type="button"
+                      data-autofocus
                       onClick={() => {
                         onPickAnother();
                         onClose();

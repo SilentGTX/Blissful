@@ -1,12 +1,30 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ListBox, ScrollShadow, Select } from '@heroui/react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { ScrollShadow } from '@heroui/react';
 import { ChromePicker, type ColorResult } from 'react-color';
 import { useAuth } from '../context/AuthProvider';
 import { useStorage } from '../context/StorageProvider';
 import { useUI } from '../context/UIProvider';
 import { parseColor, buildRgba, hexToRgb } from '../lib/colorUtils';
 import { SettingsStremioPanel } from '../components/SettingsStremioPanel';
+import { SettingsTraktPanel } from '../components/SettingsTraktPanel';
 import { notifySuccess } from '../lib/toastQueues';
+import { FocusableButton } from '../spatial/FocusableButton';
+import { TvSelect } from '../spatial/TvSelect';
+import { TvTextInput } from '../spatial/TvTextInput';
+import { useTvFocusable } from '../spatial/useTvFocusable';
+import { isTvMode } from '../lib/platform';
+import { desktop, isNativeShell } from '../lib/desktop';
+import {
+  SettingsGearIcon,
+  AppearanceIcon,
+  PlayerIcon,
+  PlaybackIcon,
+  StreamingIcon,
+  AccountIcon,
+  LinkedAccountsIcon,
+  AdvancedIcon,
+  AboutIcon,
+} from '../icons/SettingsCategoryIcons';
 import {
   EXTERNAL_PLAYER_OPTIONS,
   NEXT_VIDEO_POPUP_OPTIONS_MS,
@@ -20,13 +38,145 @@ import {
 
 const USERNAME_RE = /^[a-z0-9_-]{3,50}$/;
 
-const triggerClassName = 'bg-white/10 border border-white/10 rounded-full h-9 text-white';
+const triggerClassName = 'bg-white/10 border border-white/10 rounded-full';
+
+// Preset accent / subtitle color swatches for the TV remote, which cannot
+// drive the react-color ChromePicker. Mirrors the default Blissful accent
+// plus a spread of common subtitle colors (white/black/yellow + a few hues).
+const TV_COLOR_PRESETS = [
+  '#95a2ff',
+  '#19f7d2',
+  '#ffffff',
+  '#000000',
+  '#ffd60a',
+  '#ff453a',
+  '#32d74b',
+  '#0a84ff',
+  '#bf5af2',
+  '#ff9f0a',
+];
+
+// Surface (glass) color presets — DARK, muted tints ONLY. The surface is a
+// translucent dark base sitting behind light text, so bright/light colors
+// would blind the user and make text unreadable. Every entry here stays dark
+// enough that the existing light text remains legible. First entry = default.
+const SURFACE_COLOR_PRESETS = [
+  '#282f40', // default — cool dark slate (the original glass)
+  '#2c2c2c', // neutral charcoal
+  '#1b1d29', // midnight blue-black
+  '#1f2937', // slate
+  '#16302e', // deep teal
+  '#2a2140', // deep indigo
+  '#1e2a1c', // deep green
+  '#321e26', // deep maroon
+];
+
+type SettingsCategory =
+  | 'appearance'
+  | 'player'
+  | 'playback'
+  | 'streaming'
+  | 'account'
+  | 'linked'
+  | 'advanced'
+  | 'about';
+
+// Sidebar nav definition. Order matches the mockup. The icon component takes a
+// className so the active accent color cascades through `currentColor`.
+const CATEGORIES: {
+  key: SettingsCategory;
+  label: string;
+  Icon: (props: { className?: string }) => ReactNode;
+}[] = [
+  { key: 'appearance', label: 'Appearance', Icon: AppearanceIcon },
+  { key: 'player', label: 'Player', Icon: PlayerIcon },
+  { key: 'playback', label: 'Playback', Icon: PlaybackIcon },
+  { key: 'streaming', label: 'Streaming', Icon: StreamingIcon },
+  { key: 'account', label: 'Account', Icon: AccountIcon },
+  { key: 'linked', label: 'Linked Accounts', Icon: LinkedAccountsIcon },
+  { key: 'advanced', label: 'Advanced', Icon: AdvancedIcon },
+  { key: 'about', label: 'About', Icon: AboutIcon },
+];
+
+const CATEGORY_TITLES: Record<SettingsCategory, string> = {
+  appearance: 'Appearance',
+  player: 'Player',
+  playback: 'Playback',
+  streaming: 'Streaming',
+  account: 'Account',
+  linked: 'Linked Accounts',
+  advanced: 'Advanced',
+  about: 'About',
+};
+
+// The role=switch auto-play toggle. Extracted so it can call useTvFocusable
+// (hooks can't run inline in JSX/maps). Keeps the original onClick/onKeyDown
+// so desktop behaviour is unchanged; on TV the wrapper makes the span a
+// D-pad focus stop that fires the same toggle on OK.
+function BingeToggle({
+  checked,
+  onToggle,
+}: {
+  checked: boolean;
+  onToggle: () => void;
+}) {
+  const { ref } = useTvFocusable({ onPress: onToggle });
+  return (
+    <span
+      ref={ref}
+      role="switch"
+      aria-checked={checked}
+      tabIndex={0}
+      className={
+        'relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition ' +
+        (checked ? 'bg-[var(--bliss-accent)]' : 'bg-white/15')
+      }
+      onClick={onToggle}
+      onKeyDown={(e) => {
+        if (e.key === ' ' || e.key === 'Enter') {
+          e.preventDefault();
+          onToggle();
+        }
+      }}
+    >
+      <span
+        className={
+          'absolute top-0.5 h-5 w-5 rounded-full bg-white transition ' +
+          (checked ? 'left-5' : 'left-0.5')
+        }
+      />
+    </span>
+  );
+}
 
 export default function SettingsPage() {
   const { uiStyle, setUiStyle } = useUI();
   const { playerSettings, savePlayerSettings } = useStorage();
   const { user, updateProfile } = useAuth();
-  const [colorModal, setColorModal] = useState<'text' | 'bg' | 'outline' | 'accent' | null>(null);
+  const [colorModal, setColorModal] = useState<
+    'text' | 'bg' | 'outline' | 'accent' | 'surface' | null
+  >(null);
+
+  // Which category panel is shown in the right column. Defaults to Appearance
+  // (the first nav item, which also claims TV focus on route entry).
+  const [category, setCategory] = useState<SettingsCategory>('appearance');
+
+  // App version for the About panel. Only available inside the native shell;
+  // mirrors the DesktopNav fetch pattern (cancel-on-unmount guard).
+  const [appVersion, setAppVersion] = useState<string>('');
+  useEffect(() => {
+    if (!isNativeShell()) return;
+    let cancelled = false;
+    desktop
+      .getAppVersion()
+      .then((v) => {
+        if (!cancelled) setAppVersion(v);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Username edit. Seeded from the live user, reset whenever the
   // server-side username changes (after a successful save or
@@ -162,6 +312,7 @@ export default function SettingsPage() {
   const subtitleBgColor = parseColor(playerSettings.subtitlesBackgroundColor);
   const subtitleOutlineColor = parseColor(playerSettings.subtitlesOutlineColor);
   const accentColor = parseColor(playerSettings.accentColor ?? '#95a2ff');
+  const surfaceColor = parseColor(playerSettings.surfaceColor ?? '#282f40');
 
   const activeColor = colorModal === 'text'
     ? subtitleTextColor
@@ -171,9 +322,15 @@ export default function SettingsPage() {
         ? subtitleOutlineColor
         : colorModal === 'accent'
           ? accentColor
-          : null;
+          : colorModal === 'surface'
+            ? surfaceColor
+            : null;
 
-  const updateColor = (key: 'text' | 'bg' | 'outline' | 'accent', hex: string, alpha: number) => {
+  const updateColor = (
+    key: 'text' | 'bg' | 'outline' | 'accent' | 'surface',
+    hex: string,
+    alpha: number,
+  ) => {
     const rgba = buildRgba(hex, alpha);
     if (key === 'text') updateSettings({ subtitlesTextColor: rgba });
     if (key === 'bg') updateSettings({ subtitlesBackgroundColor: rgba });
@@ -184,303 +341,407 @@ export default function SettingsPage() {
     // new accent. The picker still shows an alpha slider for parity
     // with the subtitle pickers but we discard it here.
     if (key === 'accent') updateSettings({ accentColor: hex });
+    // Surface is likewise hex-only -- the glass recipe bakes its own
+    // alphas (0.97 / 0.985), so a translucent surface hex would let page
+    // content bleed through every menu/modal. Discard alpha.
+    if (key === 'surface') updateSettings({ surfaceColor: hex });
   };
 
   return (
     <>
       <div className="mt-4">
-        <div className="solid-surface rounded-[28px] bg-white/6 p-6 ">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="font-[Instrument_Serif] text-2xl font-semibold">Settings</div>
-              <div className="text-sm text-foreground/60">Customize your experience</div>
-            </div>
-          </div>
-
-          <ScrollShadow className="mt-6 max-h-[calc(100vh-14rem)] space-y-6 pr-1" hideScrollBar>
-            <div>
-              <div className="text-lg font-semibold mb-3">Style</div>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <button
-                  type="button"
-                  className={
-                    'rounded-2xl border px-4 py-4 text-left transition ' +
-                    (uiStyle === 'classic'
-                      ? 'border-white bg-white/15 text-white'
-                      : 'border-white/10 bg-white/5 text-foreground/70 hover:bg-white/10')
-                  }
-                  onClick={() => setUiStyle('classic')}
-                >
-                  <div className="text-sm font-semibold">Classic</div>
-                  <div className="mt-1 text-xs text-foreground/60">
-                    Solid surfaces with simple layout.
-                  </div>
-                </button>
-                <button
-                  type="button"
-                  className={
-                    'rounded-2xl border px-4 py-4 text-left transition ' +
-                    (uiStyle === 'netflix'
-                      ? 'border-white bg-white/15 text-white'
-                      : 'border-white/10 bg-white/5 text-foreground/70 hover:bg-white/10')
-                  }
-                  onClick={() => setUiStyle('netflix')}
-                >
-                  <div className="text-sm font-semibold">Kecflix</div>
-                  <div className="mt-1 text-xs text-foreground/60">
-                    Dark UI with Kecflix-style navigation and rails.
-                  </div>
-                </button>
-                <button
-                  type="button"
-                  className={
-                    'rounded-2xl border px-4 py-4 text-left transition ' +
-                    (uiStyle === 'modern'
-                      ? 'border-white bg-white/15 text-white'
-                      : 'border-white/10 bg-white/5 text-foreground/70 hover:bg-white/10')
-                  }
-                  onClick={() => setUiStyle('modern')}
-                >
-                  <div className="text-sm font-semibold">Modern</div>
-                  <div className="mt-1 text-xs text-foreground/60">
-                    Coverflow carousel with hero detail panel.
-                  </div>
-                </button>
+        <div className="solid-surface flex flex-col rounded-[28px] bg-white/6 lg:flex-row">
+          {/* Left category sidebar: header + nav list. */}
+          <aside className="shrink-0 border-b border-white/10 p-5 lg:w-[clamp(200px,18vw,260px)] lg:border-b-0 lg:border-r">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[var(--bliss-accent)]/15 text-[var(--bliss-accent)]">
+                <SettingsGearIcon className="h-5 w-5" />
+              </span>
+              <div>
+                <div className="font-[Instrument_Serif] text-xl font-semibold leading-tight">
+                  Settings
+                </div>
+                <div className="text-xs text-foreground/60">Customize your experience</div>
               </div>
             </div>
 
-            <div className="text-sm text-foreground/60">
-              Solid colors only (background gradients removed).
+            <nav className="mt-5 flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0">
+              {CATEGORIES.map(({ key, label, Icon }, index) => {
+                const active = category === key;
+                return (
+                  <FocusableButton
+                    key={key}
+                    autoFocusTv={index === 0}
+                    onPress={() => setCategory(key)}
+                    aria-current={active ? 'page' : undefined}
+                    className={
+                      'flex shrink-0 items-center gap-3 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition lg:w-full ' +
+                      (active
+                        ? 'bg-[var(--bliss-accent)]/15 text-[var(--bliss-accent)] shadow-[0_0_0_1px_var(--bliss-accent)] [text-shadow:0_0_12px_var(--bliss-accent)]'
+                        : 'text-foreground/70 hover:bg-white/8 hover:text-foreground')
+                    }
+                  >
+                    <Icon className="h-5 w-5 shrink-0" />
+                    <span className="whitespace-nowrap">{label}</span>
+                  </FocusableButton>
+                );
+              })}
+            </nav>
+          </aside>
+
+          {/* Right content panel: renders only the selected category. */}
+          <div className="min-w-0 flex-1 p-6">
+            <div className="font-[Instrument_Serif] text-2xl font-semibold">
+              {CATEGORY_TITLES[category]}
             </div>
 
-            <div>
-              <div className="text-lg font-semibold mb-3">Accent color</div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-4">
+            <ScrollShadow className="mt-5 max-h-[calc(100vh-16rem)] space-y-6 pr-1" hideScrollBar>
+              {category === 'appearance' ? (
+                <>
                   <div>
-                    <div className="text-sm font-semibold">Site accent</div>
-                    <div className="mt-1 text-xs text-foreground/60">
-                      Used by progress bars, focus rings, badges, the loading spinner -- anywhere the
-                      default teal shows up. Syncs to your account.
+                    <h2 className="text-lg font-semibold mb-3">Style</h2>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <FocusableButton
+                        className={
+                          'rounded-2xl border px-4 py-4 text-left transition ' +
+                          (uiStyle === 'classic'
+                            ? 'border-white bg-white/15 text-white'
+                            : 'border-white/10 bg-white/5 text-foreground/70 hover:bg-white/10')
+                        }
+                        onPress={() => setUiStyle('classic')}
+                      >
+                        <div className="text-sm font-semibold">Classic</div>
+                        <div className="mt-1 text-xs text-foreground/60">
+                          Solid surfaces with simple layout.
+                        </div>
+                      </FocusableButton>
+                      <FocusableButton
+                        className={
+                          'rounded-2xl border px-4 py-4 text-left transition ' +
+                          (uiStyle === 'netflix'
+                            ? 'border-white bg-white/15 text-white'
+                            : 'border-white/10 bg-white/5 text-foreground/70 hover:bg-white/10')
+                        }
+                        onPress={() => setUiStyle('netflix')}
+                      >
+                        <div className="text-sm font-semibold">Kecflix</div>
+                        <div className="mt-1 text-xs text-foreground/60">
+                          Dark UI with Kecflix-style navigation and rails.
+                        </div>
+                      </FocusableButton>
+                      <FocusableButton
+                        className={
+                          'rounded-2xl border px-4 py-4 text-left transition ' +
+                          (uiStyle === 'modern'
+                            ? 'border-white bg-white/15 text-white'
+                            : 'border-white/10 bg-white/5 text-foreground/70 hover:bg-white/10')
+                        }
+                        onPress={() => setUiStyle('modern')}
+                      >
+                        <div className="text-sm font-semibold">Modern</div>
+                        <div className="mt-1 text-xs text-foreground/60">
+                          Coverflow carousel with hero detail panel.
+                        </div>
+                      </FocusableButton>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      aria-label="Pick accent color"
-                      className="h-10 w-10 cursor-pointer rounded-full border border-white/20 shadow-inner"
-                      style={{ background: accentColor.hex }}
-                      onClick={() => setColorModal('accent')}
-                    />
-                    <button
-                      type="button"
-                      className="cursor-pointer rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs text-foreground/80 hover:bg-white/15"
-                      onClick={() => updateSettings({ accentColor: '#95a2ff' })}
-                    >
-                      Reset
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
 
-            <div>
-              <div className="text-lg font-semibold mb-3">Player</div>
-              <div className="space-y-6">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <div className="text-sm font-semibold mb-3">Subtitles</div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <div className="text-xs text-foreground/60 mb-2">Language</div>
-                      <Select
-                        aria-label="Subtitles language"
-                        selectedKey={playerSettings.subtitlesLanguage ?? 'none'}
-                        onSelectionChange={(key) => {
-                          updateSettings({ subtitlesLanguage: key === 'none' ? null : String(key) });
-                        }}
-                      >
-                        <Select.Trigger className={triggerClassName}>
-                          <Select.Value />
-                          <Select.Indicator />
-                        </Select.Trigger>
-                        <Select.Popover>
-                          <ListBox>
-                            {languageItems.map((item) => (
-                              <ListBox.Item key={item.key} id={item.key} textValue={item.label}>
-                                {item.label}
-                              </ListBox.Item>
-                            ))}
-                          </ListBox>
-                        </Select.Popover>
-                      </Select>
+                  <div className="text-sm text-foreground/60">
+                    Solid colors only (background gradients removed).
+                  </div>
+
+                  <div>
+                    <h2 className="text-lg font-semibold mb-3">Accent color</h2>
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-4">
+                        <div>
+                          <div className="text-sm font-semibold">Site accent</div>
+                          <div className="mt-1 text-xs text-foreground/60">
+                            Used by progress bars, focus rings, badges, the loading spinner -- anywhere the
+                            default teal shows up. Syncs to your account.
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          {isTvMode() ? (
+                            // The ChromePicker is unusable by remote -- offer a row of
+                            // focusable preset swatches instead.
+                            <div className="flex flex-wrap items-center gap-2">
+                              {TV_COLOR_PRESETS.map((hex) => (
+                                <FocusableButton
+                                  key={hex}
+                                  aria-label={`Set accent ${hex}`}
+                                  className={
+                                    'h-9 w-9 cursor-pointer rounded-full border shadow-inner ' +
+                                    (accentColor.hex.toLowerCase() === hex.toLowerCase()
+                                      ? 'border-white'
+                                      : 'border-white/20')
+                                  }
+                                  style={{ background: hex }}
+                                  onPress={() => updateSettings({ accentColor: hex })}
+                                />
+                              ))}
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              aria-label="Pick accent color"
+                              className="h-10 w-10 cursor-pointer rounded-full border border-white/20 shadow-inner"
+                              style={{ background: accentColor.hex }}
+                              onClick={() => setColorModal('accent')}
+                            />
+                          )}
+                          <FocusableButton
+                            className="cursor-pointer rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs text-foreground/80 hover:bg-white/15"
+                            onPress={() => updateSettings({ accentColor: '#95a2ff' })}
+                          >
+                            Reset
+                          </FocusableButton>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="text-xs text-foreground/60 mb-2">Size</div>
-                      <Select
-                        aria-label="Subtitles size"
-                        selectedKey={String(playerSettings.subtitlesSizePx)}
-                        onSelectionChange={(key) => {
-                          updateSettings({ subtitlesSizePx: Number.parseInt(String(key), 10) });
-                        }}
-                      >
-                        <Select.Trigger className={triggerClassName}>
-                          <Select.Value />
-                          <Select.Indicator />
-                        </Select.Trigger>
-                        <Select.Popover>
-                          <ListBox>
-                            {sizeItems.map((item) => (
-                              <ListBox.Item key={item.key} id={item.key} textValue={item.label}>
-                                {item.label}
-                              </ListBox.Item>
+                  </div>
+
+                  <div>
+                    <h2 className="text-lg font-semibold mb-3">Surface color</h2>
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-4">
+                        <div>
+                          <div className="text-sm font-semibold">Glass surface</div>
+                          <div className="mt-1 text-xs text-foreground/60">
+                            Tints the glass behind menus, dropdowns, popovers, modals and the
+                            nav rail. Leave on the default for the standard dark glass. Syncs
+                            to your account.
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          {/* Dark, legibility-safe presets only (no free color
+                              picker) — a bright/white surface would blind the
+                              user and hide the light text. Same on TV + desktop. */}
+                          <div className="flex flex-wrap items-center gap-2">
+                            {SURFACE_COLOR_PRESETS.map((hex) => (
+                              <FocusableButton
+                                key={hex}
+                                aria-label={`Set surface ${hex}`}
+                                className={
+                                  'h-9 w-9 cursor-pointer rounded-full border shadow-inner ' +
+                                  (surfaceColor.hex.toLowerCase() === hex.toLowerCase()
+                                    ? 'border-white'
+                                    : 'border-white/20')
+                                }
+                                style={{ background: hex }}
+                                onPress={() => updateSettings({ surfaceColor: hex })}
+                              />
                             ))}
-                          </ListBox>
-                        </Select.Popover>
-                      </Select>
+                          </div>
+                          <FocusableButton
+                            className="cursor-pointer rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs text-foreground/80 hover:bg-white/15"
+                            onPress={() => updateSettings({ surfaceColor: '#282f40' })}
+                          >
+                            Reset
+                          </FocusableButton>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="text-xs text-foreground/60 mb-2">Text color</div>
-                      <button
-                        type="button"
-                        className="flex w-full items-center justify-end rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-white hover:bg-white/10"
-                        onClick={() => setColorModal('text')}
-                      >
-                        {subtitleTextColor.alpha === 0 ? (
-                          <span className="text-xs text-foreground/70">transparent</span>
+                  </div>
+                </>
+              ) : null}
+
+              {category === 'player' ? (
+                <>
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <h2 className="text-sm font-semibold mb-3">Subtitles</h2>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div>
+                        <div className="text-xs text-foreground/60 mb-2">Language</div>
+                        <TvSelect
+                          ariaLabel="Subtitles language"
+                          triggerClassName={triggerClassName}
+                          value={playerSettings.subtitlesLanguage ?? 'none'}
+                          options={languageItems}
+                          onChange={(key) => {
+                            updateSettings({ subtitlesLanguage: key === 'none' ? null : String(key) });
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <div className="text-xs text-foreground/60 mb-2">Size</div>
+                        <TvSelect
+                          ariaLabel="Subtitles size"
+                          triggerClassName={triggerClassName}
+                          value={String(playerSettings.subtitlesSizePx)}
+                          options={sizeItems}
+                          onChange={(key) => {
+                            updateSettings({ subtitlesSizePx: Number.parseInt(String(key), 10) });
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <div className="text-xs text-foreground/60 mb-2">Text color</div>
+                        {isTvMode() ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            {TV_COLOR_PRESETS.map((hex) => (
+                              <FocusableButton
+                                key={hex}
+                                aria-label={`Set text color ${hex}`}
+                                className={
+                                  'h-7 w-7 cursor-pointer rounded-full border shadow-inner ' +
+                                  (subtitleTextColor.hex.toLowerCase() === hex.toLowerCase()
+                                    ? 'border-white'
+                                    : 'border-white/20')
+                                }
+                                style={{ background: hex }}
+                                onPress={() => updateColor('text', hex, subtitleTextColor.alpha || 1)}
+                              />
+                            ))}
+                          </div>
                         ) : (
-                          <span
-                            className="h-5 w-full rounded-full border border-white/20"
-                            style={{ background: subtitleTextColor.hex }}
-                          />
+                          <button
+                            type="button"
+                            className="flex w-full items-center justify-end rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-white hover:bg-white/10"
+                            onClick={() => setColorModal('text')}
+                          >
+                            {subtitleTextColor.alpha === 0 ? (
+                              <span className="text-xs text-foreground/70">transparent</span>
+                            ) : (
+                              <span
+                                className="h-5 w-full rounded-full border border-white/20"
+                                style={{ background: subtitleTextColor.hex }}
+                              />
+                            )}
+                          </button>
                         )}
-                      </button>
-                    </div>
-                    <div>
-                      <div className="text-xs text-foreground/60 mb-2">Background color</div>
-                      <button
-                        type="button"
-                        className="flex w-full items-center justify-end rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-white hover:bg-white/10"
-                        onClick={() => setColorModal('bg')}
-                      >
-                        {subtitleBgColor.alpha === 0 ? (
-                          <span className="text-xs text-foreground/70">transparent</span>
+                      </div>
+                      <div>
+                        <div className="text-xs text-foreground/60 mb-2">Background color</div>
+                        {isTvMode() ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            {TV_COLOR_PRESETS.map((hex) => (
+                              <FocusableButton
+                                key={hex}
+                                aria-label={`Set background color ${hex}`}
+                                className={
+                                  'h-7 w-7 cursor-pointer rounded-full border shadow-inner ' +
+                                  (subtitleBgColor.hex.toLowerCase() === hex.toLowerCase()
+                                    ? 'border-white'
+                                    : 'border-white/20')
+                                }
+                                style={{ background: hex }}
+                                onPress={() => updateColor('bg', hex, subtitleBgColor.alpha || 1)}
+                              />
+                            ))}
+                          </div>
                         ) : (
-                          <span
-                            className="h-5 w-full rounded-full border border-white/20"
-                            style={{ background: subtitleBgColor.hex }}
-                          />
+                          <button
+                            type="button"
+                            className="flex w-full items-center justify-end rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-white hover:bg-white/10"
+                            onClick={() => setColorModal('bg')}
+                          >
+                            {subtitleBgColor.alpha === 0 ? (
+                              <span className="text-xs text-foreground/70">transparent</span>
+                            ) : (
+                              <span
+                                className="h-5 w-full rounded-full border border-white/20"
+                                style={{ background: subtitleBgColor.hex }}
+                              />
+                            )}
+                          </button>
                         )}
-                      </button>
-                    </div>
-                    <div>
-                      <div className="text-xs text-foreground/60 mb-2">Outline color</div>
-                      <button
-                        type="button"
-                        className="flex w-full items-center justify-end rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-white hover:bg-white/10"
-                        onClick={() => setColorModal('outline')}
-                      >
-                        {subtitleOutlineColor.alpha === 0 ? (
-                          <span className="text-xs text-foreground/70">transparent</span>
+                      </div>
+                      <div>
+                        <div className="text-xs text-foreground/60 mb-2">Outline color</div>
+                        {isTvMode() ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            {TV_COLOR_PRESETS.map((hex) => (
+                              <FocusableButton
+                                key={hex}
+                                aria-label={`Set outline color ${hex}`}
+                                className={
+                                  'h-7 w-7 cursor-pointer rounded-full border shadow-inner ' +
+                                  (subtitleOutlineColor.hex.toLowerCase() === hex.toLowerCase()
+                                    ? 'border-white'
+                                    : 'border-white/20')
+                                }
+                                style={{ background: hex }}
+                                onPress={() => updateColor('outline', hex, subtitleOutlineColor.alpha || 1)}
+                              />
+                            ))}
+                          </div>
                         ) : (
-                          <span
-                            className="h-5 w-full rounded-full border border-white/20"
-                            style={{ background: subtitleOutlineColor.hex }}
-                          />
+                          <button
+                            type="button"
+                            className="flex w-full items-center justify-end rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-white hover:bg-white/10"
+                            onClick={() => setColorModal('outline')}
+                          >
+                            {subtitleOutlineColor.alpha === 0 ? (
+                              <span className="text-xs text-foreground/70">transparent</span>
+                            ) : (
+                              <span
+                                className="h-5 w-full rounded-full border border-white/20"
+                                style={{ background: subtitleOutlineColor.hex }}
+                              />
+                            )}
+                          </button>
                         )}
-                      </button>
-                    </div>
+                      </div>
 
+                    </div>
                   </div>
-                </div>
 
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <div className="text-sm font-semibold mb-3">Audio</div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <div className="text-xs text-foreground/60 mb-2">Default audio track</div>
-                      <Select
-                        aria-label="Audio language"
-                        selectedKey={playerSettings.audioLanguage ?? 'none'}
-                        onSelectionChange={(key) => {
-                          updateSettings({ audioLanguage: key === 'none' ? null : String(key) });
-                        }}
-                      >
-                        <Select.Trigger className={triggerClassName}>
-                          <Select.Value />
-                          <Select.Indicator />
-                        </Select.Trigger>
-                        <Select.Popover>
-                          <ListBox>
-                            {languageItems.map((item) => (
-                              <ListBox.Item key={item.key} id={item.key} textValue={item.label}>
-                                {item.label}
-                              </ListBox.Item>
-                            ))}
-                          </ListBox>
-                        </Select.Popover>
-                      </Select>
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <h2 className="text-sm font-semibold mb-3">Audio</h2>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div>
+                        <div className="text-xs text-foreground/60 mb-2">Default audio track</div>
+                        <TvSelect
+                          ariaLabel="Audio language"
+                          triggerClassName={triggerClassName}
+                          value={playerSettings.audioLanguage ?? 'none'}
+                          options={languageItems}
+                          onChange={(key) => {
+                            updateSettings({ audioLanguage: key === 'none' ? null : String(key) });
+                          }}
+                        />
+                      </div>
+
                     </div>
-
                   </div>
-                </div>
 
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <div className="text-sm font-semibold mb-3">Controls</div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <div className="text-xs text-foreground/60 mb-2">Seek key</div>
-                      <Select
-                        aria-label="Seek key"
-                        selectedKey={String(playerSettings.seekTimeDurationMs)}
-                        onSelectionChange={(key) => {
-                          updateSettings({ seekTimeDurationMs: Number.parseInt(String(key), 10) });
-                        }}
-                      >
-                        <Select.Trigger className={triggerClassName}>
-                          <Select.Value />
-                          <Select.Indicator />
-                        </Select.Trigger>
-                        <Select.Popover>
-                          <ListBox>
-                            {seekItems.map((item) => (
-                              <ListBox.Item key={item.key} id={item.key} textValue={item.label}>
-                                {item.label}
-                              </ListBox.Item>
-                            ))}
-                          </ListBox>
-                        </Select.Popover>
-                      </Select>
-                    </div>
-                    <div>
-                      <div className="text-xs text-foreground/60 mb-2">Seek key + Shift</div>
-                      <Select
-                        aria-label="Seek key shift"
-                        selectedKey={String(playerSettings.seekShortTimeDurationMs)}
-                        onSelectionChange={(key) => {
-                          updateSettings({ seekShortTimeDurationMs: Number.parseInt(String(key), 10) });
-                        }}
-                      >
-                        <Select.Trigger className={triggerClassName}>
-                          <Select.Value />
-                          <Select.Indicator />
-                        </Select.Trigger>
-                        <Select.Popover>
-                          <ListBox>
-                            {seekShiftItems.map((item) => (
-                              <ListBox.Item key={item.key} id={item.key} textValue={item.label}>
-                                {item.label}
-                              </ListBox.Item>
-                            ))}
-                          </ListBox>
-                        </Select.Popover>
-                      </Select>
-                    </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <h2 className="text-sm font-semibold mb-3">Controls</h2>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div>
+                        <div className="text-xs text-foreground/60 mb-2">Seek key</div>
+                        <TvSelect
+                          ariaLabel="Seek key"
+                          triggerClassName={triggerClassName}
+                          value={String(playerSettings.seekTimeDurationMs)}
+                          options={seekItems}
+                          onChange={(key) => {
+                            updateSettings({ seekTimeDurationMs: Number.parseInt(String(key), 10) });
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <div className="text-xs text-foreground/60 mb-2">Seek key + Shift</div>
+                        <TvSelect
+                          ariaLabel="Seek key shift"
+                          triggerClassName={triggerClassName}
+                          value={String(playerSettings.seekShortTimeDurationMs)}
+                          options={seekShiftItems}
+                          onChange={(key) => {
+                            updateSettings({ seekShortTimeDurationMs: Number.parseInt(String(key), 10) });
+                          }}
+                        />
+                      </div>
 
+                    </div>
                   </div>
-                </div>
+                </>
+              ) : null}
 
+              {category === 'playback' ? (
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <div className="text-sm font-semibold mb-3">Auto Play</div>
+                  <h2 className="text-sm font-semibold mb-3">Auto Play</h2>
 
                   {/* Master enable/disable. Drives the "Auto next" toggle
                       inside the player's episode drawer too -- both
@@ -494,33 +755,12 @@ export default function SettingsPage() {
                         Automatically play the next episode when the current one ends.
                       </span>
                     </span>
-                    <span
-                      role="switch"
-                      aria-checked={playerSettings.bingeWatching}
-                      tabIndex={0}
-                      className={
-                        'relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition ' +
-                        (playerSettings.bingeWatching
-                          ? 'bg-[var(--bliss-accent)]'
-                          : 'bg-white/15')
-                      }
-                      onClick={() =>
+                    <BingeToggle
+                      checked={playerSettings.bingeWatching}
+                      onToggle={() =>
                         updateSettings({ bingeWatching: !playerSettings.bingeWatching })
                       }
-                      onKeyDown={(e) => {
-                        if (e.key === ' ' || e.key === 'Enter') {
-                          e.preventDefault();
-                          updateSettings({ bingeWatching: !playerSettings.bingeWatching });
-                        }
-                      }}
-                    >
-                      <span
-                        className={
-                          'absolute top-0.5 h-5 w-5 rounded-full bg-white transition ' +
-                          (playerSettings.bingeWatching ? 'left-5' : 'left-0.5')
-                        }
-                      />
-                    </span>
+                    />
                   </label>
 
                   <div
@@ -530,47 +770,37 @@ export default function SettingsPage() {
                     }
                   >
                     <div className="text-xs text-foreground/60 mb-2">Next video popup</div>
-                    <Select
-                      aria-label="Next video popup"
-                      isDisabled={!playerSettings.bingeWatching}
-                      selectedKey={String(playerSettings.nextVideoNotificationDurationMs)}
-                      onSelectionChange={(key) => {
+                    <TvSelect
+                      ariaLabel="Next video popup"
+                      triggerClassName={triggerClassName}
+                      value={String(playerSettings.nextVideoNotificationDurationMs)}
+                      options={nextPopupItems}
+                      onChange={(key) => {
                         updateSettings({
                           nextVideoNotificationDurationMs: Number.parseInt(String(key), 10),
                         });
                       }}
-                    >
-                      <Select.Trigger className={triggerClassName}>
-                        <Select.Value />
-                        <Select.Indicator />
-                      </Select.Trigger>
-                      <Select.Popover>
-                        <ListBox>
-                          {nextPopupItems.map((item) => (
-                            <ListBox.Item key={item.key} id={item.key} textValue={item.label}>
-                              {item.label}
-                            </ListBox.Item>
-                          ))}
-                        </ListBox>
-                      </Select.Popover>
-                    </Select>
+                    />
                   </div>
                 </div>
+              ) : null}
 
+              {category === 'streaming' ? (
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <div className="text-sm font-semibold mb-3">Streaming server</div>
+                  <h2 className="text-sm font-semibold mb-3">Streaming server</h2>
                   <div className="grid gap-4 md:grid-cols-2">
                     <div>
                       <div className="text-xs text-foreground/60 mb-2">Cache size</div>
-                      <Select
-                        aria-label="Cache size"
-                        selectedKey={
+                      <TvSelect
+                        ariaLabel="Cache size"
+                        triggerClassName={triggerClassName}
+                        value={
                           playerSettings.streamingServerCacheSizeBytes === null
                             ? 'unlimited'
                             : String(playerSettings.streamingServerCacheSizeBytes)
                         }
-                        onSelectionChange={(key) => {
-                          if (typeof key !== 'string') return;
+                        options={cacheSizeItems}
+                        onChange={(key) => {
                           const next =
                             key === 'unlimited' ? null : Number.parseInt(key, 10);
                           if (key !== 'unlimited' && !Number.isFinite(next)) return;
@@ -579,21 +809,7 @@ export default function SettingsPage() {
                               key === 'unlimited' ? null : (next as number),
                           });
                         }}
-                      >
-                        <Select.Trigger className={triggerClassName}>
-                          <Select.Value />
-                          <Select.Indicator />
-                        </Select.Trigger>
-                        <Select.Popover>
-                          <ListBox>
-                            {cacheSizeItems.map((item) => (
-                              <ListBox.Item key={item.key} id={item.key} textValue={item.label}>
-                                {item.label}
-                              </ListBox.Item>
-                            ))}
-                          </ListBox>
-                        </Select.Popover>
-                      </Select>
+                      />
                       <div className="mt-2 text-xs text-foreground/50">
                         Maximum disk space the torrent cache may grow to.
                         Only fills as you stream. Larger values reduce
@@ -602,45 +818,148 @@ export default function SettingsPage() {
                     </div>
                   </div>
                 </div>
+              ) : null}
 
+              {category === 'account' ? (
+                user ? (
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <h2 className="text-sm font-semibold mb-3">Profile</h2>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="md:col-span-2">
+                        <div className="text-xs text-foreground/60 mb-2">Username</div>
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+                          <TvTextInput
+                            type="text"
+                            value={usernameDraft}
+                            onChange={(v) => {
+                              setUsernameDraft(v.toLowerCase());
+                              setUsernameError(null);
+                            }}
+                            placeholder="3-50 chars: a-z 0-9 _ -"
+                            ariaLabel="Username"
+                            onSubmit={() => { void handleSaveUsername(); }}
+                            className="min-w-0 flex-1"
+                            inputClassName={
+                              'min-w-0 w-full rounded-xl border bg-white/5 px-3 py-2 text-sm text-foreground/90 placeholder:text-foreground/40 focus:outline-none ' +
+                              (usernameError || (usernameDirty && !usernameValid)
+                                ? 'border-danger focus:border-danger'
+                                : 'border-white/10 focus:border-[var(--bliss-accent)]')
+                            }
+                          />
+                          <FocusableButton
+                            onPress={() => { void handleSaveUsername(); }}
+                            disabled={usernameSaveDisabled}
+                            focusableTv={!usernameSaveDisabled}
+                            className={
+                              'h-9 shrink-0 rounded-full px-4 text-xs font-semibold transition ' +
+                              (usernameSaveDisabled
+                                ? 'cursor-not-allowed bg-white/10 text-foreground/40'
+                                : 'cursor-pointer bg-white text-black hover:bg-white/90')
+                            }
+                          >
+                            {usernameSaving ? 'Saving...' : 'Save'}
+                          </FocusableButton>
+                        </div>
+                        <div className="mt-2 text-xs text-foreground/50">
+                          {usernameError
+                            ? <span className="text-danger">{usernameError}</span>
+                            : usernameDirty && !usernameValid
+                              ? <span className="text-danger">3-50 chars: lowercase a-z, 0-9, _ -</span>
+                              : <>
+                                  Used to log in to Blissful and as your public handle
+                                  (<span className="text-foreground/80">@{currentUsername || 'unset'}</span>)
+                                  -- friends find you by it. Display name is separate and
+                                  can be anything.
+                                </>}
+                        </div>
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <div className="text-xs text-foreground/60 mb-2">Display name</div>
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+                          <TvTextInput
+                            type="text"
+                            value={displayNameDraft}
+                            onChange={(v) => {
+                              setDisplayNameDraft(v);
+                              setDisplayNameError(null);
+                            }}
+                            placeholder="how friends see you"
+                            ariaLabel="Display name"
+                            onSubmit={() => { void handleSaveDisplayName(); }}
+                            className="min-w-0 flex-1"
+                            inputClassName={
+                              'min-w-0 w-full rounded-xl border bg-white/5 px-3 py-2 text-sm text-foreground/90 placeholder:text-foreground/40 focus:outline-none ' +
+                              (displayNameError
+                                ? 'border-danger focus:border-danger'
+                                : 'border-white/10 focus:border-[var(--bliss-accent)]')
+                            }
+                          />
+                          <FocusableButton
+                            onPress={() => { void handleSaveDisplayName(); }}
+                            disabled={displayNameSaveDisabled}
+                            focusableTv={!displayNameSaveDisabled}
+                            className={
+                              'h-9 shrink-0 rounded-full px-4 text-xs font-semibold transition ' +
+                              (displayNameSaveDisabled
+                                ? 'cursor-not-allowed bg-white/10 text-foreground/40'
+                                : 'cursor-pointer bg-white text-black hover:bg-white/90')
+                            }
+                          >
+                            {displayNameSaving ? 'Saving...' : 'Save'}
+                          </FocusableButton>
+                        </div>
+                        <div className="mt-2 text-xs text-foreground/50">
+                          {displayNameError
+                            ? <span className="text-danger">{displayNameError}</span>
+                            : <>
+                                Shown in friends, chat, and watch parties. Can be anything
+                                -- spaces, emoji, capitals all fine. Up to 60 characters.
+                              </>}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-foreground/60">
+                    Sign in to manage your account.
+                  </div>
+                )
+              ) : null}
+
+              {category === 'linked' ? (
+                <>
+                  <SettingsStremioPanel />
+                  <SettingsTraktPanel />
+                </>
+              ) : null}
+
+              {category === 'advanced' ? (
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <div className="text-sm font-semibold mb-3">Advanced</div>
+                  <h2 className="text-sm font-semibold mb-3">Advanced</h2>
                   <div className="grid gap-4 md:grid-cols-2">
                     <div>
                       <div className="text-xs text-foreground/60 mb-2">Play in external player</div>
-                      <Select
-                        aria-label="External player"
-                        selectedKey={playerSettings.playInExternalPlayer}
-                        onSelectionChange={(key) => {
-                          if (typeof key === 'string') updateSettings({ playInExternalPlayer: key });
+                      <TvSelect
+                        ariaLabel="External player"
+                        triggerClassName={triggerClassName}
+                        value={playerSettings.playInExternalPlayer}
+                        options={externalPlayerItems}
+                        onChange={(key) => {
+                          updateSettings({ playInExternalPlayer: key });
                         }}
-                      >
-                        <Select.Trigger className={triggerClassName}>
-                          <Select.Value />
-                          <Select.Indicator />
-                        </Select.Trigger>
-                        <Select.Popover>
-                          <ListBox>
-                            {externalPlayerItems.map((item) => (
-                              <ListBox.Item key={item.key} id={item.key} textValue={item.label}>
-                                {item.label}
-                              </ListBox.Item>
-                            ))}
-                          </ListBox>
-                        </Select.Popover>
-                      </Select>
+                      />
                     </div>
 
                     <div className="md:col-span-2">
                       <div className="text-xs text-foreground/60 mb-2">Real-Debrid API key</div>
-                      <input
+                      <TvTextInput
                         type="text"
                         value={playerSettings.realDebridApiKey ?? ''}
-                        onChange={(e) => updateSettings({ realDebridApiKey: e.target.value.trim() })}
+                        onChange={(v) => updateSettings({ realDebridApiKey: v.trim() })}
                         placeholder="paste your Real-Debrid API key"
-                        autoComplete="off"
-                        spellCheck={false}
-                        className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-foreground/90 placeholder:text-foreground/40 focus:border-[var(--bliss-accent)] focus:outline-none"
+                        ariaLabel="Real-Debrid API key"
+                        inputClassName="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-foreground/90 placeholder:text-foreground/40 focus:border-[var(--bliss-accent)] focus:outline-none"
                       />
                       <div className="mt-2 text-xs text-foreground/50">
                         All torrent streams will be resolved through
@@ -661,14 +980,13 @@ export default function SettingsPage() {
 
                     <div className="md:col-span-2">
                       <div className="text-xs text-foreground/60 mb-2">TMDB API key</div>
-                      <input
+                      <TvTextInput
                         type="text"
                         value={playerSettings.tmdbApiKey}
-                        onChange={(e) => updateSettings({ tmdbApiKey: e.target.value.trim() })}
+                        onChange={(v) => updateSettings({ tmdbApiKey: v.trim() })}
                         placeholder="paste your TMDB v3 API key"
-                        autoComplete="off"
-                        spellCheck={false}
-                        className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-foreground/90 placeholder:text-foreground/40 focus:border-[var(--bliss-accent)] focus:outline-none"
+                        ariaLabel="TMDB API key"
+                        inputClassName="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-foreground/90 placeholder:text-foreground/40 focus:border-[var(--bliss-accent)] focus:outline-none"
                       />
                       <div className="mt-2 text-xs text-foreground/50">
                         Used as a rating fallback for posters where
@@ -689,124 +1007,25 @@ export default function SettingsPage() {
 
                   </div>
                 </div>
-              </div>
-            </div>
+              ) : null}
 
-            {user ? (
-              <div>
-                <div className="text-lg font-semibold mb-3">Account</div>
-                <div className="space-y-4">
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <div className="text-sm font-semibold mb-3">Profile</div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="md:col-span-2">
-                        <div className="text-xs text-foreground/60 mb-2">Username</div>
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
-                          <input
-                            type="text"
-                            value={usernameDraft}
-                            onChange={(e) => {
-                              setUsernameDraft(e.target.value.toLowerCase());
-                              setUsernameError(null);
-                            }}
-                            maxLength={50}
-                            placeholder="3-50 chars: a-z 0-9 _ -"
-                            autoComplete="off"
-                            spellCheck={false}
-                            className={
-                              'min-w-0 flex-1 rounded-xl border bg-white/5 px-3 py-2 text-sm text-foreground/90 placeholder:text-foreground/40 focus:outline-none ' +
-                              (usernameError || (usernameDirty && !usernameValid)
-                                ? 'border-danger focus:border-danger'
-                                : 'border-white/10 focus:border-[var(--bliss-accent)]')
-                            }
-                          />
-                          <button
-                            type="button"
-                            onClick={() => { void handleSaveUsername(); }}
-                            disabled={usernameSaveDisabled}
-                            className={
-                              'h-9 shrink-0 rounded-full px-4 text-xs font-semibold transition ' +
-                              (usernameSaveDisabled
-                                ? 'cursor-not-allowed bg-white/10 text-foreground/40'
-                                : 'cursor-pointer bg-white text-black hover:bg-white/90')
-                            }
-                          >
-                            {usernameSaving ? 'Saving...' : 'Save'}
-                          </button>
-                        </div>
-                        <div className="mt-2 text-xs text-foreground/50">
-                          {usernameError
-                            ? <span className="text-danger">{usernameError}</span>
-                            : usernameDirty && !usernameValid
-                              ? <span className="text-danger">3-50 chars: lowercase a-z, 0-9, _ -</span>
-                              : <>
-                                  Used to log in to Blissful and as your public handle
-                                  (<span className="text-foreground/80">@{currentUsername || 'unset'}</span>)
-                                  -- friends find you by it. Display name is separate and
-                                  can be anything.
-                                </>}
-                        </div>
-                      </div>
-
-                      <div className="md:col-span-2">
-                        <div className="text-xs text-foreground/60 mb-2">Display name</div>
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
-                          <input
-                            type="text"
-                            value={displayNameDraft}
-                            onChange={(e) => {
-                              setDisplayNameDraft(e.target.value);
-                              setDisplayNameError(null);
-                            }}
-                            maxLength={60}
-                            placeholder="how friends see you"
-                            autoComplete="off"
-                            className={
-                              'min-w-0 flex-1 rounded-xl border bg-white/5 px-3 py-2 text-sm text-foreground/90 placeholder:text-foreground/40 focus:outline-none ' +
-                              (displayNameError
-                                ? 'border-danger focus:border-danger'
-                                : 'border-white/10 focus:border-[var(--bliss-accent)]')
-                            }
-                          />
-                          <button
-                            type="button"
-                            onClick={() => { void handleSaveDisplayName(); }}
-                            disabled={displayNameSaveDisabled}
-                            className={
-                              'h-9 shrink-0 rounded-full px-4 text-xs font-semibold transition ' +
-                              (displayNameSaveDisabled
-                                ? 'cursor-not-allowed bg-white/10 text-foreground/40'
-                                : 'cursor-pointer bg-white text-black hover:bg-white/90')
-                            }
-                          >
-                            {displayNameSaving ? 'Saving...' : 'Save'}
-                          </button>
-                        </div>
-                        <div className="mt-2 text-xs text-foreground/50">
-                          {displayNameError
-                            ? <span className="text-danger">{displayNameError}</span>
-                            : <>
-                                Shown in friends, chat, and watch parties. Can be anything
-                                -- spaces, emoji, capitals all fine. Up to 60 characters.
-                              </>}
-                        </div>
-                      </div>
-                    </div>
+              {category === 'about' ? (
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <h2 className="text-sm font-semibold mb-3">About</h2>
+                  <div className="font-[Instrument_Serif] text-2xl font-semibold">Blissful</div>
+                  <div className="mt-1 text-sm text-foreground/60">
+                    A native Stremio client for movies and TV.
                   </div>
+                  {appVersion ? (
+                    <div className="mt-3 text-xs text-foreground/50">v{appVersion}</div>
+                  ) : null}
                 </div>
-              </div>
-            ) : null}
-
-            <div>
-              <div className="text-lg font-semibold mb-3">Linked accounts</div>
-              <div className="space-y-6">
-                <SettingsStremioPanel />
-              </div>
-            </div>
-          </ScrollShadow>
+              ) : null}
+            </ScrollShadow>
+          </div>
         </div>
       </div>
-      {colorModal && activeColor ? (
+      {colorModal && activeColor && !isTvMode() ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
           <div className="solid-surface w-full max-w-sm rounded-[24px] bg-black/70 p-6 text-center">
             <div className="text-lg font-semibold">Pick color</div>
@@ -818,7 +1037,7 @@ export default function SettingsPage() {
                   a: activeColor.alpha,
                 }}
               onChange={(color: ColorResult) => updateColor(colorModal, color.hex, color.rgb.a ?? 1)}
-                disableAlpha={colorModal === 'accent'}
+                disableAlpha={colorModal === 'accent' || colorModal === 'surface'}
               />
             </div>
             <div className="mt-5 flex justify-center">

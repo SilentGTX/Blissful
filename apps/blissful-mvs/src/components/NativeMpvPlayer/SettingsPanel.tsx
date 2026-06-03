@@ -9,9 +9,10 @@
 //   color, delay.
 
 import { AnimatePresence, motion } from 'framer-motion';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { PlayerControlIcon as StremioIcon, type StremioIconName } from '../PlayerControlIcons';
 import type { MpvTrack } from '../../lib/desktop';
+import { isAndroidTv, isTvMode } from '../../lib/platform';
 import { subtitleLangLabel } from './subtitleHelpers';
 import {
   writeStoredPlayerSettings,
@@ -114,6 +115,99 @@ export function SettingsPanel(props: SettingsPanelProps) {
 
   const audioTracks = tracks.filter((t) => t.kind === 'audio');
 
+  // === TV: D-pad navigation inside the panel ============================
+  // The player pauses Norigin and stands its own keyboard handler down while
+  // this panel is open (settingsPanelOpenRef), so the panel owns the D-pad.
+  // We do NOT call Norigin resume() here (unlike useTvOverlay) — the player
+  // keeps the engine paused for its whole session; resuming would re-activate
+  // page navigation underneath the still-mounted player. Up/Down/Left/Right
+  // walk the visible buttons in DOM order, OK clicks the lit one, Back closes.
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Signature of the currently-rendered list. When it changes (tab switch,
+  // drill in/out, appearance toggle) we re-seed focus onto the first row so
+  // the cursor never strands on a node that just unmounted.
+  const viewSig = `${tab}|${subtitlesView}|${drilledLang ?? ''}`;
+  useEffect(() => {
+    if (!open || !isTvMode()) return;
+    const FOCUSABLE =
+      'button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex="-1"])';
+    const focusFirst = () => {
+      const r = panelRef.current;
+      if (!r) return;
+      const active = document.activeElement as HTMLElement | null;
+      // Leave the user's focus alone once they're driving inside the panel.
+      if (active && r.contains(active)) return;
+      // Prefer the first row in the scrollable content list (e.g. "Off" /
+      // first track / the "‹ back" row after drilling in) over the tab/close
+      // buttons in the header — so a fresh open or a view change lands the
+      // cursor where the user actually picks, not on the tab. Tabs + close
+      // stay reachable by pressing Up.
+      const first =
+        r.querySelector<HTMLElement>(`.bliss-tv-navlist ${FOCUSABLE}`) ??
+        r.querySelector<HTMLElement>(FOCUSABLE);
+      first?.focus();
+    };
+    const timers = [0, 80, 200].map((ms) => window.setTimeout(focusFirst, ms));
+
+    const handler = (e: KeyboardEvent) => {
+      const r = panelRef.current;
+      if (!r) return;
+      const active = document.activeElement as HTMLElement | null;
+      const inRoot = !!active && r.contains(active);
+      const focusLost = !active || active === document.body;
+      // Only react when we own focus (or it was lost and needs reclaiming).
+      if (!inRoot && !focusLost) return;
+      timers.forEach((t) => window.clearTimeout(t));
+
+      const k = e.key;
+      const isBack =
+        k === 'Escape' || k === 'GoBack' || k === 'BrowserBack' || e.keyCode === 10009;
+      if (isBack) {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+        return;
+      }
+      const isOk =
+        k === 'Enter' || k === ' ' || k === 'Spacebar' || k === 'Select' ||
+        e.keyCode === 13 || e.keyCode === 23 || e.keyCode === 66;
+      if (isOk) {
+        // Android System WebView doesn't synthesize a click for a
+        // programmatically-focused button (desktop Chrome does), so click it
+        // ourselves there; in browser ?tv=1 we let the native Enter→click run.
+        if (isAndroidTv()) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (inRoot && active) active.click();
+        }
+        return;
+      }
+      const isArrow =
+        k === 'ArrowDown' || k === 'ArrowUp' || k === 'ArrowLeft' || k === 'ArrowRight';
+      if (!isArrow) return;
+      const isInput = active?.tagName === 'INPUT';
+      // On a range slider, Left/Right adjust the value natively — let them pass.
+      if (isInput && (k === 'ArrowLeft' || k === 'ArrowRight')) return;
+      const focusables = Array.from(r.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (el) => el.offsetParent !== null,
+      );
+      if (!focusables.length) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const idx = inRoot && active ? focusables.indexOf(active) : -1;
+      const delta = k === 'ArrowDown' || k === 'ArrowRight' ? 1 : -1;
+      const next = focusables[(idx + delta + focusables.length) % focusables.length];
+      next?.focus();
+      next?.scrollIntoView({ block: 'nearest' });
+    };
+    document.addEventListener('keydown', handler, true);
+    return () => {
+      timers.forEach((t) => window.clearTimeout(t));
+      document.removeEventListener('keydown', handler, true);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, viewSig]);
+
   return (
     <AnimatePresence>
       {open ? (
@@ -126,11 +220,12 @@ export function SettingsPanel(props: SettingsPanelProps) {
           onClick={onClose}
         >
           <motion.div
+            ref={panelRef}
             initial={{ x: 'calc(100% + 2rem)', opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: 'calc(100% + 2rem)', opacity: 0 }}
             transition={{ type: 'spring', stiffness: 280, damping: 32, mass: 0.85 }}
-            className="pointer-events-auto flex max-h-full w-[420px] flex-col gap-3"
+            className="bliss-tv-navpanel pointer-events-auto flex max-h-full w-[420px] flex-col gap-3"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Tabs + close row */}
@@ -175,7 +270,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
 
             {/* Content panel */}
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#101116]/95 shadow-2xl backdrop-blur-md">
-              <div className="flex-1 overflow-auto p-3">
+              <div className="bliss-tv-navlist flex-1 overflow-auto p-3">
                 {/* AUDIO */}
                 {tab === 'audio' ? (
                   <div className="flex flex-col gap-1">

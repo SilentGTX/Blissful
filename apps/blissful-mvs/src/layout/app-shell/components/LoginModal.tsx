@@ -8,11 +8,12 @@
 // and have this thing appear without prop drilling.
 
 import { Button, FieldError, Form, Input, Label, Modal, TextField } from '@heroui/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../../context/AuthProvider';
 import { useModals } from '../../../context/ModalsProvider';
 import { useErrorToast } from '../../../lib/useErrorToast';
 import { notifySuccess } from '../../../lib/toastQueues';
+import { useTvOverlay } from '../../../spatial/useTvOverlay';
 
 const USERNAME_RE = /^[a-z0-9_-]{3,50}$/;
 
@@ -59,6 +60,17 @@ export function LoginModal() {
     if (modals.loginPrefillEmail) setLoginIdentifier(modals.loginPrefillEmail);
     if (modals.loginForcedError) setAuthError(modals.loginForcedError);
   }, [modals.isLoginOpen, modals.loginPrefillEmail, modals.loginForcedError]);
+
+  // TV: D-pad-drive the form (auto-focus the username field, Up/Down between
+  // the inputs + buttons, Enter submits/activates, Back closes). The user OKs
+  // into a focused <input> to type. Inert on desktop.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { onKeyDown } = useTvOverlay({
+    open: modals.isLoginOpen,
+    containerRef,
+    onClose: () => modals.closeLogin(),
+    autoFocusSelector: '[data-autofocus]',
+  });
 
   // Hard short-circuit — HeroUI Modal.Backdrop's `isOpen` doesn't fully
   // unmount the dialog DOM, so we gate at the top level too.
@@ -151,7 +163,11 @@ export function LoginModal() {
           <Modal.Dialog className="bg-transparent shadow-none">
             <Modal.Header className="sr-only"><Modal.Heading>Login</Modal.Heading></Modal.Header>
             <Modal.Body className="px-0">
-              <div className="solid-surface mx-auto w-full rounded-[28px] bg-white/10 p-6">
+              <div
+                ref={containerRef}
+                onKeyDown={onKeyDown}
+                className="solid-surface bliss-glass mx-auto w-full rounded-[28px] p-6"
+              >
                 <div className="font-[Instrument_Serif] text-2xl font-semibold tracking-tight">
                   {isRegisterMode ? 'Create account' : 'Login'}
                 </div>
@@ -174,6 +190,7 @@ export function LoginModal() {
                       >
                         <Label className={LABEL_CLASS}>Username</Label>
                         <Input
+                          data-autofocus
                           type="text"
                           autoComplete="username"
                           placeholder="3-50 chars: a-z 0-9 _ -"
@@ -193,6 +210,7 @@ export function LoginModal() {
                       >
                         <Label className={LABEL_CLASS}>Username</Label>
                         <Input
+                          data-autofocus
                           type="text"
                           autoComplete="username"
                           // No maxLength on login — legacy accounts can

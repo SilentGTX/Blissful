@@ -19,6 +19,7 @@ import {
 import type { NextEpisodeInfo } from '../../pages/PlayerPage';
 import type { SettingsTab } from './SettingsPanel';
 import { volumeFillColor } from '../../lib/colorUtils';
+import { isTvMode } from '../../lib/platform';
 
 /** Subscribe to the live playback clock at mpv's full tick rate. */
 function usePlaybackClock(): number {
@@ -69,6 +70,12 @@ export type BottomControlsProps = {
   openSettings: (tab: SettingsTab) => void;
   isSeriesLike?: boolean;
   toggleEpisodes?: () => void;
+
+  /** TV only: id of the transport control currently lit by the D-pad row
+   *  ('play' | 'episodes' | 'subtitles' | 'audio'), or null when the row
+   *  isn't focused. Drives the focus ring; the parent's keyboard handler
+   *  runs the actual action so no DOM focus is involved. */
+  tvFocusedControl?: string | null;
 };
 
 export function BottomControls(props: BottomControlsProps) {
@@ -94,7 +101,13 @@ export function BottomControls(props: BottomControlsProps) {
     openSettings,
     isSeriesLike,
     toggleEpisodes,
+    tvFocusedControl,
   } = props;
+
+  // TV: append the focus-ring class to whichever transport control the D-pad
+  // row currently highlights. (No DOM focus — the parent fires the action.)
+  const focusCls = (id: string) =>
+    tvFocusedControl === id ? ' bliss-tv-ctrl-focused' : '';
 
   const livePos = usePlaybackClock();
   const currentTime = scrubValue != null ? scrubValue : livePos;
@@ -167,6 +180,12 @@ export function BottomControls(props: BottomControlsProps) {
             ref={sliderRef}
             className="bliss-player-range h-1 w-full cursor-pointer appearance-none rounded-full"
             type="range"
+            // TV: keep this slider OUT of the WebView's D-pad focus order. If
+            // native arrow-focus ever lands on it, the player's window keydown
+            // handler early-returns for INPUT targets and the whole player
+            // freezes (OK/seek/back all dead). Seeking on TV is driven by the
+            // Left/Right handler, not this slider, so -1 costs nothing there.
+            tabIndex={isTvMode() ? -1 : undefined}
             min={0}
             max={Math.max(0.1, duration)}
             step={1}
@@ -216,7 +235,8 @@ export function BottomControls(props: BottomControlsProps) {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            className="bliss-player-icon-btn flex h-10 w-10 items-center justify-center rounded-full"
+            data-tvfocus={tvFocusedControl === 'play' || undefined}
+            className={'bliss-player-icon-btn flex h-10 w-10 items-center justify-center rounded-full' + focusCls('play')}
             onClick={togglePlay}
             aria-label={paused ? 'Play' : 'Pause'}
           >
@@ -233,6 +253,9 @@ export function BottomControls(props: BottomControlsProps) {
           <input
             className="bliss-player-volume h-1 w-28 cursor-pointer appearance-none rounded-full"
             type="range"
+            // TV: same as the scrub slider — not D-pad focusable (remote volume
+            // keys handle volume); prevents the INPUT-focus player freeze.
+            tabIndex={isTvMode() ? -1 : undefined}
             min={0}
             max={2}
             step={0.01}
@@ -292,7 +315,8 @@ export function BottomControls(props: BottomControlsProps) {
           {isSeriesLike && toggleEpisodes ? (
             <button
               type="button"
-              className="bliss-player-icon-btn flex h-10 items-center justify-center gap-2 rounded-full px-3 text-sm font-medium"
+              data-tvfocus={tvFocusedControl === 'episodes' || undefined}
+              className={'bliss-player-icon-btn flex h-10 items-center justify-center gap-2 rounded-full px-3 text-sm font-medium' + focusCls('episodes')}
               onClick={toggleEpisodes}
               aria-label="Episodes"
               title="Episodes"
@@ -304,7 +328,8 @@ export function BottomControls(props: BottomControlsProps) {
           <BlissTooltip content="Subtitles" placement="top">
             <button
               type="button"
-              className="bliss-player-icon-btn flex h-10 w-10 items-center justify-center rounded-full"
+              data-tvfocus={tvFocusedControl === 'subtitles' || undefined}
+              className={'bliss-player-icon-btn flex h-10 w-10 items-center justify-center rounded-full' + focusCls('subtitles')}
               onClick={() => openSettings('subtitles')}
               aria-label="Subtitles"
             >
@@ -314,7 +339,8 @@ export function BottomControls(props: BottomControlsProps) {
           <BlissTooltip content="Audio tracks" placement="top">
             <button
               type="button"
-              className="bliss-player-icon-btn flex h-10 w-10 items-center justify-center rounded-full"
+              data-tvfocus={tvFocusedControl === 'audio' || undefined}
+              className={'bliss-player-icon-btn flex h-10 w-10 items-center justify-center rounded-full' + focusCls('audio')}
               onClick={() => openSettings('audio')}
               aria-label="Audio tracks"
             >

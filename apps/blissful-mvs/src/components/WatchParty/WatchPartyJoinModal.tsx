@@ -27,6 +27,7 @@ import {
   verifyWatchPartyPassword,
   type WatchPartyRoomInfo,
 } from '../../lib/watchParty';
+import { useTvOverlay } from '../../spatial/useTvOverlay';
 
 type JoinPartyModalProps = {
   isOpen: boolean;
@@ -54,6 +55,18 @@ export function WatchPartyJoinModal({ isOpen, onOpenChange }: JoinPartyModalProp
   const [error, setError] = useState<string | null>(null);
   const codeInputRef = useRef<HTMLInputElement | null>(null);
   const passwordInputRef = useRef<HTMLInputElement | null>(null);
+
+  // TV: pause Norigin + native-focus the room-code input on open, then drive
+  // the input -> Continue -> Cancel ring with the D-pad (Back closes). Without
+  // this the modal native-focuses the input but never pauses the spatial
+  // engine, so arrows still move the page behind the backdrop. Inert on desktop.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { onKeyDown } = useTvOverlay({
+    open: isOpen,
+    containerRef,
+    onClose: () => onOpenChange(false),
+    autoFocusSelector: '[data-autofocus]',
+  });
 
   // Reset every reopen.
   useEffect(() => {
@@ -141,7 +154,11 @@ export function WatchPartyJoinModal({ isOpen, onOpenChange }: JoinPartyModalProp
               <Modal.Heading>Join a watch party</Modal.Heading>
             </Modal.Header>
             <Modal.Body className="px-0">
-              <div className="solid-surface mx-auto w-full max-w-md rounded-[24px] bg-white/20 p-6">
+              <div
+                ref={containerRef}
+                onKeyDown={onKeyDown}
+                className="solid-surface bliss-glass mx-auto w-full max-w-md rounded-[24px] p-6"
+              >
                 {step.kind === 'code' ? (
                   <>
                     <div className="text-lg font-semibold">Join a watch party</div>
@@ -157,6 +174,7 @@ export function WatchPartyJoinModal({ isOpen, onOpenChange }: JoinPartyModalProp
                     >
                       <input
                         ref={codeInputRef}
+                        data-autofocus
                         type="text"
                         value={code}
                         onChange={(e) => handleCodeChange(e.target.value)}

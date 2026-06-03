@@ -5,9 +5,11 @@
 
 import { Modal } from '@heroui/react';
 import { motion, type PanInfo } from 'framer-motion';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { formatTimecode } from '../lib/progress';
 import { CloseIcon } from '../icons/CloseIcon';
+import { useTvOverlay } from '../spatial/useTvOverlay';
+import { isTvMode } from '../lib/platform';
 
 export type ResumeOrStartOverModalProps = {
   isOpen: boolean;
@@ -21,6 +23,9 @@ export type ResumeOrStartOverModalProps = {
   resumeSeconds: number;
   onResume: () => void;
   onStartOver: () => void;
+  /** Optional third action: open the show/movie's detail page instead of
+   *  playing. When provided, a "Go to show" button is shown. */
+  onGoToDetail?: () => void;
   onClose: () => void;
 };
 
@@ -48,9 +53,19 @@ export function ResumeOrStartOverModal({
   resumeSeconds,
   onResume,
   onStartOver,
+  onGoToDetail,
   onClose,
 }: ResumeOrStartOverModalProps) {
   const isMobile = useIsMobile();
+  // TV: drive the modal's buttons with the D-pad (auto-focus Resume, Up/Down
+  // between buttons, Back closes). Inert on desktop.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { onKeyDown } = useTvOverlay({
+    open: isOpen,
+    containerRef,
+    onClose,
+    autoFocusSelector: '[data-autofocus]',
+  });
   if (!isOpen) return null;
 
   // Shared body content used in both the centered desktop modal
@@ -95,6 +110,7 @@ export function ResumeOrStartOverModal({
         <div className="mt-5 flex flex-col gap-2">
           <button
             type="button"
+            data-autofocus
             onClick={() => {
               onResume();
               onClose();
@@ -113,6 +129,18 @@ export function ResumeOrStartOverModal({
           >
             Start from beginning
           </button>
+          {onGoToDetail ? (
+            <button
+              type="button"
+              onClick={() => {
+                onGoToDetail();
+                onClose();
+              }}
+              className="cursor-pointer rounded-xl bg-white/10 px-4 py-3 text-sm font-semibold text-white/85 ring-1 ring-white/10 transition hover:bg-white/15"
+            >
+              Go to show
+            </button>
+          ) : null}
         </div>
       </div>
     </>
@@ -139,13 +167,35 @@ export function ResumeOrStartOverModal({
           initial={{ y: 180, opacity: 0.94 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ type: 'spring', stiffness: 220, damping: 24, mass: 0.85 }}
-          className="solid-surface pointer-events-auto relative w-full max-w-[520px] overflow-hidden rounded-t-[28px] bg-[#101116] text-white shadow-2xl"
+          className="solid-surface bliss-glass pointer-events-auto relative w-full max-w-[520px] overflow-hidden rounded-t-[28px] text-white shadow-2xl"
           onClick={(e) => e.stopPropagation()}
           style={{ touchAction: 'none' }}
         >
           <div className="mx-auto mt-3 h-1.5 w-14 rounded-full bg-white/15" />
           {bodyContent}
         </motion.div>
+      </div>
+    );
+  }
+
+  // TV: render our OWN full-screen fixed backdrop so the dim covers the WHOLE
+  // screen. HeroUI's <Modal.Backdrop> only dimmed part of the 1440px TV viewport
+  // (the user saw "half the screen" dimmed). Same D-pad wiring (containerRef +
+  // onKeyDown) as the desktop path.
+  if (isTvMode()) {
+    return (
+      <div
+        className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 backdrop-blur-sm"
+        onClick={onClose}
+      >
+        <div
+          ref={containerRef}
+          onKeyDown={onKeyDown}
+          onClick={(e) => e.stopPropagation()}
+          className="solid-surface bliss-glass relative w-full max-w-[440px] overflow-hidden rounded-[20px]"
+        >
+          {bodyContent}
+        </div>
       </div>
     );
   }
@@ -166,7 +216,11 @@ export function ResumeOrStartOverModal({
               <Modal.Heading>Continue watching</Modal.Heading>
             </Modal.Header>
             <Modal.Body className="px-0">
-              <div className="solid-surface relative mx-auto max-h-[90vh] w-full max-w-[420px] overflow-hidden rounded-[20px] bg-[#101116]">
+              <div
+                ref={containerRef}
+                onKeyDown={onKeyDown}
+                className="solid-surface bliss-glass relative mx-auto max-h-[90vh] w-full max-w-[420px] overflow-hidden rounded-[20px]"
+              >
                 {bodyContent}
               </div>
             </Modal.Body>

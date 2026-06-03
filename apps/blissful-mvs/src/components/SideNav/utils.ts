@@ -61,6 +61,7 @@ export function getContinueSubtitle(item: LibraryItem): {
 
 export const ICONS = {
   home: 'M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-6a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v6H4a1 1 0 0 1-1-1v-10.5Z',
+  search: 'M21 21l-4.3-4.3M11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14Z',
   discover:
     'M12 22a10 10 0 1 0-10-10 10 10 0 0 0 10 10Zm3.5-13.5-2.2 6.8a1 1 0 0 1-.6.6l-6.8 2.2 2.2-6.8a1 1 0 0 1 .6-.6l6.8-2.2Z',
   library:

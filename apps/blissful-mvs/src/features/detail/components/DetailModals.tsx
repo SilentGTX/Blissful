@@ -1,4 +1,6 @@
 import { Button, Modal } from '@heroui/react';
+import { useRef } from 'react';
+import { useTvOverlay } from '../../../spatial/useTvOverlay';
 
 type DetailModalsProps = {
   isTrailerOpen: boolean;
@@ -15,6 +17,23 @@ export function DetailModals({
   isShareOpen,
   onShareOpenChange,
 }: DetailModalsProps) {
+  // TV: give each overlay D-pad control. The trailer is a YouTube iframe with
+  // no buttons, so we focus its wrapper and rely on Back/Esc to close. The
+  // share modal's copy/close buttons are driven 1-D. Inert on desktop.
+  const trailerRef = useRef<HTMLDivElement>(null);
+  const { onKeyDown: onTrailerKeyDown } = useTvOverlay({
+    open: isTrailerOpen,
+    containerRef: trailerRef,
+    onClose: () => onTrailerOpenChange(false),
+    autoFocusSelector: '[data-autofocus]',
+  });
+  const shareRef = useRef<HTMLDivElement>(null);
+  const { onKeyDown: onShareKeyDown } = useTvOverlay({
+    open: isShareOpen,
+    containerRef: shareRef,
+    onClose: () => onShareOpenChange(false),
+    autoFocusSelector: '[data-autofocus]',
+  });
   return (
     <>
       <Modal>
@@ -28,7 +47,13 @@ export function DetailModals({
             <Modal.Dialog className="bg-transparent shadow-none">
               <Modal.Header className="sr-only"><Modal.Heading>Trailer</Modal.Heading></Modal.Header>
               <Modal.Body className="px-0">
-                <div className="overflow-hidden rounded-[28px] bg-black">
+                <div
+                  ref={trailerRef}
+                  onKeyDown={onTrailerKeyDown}
+                  data-autofocus
+                  tabIndex={-1}
+                  className="overflow-hidden rounded-[28px] bg-black"
+                >
                   {firstTrailerId ? (
                     <iframe
                       title="Trailer"
@@ -58,12 +83,17 @@ export function DetailModals({
             <Modal.Dialog className="bg-transparent shadow-none">
               <Modal.Header className="sr-only"><Modal.Heading>Share</Modal.Heading></Modal.Header>
               <Modal.Body className="px-0">
-                <div className="solid-surface mx-auto w-[min(520px,92vw)] rounded-[28px] bg-white/10 p-6">
+                <div
+                  ref={shareRef}
+                  onKeyDown={onShareKeyDown}
+                  className="solid-surface bliss-glass mx-auto w-[min(520px,92vw)] rounded-[28px] p-6"
+                >
                   <div className="text-lg font-semibold text-white">Share</div>
                   <div className="mt-2 text-sm text-white/70">Copy a link to this title.</div>
 
                   <div className="mt-4 flex gap-2">
                     <Button
+                      data-autofocus
                       className="rounded-full bg-white text-black"
                       onPress={async () => {
                         const href = window.location.href;

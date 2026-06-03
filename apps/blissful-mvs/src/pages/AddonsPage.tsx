@@ -1,8 +1,9 @@
-import { Button, Input } from '@heroui/react';
 import { useState } from 'react';
 import { useAddons } from '../context/AddonsProvider';
 import { useModals } from '../context/ModalsProvider';
 import { getAddonDisplayName } from '../lib/stremioApi';
+import { FocusableButton } from '../spatial/FocusableButton';
+import { TvTextInput } from '../spatial/TvTextInput';
 
 export default function AddonsPage() {
   const { addons, addonsLoading, uninstallAddon } = useAddons();
@@ -28,16 +29,21 @@ export default function AddonsPage() {
             <div className="font-[Fraunces] text-2xl font-semibold">Addons</div>
             <div className="text-sm text-foreground/60">Manage your installed addons.</div>
           </div>
-          <Button className="rounded-full bg-white text-black" onPress={openAddAddon}>
+          <FocusableButton
+            className="rounded-full bg-white text-black"
+            onPress={openAddAddon}
+            autoFocusTv
+          >
             Add addon
-          </Button>
+          </FocusableButton>
         </div>
 
         <div className="mt-4">
-          <Input
+          <TvTextInput
             value={addonsQuery}
-            onChange={(e) => setAddonsQuery(e.target.value)}
+            onChange={(v) => setAddonsQuery(v)}
             placeholder="Search addons"
+            ariaLabel="Search addons"
             className="solid-surface w-full bg-white/6 border border-white/10 rounded-full h-11 px-4"
           />
         </div>
@@ -55,15 +61,14 @@ export default function AddonsPage() {
                   <div className="mt-1 text-xs text-foreground/60">{addon.manifest.description}</div>
                 ) : null}
                 <div className="mt-4 flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="ghost"
+                  <FocusableButton
                     className="rounded-full bg-white/10"
-                    isPending={addonsLoading}
+                    focusableTv={!addonsLoading}
+                    disabled={addonsLoading}
                     onPress={() => uninstallAddon(addon.transportUrl)}
                   >
                     Uninstall
-                  </Button>
+                  </FocusableButton>
                 </div>
               </div>
             ))

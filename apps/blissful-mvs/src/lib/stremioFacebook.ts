@@ -16,6 +16,8 @@
 // (which holds the JWT and panel state) while the popup window simply
 // navigates to Stremio and goes away.
 
+import { proxyUrl } from './proxyBase';
+
 const STREMIO_URL = 'https://www.strem.io';
 const MAX_POLL_TRIES = 90;
 const POLL_INTERVAL_MS = 1500;
@@ -47,7 +49,9 @@ export function prepareFacebookFlow(): FacebookFlowInit {
 async function getCredentials(state: string): Promise<FacebookCredentials> {
   // Routed through the same-origin /stremio proxy (Vite dev + Traefik
   // prod both forward /stremio/* to www.strem.io) so we avoid CORS.
-  const res = await fetch(`/stremio/login-fb-get-acc/${state}`);
+  // proxyUrl() prefixes the loopback proxy origin on Android (PROXY_BASE
+  // === '' on desktop/browser, so this stays a relative path there).
+  const res = await fetch(proxyUrl(`/stremio/login-fb-get-acc/${state}`));
   if (!res.ok) {
     throw new Error(`Facebook auth polling failed (${res.status})`);
   }

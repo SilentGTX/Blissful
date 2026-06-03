@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { useThemeToggle } from '../layout/app-shell/hooks/useThemeToggle';
 import type { UiStyle } from '../layout/app-shell/types';
+import { isTvMode, isAndroidTv } from '../lib/platform';
 
 type UIContextValue = {
   uiStyle: UiStyle;
@@ -37,6 +38,9 @@ export function UIProvider({ children }: { children: ReactNode }) {
   const { isDark, setIsDark } = useThemeToggle();
 
   const [uiStyle, setUiStyleRaw] = useState<UiStyle>(() => {
+    // TV defaults to the CLASSIC theme (redone for 10-foot — the primary TV
+    // experience). Ignore any stored value on TV so it's deterministic.
+    if (isTvMode()) return 'classic';
     const stored = localStorage.getItem('uiStyle');
     return stored === 'netflix' ? 'netflix' : 'classic';
   });
@@ -56,6 +60,14 @@ export function UIProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     document.documentElement.setAttribute('data-ui', uiStyle);
+    // `html[data-tv]` gates the 10-foot CSS layer (overscan, focus rings, etc.).
+    if (isTvMode()) document.documentElement.setAttribute('data-tv', '');
+    else document.documentElement.removeAttribute('data-tv');
+    // `html[data-tv-native]` = a REAL Android TV (not browser ?tv=1 testing).
+    // Gates low-end-GPU perf rules (instant focus scale, no smooth scroll) so the
+    // weak Mali-class software compositor doesn't animate every focus move.
+    if (isAndroidTv()) document.documentElement.setAttribute('data-tv-native', '');
+    else document.documentElement.removeAttribute('data-tv-native');
   }, [uiStyle]);
 
   const value = useMemo<UIContextValue>(

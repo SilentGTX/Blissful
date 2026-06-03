@@ -194,7 +194,7 @@ export default function PlayerPage() {
   // Browser/web → SimplePlayer (accepts nullables throughout because
   // it had to handle url-only entry paths before).
   if (isNativeShell()) {
-    if (!type || !id || (type !== 'movie' && type !== 'series')) return null;
+    if (!type || !id || (type !== 'movie' && type !== 'series' && type !== 'anime')) return null;
     return (
       <NativeMpvPlayer
         url={url}

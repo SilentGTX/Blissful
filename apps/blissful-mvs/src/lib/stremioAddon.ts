@@ -1,4 +1,5 @@
 import type { MediaType } from '../types/media';
+import { proxyUrl } from './proxyBase';
 
 export type StremioAddonManifest = {
   id: string;
@@ -168,7 +169,8 @@ export function normalizeAddonBaseUrl(baseUrl: string): string {
   return next.replace(/\/$/, '');
 }
 
-const resolveAddonFetchUrl = (targetUrl: string) => `/addon-proxy?url=${encodeURIComponent(targetUrl)}`;
+const resolveAddonFetchUrl = (targetUrl: string) =>
+  proxyUrl(`/addon-proxy?url=${encodeURIComponent(targetUrl)}`);
 
 function getCacheKey(baseUrl: string, parts: Array<string>) {
   return [baseUrl.replace(/\/$/, ''), ...parts].join('|');

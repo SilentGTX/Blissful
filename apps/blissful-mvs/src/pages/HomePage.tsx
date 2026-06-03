@@ -31,9 +31,15 @@ import { NetflixHero } from '../features/home/components/NetflixHero';
 import { NowPopular } from '../features/home/components/NowPopular';
 import { ModernHomePage } from '../features/home/components/ModernHomePage';
 import { isMobile, libraryProgressPercent, libraryItemToMediaItem } from '../features/home/utils';
+import { isTvMode, isAndroidTv } from '../lib/platform';
 import { useAddonRows } from '../features/home/hooks/useAddonRows';
 import { useNetflixHero } from '../features/home/hooks/useNetflixHero';
 import { useNetflixReveal } from '../features/home/hooks/useNetflixReveal';
+
+/** Stable Norigin focusKey for the classic-TV hero "Watch now" button, so the
+ *  top content rail can route D-pad UP back onto it (geometry alone lands on the
+ *  wide pinned search bar instead). */
+const HERO_WATCH_KEY = 'tv-hero-watch';
 
 export default function HomePage() {
   const maxRowItems = 10;
@@ -43,7 +49,7 @@ export default function HomePage() {
   const { homeRowPrefs, setHomeRowPrefs } = useStorage();
   const { movieItems, seriesItems, loading, homeRowOptions, saveHomeRowPrefs } =
     useHomeCatalogContext();
-  const { continueWatching } = useContinueWatchingContext();
+  const { continueWatching, onOpenContinueItem } = useContinueWatchingContext();
   const navigate = useNavigate();
   const isNetflix = uiStyle === 'netflix';
   const isModern = uiStyle === 'modern';
@@ -58,8 +64,15 @@ export default function HomePage() {
   }, [authKey]);
   const [heroTrailerId, setHeroTrailerId] = useState<string | null>(null);
   const [heroInLibrary, setHeroInLibrary] = useState(false);
+  // The rotating-hero behaviour (auto-cycle every ~11s + crossfade) is shared by
+  // the Netflix theme AND the classic TV billboard. Disable it on REAL Android TV
+  // hardware: every rotation remounts the full-screen hero layer and decodes a
+  // fresh ~1080p background JPEG, which on a low-end GLES2 TV (software
+  // compositing) is a recurring CPU + memory spike. Still rotates in Netflix mode
+  // (desktop) and in ?tv=1 browser testing (isAndroidTv() === false there).
+  const heroRotates = isNetflix || (isTvMode() && !isAndroidTv());
   const { hero, heroMeta, heroPrev, heroPrevMeta, heroIsFading, heroFadeIn } = useNetflixHero(
-    isNetflix,
+    heroRotates,
     movieItems,
     seriesItems
   );
@@ -129,11 +142,14 @@ export default function HomePage() {
     resolved.order.forEach((id) => {
       if (resolved.hidden.includes(id) && !homeEditMode) return;
       if (id === HOME_ROW_POPULAR_MOVIE) {
-        result.push({ id, title: 'Popular - Movie', items: movieItems });
+        // TV: bound the rail to maxRowItems like the addon rails — Popular
+        // otherwise renders the full Cinemeta page (dozens of live MediaCards)
+        // which inflates the DOM/poster cost on low-end TVs.
+        result.push({ id, title: 'Popular - Movie', items: isTvMode() ? movieItems.slice(0, maxRowItems) : movieItems });
         return;
       }
       if (id === HOME_ROW_POPULAR_SERIES) {
-        result.push({ id, title: 'Popular - Series', items: seriesItems });
+        result.push({ id, title: 'Popular - Series', items: isTvMode() ? seriesItems.slice(0, maxRowItems) : seriesItems });
         return;
       }
       const addonRow = addonRows[id];
@@ -322,12 +338,17 @@ export default function HomePage() {
     );
   }
 
+  // The top content rail on TV is Continue Watching when present, else the
+  // first catalog row. Only that rail routes UP onto the hero.
+  const cwIsTopRail = isTvMode() && continueItems.length > 0;
+
   return (
     <div className="board-container ">
       <div className="board-content space-y-10">
         <NowPopular
           hero={hero ?? null}
           heroMeta={heroMeta}
+          watchFocusKey={HERO_WATCH_KEY}
           inLibrary={heroInLibrary}
           onWatch={() => {
             if (hero) navigate(`/detail/${hero.type}/${encodeURIComponent(hero.id)}`);
@@ -342,6 +363,35 @@ export default function HomePage() {
           }}
         />
 
+        {/* Continue Watching as a first-class home rail on TV (instead of the
+            sidebar accordion, which doesn't belong on a 10-foot UI). */}
+        {isTvMode() && continueItems.length > 0 ? (
+          <MediaRail
+            title="Continue Watching"
+            // TV: cap the rail — Continue Watching is otherwise uncapped (can be
+            // 20-40+ live cards) while every other rail caps at maxRowItems. The
+            // full `continueWatching` list is still used for the lookup below.
+            items={continueItems.slice(0, 14)}
+            onItemPress={(item) => {
+              // TV: match desktop — defer to the shared continue-watching
+              // flow so items with saved progress pop the
+              // ResumeOrStartOverModal first (and only navigate/play after
+              // the user's choice). `continueItems` are derived from
+              // `continueWatching` so MediaItem.id === LibraryItem._id.
+              const libItem = continueWatching.find((cw) => cw._id === item.id);
+              if (libItem) {
+                onOpenContinueItem(libItem);
+                return;
+              }
+              navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`);
+            }}
+            noScroll
+            className="board-row-poster"
+            autoFocusFirst={false}
+            upFocusKey={HERO_WATCH_KEY}
+          />
+        ) : null}
+
         {showRowsLoading ? (
           <div className="space-y-8">
             <SkeletonHomeRow />
@@ -353,15 +403,30 @@ export default function HomePage() {
             <ErrorBoundary key={row.id} fallback={<ErrorRow />}>
               <motion.div
                 className="board-row"
-                initial={{ opacity: 0, y: 12 }}
+                // TV: skip the staggered enter animation. Framer drives these on
+                // the JS main thread via rAF; ~7 rows animating at once while
+                // posters decode + Norigin registers focusables is a mount-time
+                // jank spike on every home return. initial={false} renders at the
+                // final state immediately (no animation) on TV; desktop keeps it.
+                initial={isTvMode() ? false : { opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{
-                  duration: 0.32,
-                  delay: Math.min(rowIndex, 6) * 0.06,
-                  ease: [0.4, 0, 0.2, 1],
-                }}
+                transition={
+                  isTvMode()
+                    ? { duration: 0 }
+                    : {
+                        duration: 0.32,
+                        delay: Math.min(rowIndex, 6) * 0.06,
+                        ease: [0.4, 0, 0.2, 1],
+                      }
+                }
               >
-                {isMobile() ? (
+                {/* Android TV reports a mobile UA (the WebView UA contains
+                    "Android"), so isMobile() is true on the TV — but the TV
+                    must use the desktop MediaRail (the larger board-row-poster
+                    cards) to match the Continue Watching rail above. Without
+                    the !isTvMode() guard the catalog rows rendered the small
+                    MediaRailMobile cards while CW stayed large. */}
+                {isMobile() && !isTvMode() ? (
                   <MediaRailMobile
                     title={row.title}
                     items={row.items}
@@ -390,6 +455,8 @@ export default function HomePage() {
                     dimmed={homeRowPrefs.hidden.includes(row.id)}
                     noScroll
                     className="board-row-poster"
+                    autoFocusFirst={false}
+                    upFocusKey={!cwIsTopRail && rowIndex === 0 ? HERO_WATCH_KEY : undefined}
                     actions={
                       homeEditMode ? (
                         <Button

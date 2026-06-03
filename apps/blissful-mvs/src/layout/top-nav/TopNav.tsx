@@ -209,7 +209,7 @@ export function TopNav({
             </div>
 
             {isSearchMenuOpen && (searchHistory.length > 0 || searchSuggestions.length > 0 || (searchResults && searchResults.length > 0)) ? (
-              <div className="solid-surface absolute left-0 top-full z-50 mt-3 w-full rounded-[20px] border border-white/10 bg-white/10 p-4">
+              <div className="bliss-glass absolute left-0 top-full z-50 mt-3 w-full rounded-[20px] p-4">
                 {searchHistory.length > 0 ? (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
@@ -327,7 +327,7 @@ export function TopNav({
             ) : (
               <Dropdown isOpen={isDesktopAccountMenuOpen} onOpenChange={(open) => { if (!fsLockedRef.current) setIsDesktopAccountMenuOpen(open); }}>
                 <Dropdown.Trigger className="rounded-full">{accountTrigger}</Dropdown.Trigger>
-                <Dropdown.Popover className="mt-3 min-w-[260px] -translate-x-[10px] translate-y-[3px] rounded-2xl bg-[#2a2a2a] p-2 text-white backdrop-blur-xl">
+                <Dropdown.Popover className="bliss-glass mt-3 min-w-[260px] -translate-x-[10px] translate-y-[3px] rounded-2xl p-2 text-white">
                   <Dropdown.Menu onAction={handleAccountAction}>
                     <Dropdown.Item id="profiles" textValue="Profiles" className="rounded-xl hover:bg-white/15 data-[hovered=true]:bg-white/15">
                       <div className="flex items-center gap-2">
@@ -373,7 +373,7 @@ export function TopNav({
               <Dropdown.Trigger className="rounded-full">
                 <div className="md:hidden flex-shrink-0">{accountTrigger}</div>
               </Dropdown.Trigger>
-              <Dropdown.Popover className="mt-3 min-w-[240px] rounded-2xl bg-[#2a2a2a] p-2 text-white backdrop-blur-xl">
+              <Dropdown.Popover className="bliss-glass mt-3 min-w-[240px] rounded-2xl p-2 text-white">
                 <Dropdown.Menu onAction={handleAccountAction}>
                   <Dropdown.Item id="profiles" textValue="Profiles" className="rounded-xl hover:bg-white/15 data-[hovered=true]:bg-white/15">
                     <div className="flex items-center gap-2">
