@@ -1,33 +1,37 @@
 import { Button, Input, Modal } from '@heroui/react';
-import { useState } from 'react';
-import { useFocusable, FocusContext } from '@noriginmedia/norigin-spatial-navigation';
+import { useRef, useState } from 'react';
 import { PRESET_PROFILE_AVATARS, renderProfileAvatar } from '../../../lib/profileAvatars';
-import { useTvFocusable } from '../../../spatial/useTvFocusable';
+import { useTvOverlay } from '../../../spatial/useTvOverlay';
 import { isTvMode } from '../../../lib/platform';
+import { CloseIcon } from '../../../icons/CloseIcon';
 
 type ProfilePromptModalProps = {
   isOpen: boolean;
   initialName: string;
   onSave: (profile: { displayName: string; avatar?: string }) => Promise<void>;
+  /** Dismiss without saving. When provided, a close (X) button is shown and
+   *  the backdrop becomes dismissable — used when re-opened to edit the
+   *  avatar later (vs the forced onboarding prompt after first login). */
+  onClose?: () => void;
 };
 
-// A single avatar tile. Extracted so it can host a TV focus node (hooks can't
-// run inside a .map). On TV it becomes a Norigin focusable; on desktop the
-// onClick still drives selection. Selecting is via D-pad OK (onPress).
-type FocusAvatarProps = {
+// A single avatar tile. Plain <button> — TV D-pad navigation is driven by the
+// modal's useTvOverlay (it walks every focusable button/input in DOM order),
+// so no per-tile focus hook is needed. The selected tile carries
+// `data-autofocus` so the overlay lands focus on it when the modal opens.
+type AvatarTileProps = {
   entry: string;
   selected: boolean;
   autoFocus: boolean;
   onSelect: () => void;
 };
 
-function FocusAvatar({ entry, selected, autoFocus, onSelect }: FocusAvatarProps) {
-  const { ref } = useTvFocusable({ onPress: onSelect, autoFocus });
+function AvatarTile({ entry, selected, autoFocus, onSelect }: AvatarTileProps) {
   const rendered = renderProfileAvatar(entry, '?');
   return (
     <button
-      ref={ref}
       type="button"
+      data-autofocus={autoFocus || undefined}
       className={
         'relative grid h-14 w-14 place-items-center overflow-hidden rounded-lg text-2xl transition ' +
         (selected
@@ -50,20 +54,24 @@ function FocusAvatar({ entry, selected, autoFocus, onSelect }: FocusAvatarProps)
   );
 }
 
-export function ProfilePromptModal({ isOpen, initialName, onSave }: ProfilePromptModalProps) {
+export function ProfilePromptModal({ isOpen, initialName, onSave, onClose }: ProfilePromptModalProps) {
   const [displayName, setDisplayName] = useState(initialName);
   const [avatar, setAvatar] = useState<string | undefined>(PRESET_PROFILE_AVATARS[0]);
   const [saving, setSaving] = useState(false);
 
-  // TV: wrap the avatar grid in a Norigin focus boundary so the D-pad stays
-  // inside it (geometry walks the 4-column grid). Inert on desktop.
-  const tv = isTvMode();
-  const { ref: gridRef, focusKey: gridFocusKey } = useFocusable({
-    focusable: tv,
-    isFocusBoundary: tv,
-    focusBoundaryDirections: ['up', 'down', 'left', 'right'],
-    saveLastFocusedChild: true,
-    trackChildren: true,
+  // TV: drive the whole modal with the shared overlay primitive — same pattern
+  // as LoginModal / ResumeOrStartOverModal (pauses Norigin, captures D-pad on
+  // document, walks the modal's focusables with Up/Down/Left/Right, OK clicks,
+  // Back closes). The earlier Norigin-focusable approach didn't register the
+  // portaled grid reliably, so the D-pad couldn't move inside the modal.
+  // Inert off-TV. autoFocus lands on the currently-selected avatar.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { onKeyDown } = useTvOverlay({
+    open: isOpen,
+    containerRef,
+    // Back during onboarding (no onClose) is a no-op — the user must pick.
+    onClose: onClose ?? (() => {}),
+    autoFocusSelector: '[data-autofocus]',
   });
 
   const handleContinue = async () => {
@@ -77,22 +85,37 @@ export function ProfilePromptModal({ isOpen, initialName, onSave }: ProfilePromp
     }
   };
 
-  // Continue button as a TV focus node so the D-pad can move Down onto it from
-  // the avatar grid and press it. Inert on desktop (onPress still fires on click).
-  const { ref: continueRef } = useTvFocusable({ onPress: handleContinue });
-
   if (!isOpen) return null;
 
   return (
     <Modal>
-      <Modal.Backdrop isOpen={isOpen} variant="blur" className="bg-black/55" onOpenChange={() => {}}>
+      <Modal.Backdrop
+        isOpen={isOpen}
+        variant="blur"
+        className="bg-black/55"
+        onOpenChange={(open) => { if (!open) onClose?.(); }}
+      >
         <Modal.Container placement="center" size="lg">
           <Modal.Dialog className="bg-transparent shadow-none">
             <Modal.Header className="sr-only">
               <Modal.Heading>Profile setup</Modal.Heading>
             </Modal.Header>
             <Modal.Body className="px-0">
-              <div className="solid-surface bliss-glass mx-auto w-full max-w-xl rounded-[28px] p-6">
+              <div
+                ref={containerRef}
+                onKeyDown={onKeyDown}
+                className="solid-surface bliss-glass relative mx-auto w-full max-w-xl rounded-[28px] p-6"
+              >
+                {onClose ? (
+                  <button
+                    type="button"
+                    aria-label="Close"
+                    onClick={onClose}
+                    className="absolute right-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-full bg-black/40 text-white/80 transition hover:bg-black/60 hover:text-white"
+                  >
+                    <CloseIcon size={16} />
+                  </button>
+                ) : null}
                 <div className="font-[Fraunces] text-3xl font-semibold">Who's watching?</div>
                 <div className="mt-1 text-sm text-foreground/70">Set your display name and avatar.</div>
 
@@ -106,32 +129,30 @@ export function ProfilePromptModal({ isOpen, initialName, onSave }: ProfilePromp
                   />
                 </div>
 
-                <FocusContext.Provider value={gridFocusKey}>
-                  <div ref={gridRef}>
-                    <div className="mt-4 grid grid-cols-4 gap-2">
-                      {PRESET_PROFILE_AVATARS.map((entry, index) => (
-                        <FocusAvatar
-                          key={entry}
-                          entry={entry}
-                          selected={avatar === entry}
-                          autoFocus={avatar === entry || (avatar === undefined && index === 0)}
-                          onSelect={() => setAvatar(entry)}
-                        />
-                      ))}
-                    </div>
+                <div className="mt-4 grid grid-cols-4 gap-2">
+                  {PRESET_PROFILE_AVATARS.map((entry, index) => (
+                    <AvatarTile
+                      key={entry}
+                      entry={entry}
+                      selected={avatar === entry}
+                      autoFocus={
+                        isTvMode() &&
+                        (avatar === entry || (avatar === undefined && index === 0))
+                      }
+                      onSelect={() => setAvatar(entry)}
+                    />
+                  ))}
+                </div>
 
-                    <div className="mt-6">
-                      <Button
-                        ref={continueRef}
-                        className="rounded-full bg-white text-black"
-                        isPending={saving}
-                        onPress={handleContinue}
-                      >
-                        Continue
-                      </Button>
-                    </div>
-                  </div>
-                </FocusContext.Provider>
+                <div className="mt-6">
+                  <Button
+                    className="rounded-full bg-white text-black"
+                    isPending={saving}
+                    onPress={handleContinue}
+                  >
+                    Continue
+                  </Button>
+                </div>
               </div>
             </Modal.Body>
           </Modal.Dialog>

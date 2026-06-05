@@ -13,7 +13,8 @@ type TvTopBarProps = {
   onCustomizeHome?: () => void;
   onLogin?: () => void;
   onLogout?: () => void;
-  onToggleFullscreen?: () => void;
+  /** Open the profile/avatar editor (the "Who's watching?" + avatar picker). */
+  onEditProfile?: () => void;
 };
 
 type MenuItem = { label: string; onPress?: () => void; accent?: boolean; danger?: boolean };
@@ -26,12 +27,16 @@ function ProfileMenu({
   avatarView,
   items,
   onClose,
+  onEditProfile,
 }: {
   displayName: string;
   userHandle?: string | null;
   avatarView: AvatarView;
   items: MenuItem[];
   onClose: () => void;
+  /** When set, the avatar+name header becomes a button that opens the
+   *  profile/avatar editor (the "Who's watching?" modal). */
+  onEditProfile?: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -61,17 +66,41 @@ function ProfileMenu({
 
   return (
     <div ref={ref} className="tv-profile-menu" role="menu" onKeyDown={onKeyDown}>
-      <div className="tv-profile-menu-head">
-        {avatarView.kind === 'image' ? (
-          <img src={avatarView.value} alt="" className="tv-profile-menu-avatar" />
-        ) : (
-          <div className="tv-profile-menu-avatar tv-profile-menu-avatar-letter">{avatarView.value}</div>
-        )}
-        <div className="tv-profile-menu-name">
-          <div>{displayName}</div>
-          {userHandle ? <div className="tv-profile-menu-handle">{userHandle}</div> : null}
+      {/* Header opens the profile/avatar editor when onEditProfile is set
+          (logged in). It's a <button> so the menu's Up/Down/Enter handler
+          (which walks all buttons) reaches it and it auto-focuses on open. */}
+      {onEditProfile ? (
+        <button
+          type="button"
+          className="tv-profile-menu-head tv-profile-menu-head-btn"
+          onClick={() => {
+            onEditProfile();
+            onClose();
+          }}
+        >
+          {avatarView.kind === 'image' ? (
+            <img src={avatarView.value} alt="" className="tv-profile-menu-avatar" />
+          ) : (
+            <div className="tv-profile-menu-avatar tv-profile-menu-avatar-letter">{avatarView.value}</div>
+          )}
+          <div className="tv-profile-menu-name">
+            <div>{displayName}</div>
+            {userHandle ? <div className="tv-profile-menu-handle">{userHandle}</div> : null}
+          </div>
+        </button>
+      ) : (
+        <div className="tv-profile-menu-head">
+          {avatarView.kind === 'image' ? (
+            <img src={avatarView.value} alt="" className="tv-profile-menu-avatar" />
+          ) : (
+            <div className="tv-profile-menu-avatar tv-profile-menu-avatar-letter">{avatarView.value}</div>
+          )}
+          <div className="tv-profile-menu-name">
+            <div>{displayName}</div>
+            {userHandle ? <div className="tv-profile-menu-handle">{userHandle}</div> : null}
+          </div>
         </div>
-      </div>
+      )}
       {items.map((it) => (
         <button
           key={it.label}
@@ -106,7 +135,7 @@ export function TvTopBar({
   onCustomizeHome,
   onLogin,
   onLogout,
-  onToggleFullscreen,
+  onEditProfile,
 }: TvTopBarProps) {
   const navigate = useNavigate();
   const [value, setValue] = useState('');
@@ -175,9 +204,8 @@ export function TvTopBar({
   const avatarView = renderProfileAvatar(avatar, initial) as AvatarView;
 
   const items: MenuItem[] = [
-    ...(onToggleFullscreen
-      ? [{ label: 'Enter full screen mode', onPress: onToggleFullscreen, accent: true }]
-      : []),
+    // No "Enter full screen mode" on TV — the app is always fullscreen.
+    // The avatar/name header (not a list item) opens the profile editor.
     { label: 'Settings', onPress: onSettings },
     { label: 'Customize Home', onPress: onCustomizeHome },
     isLoggedIn
@@ -251,6 +279,7 @@ export function TvTopBar({
             avatarView={avatarView}
             items={items}
             onClose={() => setMenuOpen(false)}
+            onEditProfile={isLoggedIn ? onEditProfile : undefined}
           />
         </>
       ) : null}

@@ -213,6 +213,41 @@ export async function lookupPresence(token: string, userIds: string[]): Promise<
   return result.users;
 }
 
+// --- Friend profile -----------------------------------------------------
+
+/** One recently-watched row on a friend's profile (their Continue-Watching
+ *  surface). `videoId` is the Stremio `<imdb>:<season>:<episode>` for series. */
+export type WatchHistoryEntry = {
+  id: string;
+  type: string | null;
+  name: string | null;
+  poster: string | null;
+  videoId: string | null;
+  lastWatched: number | null;
+  timeOffset: number;
+  duration: number;
+};
+
+export type FriendProfileResponse = {
+  profile: {
+    id: string;
+    displayName: string;
+    username: string | null;
+    avatar: string | null;
+    createdAt: number | null;
+  };
+  online: boolean;
+  lastSeenAt: number | null;
+  currentActivity: (PresenceActivity & { at: number }) | null;
+  history: WatchHistoryEntry[];
+};
+
+/** A friend's public profile + recent activity. Server gates this to
+ *  accepted friends (or self) and proxies through the shell's /storage/*. */
+export async function fetchUserProfile(token: string, userId: string): Promise<FriendProfileResponse> {
+  return request<FriendProfileResponse>(`/users/${encodeURIComponent(userId)}/profile`, {}, token);
+}
+
 // --- Party invites ------------------------------------------------------
 
 /** Ask a friend who is currently watching something to start a watch

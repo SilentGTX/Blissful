@@ -6,6 +6,7 @@
 // component is friend-graph only.
 
 import { Button, Dropdown, Label } from '@heroui/react';
+import { useNavigate } from 'react-router-dom';
 import { FriendAvatar } from './FriendAvatar';
 import { formatRelativeTime } from './relativeTime';
 import { activityLabel } from './activityLabel';
@@ -61,6 +62,7 @@ function statusText(presence?: PresenceRecord | null): string {
 }
 
 export function PersonActionsRow({
+  userId,
   displayName,
   friendRecord,
   pendingOutgoingId,
@@ -74,6 +76,7 @@ export function PersonActionsRow({
   hasActiveParty,
   onJoinParty,
 }: Props) {
+  const navigate = useNavigate();
   const isFriend = Boolean(friendRecord);
   const isPendingOutgoing = Boolean(pendingOutgoingId) && !isFriend;
   const online = Boolean(presence?.online);
@@ -88,8 +91,10 @@ export function PersonActionsRow({
     && !canJoinParty
     && Boolean(onRequestParty)
     && Boolean(presence?.online && presence?.activity?.name);
+  // Accepted friends always get at least the "View profile" action, so the
+  // row is always a menu for them.
   const hasMenu =
-    (isFriend && (Boolean(onSetNickname) || Boolean(onRemove) || canRequestParty || canJoinParty))
+    isFriend
     || (isPendingOutgoing && Boolean(onCancelInvite))
     || (!isFriend && !isPendingOutgoing && Boolean(onAddFriend));
 
@@ -139,7 +144,8 @@ export function PersonActionsRow({
         <Dropdown.Menu
           onAction={(key) => {
             const action = String(key);
-            if (action === 'nickname' && onSetNickname) onSetNickname();
+            if (action === 'view-profile') navigate(`/profile/${encodeURIComponent(userId)}`);
+            else if (action === 'nickname' && onSetNickname) onSetNickname();
             else if (action === 'request-party' && onRequestParty) onRequestParty();
             else if (action === 'join-party' && onJoinParty) onJoinParty();
             else if (action === 'add' && onAddFriend) onAddFriend();
@@ -147,6 +153,11 @@ export function PersonActionsRow({
             else if (action === 'remove' && onRemove) onRemove();
           }}
         >
+          {isFriend ? (
+            <Dropdown.Item id="view-profile" textValue="View profile" className="rounded-xl px-3 py-2 text-sm hover:bg-white/10 data-[hovered=true]:bg-white/10">
+              <Label>View profile</Label>
+            </Dropdown.Item>
+          ) : null}
           {canJoinParty ? (
             <Dropdown.Item id="join-party" textValue="Join party" className="rounded-xl px-3 py-2 text-sm hover:bg-white/10 data-[hovered=true]:bg-white/10">
               <Label className="text-[var(--bliss-accent)]">Join party</Label>

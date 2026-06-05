@@ -111,15 +111,15 @@ function RailSearchRow({
   );
 }
 
-/** Centered, D-pad-driven actions menu for a friend (Join/Request party,
- *  Nickname, Remove friend). Pauses the spatial engine and self-drives focus
- *  with Up/Down/Enter/Esc — same pattern as the profile menu. ("View profile"
- *  from the desktop WIP isn't in this codebase yet, so it's omitted.) */
+/** Centered, D-pad-driven actions menu for a friend (View profile, Join/Request
+ *  party, Nickname, Remove friend). Pauses the spatial engine and self-drives
+ *  focus with Up/Down/Enter/Esc — same pattern as the profile menu. */
 function TvFriendActionsMenu({
   friend,
   presence,
   activeParty,
   onClose,
+  onViewProfile,
   onRequestParty,
   onJoinParty,
   onNickname,
@@ -129,6 +129,7 @@ function TvFriendActionsMenu({
   presence?: PresenceRecord | null;
   activeParty?: ActiveParty | null;
   onClose: () => void;
+  onViewProfile: () => void;
   onRequestParty: () => void;
   onJoinParty: () => void;
   onNickname: () => void;
@@ -178,6 +179,9 @@ function TvFriendActionsMenu({
           <FriendAvatar displayName={name} online={online} size="clamp(2.4rem,3vw,3rem)" />
           <div className="tv-friend-menu-name">{name}</div>
         </div>
+        <button type="button" className="tv-friend-menu-item" onClick={() => { onViewProfile(); onClose(); }}>
+          View profile
+        </button>
         {activeParty ? (
           <button type="button" className="tv-friend-menu-item is-accent" onClick={() => { onJoinParty(); onClose(); }}>
             Join party
@@ -415,6 +419,7 @@ export function TvFriendsRail({ collapsed, isSignedIn, onOpenLogin, onRailFocus 
           presence={presence.get(menuFriend.userId)}
           activeParty={activePartiesByHost[menuFriend.userId] ?? null}
           onClose={() => setMenuFriend(null)}
+          onViewProfile={() => navigate(`/profile/${encodeURIComponent(menuFriend.userId)}`)}
           onRequestParty={() => requestParty(menuFriend)}
           onJoinParty={() => {
             const party = activePartiesByHost[menuFriend.userId];

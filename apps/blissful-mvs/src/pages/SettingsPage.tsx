@@ -398,57 +398,58 @@ export default function SettingsPage() {
             <ScrollShadow className="mt-5 max-h-[calc(100vh-16rem)] space-y-6 pr-1" hideScrollBar>
               {category === 'appearance' ? (
                 <>
-                  <div>
-                    <h2 className="text-lg font-semibold mb-3">Style</h2>
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <FocusableButton
-                        className={
-                          'rounded-2xl border px-4 py-4 text-left transition ' +
-                          (uiStyle === 'classic'
-                            ? 'border-white bg-white/15 text-white'
-                            : 'border-white/10 bg-white/5 text-foreground/70 hover:bg-white/10')
-                        }
-                        onPress={() => setUiStyle('classic')}
-                      >
-                        <div className="text-sm font-semibold">Classic</div>
-                        <div className="mt-1 text-xs text-foreground/60">
-                          Solid surfaces with simple layout.
-                        </div>
-                      </FocusableButton>
-                      <FocusableButton
-                        className={
-                          'rounded-2xl border px-4 py-4 text-left transition ' +
-                          (uiStyle === 'netflix'
-                            ? 'border-white bg-white/15 text-white'
-                            : 'border-white/10 bg-white/5 text-foreground/70 hover:bg-white/10')
-                        }
-                        onPress={() => setUiStyle('netflix')}
-                      >
-                        <div className="text-sm font-semibold">Kecflix</div>
-                        <div className="mt-1 text-xs text-foreground/60">
-                          Dark UI with Kecflix-style navigation and rails.
-                        </div>
-                      </FocusableButton>
-                      <FocusableButton
-                        className={
-                          'rounded-2xl border px-4 py-4 text-left transition ' +
-                          (uiStyle === 'modern'
-                            ? 'border-white bg-white/15 text-white'
-                            : 'border-white/10 bg-white/5 text-foreground/70 hover:bg-white/10')
-                        }
-                        onPress={() => setUiStyle('modern')}
-                      >
-                        <div className="text-sm font-semibold">Modern</div>
-                        <div className="mt-1 text-xs text-foreground/60">
-                          Coverflow carousel with hero detail panel.
-                        </div>
-                      </FocusableButton>
+                  {/* Style picker hidden on TV — the Android/TV build only
+                      ships the Classic layout (netflix/modern are desktop
+                      UI modes). UIProvider already forces 'classic' on TV. */}
+                  {!isTvMode() ? (
+                    <div>
+                      <h2 className="text-lg font-semibold mb-3">Style</h2>
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <FocusableButton
+                          className={
+                            'rounded-2xl border px-4 py-4 text-left transition ' +
+                            (uiStyle === 'classic'
+                              ? 'border-white bg-white/15 text-white'
+                              : 'border-white/10 bg-white/5 text-foreground/70 hover:bg-white/10')
+                          }
+                          onPress={() => setUiStyle('classic')}
+                        >
+                          <div className="text-sm font-semibold">Classic</div>
+                          <div className="mt-1 text-xs text-foreground/60">
+                            Solid surfaces with simple layout.
+                          </div>
+                        </FocusableButton>
+                        <FocusableButton
+                          className={
+                            'rounded-2xl border px-4 py-4 text-left transition ' +
+                            (uiStyle === 'netflix'
+                              ? 'border-white bg-white/15 text-white'
+                              : 'border-white/10 bg-white/5 text-foreground/70 hover:bg-white/10')
+                          }
+                          onPress={() => setUiStyle('netflix')}
+                        >
+                          <div className="text-sm font-semibold">Kecflix</div>
+                          <div className="mt-1 text-xs text-foreground/60">
+                            Dark UI with Kecflix-style navigation and rails.
+                          </div>
+                        </FocusableButton>
+                        <FocusableButton
+                          className={
+                            'rounded-2xl border px-4 py-4 text-left transition ' +
+                            (uiStyle === 'modern'
+                              ? 'border-white bg-white/15 text-white'
+                              : 'border-white/10 bg-white/5 text-foreground/70 hover:bg-white/10')
+                          }
+                          onPress={() => setUiStyle('modern')}
+                        >
+                          <div className="text-sm font-semibold">Modern</div>
+                          <div className="mt-1 text-xs text-foreground/60">
+                            Coverflow carousel with hero detail panel.
+                          </div>
+                        </FocusableButton>
+                      </div>
                     </div>
-                  </div>
-
-                  <div className="text-sm text-foreground/60">
-                    Solid colors only (background gradients removed).
-                  </div>
+                  ) : null}
 
                   <div>
                     <h2 className="text-lg font-semibold mb-3">Accent color</h2>

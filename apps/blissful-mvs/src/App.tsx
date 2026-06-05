@@ -30,6 +30,7 @@ import PlayerPage from './pages/PlayerPageLazy';
 const SearchPage = lazy(() => import('./pages/SearchPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const InvitePage = lazy(() => import('./pages/InvitePage'));
+const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 
 export default function App() {
   return (
@@ -84,6 +85,16 @@ export default function App() {
                     <ErrorBoundary fallback={<ErrorPage action="go-back" />}>
                       <Suspense fallback={<SkeletonDetailPanel />}>
                         <DetailPage />
+                      </Suspense>
+                    </ErrorBoundary>
+                  }
+                />
+                <Route
+                  path="profile/:userId"
+                  element={
+                    <ErrorBoundary fallback={<ErrorPage action="go-back" />}>
+                      <Suspense fallback={<div className="space-y-8 p-4"><SkeletonHomeRow /></div>}>
+                        <ProfilePage />
                       </Suspense>
                     </ErrorBoundary>
                   }
