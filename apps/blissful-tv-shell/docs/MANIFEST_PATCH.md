@@ -119,6 +119,35 @@ the whole 1920px-design UI behind the keyboard. Stripping the inset makes
 the keyboard a pure overlay; the login form sits in the top half of the
 screen so the focused field stays visible.
 
+## 7. Hardware BACK → the `window.__blissOnBack` ladder
+
+Override `dispatchKeyEvent` in `MainActivity.kt` (gen/) to route
+KEYCODE_BACK through the page's `window.__blissOnBack` (installed app-wide
+by `useTvBackHandler`, overridden by the player while mounted), falling back
+to WebView `goBack()` / `finish()` when it returns false:
+
+```kotlin
+override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+  if (event.keyCode == KeyEvent.KEYCODE_BACK) {
+    if (event.action == KeyEvent.ACTION_UP) {
+      val wv = findWebView(findViewById(android.R.id.content)) ?: return super.dispatchKeyEvent(event)
+      wv.evaluateJavascript("window.__blissOnBack ? window.__blissOnBack() : false") { res ->
+        if (res != "true") runOnUiThread { if (wv.canGoBack()) wv.goBack() else finish() }
+      }
+    }
+    return true // swallow DOWN+UP so the WebView's own history-back can't race
+  }
+  return super.dispatchKeyEvent(event)
+}
+```
+
+(`findWebView` = trivial recursive search over `android.R.id.content`.)
+
+Why dispatchKeyEvent: a View-level `OnKeyListener` on the WebView (the
+original approach, in BlissfulMpvPlugin) only fires while the WebView holds
+NATIVE focus — on a D-pad TV it usually doesn't, so BACK fell through to the
+default activity handling and exited the app from any non-player screen.
+
 ## Verify
 
 ```powershell
