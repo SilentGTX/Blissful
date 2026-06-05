@@ -110,8 +110,16 @@ export function useSkipSegments(params: {
   videoId: string | null;
   duration: number;
   currentTime: number;
+  /** How to perform the skip seek (absolute seconds). Defaults to the
+   *  native mpv seek (NativeMpvPlayer); SimplePlayer passes a <video>
+   *  currentTime setter so the feature works in the browser too. */
+  seek?: (seconds: number) => void;
 }): ChapterSkipState | null {
-  const { id, videoId, duration, currentTime } = params;
+  const { id, videoId, duration, currentTime, seek } = params;
+  // Keep the seek fn in a ref so the returned state's onSkip closure stays
+  // current without re-memoising on every render the caller does.
+  const seekRef = useRef(seek);
+  seekRef.current = seek;
   const { anime, introdb, key } = useMemo(
     () => parseTargets(id, videoId),
     [id, videoId],
@@ -227,7 +235,8 @@ export function useSkipSegments(params: {
       endTime,
       // No sticky dismissal — seeking back in re-shows the button.
       onSkip: () => {
-        desktop.seek(endTime, 'absolute').catch(() => {});
+        if (seekRef.current) seekRef.current(endTime);
+        else desktop.seek(endTime, 'absolute').catch(() => {});
       },
     };
   }, [segments, currentTime, key, duration]);

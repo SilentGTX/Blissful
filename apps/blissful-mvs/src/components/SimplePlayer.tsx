@@ -15,6 +15,10 @@ import { getLastStreamSelection, setLastStreamSelection } from '../lib/streamHis
 import { isElectronDesktopApp } from '../lib/platform';
 import { notifyError, notifyInfo, notifySuccess } from '../lib/toastQueues';
 import { useTraktScrobble } from '../lib/useTraktScrobble';
+import { usePlayerReady } from '../context/PlayerReadyProvider';
+import { useSkipSegments } from './NativeMpvPlayer/useSkipSegments';
+import { SkipChapterButton } from './NativeMpvPlayer/SkipChapterButton';
+import { proxyUrl } from '../lib/proxyBase';
 
 type SubtitleTrack = {
   key: string;
@@ -956,6 +960,17 @@ export default function SimplePlayer(props: {
   nextEpisodeInfo?: NextEpisodeInfo | null;
 }) {
   const navigate = useNavigate();
+  // Lift the AppShell route-level buffering veil (z-[9999], shown while
+  // `!playerReady`). Only NativeMpvPlayer signalled this, so on the browser
+  // SimplePlayer path the veil stayed up forever — covering the <video> (you
+  // heard audio, saw only the buffering logo). Mount = ready (SimplePlayer
+  // renders its own controls/loading underneath); cleanup resets it so the
+  // next /player entry re-veils until its player mounts.
+  const { setReady: setPlayerReady } = usePlayerReady();
+  useEffect(() => {
+    setPlayerReady(true);
+    return () => setPlayerReady(false);
+  }, [setPlayerReady]);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const subtitleBlobUrlRef = useRef<string | null>(null);
   const startAppliedRef = useRef(false);
@@ -996,6 +1011,75 @@ export default function SimplePlayer(props: {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+
+  // Auto-fallback when the stream is a Real-Debrid DMCA placeholder (RD
+  // serves a ~30s "File was removed for copyright infringement" video when a
+  // cached release is taken down). Instead of playing the 30s placeholder,
+  // navigate to /detail?autoplay=1 with this URL appended to the `skip=`
+  // list, so DetailPage's auto-pick grabs the NEXT-best stream and resumes at
+  // the same offset. The growing skip list is the loop-breaker (DetailPage
+  // excludes already-skipped URLs and lands on detail once all are dead).
+  // Ported from OpenCode's BlissfulPlayer; mirrors NativeMpvPlayer's intent.
+  const autoFallbackFiredRef = useRef(false);
+  const autoFallbackToNextStream = useCallback(() => {
+    if (autoFallbackFiredRef.current) return;
+    if (!props.type || !props.id) return;
+    autoFallbackFiredRef.current = true;
+    const base = `/detail/${encodeURIComponent(props.type)}/${encodeURIComponent(props.id)}`;
+    const qs = new URLSearchParams();
+    if (props.type === 'series' && props.videoId) qs.set('videoId', props.videoId);
+    qs.set('autoplay', '1');
+    const seconds = props.startTimeSeconds && props.startTimeSeconds > 0 ? props.startTimeSeconds : 0;
+    if (seconds > 0) qs.set('t', String(Math.floor(seconds)));
+    const incoming = new URLSearchParams(window.location.search);
+    for (const prev of incoming.getAll('skip')) qs.append('skip', prev);
+    if (props.url) qs.append('skip', props.url);
+    navigate(`${base}?${qs.toString()}`, { replace: true });
+  }, [navigate, props.type, props.id, props.videoId, props.startTimeSeconds, props.url]);
+
+  // Pre-load HEAD probe for the RD DMCA placeholder: a real episode/movie is
+  // >100 MB even at low quality, the placeholder is <20 MB. Probe HTTPS URLs
+  // (debrid CDN) via /resolve-url (server-side HEAD, no CORS); skip torrent
+  // paths whose Content-Length doesn't reflect the real size. Hits before the
+  // <video> ever loads the dead file, so the placeholder never plays.
+  useEffect(() => {
+    if (!props.url || !/^https:\/\//i.test(props.url)) return;
+    let cancelled = false;
+    const ac = new AbortController();
+    void (async () => {
+      try {
+        const probe = await fetch(proxyUrl(`/resolve-url?url=${encodeURIComponent(props.url)}`), {
+          signal: ac.signal,
+        });
+        if (!probe.ok || cancelled) return;
+        const data = (await probe.json()) as { contentLength?: number };
+        const len = data.contentLength ?? 0;
+        if (len > 0 && len < 20 * 1024 * 1024) autoFallbackToNextStream();
+      } catch {
+        // ignore — probe is best-effort; the duration safety net backs it up.
+      }
+    })();
+    return () => {
+      cancelled = true;
+      ac.abort();
+    };
+  }, [props.url, autoFallbackToNextStream]);
+
+  // Skip Intro / Recap / Credits via external segment sources (AniSkip for
+  // anime, TheIntroDB for live-action) — the SAME hook NativeMpvPlayer uses,
+  // so the browser/web <video> path gets the floating Skip button too. There
+  // are no mpv chapter markers here, so this is the only skip source (no
+  // useChapterSkip). Seeks the <video> element directly.
+  const skipSegment = useSkipSegments({
+    id: props.id ?? '',
+    videoId: props.videoId,
+    duration,
+    currentTime,
+    seek: (seconds) => {
+      const v = videoRef.current;
+      if (v) v.currentTime = seconds;
+    },
+  });
 
   // Trakt scrobble (shared with NativeMpvPlayer). Fully inert unless Trakt is
   // configured AND connected; all calls are fire-and-forget and can never
@@ -1534,6 +1618,19 @@ export default function SimplePlayer(props: {
     }
 
     const onLoadedMetadata = () => {
+      // Post-load duration safety net for RD DMCA placeholders that slipped
+      // past the HEAD probe (e.g. a just-removed release whose Content-Length
+      // isn't <20 MB yet). A real movie/episode is never under 5 minutes; if
+      // we see one on an HTTPS (debrid) URL, fall back to the next stream.
+      if (
+        /^https:\/\//i.test(props.url) &&
+        Number.isFinite(video.duration) &&
+        video.duration > 0 &&
+        video.duration < 300
+      ) {
+        autoFallbackToNextStream();
+        return;
+      }
       if (startAppliedRef.current) return;
       startAppliedRef.current = true;
       if (!props.startTimeSeconds || props.startTimeSeconds <= 0) return;
@@ -1804,7 +1901,7 @@ export default function SimplePlayer(props: {
       video.removeAttribute('src');
       video.load();
     };
-  }, [desktopStreamUrl, props.playerSettings, props.startTimeSeconds, props.url]);
+  }, [desktopStreamUrl, props.playerSettings, props.startTimeSeconds, props.url, autoFallbackToNextStream]);
 
   useEffect(() => {
     if (isIos()) {
@@ -2344,6 +2441,17 @@ export default function SimplePlayer(props: {
         playsInline
         onClick={togglePlay}
       />
+
+      {/* Skip Intro / Recap / Credits (AniSkip + TheIntroDB). Floats
+          bottom-right above the controls; visible only while inside a
+          detected segment. */}
+      {skipSegment ? (
+        <SkipChapterButton
+          kind={skipSegment.kind}
+          label={skipSegment.label}
+          onSkip={skipSegment.onSkip}
+        />
+      ) : null}
 
       {/* Top overlay */}
       <div
