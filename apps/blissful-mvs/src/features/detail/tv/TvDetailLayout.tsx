@@ -158,13 +158,11 @@ export function TvDetailLayout(props: Props) {
   }, [tv, props.isSeriesLike, autoFocusVideoId, popupOpen]);
 
   // Exactly one route-entry autoFocus target.
-  const primary: 'watch' | 'library' | 'trailer' | 'share' = !props.isSeriesLike
+  const primary: 'watch' | 'library' | 'trailer' = !props.isSeriesLike
     ? 'watch'
     : props.isLoggedIn
       ? 'library'
-      : props.hasTrailer
-        ? 'trailer'
-        : 'share';
+      : 'trailer';
 
   const metaParts = [
     props.runtime,
@@ -260,15 +258,6 @@ export function TvDetailLayout(props: Props) {
             >
               <StremioIcon name="trailer" className="icon" />
               <span className="text">Trailer</span>
-            </FocusableButton>
-            <FocusableButton
-              className="action-button-Pn4hZ"
-              onPress={props.onShare}
-              autoFocusTv={primary === 'share'}
-              aria-label="Share"
-            >
-              <StremioIcon name="share" className="icon" />
-              <span className="text">Share</span>
             </FocusableButton>
           </div>
         </div>

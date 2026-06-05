@@ -58,9 +58,13 @@ export function DetailModals({
                     <iframe
                       title="Trailer"
                       className="h-[70vh] w-[min(1000px,92vw)]"
-                      src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(firstTrailerId)}?autoplay=1`}
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen
+                      // playsinline=1 is required on the Android TV WebView:
+                      // without it the YouTube embed plays in a fullscreen/
+                      // overlay surface the (Wry) WebChromeClient doesn't
+                      // composite, so you get audio with no visible video.
+                      // fs=0 hides the fullscreen button (same trap on OK).
+                      src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(firstTrailerId)}?autoplay=1&playsinline=1&fs=0&rel=0`}
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope"
                     />
                   ) : (
                     <div className="p-6 text-sm text-white/70">No trailer.</div>
