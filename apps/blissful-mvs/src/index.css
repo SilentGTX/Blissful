@@ -2908,6 +2908,18 @@ html[data-tv] .native-player-root [class*="backdrop-blur"] {
   -webkit-backdrop-filter: none !important;
 }
 
+/* Login modal vs the Android IME: the soft keyboard RESIZES the WebView
+   viewport (adjustResize), and the center-placed dialog — taller than the
+   remaining ~1/3-screen strip — clipped at both ends with no scroll path
+   (the form's top half was simply unreachable). Cap the surface to the live
+   viewport and let it scroll; LoginModal's focus/resize handlers keep the
+   active field centered in it. */
+html[data-tv] .tv-login-surface {
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
 /* Lift headroom so a focused card's scale(1.08) isn't clipped by the rail. */
 html[data-tv] .board-row-poster,
 html[data-tv] .netflix-rail {

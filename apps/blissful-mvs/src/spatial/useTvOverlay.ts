@@ -96,6 +96,12 @@ export function useTvOverlay({ open, containerRef, onClose, autoFocusSelector }:
         e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar' || e.key === 'Select' ||
         e.keyCode === 13 || e.keyCode === 23 || e.keyCode === 66;
       if (isOk && isAndroidTv()) {
+        // Text fields own Enter: the IME action key (→ / Done) must reach the
+        // input so the field's own handler (focus-next-field / submit) and
+        // native form semantics run. Synthesizing click() on an <input> was a
+        // no-op that swallowed the event and left the keyboard open with no
+        // way forward — the login-modal trap.
+        if (active?.tagName === 'INPUT') return;
         if (inRoot && active) {
           e.preventDefault();
           e.stopPropagation();
@@ -144,7 +150,7 @@ export function useTvOverlay({ open, containerRef, onClose, autoFocusSelector }:
   // container. The real handling is the global capture listener above (which,
   // unlike a React synthetic handler, also fires for body-portaled overlays).
   // Kept as a stub so no call site needs editing and nothing double-processes.
-  const onKeyDown = (_e: React.KeyboardEvent) => {};
+  const onKeyDown = () => {};
 
   return { onKeyDown };
 }

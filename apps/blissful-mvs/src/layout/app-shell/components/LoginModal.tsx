@@ -14,6 +14,7 @@ import { useModals } from '../../../context/ModalsProvider';
 import { useErrorToast } from '../../../lib/useErrorToast';
 import { notifySuccess } from '../../../lib/toastQueues';
 import { useTvOverlay } from '../../../spatial/useTvOverlay';
+import { isTvMode } from '../../../lib/platform';
 
 const USERNAME_RE = /^[a-z0-9_-]{3,50}$/;
 
@@ -71,6 +72,36 @@ export function LoginModal() {
     onClose: () => modals.closeLogin(),
     autoFocusSelector: '[data-autofocus]',
   });
+
+  // TV: while a field is natively focused the Android IME is up and ALL D-pad
+  // events drive the keyboard's own key grid — the app never sees arrows. The
+  // only app-visible signal is the IME action key (Enter). So the form must be
+  // completable with Enter alone: username → focus password, password → submit
+  // (handlers on the Inputs below). `enterKeyHint` labels the action key
+  // accordingly (next / go).
+  const focusField = (name: string) => {
+    containerRef.current
+      ?.querySelector<HTMLInputElement>(`input[name="${name}"]`)
+      ?.focus();
+  };
+
+  // TV: the IME also RESIZES the WebView viewport (adjustResize) AFTER the
+  // open-time autofocus already ran, so the focus-time scroll position is
+  // computed against the tall viewport — the focused field (or the whole
+  // header) ends up clipped above the capped, scrollable surface (see the
+  // html[data-tv] .tv-login-surface rule). Re-center the active field on
+  // every viewport resize while the modal is open.
+  useEffect(() => {
+    if (!modals.isLoginOpen || !isTvMode()) return;
+    const onResize = () => {
+      const el = document.activeElement;
+      if (el instanceof HTMLElement && containerRef.current?.contains(el)) {
+        el.scrollIntoView({ block: 'center' });
+      }
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [modals.isLoginOpen]);
 
   // Hard short-circuit — HeroUI Modal.Backdrop's `isOpen` doesn't fully
   // unmount the dialog DOM, so we gate at the top level too.
@@ -166,7 +197,12 @@ export function LoginModal() {
               <div
                 ref={containerRef}
                 onKeyDown={onKeyDown}
-                className="solid-surface bliss-glass mx-auto w-full rounded-[28px] p-6"
+                // TV: keep whatever gains focus visible inside the scrollable
+                // surface (the IME-resized viewport can be ~1/3 screen tall).
+                onFocus={(e) => {
+                  if (isTvMode()) e.target.scrollIntoView({ block: 'center' });
+                }}
+                className="tv-login-surface solid-surface bliss-glass mx-auto w-full rounded-[28px] p-6"
               >
                 <div className="font-[Instrument_Serif] text-2xl font-semibold tracking-tight">
                   {isRegisterMode ? 'Create account' : 'Login'}
@@ -196,6 +232,13 @@ export function LoginModal() {
                           placeholder="3-50 chars: a-z 0-9 _ -"
                           maxLength={50}
                           className={INPUT_CLASS}
+                          enterKeyHint="next"
+                          onKeyDown={(e) => {
+                            if (isTvMode() && e.key === 'Enter') {
+                              e.preventDefault();
+                              focusField('password');
+                            }
+                          }}
                         />
                         <FieldError />
                       </TextField>
@@ -217,6 +260,13 @@ export function LoginModal() {
                           // still log in with their email which is
                           // routinely longer than 20 chars.
                           className={INPUT_CLASS}
+                          enterKeyHint="next"
+                          onKeyDown={(e) => {
+                            if (isTvMode() && e.key === 'Enter') {
+                              e.preventDefault();
+                              focusField('password');
+                            }
+                          }}
                         />
                         <FieldError />
                       </TextField>
@@ -241,6 +291,20 @@ export function LoginModal() {
                         maxLength={isRegisterMode ? 50 : undefined}
                         placeholder={isRegisterMode ? '8-50 characters' : undefined}
                         className={INPUT_CLASS}
+                        enterKeyHint={isRegisterMode ? 'next' : 'go'}
+                        onKeyDown={(e) => {
+                          if (isTvMode() && e.key === 'Enter') {
+                            e.preventDefault();
+                            if (isRegisterMode) {
+                              focusField('confirmPassword');
+                            } else {
+                              // Drop the IME, then submit through the Form so
+                              // HeroUI's validation gate still runs.
+                              e.currentTarget.blur();
+                              e.currentTarget.form?.requestSubmit();
+                            }
+                          }
+                        }}
                       />
                       <FieldError />
                     </TextField>
@@ -261,6 +325,14 @@ export function LoginModal() {
                           maxLength={50}
                           placeholder="repeat your password"
                           className={INPUT_CLASS}
+                          enterKeyHint="go"
+                          onKeyDown={(e) => {
+                            if (isTvMode() && e.key === 'Enter') {
+                              e.preventDefault();
+                              e.currentTarget.blur();
+                              e.currentTarget.form?.requestSubmit();
+                            }
+                          }}
                         />
                         <FieldError />
                       </TextField>
