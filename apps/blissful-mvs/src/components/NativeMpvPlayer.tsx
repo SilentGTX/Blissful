@@ -3263,6 +3263,17 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       }
 
       // === Plain playback =============================================
+      // TV: when a Skip Intro/Recap/Credits button is showing, it's "armed"
+      // (focus ring + OK hint) and OK fires the skip instead of pausing —
+      // the contextual primary action. To pause during a skippable segment,
+      // press Down first to enter the controls. Desktop OK still pauses.
+      if (isOk && tv && skipRef.current) {
+        e.preventDefault();
+        e.stopPropagation();
+        skipRef.current.onSkip();
+        showControls();
+        return;
+      }
       if (isOk) {
         e.preventDefault();
         e.stopPropagation();
@@ -3433,6 +3444,14 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     currentTime: timePos,
   });
   const skip = chapterSkip ?? segmentSkip;
+  // Ref so the (closure-stable) keyboard handler can fire the skip on OK
+  // without re-subscribing every time the skip window opens/closes.
+  const skipRef = useRef(skip);
+  skipRef.current = skip;
+  // The skip button is "armed" (OK fires it) only in plain playback — not
+  // while a control row / top row / overlay owns the D-pad.
+  const skipArmed =
+    isTvMode() && !!skip && !tvControlsFocused && !settingsPanelOpen && !episodesOpen && !watchPartyOpen;
 
   // (Audio-track button gating removed -- the unified SettingsPanel
   // shows/hides the audio tab based on track count internally.)
@@ -3714,6 +3733,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
           kind={skip.kind}
           label={skip.label}
           onSkip={skip.onSkip}
+          focused={skipArmed}
         />
       ) : null}
 

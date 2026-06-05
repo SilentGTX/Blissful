@@ -12,7 +12,7 @@ import { fetchSubtitles } from '../lib/stremioAddon';
 import { setProgress, flushNow } from '../lib/progressStore';
 import { addToLibraryItem, updateLibraryItemProgress } from '../lib/stremioApi';
 import { getLastStreamSelection, setLastStreamSelection } from '../lib/streamHistory';
-import { isElectronDesktopApp } from '../lib/platform';
+import { isElectronDesktopApp, isTvMode } from '../lib/platform';
 import { notifyError, notifyInfo, notifySuccess } from '../lib/toastQueues';
 import { useTraktScrobble } from '../lib/useTraktScrobble';
 import { usePlayerReady } from '../context/PlayerReadyProvider';
@@ -1080,6 +1080,10 @@ export default function SimplePlayer(props: {
       if (v) v.currentTime = seconds;
     },
   });
+  // Ref so the capture-phase keydown handler can fire the skip on OK without
+  // re-subscribing each time the skip window opens/closes.
+  const skipSegmentRef = useRef(skipSegment);
+  skipSegmentRef.current = skipSegment;
 
   // Trakt scrobble (shared with NativeMpvPlayer). Fully inert unless Trakt is
   // configured AND connected; all calls are fire-and-forget and can never
@@ -1961,7 +1965,18 @@ export default function SimplePlayer(props: {
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
       const video = videoRef.current;
       if (!video) return;
-      if (event.code === 'Space' || event.key === ' ') {
+      // TV: when a Skip Intro/Recap/Credits button is showing it's armed, and
+      // OK (DPAD_CENTER / Enter) fires the skip instead of toggling play.
+      const isOk =
+        event.key === 'Enter' || event.code === 'Enter' || event.code === 'NumpadEnter' ||
+        event.keyCode === 13 || event.keyCode === 23 || event.keyCode === 66;
+      if (isTvMode() && isOk && skipSegmentRef.current) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        skipSegmentRef.current.onSkip();
+        return;
+      }
+      if (event.code === 'Space' || event.key === ' ' || isOk) {
         event.preventDefault();
         event.stopImmediatePropagation();
         if (video.paused) {
@@ -2450,6 +2465,7 @@ export default function SimplePlayer(props: {
           kind={skipSegment.kind}
           label={skipSegment.label}
           onSkip={skipSegment.onSkip}
+          focused={isTvMode()}
         />
       ) : null}
 
