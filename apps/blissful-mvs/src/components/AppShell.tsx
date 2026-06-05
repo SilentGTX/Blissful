@@ -57,7 +57,7 @@ import { isTvMode } from '../lib/platform';
 import { RD_REQUIRED_MESSAGE } from '../lib/androidPlayable';
 import { TvTopBar } from '../layout/TvTopBar';
 import { PartyInviteListener } from './PartyInviteListener';
-import { preloadPlayerPage } from '../pages/PlayerPageLazy';
+import { preloadPlayerPage } from '../lib/playerPageLoader';
 
 const MIGRATION_KEY = 'bliss:migrated:tagOldItemsWeb';
 

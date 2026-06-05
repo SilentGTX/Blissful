@@ -10,7 +10,7 @@ import { useContinueWatchingContext } from '../context/ContinueWatchingProvider'
 import { showHeroTransition } from '../lib/heroTransition';
 import { consumeClickedPoster, metahubPosterToBackdrop } from '../lib/transitionPoster';
 import { getLastStreamSelection } from '../lib/streamHistory';
-import { preloadPlayerPage } from './PlayerPageLazy';
+import { preloadPlayerPage } from '../lib/playerPageLoader';
 import { proxyUrl } from '../lib/proxyBase';
 import { useMetaDetails } from '../models/useMetaDetails';
 import { DesktopActionButtons, MobileActionButtons } from '../features/detail/components/ActionButtons';

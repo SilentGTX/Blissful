@@ -1,4 +1,5 @@
 import { useEffect, useState, type ComponentType } from 'react';
+import { getCachedPlayerPage, preloadPlayerPage } from '../lib/playerPageLoader';
 
 /** Suspense-free lazy PlayerPage.
  *
@@ -11,28 +12,15 @@ import { useEffect, useState, type ComponentType } from 'react';
  *  React.lazy + <Suspense> is deliberately NOT used: Suspense's reconnect
  *  cycle in React 19 fires effects twice during resolution and caused a
  *  visible flash on every player open (the reason the import was made eager
- *  in the first place). This wrapper instead caches the resolved component
- *  at module level: once the chunk has landed — via `preloadPlayerPage()`
+ *  in the first place). This wrapper instead reads the module-level cache in
+ *  lib/playerPageLoader: once the chunk has landed — via `preloadPlayerPage()`
  *  from AppShell's idle prefetch or DetailPage's on-mount prefetch — every
  *  mount renders PlayerPage synchronously, identical to the old eager
  *  import. Only a never-prefetched first open (deep-link straight to
  *  /player before idle) briefly shows the black backdrop the player opens
  *  over anyway. */
-let cached: ComponentType | null = null;
-let pending: Promise<ComponentType> | null = null;
-
-export function preloadPlayerPage(): Promise<ComponentType> {
-  if (!pending) {
-    pending = import('./PlayerPage').then((mod) => {
-      cached = mod.default;
-      return mod.default;
-    });
-  }
-  return pending;
-}
-
 export default function PlayerPageLazy() {
-  const [Comp, setComp] = useState<ComponentType | null>(() => cached);
+  const [Comp, setComp] = useState<ComponentType | null>(() => getCachedPlayerPage());
 
   useEffect(() => {
     if (Comp) return;
