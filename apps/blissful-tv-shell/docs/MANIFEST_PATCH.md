@@ -103,9 +103,10 @@ android:windowSoftInputMode="adjustPan"
 ```kotlin
 val content = findViewById<View>(android.R.id.content)
 ViewCompat.setOnApplyWindowInsetsListener(content) { v, insets ->
+  // setInsetsIgnoringVisibility(ime(), …) is NOT platform-supported
+  // ("Maximum inset not available for IME" crash) — strip only setInsets.
   val stripped = WindowInsetsCompat.Builder(insets)
     .setInsets(WindowInsetsCompat.Type.ime(), Insets.NONE)
-    .setInsetsIgnoringVisibility(WindowInsetsCompat.Type.ime(), Insets.NONE)
     .build()
   ViewCompat.onApplyWindowInsets(v, stripped)
 }
