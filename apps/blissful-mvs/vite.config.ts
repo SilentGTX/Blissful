@@ -179,6 +179,27 @@ export default defineConfig({
       },
     },
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        // Split the stable vendor frameworks out of the app entry chunk.
+        // Two wins on the low-end Android TV WebView (Cortex-A53, ~1 MB/s
+        // JS parse): separate files stream-parse on background threads in
+        // parallel (one 1.8 MB entry parses serially), and app-code changes
+        // no longer invalidate the cached vendor bytes. Matchers are
+        // directory-anchored so e.g. 'react-aria' never matches the bare
+        // 'react' check.
+        manualChunks(id: string) {
+          if (!id.includes('node_modules')) return undefined;
+          if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) return 'vendor-react';
+          if (id.includes('node_modules/react-router')) return 'vendor-router';
+          if (/node_modules\/(@heroui|@react-aria|@react-stately|@react-types|@internationalized|@formatjs)\//.test(id)) return 'vendor-heroui';
+          if (/node_modules\/(framer-motion|motion-dom|motion-utils)\//.test(id)) return 'vendor-motion';
+          return undefined;
+        },
+      },
+    },
+  },
   server: {
     host: true,
     // Override with VITE_DEV_PORT when 5173 is already taken (e.g. another

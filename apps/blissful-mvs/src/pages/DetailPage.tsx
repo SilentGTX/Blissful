@@ -10,6 +10,7 @@ import { useContinueWatchingContext } from '../context/ContinueWatchingProvider'
 import { showHeroTransition } from '../lib/heroTransition';
 import { consumeClickedPoster, metahubPosterToBackdrop } from '../lib/transitionPoster';
 import { getLastStreamSelection } from '../lib/streamHistory';
+import { preloadPlayerPage } from './PlayerPageLazy';
 import { proxyUrl } from '../lib/proxyBase';
 import { useMetaDetails } from '../models/useMetaDetails';
 import { DesktopActionButtons, MobileActionButtons } from '../features/detail/components/ActionButtons';
@@ -85,11 +86,12 @@ export default function DetailPage() {
   const guessedBackdrop = flipClick?.backdropUrl ?? null;
 
   // Prefetch the PlayerPage chunk as soon as the user lands on DetailPage —
-  // by the time they click Play, the lazy chunk is already in the browser
-  // cache so Suspense resolves on the first frame, leaving the
-  // `bliss-player-enter` scale animation as the only visible delay.
+  // by the time they click Play the module is resolved and cached inside
+  // PlayerPageLazy, which then mounts the player synchronously (no flash),
+  // leaving the `bliss-player-enter` scale animation as the only visible
+  // delay.
   useEffect(() => {
-    void import('./PlayerPage');
+    void preloadPlayerPage();
   }, []);
 
   const {

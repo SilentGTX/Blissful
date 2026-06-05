@@ -21,10 +21,12 @@ const AccountsPage = lazy(() => import('./pages/AccountsPage'));
 const DetailPage = lazy(() => import('./pages/DetailPage'));
 const DiscoverPage = lazy(() => import('./pages/DiscoverPage'));
 const LibraryPage = lazy(() => import('./pages/LibraryPage'));
-// Eagerly imported — no Suspense boundary needed. The chunk is
-// prefetched from DetailPage anyway, and Suspense's reconnect cycle
-// in React 19 caused a visible flash on every player open.
-import PlayerPage from './pages/PlayerPage';
+// Code-split WITHOUT React.lazy/Suspense (whose React 19 reconnect cycle
+// flashed on every player open — see PlayerPageLazy). The chunk is
+// prefetched at AppShell idle + on DetailPage mount, so by click time the
+// wrapper renders PlayerPage synchronously, exactly like the old eager
+// import — minus its parse cost in the boot-critical entry chunk.
+import PlayerPage from './pages/PlayerPageLazy';
 const SearchPage = lazy(() => import('./pages/SearchPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const InvitePage = lazy(() => import('./pages/InvitePage'));
@@ -90,9 +92,9 @@ export default function App() {
                   path="player"
                   element={
                     <ErrorBoundary fallback={<ErrorPage action="go-back" />}>
-                      {/* No Suspense — the chunk is prefetched from
-                          DetailPage so it's already cached by the time
-                          the user clicks a stream. Suspense's reconnect
+                      {/* No Suspense — PlayerPageLazy resolves its chunk
+                          via the AppShell/DetailPage prefetches and then
+                          renders synchronously. Suspense's reconnect
                           cycle caused a visible flash on every player
                           open (React 19 fires effects twice during
                           Suspense resolution). */}

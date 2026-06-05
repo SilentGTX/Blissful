@@ -57,6 +57,7 @@ import { isTvMode } from '../lib/platform';
 import { RD_REQUIRED_MESSAGE } from '../lib/androidPlayable';
 import { TvTopBar } from '../layout/TvTopBar';
 import { PartyInviteListener } from './PartyInviteListener';
+import { preloadPlayerPage } from '../pages/PlayerPageLazy';
 
 const MIGRATION_KEY = 'bliss:migrated:tagOldItemsWeb';
 
@@ -64,6 +65,25 @@ export default function AppShell() {
   usePresenceHeartbeat();
   useTvBackHandler(); // TV: Esc/Back closes overlays or goes to safe-back
   const { updateReady, isInstalling, installNow, dismissUpdate } = useDesktopUpdater();
+
+  // Warm the code-split PlayerPage chunk once boot work has settled, so a
+  // play started anywhere (Continue Watching on /home included — not just
+  // via DetailPage's own prefetch) mounts the player synchronously. Idle
+  // callback keeps the fetch+parse off the first-paint critical path that
+  // splitting the chunk out of the entry just freed up.
+  useEffect(() => {
+    const w = window as Window & {
+      requestIdleCallback?: (cb: () => void) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    const handle = w.requestIdleCallback
+      ? w.requestIdleCallback(() => void preloadPlayerPage())
+      : window.setTimeout(() => void preloadPlayerPage(), 2000);
+    return () => {
+      if (w.cancelIdleCallback) w.cancelIdleCallback(handle);
+      else window.clearTimeout(handle);
+    };
+  }, []);
 
   // One-time migration: tag all untagged library items as 'web'.
   const { authKey: migAuthKey } = useAuth();
