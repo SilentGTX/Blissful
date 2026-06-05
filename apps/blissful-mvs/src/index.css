@@ -1073,10 +1073,10 @@ html:not(.dark) .bliss-sidebar .toggle {
   padding: 0rem 0.5rem;
 }
 
-.imdb-button-container-hTq0g .label {
+.imdb-button-container-hTq0g .bliss-rating-value {
   flex: 0 1 auto;
-  margin-right: 1rem;
-  font-size: 1.25rem;
+  margin-right: 0.35rem;
+  font-size: clamp(0.875rem, 1.4vw, 1.25rem);
   font-weight: 600;
   color: #fff;
 }
@@ -2879,8 +2879,15 @@ html[data-tv] .now-popular-bg-layer.is-prev {
 
 /* Glass/blur performance: drop backdrop-blur on the scrolling/scaling TV cards
    (the worst case for low-end Android-TV GPUs). Depth comes from the focus ring
-   + shadow instead. Blur stays on the static nav/hero surfaces only. */
-html[data-tv] .tv-focusable-card [class*="backdrop-blur"],
+   + shadow instead. Blur stays on the static nav/hero surfaces only.
+   NOTE: only DISABLE the blur on descendants — do NOT also force a white
+   background, which washed out elements that carry their own bg (e.g. the
+   rating pill's bg-black/45, which then read as transparent grey). */
+html[data-tv] .tv-focusable-card [class*="backdrop-blur"] {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+/* The card frame itself keeps its opaque glass fill (sans blur). */
 html[data-tv] .netflix-card {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
@@ -3706,29 +3713,6 @@ html[data-tv] .tv-episode-imdb .tv-episode-rating {
   font-weight: 700;
   color: #fff;
   gap: 0.28rem;
-}
-/* Movie poster IMDb badge (MediaCard poster variant) — TV only. On the MAIN
-   MENU (home rails, Discover, Library) the badge stays TOP-LEFT (the inline
-   Tailwind `left-3 top-3` position is kept); we only darken it to the same
-   blackish pill as the episode badge (.tv-episode-imdb) so it reads on bright
-   posters. Overrides the translucent `bg-black/45 rounded-full` utilities. */
-html[data-tv] .media-card-imdb {
-  gap: 0.28rem;
-  padding: 0.18rem 0.42rem;
-  border-radius: 0.5rem;
-  background: rgba(0, 0, 0, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
-}
-/* Only on the movie/TV-show DETAIL screen ("You may also like" row, which
-   renders inside .tv-detail-shell) does the badge move to the BOTTOM-RIGHT,
-   matching the episode cards. `left/top:auto` cancel the Tailwind left-3/top-3. */
-html[data-tv] .tv-detail-shell .media-card-imdb {
-  left: auto;
-  top: auto;
-  right: 0.5rem;
-  bottom: 0.5rem;
-  z-index: 16;
 }
 html[data-tv] .tv-episode-card-title {
   font-size: clamp(1rem, 1.1vw, 1.3rem);

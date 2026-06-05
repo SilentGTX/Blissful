@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Rating } from '../../../components/Rating';
 import { SkeletonBox } from '../../../components/Skeleton';
+import { proxiedImage } from '../../../lib/imageProxy';
 import { useTvFocusable } from '../../../spatial/useTvFocusable';
 
 // Focusable episode-card shell (hooks can't run in a .map). D-pad reachable on
@@ -42,7 +43,7 @@ export function EpisodeThumb({
   stillPending?: boolean;
 }) {
   const candidates = useMemo(
-    () => [thumb, still].filter((x): x is string => !!x),
+    () => [thumb, still].filter((x): x is string => !!x).map((u) => proxiedImage(u)),
     [thumb, still],
   );
   const [idx, setIdx] = useState(0);
@@ -79,7 +80,7 @@ export function EpisodeThumb({
       ) : null}
       {showPoster ? (
         <img
-          src={poster as string}
+          src={proxiedImage(poster)}
           alt=""
           className="absolute inset-0 h-full w-full object-cover"
           loading="lazy"

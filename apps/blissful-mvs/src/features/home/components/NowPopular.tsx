@@ -6,6 +6,7 @@ import { FocusableButton } from '../../../spatial/FocusableButton';
 import { isTvMode } from '../../../lib/platform';
 import type { StremioMetaDetail } from '../../../lib/stremioAddon';
 import { normalizeStremioImage } from '../../../lib/mediaTypes';
+import { proxiedImage } from '../../../lib/imageProxy';
 import { GenreChips } from '../../detail/components/GenreChips';
 
 type NowPopularProps = {
@@ -46,7 +47,7 @@ export function NowPopular({
   }, [hero?.id]);
 
   useEffect(() => {
-    const raw = normalizeStremioImage(heroMeta?.meta?.background) ?? '';
+    const raw = proxiedImage(normalizeStremioImage(heroMeta?.meta?.background) ?? '');
     const next = raw.startsWith('http://') ? raw.replace(/^http:\/\//, 'https://') : raw;
     if (next && next !== curBgRef.current) {
       if (curBgRef.current) setPrevBg(curBgRef.current);

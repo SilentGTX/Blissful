@@ -9,6 +9,7 @@ import { getLibraryEntry } from '../lib/libraryStore';
 import { useContinueWatchingContext } from '../context/ContinueWatchingProvider';
 import { showHeroTransition } from '../lib/heroTransition';
 import { consumeClickedPoster, metahubPosterToBackdrop } from '../lib/transitionPoster';
+import { proxiedImage } from '../lib/imageProxy';
 import { getLastStreamSelection } from '../lib/streamHistory';
 import { preloadPlayerPage } from '../lib/playerPageLoader';
 import { proxyUrl } from '../lib/proxyBase';
@@ -326,16 +327,18 @@ export default function DetailPage() {
   // matching `background/medium/...` URL from it so the persistent backdrop
   // renders high-res from frame 1 instead of a blurry small poster.
   const fallbackBackdropFromUrl = metahubPosterToBackdrop(fallbackPoster);
-  const background =
+  const background = proxiedImage(
     normalizeStremioImage(meta?.meta?.background)
     ?? normalizeStremioImage(meta?.meta?.poster)
     ?? fallbackBackdropFromUrl
-    ?? fallbackPoster;
-  const poster =
+    ?? fallbackPoster,
+  ) || null;
+  const poster = proxiedImage(
     normalizeStremioImage(meta?.meta?.poster)
     ?? fallbackPoster
-    ?? background;
-  const logo = normalizeStremioImage(meta?.meta?.logo);
+    ?? background,
+  ) || null;
+  const logo = proxiedImage(normalizeStremioImage(meta?.meta?.logo)) || null;
   // High-res landscape backdrop from addon meta (no low-res fallback).
   // This is the image the FLIP layer should morph into — same URL the
   // persistent `background-image-tSjYu` backdrop renders, so the layer's

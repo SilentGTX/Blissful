@@ -254,6 +254,10 @@ export default defineConfig({
       '/tmdb-season-info': { target: 'https://blissful.budinoff.com', changeOrigin: true, secure: true },
       '/tmdb-find': { target: 'https://blissful.budinoff.com', changeOrigin: true, secure: true },
       '/resolve-url': { target: 'https://blissful.budinoff.com', changeOrigin: true, secure: true },
+      // Caching image proxy (posters/backdrops/stills) — see lib/imageProxy.ts.
+      '/img': { target: 'https://blissful.budinoff.com', changeOrigin: true, secure: true },
+      // Server-cached IMDb rating (Cinemeta -> TMDB) — see lib/useImdbRating.ts.
+      '/imdb-rating': { target: 'https://blissful.budinoff.com', changeOrigin: true, secure: true },
     },
   },
 })

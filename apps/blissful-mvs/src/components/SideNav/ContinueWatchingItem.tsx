@@ -1,4 +1,5 @@
 import { normalizeStremioImage } from '../../lib/stremioApi';
+import { proxiedImage } from '../../lib/imageProxy';
 import type { LibraryItem } from '../../lib/stremioApi';
 import { getContinueSubtitle } from './utils';
 import { CloseIcon } from '../../icons/CloseIcon';
@@ -16,7 +17,7 @@ export type ContinueWatchingItemProps = {
 };
 
 export function ContinueWatchingItem({ item, onOpen, onRemove, compact = false }: ContinueWatchingItemProps) {
-  const poster = normalizeStremioImage(item.poster);
+  const poster = proxiedImage(normalizeStremioImage(item.poster));
   const progress = item.state?.duration
     ? Math.min(100, Math.max(0, ((item.state?.timeOffset ?? 0) / item.state.duration) * 100))
     : null;

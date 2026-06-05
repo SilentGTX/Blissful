@@ -2,15 +2,15 @@ import type { MediaItem } from '../types/media';
 import { Card, Chip } from '@heroui/react';
 import { memo, useEffect, useState } from 'react';
 import { InfoIcon } from '../icons/InfoIcon';
-import { ImdbIcon } from '../icons/ImdbIcon';
 import { PlayIcon } from '../icons/PlayIcon';
+import { Rating } from './Rating';
 import { TruncatedText } from './TruncatedText';
 import { setFocus } from '@noriginmedia/norigin-spatial-navigation';
-import { useImdbRating } from '../lib/useImdbRating';
 import { useTvFocusable } from '../spatial/useTvFocusable';
 import { MediaCardMenu } from './MediaCardMenu';
 import { isTvMode } from '../lib/platform';
 import { tvPosterUrl } from '../lib/tvPosterUrl';
+import { proxiedImage } from '../lib/imageProxy';
 
 type MediaCardProps = {
   item: MediaItem;
@@ -42,10 +42,6 @@ type MediaCardProps = {
   onItemFocus?: (item: MediaItem) => void;
 };
 
-function formatRating(rating?: number) {
-  if (rating === undefined || Number.isNaN(rating)) return null;
-  return rating.toFixed(1);
-}
 
 function MediaCard({
   item,
@@ -69,15 +65,11 @@ function MediaCard({
   const onPress = onPressProp ?? (onItemPress ? () => onItemPress(item) : undefined);
   // Same resolution for focus (see `onItemFocus` prop docs).
   const handleFocus = onFocus ?? (onItemFocus ? () => onItemFocus(item) : undefined);
-  // TV: do NOT lazy-scrape IMDB ratings per card. On the home screen that
-  // fires a burst of dozens of proxied imdb.com/Cinemeta fetches (one per
-  // card with no addon-supplied rating) the instant the grid mounts, each
-  // resolving with a setState re-render — a network + render storm competing
-  // with poster decode on a weak TV. Neutralize the id on TV (hook still
-  // called unconditionally — Rules of Hooks); the pill still shows for cards
-  // whose addon meta already carried a rating.
-  const imdbId = !isTvMode() && /^tt\d{5,}$/.test(item.id) ? item.id : null;
-  const resolvedRating = useImdbRating(imdbId, item.rating ?? null);
+  // Ratings: pass the imdbId to <Rating>, which resolves it via the backend's
+  // cached `/imdb-rating` endpoint (Cinemeta → TMDB, ~24h NAS-cached) — one
+  // tiny deduped request per title, cheap enough on TV too, so every poster
+  // gets a rating. Same component + path as the web build.
+  const imdbId = /^tt\d{5,}$/.test(item.id) ? item.id : null;
   // TV D-pad focus (inert on desktop/browser — mouse onClick still works).
   const [menuOpen, setMenuOpen] = useState(false);
   const { ref: tvRef } = useTvFocusable({
@@ -100,7 +92,6 @@ function MediaCard({
         }
       : undefined,
   });
-  const rating = formatRating(resolvedRating ?? undefined);
   const subtitle = [item.year, item.runtime].filter(Boolean).join(' \u00b7 ');
 
   // Auto-retry posters on error/stall. The <img> element doesn't
@@ -148,7 +139,9 @@ function MediaCard({
   // On TV, downscale metahub posters to the "small" variant (pixel-matched to the
   // ~144px card, ~10x fewer decoded bytes) — big graphics-memory win on low-end
   // GLES2 TVs. No-op on desktop / for non-metahub URLs.
-  const basePosterUrl = isTvMode() ? tvPosterUrl(item.posterUrl) : item.posterUrl;
+  const basePosterUrl = proxiedImage(
+    (isTvMode() ? tvPosterUrl(item.posterUrl) : item.posterUrl) ?? '',
+  ) || null;
   const posterSrc = basePosterUrl
     ? retryNonce > 0
       ? `${basePosterUrl}${basePosterUrl.includes('?') ? '&' : '?'}_r=${retryNonce}`
@@ -226,12 +219,12 @@ function MediaCard({
                     {item.title.slice(0, 1).toUpperCase()}
                   </div>
                 )}
-                {rating ? (
-                  <div className="media-card-imdb absolute left-3 top-3 inline-flex items-center gap-2 rounded-full bg-black/45 px-3 py-1 text-sm font-semibold text-white backdrop-blur">
-                    <span>{rating}</span>
-                    <ImdbIcon className="h-6 w-6 text-[#f5c518]" />
-                  </div>
-                ) : null}
+                <Rating
+                  imdbId={imdbId}
+                  initialRating={item.rating ?? null}
+                  iconClassName="h-7 w-7"
+                  className="absolute left-3 top-3 rounded-full bg-black/45 pl-2.5 pr-1.5 py-0.5 text-sm font-semibold text-white"
+                />
 
                 {showHoverActions ? (
                   <div className="netflix-card-overlay">
@@ -324,12 +317,12 @@ function MediaCard({
                 {item.title.slice(0, 1).toUpperCase()}
               </div>
             )}
-            {rating ? (
-              <div className="absolute right-3 top-3 inline-flex items-center gap-2 rounded-full bg-black/45 px-3 py-1 text-sm font-semibold text-white backdrop-blur">
-                <span>{rating}</span>
-                <ImdbIcon className="h-6 w-6 text-[#f5c518]" />
-              </div>
-            ) : null}
+            <Rating
+              imdbId={imdbId}
+              initialRating={item.rating ?? null}
+              iconClassName="h-7 w-7"
+              className="absolute right-3 top-3 rounded-full bg-black/45 pl-2.5 pr-1.5 py-0.5 text-sm font-semibold text-white"
+            />
           </div>
 
           <div className="mt-3 flex items-start justify-between gap-2">

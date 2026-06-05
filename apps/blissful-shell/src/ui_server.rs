@@ -87,6 +87,13 @@ const STREMIO_UPSTREAM: &str = "https://www.strem.io";
 // blissful backend which holds the TMDB API key. Fixed host + path, only
 // the query string is passed through.
 const TMDB_UPSTREAM: &str = "https://blissful.budinoff.com/tmdb-season-info";
+// Caching image proxy (posters/backdrops/stills). The renderer wraps metahub /
+// TMDB art URLs via lib/imageProxy.ts into `/img?url=<encoded>`; we forward to
+// the blissful backend's NAS-cached `/img`. Query string passed through.
+const IMG_UPSTREAM: &str = "https://blissful.budinoff.com/img";
+// Server-resolved + cached IMDb rating (Cinemeta -> TMDB). lib/useImdbRating.ts
+// hits `/imdb-rating?imdbId=tt..`; forward to the blissful backend.
+const IMDB_RATING_UPSTREAM: &str = "https://blissful.budinoff.com/imdb-rating";
 
 static HTTP_CLIENT: OnceCell<Client> = OnceCell::new();
 static STATIC_ROOT: OnceCell<Option<PathBuf>> = OnceCell::new();
@@ -235,6 +242,16 @@ async fn handle_request(
         // ---- /tmdb-season-info?tmdbId=..&season=.. ----
         (&Method::GET, "/tmdb-season-info") => {
             forward_request(req, TMDB_UPSTREAM, "").await
+        }
+
+        // ---- /img?url=<metahub|tmdb art url> ----
+        (&Method::GET, "/img") => {
+            forward_request(req, IMG_UPSTREAM, "").await
+        }
+
+        // ---- /imdb-rating?imdbId=tt.. ----
+        (&Method::GET, "/imdb-rating") => {
+            forward_request(req, IMDB_RATING_UPSTREAM, "").await
         }
 
         // ---- everything else: React app (static or Vite proxy) ----

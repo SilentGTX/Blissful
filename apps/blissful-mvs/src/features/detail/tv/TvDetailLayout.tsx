@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useFocusable, FocusContext, setFocus } from '@noriginmedia/norigin-spatial-navigation';
 import { isTvMode } from '../../../lib/platform';
+import { proxiedImage } from '../../../lib/imageProxy';
 import { Rating } from '../../../components/Rating';
 import StremioIcon from '../../../components/StremioIcon';
 import { GenreChips } from '../components/GenreChips';
@@ -175,7 +176,7 @@ export function TvDetailLayout(props: Props) {
     <div ref={shellRef} className="tv-detail-shell">
       {props.background ? (
         <div className="tv-detail-backdrop">
-          <img src={props.background} alt="" />
+          <img src={proxiedImage(props.background)} alt="" />
         </div>
       ) : null}
       <div className="tv-detail-scrim" />
@@ -190,7 +191,7 @@ export function TvDetailLayout(props: Props) {
 
         <div className="tv-detail-left">
           {props.logo && !props.logoFailed ? (
-            <img className="tv-detail-logo" src={props.logo} alt={props.logoTitle} onError={props.onLogoError} />
+            <img className="tv-detail-logo" src={proxiedImage(props.logo)} alt={props.logoTitle} onError={props.onLogoError} />
           ) : (
             <div className="tv-detail-title-text">{props.logoTitle}</div>
           )}

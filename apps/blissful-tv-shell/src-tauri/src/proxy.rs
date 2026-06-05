@@ -52,6 +52,13 @@ const TMDB_UPSTREAM: &str = "https://blissful.budinoff.com/tmdb-season-info";
 // add it so the fallback works on Android too. If the backend lacks the route
 // it 404s and the UI degrades to null (user must set their own TMDB key).
 const TMDB_FIND_UPSTREAM: &str = "https://blissful.budinoff.com/tmdb-find";
+// Caching image proxy (posters/backdrops/stills). lib/imageProxy.ts wraps
+// metahub/TMDB art into `/img?url=<encoded>` (absolute via PROXY_BASE on
+// Android); we forward to the backend's NAS-cached /img.
+const IMG_UPSTREAM: &str = "https://blissful.budinoff.com/img";
+// Server-resolved + cached IMDb rating (Cinemeta -> TMDB). lib/useImdbRating.ts
+// hits `/imdb-rating?imdbId=tt..` so every poster gets a rating cheaply.
+const IMDB_RATING_UPSTREAM: &str = "https://blissful.budinoff.com/imdb-rating";
 
 static HTTP_CLIENT: OnceCell<Client> = OnceCell::new();
 
@@ -127,6 +134,8 @@ async fn handle_request(req: Request<Incoming>) -> Result<Response<BoxBody>, Inf
         }
         (&Method::GET, "/tmdb-season-info") => forward_request(req, TMDB_UPSTREAM, "").await,
         (&Method::GET, "/tmdb-find") => forward_request(req, TMDB_FIND_UPSTREAM, "").await,
+        (&Method::GET, "/img") => forward_request(req, IMG_UPSTREAM, "").await,
+        (&Method::GET, "/imdb-rating") => forward_request(req, IMDB_RATING_UPSTREAM, "").await,
         // CORS preflight for browsers that send it (the WebView fetch to this
         // loopback origin is cross-origin to tauri.localhost).
         (&Method::OPTIONS, _) => Ok(cors_preflight()),
