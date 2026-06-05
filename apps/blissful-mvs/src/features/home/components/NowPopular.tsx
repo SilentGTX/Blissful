@@ -8,6 +8,7 @@ import type { StremioMetaDetail } from '../../../lib/stremioAddon';
 import { normalizeStremioImage } from '../../../lib/mediaTypes';
 import { proxiedImage } from '../../../lib/imageProxy';
 import { GenreChips } from '../../detail/components/GenreChips';
+import { Rating } from '../../../components/Rating';
 
 type NowPopularProps = {
   hero: MediaItem | null;
@@ -57,6 +58,23 @@ export function NowPopular({
   }, [heroMeta?.meta?.background]);
 
   const hasBg = Boolean(lockedBg);
+
+  // Meta line above the description: release year · IMDb rating · runtime —
+  // same trio (and Rating component) the player PauseOverlay shows. Sourced
+  // from the resolved hero meta, falling back to the catalog MediaItem.
+  const m = heroMeta?.meta;
+  const heroRelease =
+    m?.releaseInfo ?? (m?.year != null ? String(m.year) : hero?.year ?? null);
+  const heroRuntime = m?.runtime ?? hero?.runtime ?? null;
+  const heroImdbId =
+    m?.imdb_id ?? (hero?.id && /^tt\d+$/.test(hero.id) ? hero.id : null);
+  const heroRating =
+    m?.imdbRating != null
+      ? String(m.imdbRating)
+      : hero?.rating != null
+        ? String(hero.rating)
+        : null;
+  const hasHeroMeta = Boolean(heroRelease || heroImdbId || heroRating || heroRuntime);
 
   // Two button variants. The card uses a container query to swap
   // between them based on the CARD'S width (not viewport), so a
@@ -170,6 +188,26 @@ export function NowPopular({
               <div className="tv-hero-title text-xl @sm:text-2xl @md:text-3xl font-semibold text-white break-words max-w-full @md:max-w-[420px] line-clamp-2">
                 {hero?.title ?? 'Pick something to watch'}
               </div>
+              {hasHeroMeta ? (
+                <div className="flex flex-wrap items-center gap-2 text-xs @md:text-sm font-medium text-white/80">
+                  {heroRelease ? <span>{heroRelease}</span> : null}
+                  {heroRelease && (heroImdbId || heroRating) ? (
+                    <span className="text-white/40">·</span>
+                  ) : null}
+                  {heroImdbId || heroRating ? (
+                    <Rating
+                      imdbId={heroImdbId}
+                      initialRating={heroRating}
+                      className="gap-1.5 rounded-full bg-black/45 pl-2.5 pr-1.5 py-0.5 font-semibold text-white"
+                      iconClassName="h-[1.3em] w-[1.3em]"
+                    />
+                  ) : null}
+                  {(heroImdbId || heroRating) && heroRuntime ? (
+                    <span className="text-white/40">·</span>
+                  ) : null}
+                  {heroRuntime ? <span>{heroRuntime}</span> : null}
+                </div>
+              ) : null}
               {hero?.blurb ? (
                 // Always visible — the icon-only mobile button cluster
                 // and the line-clamp-3 cap mean even the narrowest

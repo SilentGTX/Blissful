@@ -7,7 +7,7 @@ import { getLastStreamSelection } from '../../../lib/streamHistory';
 import { getResumeSeconds } from '../utils';
 import { fetchMeta } from '../../../lib/stremioAddon';
 import { proxyUrl } from '../../../lib/proxyBase';
-import { isAndroidTv } from '../../../lib/platform';
+import { isAndroidTv, isTvMode } from '../../../lib/platform';
 import { isAndroidPlayableUrl } from '../../../lib/androidPlayable';
 
 type UseContinueWatchingActionsParams = {
@@ -88,11 +88,14 @@ export function useContinueWatchingActions({
       const base = `/detail/${encodeURIComponent(item.type)}/${encodeURIComponent(item._id)}`;
       const qs = new URLSearchParams();
       if (item.type === 'series' && typeof videoId === 'string') qs.set('videoId', videoId);
-      // On the RD-only Android build there is no local/web player to fall back to —
-      // pressing Resume/Play from Continue Watching means "watch it now". So auto-pick
-      // the top (Real-Debrid) stream on the detail page and play, instead of silently
-      // dumping the user on the detail page. `t` resumes at the saved offset.
-      if (isAndroidTv()) qs.set('autoplay', '1');
+      // On TV there is no local/web player to fall back to and no manual
+      // stream-picking flow that makes sense with a remote — pressing
+      // Resume/Play from Continue Watching means "watch it now". So auto-pick
+      // the top (Real-Debrid) stream on the detail page and play, instead of
+      // silently dumping the user on the detail page. `t` resumes at the saved
+      // offset. Gated on isTvMode() (not isAndroidTv) so the ?tv=1 browser
+      // test matches the real TV; desktop keeps the pick-a-stream detail page.
+      if (isTvMode()) qs.set('autoplay', '1');
       if (resumeSeconds && resumeSeconds > 0) qs.set('t', String(Math.floor(resumeSeconds)));
       const query = qs.toString();
       navigate(query ? `${base}?${query}` : base);

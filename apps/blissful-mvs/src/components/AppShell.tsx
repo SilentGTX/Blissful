@@ -258,11 +258,20 @@ export default function AppShell() {
   // Its open state was observed to outlive the navigation Resume kicked off
   // (the autoplay detour lands on /detail first, where the old /player-only
   // clear never fired — the modal sat stuck over the page until the player
-  // finally mounted). Pathname-keyed, so it can't fight the OPENING of the
-  // modal (which never changes the route).
+  // finally mounted).
+  //
+  // CRITICAL: depend ONLY on location.pathname (and the stable useState
+  // setter), NOT the whole `modals` object. The modals context value is
+  // memoized with `resumeModalItem` in its deps, so OPENING the modal
+  // changes `modals`'s identity — if this effect depended on `modals` it
+  // would re-fire on open and instantly clear the modal again (it "closed
+  // before you could click Resume"). `setResumeModalItem` is the raw
+  // useState setter, referentially stable, so the effect now fires only on
+  // an actual pathname change.
+  const { setResumeModalItem } = modals;
   useEffect(() => {
-    modals.setResumeModalItem(null);
-  }, [location.pathname, modals]);
+    setResumeModalItem(null);
+  }, [location.pathname, setResumeModalItem]);
 
   // (Previously fetched /storage/settings here on every /settings page
   // mount to "refresh" the player settings. Removed: useStoredStateSync
@@ -515,7 +524,7 @@ export default function AppShell() {
                     onCustomizeHome={modals.openHomeSettings}
                     onLogin={modals.openLogin}
                     onLogout={handleLogout}
-                    onToggleFullscreen={handleToggleFullscreen}
+                    onEditProfile={() => modals.openProfilePrompt(displayName)}
                   />
                 )}
                 {!isTvMode() && (
@@ -691,6 +700,7 @@ export default function AppShell() {
         <ProfilePromptModal
           isOpen={modals.isProfilePromptOpen}
           initialName={modals.profilePromptInitialName}
+          onClose={modals.closeProfilePrompt}
           onSave={async (profile) => {
             // Close the modal optimistically — close first so a slow
             // or failing storage-server save doesn't leave the modal
