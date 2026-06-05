@@ -248,7 +248,7 @@ export function TvSelect({
         // so the value can never overflow; the caller's triggerClassName only
         // adds color/shape (falls back to the default glassy pill).
         className={
-          'flex h-9 w-full items-center justify-between gap-2 px-4 text-sm text-white ' +
+          'tv-select-trigger flex h-9 w-full items-center justify-between gap-2 px-4 text-sm text-white ' +
           (triggerClassName ?? 'rounded-full border border-white/10 bg-white/10')
         }
         onClick={() => setOpen((o) => !o)}

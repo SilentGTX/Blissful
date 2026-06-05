@@ -13,7 +13,7 @@ type GenreChipsProps = {
 function GenreChip({ genre, onClick, className }: { genre: string; onClick: () => void; className: string }) {
   const { ref } = useTvFocusable({ onPress: onClick });
   return (
-    <button ref={ref} type="button" className={className} onClick={onClick}>
+    <button ref={ref} type="button" className={'tv-genre-chip ' + className} onClick={onClick}>
       {genre}
     </button>
   );

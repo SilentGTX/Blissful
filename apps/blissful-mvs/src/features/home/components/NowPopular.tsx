@@ -181,7 +181,7 @@ export function NowPopular({
               {tv ? (
                 <div className="flex flex-wrap gap-3 pt-3">
                   <FocusableButton
-                    className="action-button-Pn4hZ mb-0 cursor-pointer !border-0 !bg-[#19f7d2] !text-[#05070a] hover:!bg-[#15d9b8] !h-14 !px-7 !text-base"
+                    className="action-button-Pn4hZ mb-0 cursor-pointer !border-0 !bg-[var(--bliss-accent)] !text-[#05070a] hover:!opacity-90 !h-14 !px-7 !text-base"
                     onPress={onWatch}
                     autoFocusTv
                     focusKeyTv={watchFocusKey}

@@ -2391,6 +2391,22 @@ html[data-tv] .tv-topbar-search input {
 html[data-tv] .tv-topbar-search input::placeholder {
   color: rgba(255, 255, 255, 0.45);
 }
+/* ONE pill-shaped focus ring on the search bar. The wrapper carries the
+   data-focused ring when D-pad lands on it, and keeps it (via :focus-within)
+   once the inner input is native-focused for typing. Inset + pill radius so it
+   traces the pill exactly and can't be clipped. !important + outline:none beat
+   the generic outset [data-focused] rule (which was drawing a 2nd rounded-rect
+   ring outside → the "double border"). */
+html[data-tv] .tv-topbar-search[data-focused="true"],
+html[data-tv] .tv-topbar-search:focus-within {
+  outline: none !important;
+  box-shadow: inset 0 0 0 3px var(--bliss-accent) !important;
+}
+html[data-tv] .tv-topbar-search input:focus,
+html[data-tv] .tv-topbar-search input:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
 /* Profile avatar — top-right glass circle. */
 html[data-tv] .tv-topbar-profile {
   pointer-events: auto;
@@ -2563,6 +2579,39 @@ html[data-tv] [data-focused="true"]:focus-visible {
   border-radius: 14px;
 }
 
+/* Sidebar nav links live inside an `overflow-hidden` rounded container and
+   only have 16px side margins, so the generic outline+offset+outer-glow ring
+   gets clipped at the rail edges (the "cut and ugly" look). Override it with an
+   INSET ring drawn entirely inside the element — never clipped — plus a soft
+   accent glow that the visible `overflow-visible` outer wrapper still shows. */
+html[data-tv] .bliss-sidebar-link[data-focused="true"],
+html[data-tv] .bliss-sidebar-link[data-focused="true"]:focus-visible {
+  outline: none !important;
+  /* Pure INSET ring (no outset glow) so the overflow-hidden sidebar container
+     never clips it. !important beats the generic outset [data-focused] rule. */
+  box-shadow: inset 0 0 0 3px var(--bliss-accent) !important;
+  border-radius: 1rem; /* matches the link's rounded-2xl */
+}
+
+/* Top-bar dropdown triggers (Movie / Popular / Genre) live in the top bar's
+   clipped row, so the generic outset ring gets cut at the edges. Inset ring,
+   following the pill's own rounded-full radius, never clips. */
+html[data-tv] .tv-select-trigger[data-focused="true"],
+html[data-tv] .tv-select-trigger[data-focused="true"]:focus-visible {
+  outline: none !important;
+  /* No border-radius override — the inset shadow follows the button's own
+     rounded-full, so the ring stays pill-shaped (not square). */
+  box-shadow: inset 0 0 0 3px var(--bliss-accent) !important;
+}
+
+/* Detail-page genre chips (Comedy / Drama …) are rounded-full pills; the generic
+   14px-radius outset ring mismatched + clipped them. Inset, pill-shaped. */
+html[data-tv] .tv-genre-chip[data-focused="true"],
+html[data-tv] .tv-genre-chip[data-focused="true"]:focus-visible {
+  outline: none !important;
+  box-shadow: inset 0 0 0 3px var(--bliss-accent) !important;
+}
+
 /* The card title is a SIBLING below the focusable image, so it sat under the
    focus shadow. Lift it above and tint it lavender on focus (matching hover). */
 html[data-tv] .tv-focusable-card[data-focused="true"] ~ .tv-card-title {
@@ -2696,6 +2745,13 @@ html[data-tv] .tv-focusable-card {
 html[data-tv] .tv-focusable-card[data-focused="true"] {
   transform: scale(1.05);
   z-index: 3;
+}
+/* The Discover/Library poster grid lives in an `overflow-y-auto` scroller, so a
+   focused poster's scale(1.05) + outset focus ring would be clipped at the grid
+   edges (top row clipped vertically, edge columns horizontally). Pad the grid so
+   the grown card + ring always has clearance. */
+html[data-tv] .tv-poster-grid {
+  padding: clamp(0.75rem, 1.4vw, 1.5rem);
 }
 /* Real low-end TVs (Mali-class, software compositing): keep a SNAPPY focus
    scale, just shorter (110ms vs 180ms). The lag was never the small per-card
@@ -3249,14 +3305,20 @@ html[data-tv] .tv-select-item:focus {
 }
 
 /* ---- TvTextInput focus ---- */
-html[data-tv] .tv-text-input[data-focused="true"] {
+/* Search/text field focus: ONE inset ring on the wrapper. The wrapper carries
+   the Norigin data-focused ring when you D-pad onto it; once OK native-focuses
+   the inner <input>, keep the SAME ring on the wrapper (via :focus-within) and
+   suppress the input's own outline — otherwise you get two nested rings (the
+   "double ring" bug). Inset so the rounded pill never clips it. */
+html[data-tv] .tv-text-input[data-focused="true"],
+html[data-tv] .tv-text-input:focus-within {
   outline: none;
   box-shadow: inset 0 0 0 3px var(--bliss-accent);
   border-radius: 14px;
 }
-html[data-tv] .tv-text-input input:focus {
-  outline: 2px solid var(--bliss-accent);
-  outline-offset: 1px;
+html[data-tv] .tv-text-input input:focus,
+html[data-tv] .tv-text-input input:focus-visible {
+  outline: none;
 }
 
 /* Native-focused controls inside TV modals/overlays (driven by useTvOverlay —
@@ -3658,6 +3720,12 @@ html[data-tv] .tv-episode-card-title {
   font-size: clamp(1rem, 1.1vw, 1.3rem);
   font-weight: 600;
   color: #fff;
+  /* Constrain to the card width so the ellipsis actually triggers. Without
+     max-width + the flex min-width:0 reset, a long single-line title grows
+     past the card edge (flex items don't shrink below content by default)
+     and bleeds into the neighbouring card. */
+  max-width: 100%;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

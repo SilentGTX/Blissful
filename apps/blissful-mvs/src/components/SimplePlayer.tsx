@@ -2824,7 +2824,7 @@ export default function SimplePlayer(props: {
               <>
                 <div className="mb-3 h-1 w-full overflow-hidden rounded-full bg-white/10">
                   <div
-                    className="h-full rounded-full bg-[#19f7d2] transition-all duration-1000 ease-linear"
+                    className="h-full rounded-full bg-[var(--bliss-accent)] transition-all duration-1000 ease-linear"
                     style={{ width: `${(upNextCountdown / 10) * 100}%` }}
                   />
                 </div>
@@ -2840,7 +2840,7 @@ export default function SimplePlayer(props: {
               </button>
               <button
                 type="button"
-                className="rounded-full bg-[#19f7d2] px-4 py-2 text-xs font-semibold text-black transition-colors hover:bg-[#14dbb8]"
+                className="rounded-full bg-[var(--bliss-accent)] px-4 py-2 text-xs font-semibold text-black transition-colors hover:opacity-90"
                 onClick={advanceToNextEpisode}
               >
                 Play Now

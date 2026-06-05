@@ -137,7 +137,7 @@ export const SubtitleMenuPopover = React.memo(function SubtitleMenuPopover({
                     <span className="flex items-center gap-2 truncate">
                       <span>{subtitleLangLabel(lang)}</span>
                       {embeddedCount > 0 ? (
-                        <span className="rounded bg-[#19f7d2]/20 px-1 text-[9px] uppercase tracking-wider text-[#19f7d2]">
+                        <span className="rounded bg-[var(--bliss-accent)]/20 px-1 text-[9px] uppercase tracking-wider text-[var(--bliss-accent)]">
                           embedded
                         </span>
                       ) : null}

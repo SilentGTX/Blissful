@@ -45,7 +45,7 @@ export const AudioMenuPopover = React.memo(function AudioMenuPopover({
                   className={
                     'flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm ' +
                     (active
-                      ? 'bg-[#19f7d2]/20 font-semibold text-[#19f7d2]'
+                      ? 'bg-[var(--bliss-accent)]/20 font-semibold text-[var(--bliss-accent)]'
                       : 'text-white hover:bg-white/10')
                   }
                 >

@@ -771,7 +771,7 @@ export default function AppShell() {
           <span className="text-sm text-white/90">New update ready. Restart now?</span>
           <button
             onClick={installNow}
-            className="rounded-xl bg-[#19f7d2] px-4 py-1.5 text-sm font-semibold text-black hover:bg-[#19f7d2]/80 transition-colors"
+            className="rounded-xl bg-[var(--bliss-accent)] px-4 py-1.5 text-sm font-semibold text-black hover:bg-[var(--bliss-accent)]/80 transition-colors"
           >
             Update & Restart
           </button>
@@ -792,7 +792,7 @@ export default function AppShell() {
       {isInstalling && (
         <div className="fixed inset-0 z-[10000] flex flex-col items-center justify-center bg-black/85 backdrop-blur-xl">
           <div className="flex flex-col items-center gap-4 rounded-3xl border border-white/15 bg-white/5 px-10 py-8 shadow-2xl">
-            <div className="h-12 w-12 animate-spin rounded-full border-4 border-white/15 border-t-[#19f7d2]" />
+            <div className="h-12 w-12 animate-spin rounded-full border-4 border-white/15 border-t-[var(--bliss-accent)]" />
             <div className="text-center">
               <div className="text-base font-semibold text-white">Installing update</div>
               <div className="mt-1 text-sm text-white/60">

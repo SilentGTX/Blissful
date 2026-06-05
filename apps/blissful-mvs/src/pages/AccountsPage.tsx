@@ -133,7 +133,7 @@ export default function AccountsPage() {
                                   className={
                                     'relative grid h-10 w-10 place-items-center overflow-hidden rounded-lg transition ' +
                                     (draftAvatar === entry
-                                      ? 'scale-105 ring-2 ring-[#19f7d2] ring-offset-1 ring-offset-black/40'
+                                      ? 'scale-105 ring-2 ring-[var(--bliss-accent)] ring-offset-1 ring-offset-black/40'
                                       : 'opacity-90 hover:opacity-100')
                                   }
                                   onClick={() => {
@@ -146,7 +146,7 @@ export default function AccountsPage() {
                                     entry
                                   )}
                                   {draftAvatar === entry ? (
-                                    <span className="absolute right-0.5 top-0.5 grid h-3.5 w-3.5 place-items-center rounded-full bg-[#19f7d2] text-[9px] font-bold text-black">
+                                    <span className="absolute right-0.5 top-0.5 grid h-3.5 w-3.5 place-items-center rounded-full bg-[var(--bliss-accent)] text-[9px] font-bold text-black">
                                       ✓
                                     </span>
                                   ) : null}
