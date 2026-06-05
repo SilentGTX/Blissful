@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { NavigateFunction } from 'react-router-dom';
 import { getEpisodeTitle } from '../utils';
+import { isTvMode } from '../../../lib/platform';
 
 type EpisodeVideo = {
   id: string;
@@ -56,6 +57,18 @@ export function useEpisodeSelection({
       // Safe on desktop too — the streams panel should revert to episodes when
       // the URL no longer points at an episode.
       setSelectedVideoId(null);
+      return;
+    }
+    // TV: a URL videoId only FOCUSES the episode card in the rail — it must
+    // NOT auto-select (selection is what opens the full-screen stream popup:
+    // `popupOpen = selectedVideoId !== null` in TvDetailLayout). Back from
+    // the player lands here carrying the episode's videoId — both via the
+    // player's own onBack navigate AND via WebView history.back() popping to
+    // the pre-play detail URL — and force-opening the torrent selector on
+    // every back-out was disorienting. The user re-opens it with OK on the
+    // (focused) card. Autoplay flows still select: the auto-pick machinery
+    // needs a selected episode to fetch and rank streams.
+    if (isTvMode() && searchParams.get('autoplay') !== '1') {
       return;
     }
     const decoded = decodeURIComponent(qpVideoId);

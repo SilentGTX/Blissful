@@ -242,16 +242,19 @@ export function BottomControls(props: BottomControlsProps) {
           >
             {paused ? <StremioIcon name="play" className="h-6 w-6" /> : <StremioIcon name="pause" className="h-6 w-6" />}
           </button>
-          <button
-            type="button"
-            className="bliss-player-icon-btn flex h-10 w-10 items-center justify-center rounded-full"
-            onClick={toggleMute}
-            aria-label={muted ? 'Unmute' : 'Mute'}
-          >
-            <StremioIcon name={volumeIcon} className="h-5 w-5" />
-          </button>
-          {/* TV: no volume slider — the remote owns volume, and a slider the
-              D-pad can't reach is dead chrome on a 10-foot UI. */}
+          {/* TV: no mute button or volume slider — the remote owns volume,
+              and controls the D-pad can't reach are dead chrome on a
+              10-foot UI. */}
+          {!isTvMode() ? (
+            <button
+              type="button"
+              className="bliss-player-icon-btn flex h-10 w-10 items-center justify-center rounded-full"
+              onClick={toggleMute}
+              aria-label={muted ? 'Unmute' : 'Mute'}
+            >
+              <StremioIcon name={volumeIcon} className="h-5 w-5" />
+            </button>
+          ) : null}
           {!isTvMode() ? (
             <input
               className="bliss-player-volume h-1 w-28 cursor-pointer appearance-none rounded-full"

@@ -86,6 +86,20 @@ TVs are landscape-only; add to the main `<activity>`:
 android:screenOrientation="landscape"
 ```
 
+## 6. Soft keyboard: pan, don't resize
+
+Add to the main `<activity>`:
+
+```xml
+android:windowSoftInputMode="adjustPan"
+```
+
+Android's default `adjustResize` shrinks the WebView viewport when the TV
+IME opens — the whole 1920px-design UI reflows/squishes behind the keyboard
+(and center-placed modals clip). `adjustPan` keeps the viewport intact and
+just pans the window if the focused field would be covered; the login modal
+sits in the top half so usually nothing moves at all.
+
 ## Verify
 
 ```powershell

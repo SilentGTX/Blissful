@@ -150,6 +150,19 @@ export function useContinueWatchingActions({
       // stream history has one) is available synchronously, so the veil can
       // show the same logo /player?logo= will.
       onPendingNavigation?.(stored.logo ?? null);
+      // Kick the meta-image resolve NOW, in parallel with the probe below
+      // (it used to run after — serialized round-trips), and upgrade the
+      // veil the moment a logo lands when the stored stream carried none
+      // (typical for a cross-device resume via the server-synced
+      // _blissStreamUrl, which has no logo). The provider applies upgrades
+      // only while the veil is still up, so a bailed/aborted flow can't be
+      // re-veiled by this late resolve.
+      const metaImagesPromise = resolveMetaImages();
+      if (!stored.logo) {
+        void metaImagesPromise.then((images) => {
+          if (images.logo) onPendingNavigation?.(images.logo);
+        });
+      }
 
       // Pre-flight HEAD probe — Real-Debrid serves a ~30 s "File was
       // removed" placeholder (<20 MB) when a cached release is DMCA'd.
@@ -201,7 +214,7 @@ export function useContinueWatchingActions({
         return;
       }
 
-      const { logo, background } = await resolveMetaImages();
+      const { logo, background } = await metaImagesPromise;
       const qs = new URLSearchParams({
         url: stored.url,
         title: stored.title ?? item.name,

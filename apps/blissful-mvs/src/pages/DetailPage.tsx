@@ -259,6 +259,29 @@ export default function DetailPage() {
     const v = videos.find((x) => x.id === nextToWatch.videoId);
     return typeof v?.season === 'number' ? v.season : null;
   }, [nextToWatch, videos]);
+
+  // TV: a URL ?videoId arriving WITHOUT autoplay is a back-from-player landing
+  // (useEpisodeSelection deliberately does NOT auto-select it there — selection
+  // would force the stream popup open over the page). Resolve it to a concrete
+  // episode so the rail can switch to its season + focus its card instead; OK
+  // on the card then opens the stream popup like any episode press. Same
+  // exact-id-then-(season,episode)-tail matching the selection hook uses.
+  const tvFocusEpisode = useMemo(() => {
+    if (!tvMode || !isSeriesLike) return null;
+    const raw = searchParams.get('videoId');
+    if (!raw || searchParams.get('autoplay') === '1') return null;
+    const decoded = decodeURIComponent(raw);
+    const exact = videos.find((v) => v.id === decoded);
+    if (exact) return exact;
+    const tail = decoded.split(':').slice(-2);
+    const s = Number.parseInt(tail[0] ?? '', 10);
+    const e = Number.parseInt(tail[1] ?? '', 10);
+    if (Number.isFinite(s) && Number.isFinite(e)) {
+      return videos.find((v) => v.season === s && v.episode === e) ?? null;
+    }
+    return null;
+  }, [tvMode, isSeriesLike, searchParams, videos]);
+
   // Keyed by id (not a bare boolean) so navigating detail->detail (e.g. a
   // similar-titles press, which reuses this DetailPage instance — the route has
   // no key) re-applies the next-to-watch season for the NEW series instead of
@@ -267,11 +290,21 @@ export default function DetailPage() {
   useEffect(() => {
     if (!tvMode || !isSeriesLike) return;
     if (defaultSeasonAppliedForRef.current === id) return;
-    if (selectedVideoId || searchParams.get('videoId')) return;
+    if (selectedVideoId) return;
+    // Back-from-player: land on the JUST-PLAYED episode's season so the
+    // focused card (tvFocusEpisode) is actually mounted in the rail.
+    if (tvFocusEpisode) {
+      if (typeof tvFocusEpisode.season === 'number') {
+        defaultSeasonAppliedForRef.current = id;
+        setSeason(tvFocusEpisode.season);
+      }
+      return;
+    }
+    if (searchParams.get('videoId')) return;
     if (nextSeason == null) return;
     defaultSeasonAppliedForRef.current = id;
     setSeason(nextSeason);
-  }, [tvMode, isSeriesLike, selectedVideoId, searchParams, nextSeason, setSeason, id]);
+  }, [tvMode, isSeriesLike, selectedVideoId, searchParams, nextSeason, setSeason, id, tvFocusEpisode]);
 
   const streamsViewDesktop = useMemo(
     () =>
@@ -898,7 +931,7 @@ export default function DetailPage() {
           if (canNextSeason) setSeason(seasons[seasonIndex + 1] ?? null);
         }}
         videosForSeason={videosForSeason}
-        autoFocusVideoId={nextToWatch?.videoId ?? null}
+        autoFocusVideoId={tvFocusEpisode?.id ?? nextToWatch?.videoId ?? null}
         episodeRatings={currentSeasonRatings}
         episodeStills={currentSeasonStills}
         episodeStillsPending={episodeStillsPending}

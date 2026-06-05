@@ -116,9 +116,13 @@ export function ContinueWatchingProvider({ children }: { children: ReactNode }) 
         setUnavailableReason('rd-required');
         setUnavailableItem(item);
       },
-      // Player-bound stored-stream path: upgrade the veil with the stream
-      // history's logo (fires synchronously, same render as the click).
-      onPendingNavigation: (logo) => setPendingContinueVeil({ logo }),
+      // Player-bound stored-stream path: upgrade the veil's logo (fires
+      // synchronously with the stream history's logo, and possibly again
+      // when the parallel meta fetch resolves one). UPGRADE-ONLY: if the
+      // veil was already cleared (route committed, RD guard bailed), a late
+      // resolve must not re-raise it — `runContinue` does the raising.
+      onPendingNavigation: (logo) =>
+        setPendingContinueVeil((prev) => (prev ? { logo } : prev)),
     });
 
   const runContinue = useCallback(

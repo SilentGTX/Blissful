@@ -188,6 +188,15 @@ export function SettingsPanel(props: SettingsPanelProps) {
       const isInput = active?.tagName === 'INPUT';
       // On a range slider, Left/Right adjust the value natively — let them pass.
       if (isInput && (k === 'ArrowLeft' || k === 'ArrowRight')) return;
+      // Left CLOSES the panel (it slides in from the right — same gesture as
+      // the episodes / watch-party drawers). Up/Down walk the list; Right
+      // still steps forward for muscle-memory parity with Down.
+      if (k === 'ArrowLeft') {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+        return;
+      }
       const focusables = Array.from(r.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
         (el) => el.offsetParent !== null,
       );

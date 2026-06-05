@@ -3116,12 +3116,12 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         return;
       }
       const tv = isTvMode();
-      // While a right-side overlay (settings / watch party) owns the D-pad,
-      // the player stands down — return WITHOUT consuming the key so the
-      // overlay's own capture-phase listener (registered later → runs after
-      // us) can act on it. (The episodes drawer is driven INLINE below — it
-      // has no listener of its own.)
-      if (tv && (settingsPanelOpenRef.current || watchPartyOpenRef.current)) {
+      // While the settings panel owns the D-pad, the player stands down —
+      // return WITHOUT consuming the key so the panel's own capture-phase
+      // listener (registered later → runs after us) can act on it. (The
+      // episodes drawer and watch party are driven INLINE below — neither
+      // has a listener of its own.)
+      if (tv && settingsPanelOpenRef.current) {
         return;
       }
       const k = e.key;
@@ -3136,11 +3136,26 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       const isDown = e.code === 'ArrowDown' || k === 'ArrowDown' || e.keyCode === 20;
       const isBack = e.code === 'Escape' || k === 'Escape' || k === 'GoBack' || k === 'BrowserBack' || e.keyCode === 10009;
 
+      // === TV: watch-party drawer =====================================
+      // No D-pad layer of its own yet (PORT-MAP: party text-entry is
+      // drop-on-tv-v1), but Left / Back must still close it like every
+      // right-side drawer. Keys are left alone while typing in its inputs.
+      if (tv && watchPartyOpenRef.current) {
+        const typing = tgt?.tagName === 'INPUT' || tgt?.tagName === 'TEXTAREA';
+        if (!typing && (isRew || isBack)) {
+          e.preventDefault();
+          e.stopPropagation();
+          setWatchPartyOpen(false);
+        }
+        return;
+      }
+
       // === TV: episodes drawer (coverflow) ============================
       // Up/Down step the focused card via the same focus-index the wheel
       // and touch paths bump; OK clicks the focused card (which the drawer
-      // maps to onSelectEpisode); Back closes. Left/Right are swallowed so
-      // a stray press can't trigger a hidden seek under the drawer.
+      // maps to onSelectEpisode); Left (the drawer slides in from the
+      // right) or Back closes. Right is swallowed so a stray press can't
+      // trigger a hidden seek under the drawer.
       if (tv && episodesOpenRef.current) {
         const stepEpisodes = (dir: 1 | -1) => {
           setEpisodesFocusIndex((prev) => {
@@ -3171,7 +3186,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
                 )
               : currentEpisodeCardRef.current;
           card?.click();
-        } else if (isBack) {
+        } else if (isBack || isRew) {
           setEpisodesOpen(false);
         }
         return;
