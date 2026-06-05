@@ -228,6 +228,42 @@ export default function HomePage() {
     [navigate]
   );
 
+  // Stable card-press/row-focus handlers. MediaCard is memo'd and the TV
+  // MediaRail forwards `onItemPress` to every card AS-IS (the stable-handler
+  // contract documented in MediaRail/MediaCard). An inline `(item) =>
+  // navigate(...)` closure here gets a fresh identity on every HomePage
+  // render — and every vertical D-pad move re-renders HomePage via
+  // `setFocusedRowIndex` — which defeated the per-card memo and re-rendered
+  // all ~50-90 mounted cards on each Down/Up press on TV.
+  const goToItem = useCallback(
+    (item: MediaItem) => navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`),
+    [navigate]
+  );
+  // TV: match desktop — defer to the shared continue-watching flow so items
+  // with saved progress pop the ResumeOrStartOverModal first (and only
+  // navigate/play after the user's choice). `continueItems` are derived from
+  // `continueWatching` so MediaItem.id === LibraryItem._id. useCallback for
+  // the same memo contract as `goToItem`.
+  const onContinueItemPress = useCallback(
+    (item: MediaItem) => {
+      const libItem = continueWatching.find((cw) => cw._id === item.id);
+      if (libItem) {
+        onOpenContinueItem(libItem);
+        return;
+      }
+      navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`);
+    },
+    [continueWatching, onOpenContinueItem, navigate]
+  );
+  // One stable onRowFocus per row index — only rebuilt when the row COUNT
+  // changes, never on focus moves, so the prop identity each MediaRail sees
+  // survives the per-move HomePage re-render.
+  const rowFocusHandlers = useMemo(
+    () => Array.from({ length: rowsToRender.length }, (_, i) => () => setFocusedRowIndex(i)),
+    [rowsToRender.length]
+  );
+  const focusTopRow = useCallback(() => setFocusedRowIndex(0), []);
+
   const toggleVisibility = async (id: string) => {
     const nextHidden = homeRowPrefs.hidden.includes(id)
       ? homeRowPrefs.hidden.filter((rowId) => rowId !== id)
@@ -395,19 +431,7 @@ export default function HomePage() {
             // 20-40+ live cards) while every other rail caps at maxRowItems. The
             // full `continueWatching` list is still used for the lookup below.
             items={continueItems.slice(0, 14)}
-            onItemPress={(item) => {
-              // TV: match desktop — defer to the shared continue-watching
-              // flow so items with saved progress pop the
-              // ResumeOrStartOverModal first (and only navigate/play after
-              // the user's choice). `continueItems` are derived from
-              // `continueWatching` so MediaItem.id === LibraryItem._id.
-              const libItem = continueWatching.find((cw) => cw._id === item.id);
-              if (libItem) {
-                onOpenContinueItem(libItem);
-                return;
-              }
-              navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`);
-            }}
+            onItemPress={onContinueItemPress}
             noScroll
             className="board-row-poster"
             autoFocusFirst={false}
@@ -415,7 +439,7 @@ export default function HomePage() {
             // CW is the always-mounted top rail; when focus is here, anchor the
             // catalog-row window to the top so Down lands on row 0 (not a stale
             // window that would skip the first rows).
-            onRowFocus={() => setFocusedRowIndex(0)}
+            onRowFocus={focusTopRow}
           />
         ) : null}
 
@@ -476,7 +500,7 @@ export default function HomePage() {
                   <MediaRailMobile
                     title={row.title}
                     items={row.items}
-                    onItemPress={(item) => navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`)}
+                    onItemPress={goToItem}
                     onSeeAll={() => handleSeeAll(row)}
                     dimmed={homeRowPrefs.hidden.includes(row.id)}
                     actions={
@@ -496,14 +520,14 @@ export default function HomePage() {
                   <MediaRail
                     title={row.title}
                     items={row.items}
-                    onItemPress={(item) => navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`)}
+                    onItemPress={goToItem}
                     onSeeAll={() => handleSeeAll(row)}
                     dimmed={homeRowPrefs.hidden.includes(row.id)}
                     noScroll
                     className="board-row-poster"
                     autoFocusFirst={false}
                     upFocusKey={!cwIsTopRail && rowIndex === 0 ? HERO_WATCH_KEY : undefined}
-                    onRowFocus={() => setFocusedRowIndex(rowIndex)}
+                    onRowFocus={rowFocusHandlers[rowIndex]}
                     actions={
                       homeEditMode ? (
                         <Button
