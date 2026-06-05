@@ -1,5 +1,5 @@
 import { Spinner } from '@heroui/react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import BottomDrawer from '../components/BottomDrawer';
 import { SkeletonSearchGrid } from '../components/Skeleton';
@@ -16,6 +16,7 @@ import { isInLibrary as isInLibraryStored, toggleLibrary } from '../lib/libraryS
 import { useImdbRating } from '../lib/useImdbRating';
 import { TvSelect } from '../spatial/TvSelect';
 import { FocusableButton } from '../spatial/FocusableButton';
+import { useTvGridWindow } from '../spatial/useTvGridWindow';
 import type { MediaItem, MediaType } from '../types/media';
 
 export default function DiscoverPage() {
@@ -65,6 +66,28 @@ export default function DiscoverPage() {
     selectedLoading,
     selected,
   } = useDiscoverSelection({ discoverType, baseUrl, filteredItems });
+
+  // Stable per-item handlers (MediaCard is memo'd; inline closures here would
+  // get fresh identities on every selection change — i.e. every D-pad move,
+  // since focus drives `selectedId` — and re-render every mounted card. Same
+  // contract as the home rails' `onItemPress`.)
+  const previewItem = useCallback((item: MediaItem) => setSelectedId(item.id), [setSelectedId]);
+  const openItem = useCallback(
+    (item: MediaItem) => navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`),
+    [navigate]
+  );
+
+  // TV: the focused card IS the selected card (focus drives the live
+  // preview), so the grid window centers on the selection's index. The
+  // infinite-scroll grid otherwise grows unbounded — hundreds of live
+  // MediaCards (img decode + rating fetch + ResizeObserver each) on a 2GB
+  // device. Off-TV `isMounted` is always true.
+  const focusedIdx = useMemo(() => {
+    if (!selectedId) return 0;
+    const idx = filteredItems.findIndex((item) => item.id === selectedId);
+    return idx < 0 ? 0 : idx;
+  }, [filteredItems, selectedId]);
+  const { cellH, measureCell, isMounted } = useTvGridWindow(focusedIdx);
 
   const selectedInlineRating = useMemo(() => {
     if (!selected) return null;
@@ -286,19 +309,27 @@ export default function DiscoverPage() {
               // breakpoints) and get ~6-7 bigger cards at 4K instead
               // of shrinking each card down to nothing.
               <div className="tv-poster-grid grid gap-5 p-1 [grid-template-columns:repeat(auto-fit,minmax(clamp(160px,16vw,420px),1fr))]">
-                {filteredItems.map((item, index) => (
-                  <MediaCard
-                    key={item.id}
-                    item={item}
-                    variant="poster"
-                    selected={selectedId === item.id}
-                    autoFocusTv={index === 0}
-                    // Focus / hover live-previews the title in the side panel;
-                    // OK / click opens the detail page we built (TvDetailLayout).
-                    onFocus={() => setSelectedId(item.id)}
-                    onPress={() => navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`)}
-                  />
-                ))}
+                {filteredItems.map((item, index) =>
+                  isMounted(index) ? (
+                    <div key={item.id} ref={measureCell}>
+                      <MediaCard
+                        item={item}
+                        variant="poster"
+                        selected={selectedId === item.id}
+                        autoFocusTv={index === 0}
+                        // Focus / hover live-previews the title in the side panel;
+                        // OK / click opens the detail page we built (TvDetailLayout).
+                        onItemFocus={previewItem}
+                        onItemPress={openItem}
+                      />
+                    </div>
+                  ) : (
+                    // TV out-of-window cell: same grid slot, same height, no
+                    // card (see useTvGridWindow). Keeps column flow, scroll
+                    // geometry and Norigin offsets identical to full mount.
+                    <div key={item.id} style={{ height: cellH || 380 }} aria-hidden />
+                  )
+                )}
               </div>
             )}
           </div>

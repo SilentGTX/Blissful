@@ -1,5 +1,5 @@
 import { Spinner } from '@heroui/react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import MediaCard from '../components/MediaCard';
 import { useAuth } from '../context/AuthProvider';
@@ -7,6 +7,7 @@ import { useModals } from '../context/ModalsProvider';
 import { CloseIcon } from '../icons/CloseIcon';
 import { FocusableButton } from '../spatial/FocusableButton';
 import { TvSelect } from '../spatial/TvSelect';
+import { useTvGridWindow } from '../spatial/useTvGridWindow';
 import { isTvMode } from '../lib/platform';
 import {
   normalizeStremioImage,
@@ -166,6 +167,60 @@ export default function LibraryPage() {
     return ['all', ...list];
   }, [items]);
 
+  // Per-item card data, memoised so each MediaCard's `item` prop keeps a
+  // stable identity across re-renders (the cards are memo'd; a fresh object
+  // per render would defeat that and re-render every mounted card on each
+  // focus move / library poll).
+  const cells = useMemo(
+    () =>
+      filtered.map((item) => ({
+        item,
+        videoId: item.type === 'series' ? item.state?.video_id ?? null : null,
+        progress: percentProgress(item),
+        mediaItem: {
+          id: item._id,
+          type: item.type,
+          title: item.name,
+          posterUrl: normalizeStremioImage(item.poster),
+        } as MediaItem,
+      })),
+    [filtered]
+  );
+  const indexById = useMemo(
+    () => new Map(filtered.map((it, index) => [it._id, index])),
+    [filtered]
+  );
+
+  // TV: a heavy user's library is 500-2000+ items; un-windowed, EVERY one
+  // mounted a live MediaCard (poster decode + rating fetch + ResizeObserver)
+  // on first Library open — a mount/memory cliff that can kill the WebView
+  // renderer on a 2GB device. Window the grid around the focused card the
+  // same way Discover does. Off-TV everything stays mounted as before.
+  const [focusedIdx, setFocusedIdx] = useState(0);
+  const { windowed, cellH, measureCell, isMounted } = useTvGridWindow(focusedIdx);
+  const focusLibraryCard = useCallback(
+    (m: MediaItem) => {
+      // Only the TV window consumes focus position; skip the per-hover
+      // re-render on desktop (where `isMounted` is always true anyway).
+      if (!windowed) return;
+      setFocusedIdx(indexById.get(m.id) ?? 0);
+    },
+    [windowed, indexById]
+  );
+  const openLibraryItem = useCallback(
+    (m: MediaItem) => {
+      const idx = indexById.get(m.id);
+      const cell = idx !== undefined ? cells[idx] : undefined;
+      if (!cell) return;
+      const base = `/detail/${encodeURIComponent(cell.item.type)}/${encodeURIComponent(cell.item._id)}`;
+      const href = cell.item.type === 'series' && typeof cell.videoId === 'string'
+        ? `${base}?videoId=${encodeURIComponent(cell.videoId)}`
+        : base;
+      navigate(href);
+    },
+    [indexById, cells, navigate]
+  );
+
   if (!authKey) {
     return (
       <div className="mt-4">
@@ -249,20 +304,17 @@ export default function LibraryPage() {
           <div className="text-sm text-foreground/60">No library items found.</div>
         ) : null}
 
-        {filtered.map((item, index) => {
-          const poster = normalizeStremioImage(item.poster);
-          const progress = percentProgress(item);
-          const videoId = item.type === 'series' ? item.state?.video_id ?? null : null;
-
-          const mediaItem: MediaItem = {
-            id: item._id,
-            type: item.type,
-            title: item.name,
-            posterUrl: poster,
-          };
+        {cells.map((cell, index) => {
+          const { item } = cell;
+          if (!isMounted(index)) {
+            // TV out-of-window cell: same grid slot, same height, no card
+            // (see useTvGridWindow). Keeps column flow and scroll geometry
+            // identical to a fully-mounted grid.
+            return <div key={item._id} style={{ height: cellH || 380 }} aria-hidden />;
+          }
 
           return (
-            <div key={item._id} className="relative">
+            <div key={item._id} className="relative" ref={measureCell}>
               {/* On TV, gate out the Remove-X so the cell has a single focus stop
                   (the card). It stays on desktop where it's mouse-driven. */}
               {!isTvMode() ? (
@@ -285,17 +337,12 @@ export default function LibraryPage() {
               ) : null}
 
               <MediaCard
-                item={mediaItem}
+                item={cell.mediaItem}
                 variant="poster"
-                progress={progress}
+                progress={cell.progress}
                 autoFocusTv={index === 0}
-                onPress={() => {
-                  const base = `/detail/${encodeURIComponent(item.type)}/${encodeURIComponent(item._id)}`;
-                  const href = item.type === 'series' && typeof videoId === 'string'
-                    ? `${base}?videoId=${encodeURIComponent(videoId)}`
-                    : base;
-                  navigate(href);
-                }}
+                onItemFocus={focusLibraryCard}
+                onItemPress={openLibraryItem}
               />
             </div>
           );

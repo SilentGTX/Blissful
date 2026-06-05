@@ -35,6 +35,11 @@ type MediaCardProps = {
   /** Fired when the card gains D-pad/keyboard focus or mouse hover — used by
    *  Discover to live-preview the focused title in the side panel. */
   onFocus?: () => void;
+  /** Stable alternative to `onFocus`: receives the item, same contract as
+   *  `onItemPress` — the grid passes ONE stable function instead of a fresh
+   *  `() => onFocus(item)` closure per card per render, so React.memo can
+   *  skip every card whose focus didn't change on a D-pad move. */
+  onItemFocus?: (item: MediaItem) => void;
 };
 
 function formatRating(rating?: number) {
@@ -55,12 +60,15 @@ function MediaCard({
   autoFocusTv,
   upFocusKey,
   onFocus,
+  onItemFocus,
 }: MediaCardProps) {
   // Resolve a single press handler. Prefer explicit `onPress`; else build it
   // from the stable item-based `onItemPress` (so the rail passes ONE stable
   // function and React.memo can skip non-focused cards). All `onPress`
   // references below are unchanged.
   const onPress = onPressProp ?? (onItemPress ? () => onItemPress(item) : undefined);
+  // Same resolution for focus (see `onItemFocus` prop docs).
+  const handleFocus = onFocus ?? (onItemFocus ? () => onItemFocus(item) : undefined);
   // TV: do NOT lazy-scrape IMDB ratings per card. On the home screen that
   // fires a burst of dozens of proxied imdb.com/Cinemeta fetches (one per
   // card with no addon-supplied rating) the instant the grid mounts, each
@@ -74,7 +82,7 @@ function MediaCard({
   const [menuOpen, setMenuOpen] = useState(false);
   const { ref: tvRef } = useTvFocusable({
     onPress,
-    onFocus,
+    onFocus: handleFocus,
     // TV: holding OK opens a quick-actions menu (Open / Library / mark watched);
     // a short tap still fires onPress (navigate). Only for interactive cards.
     onLongPress: onPress ? () => setMenuOpen(true) : undefined,
@@ -183,7 +191,7 @@ function MediaCard({
             (showHoverActions ? 'netflix-card-wrap' : '')
           }
           onClick={onPress}
-          onMouseEnter={onFocus}
+          onMouseEnter={handleFocus}
           onTouchStart={(e) => {
             e.currentTarget.style.transform = 'scale(0.98)';
           }}

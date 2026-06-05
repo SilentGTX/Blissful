@@ -29,7 +29,6 @@ export function useDiscoverSelection({ discoverType, baseUrl, filteredItems }: U
     let cancelled = false;
 
     const run = async () => {
-      setSelectedLoading(true);
       try {
         const resp = await fetchMeta({ type: discoverType, id: selectedId, baseUrl });
         if (cancelled) return;
@@ -42,9 +41,18 @@ export function useDiscoverSelection({ discoverType, baseUrl, filteredItems }: U
       }
     };
 
-    void run();
+    // Debounce the fetch behind a short settle window: focus/hover scanning
+    // across the grid changes `selectedId` on every D-pad step (or mouse
+    // pass), and undebounced this fired one meta request PER STEP through
+    // the loopback proxy — wasted network + JSON parse on titles the user
+    // skimmed past. The spinner still shows immediately; only the request
+    // waits for the selection to rest. 200ms sits under perception for the
+    // preview panel but absorbs a held-down D-pad (Norigin steps ~100ms).
+    setSelectedLoading(true);
+    const timer = window.setTimeout(() => void run(), 200);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [discoverType, selectedId, baseUrl]);
 
