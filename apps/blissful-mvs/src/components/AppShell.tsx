@@ -710,7 +710,9 @@ export default function AppShell() {
             modals.closeProfilePrompt();
             try {
               await handleUpdateUserProfile(profile);
-              notifySuccess('Profile updated', `Welcome, ${profile.displayName}.`);
+              // The prompt is now an avatar-only picker, so the toast reflects
+              // that rather than a "welcome" onboarding message.
+              notifySuccess('Avatar updated', 'Your profile avatar has been changed.');
             } catch (err) {
               console.error('[profile] update failed', err);
             }
