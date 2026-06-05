@@ -2677,6 +2677,14 @@ html[data-tv] .board-content {
 html[data-tv] .board-row {
   contain: layout;
 }
+/* Placeholder for a row-windowed-out (unmounted) home row. Holds the row's real
+   height so .board-content's total height + every mounted row's offsetTop stay
+   constant (Norigin measures via the offsetParent/offsetTop walk, so a height
+   mismatch here would make the focused card jump + land on the wrong row).
+   contain:strict is safe — a spacer has no focusables for Norigin to measure. */
+html[data-tv] .board-row-spacer {
+  contain: strict;
+}
 
 /* Generic TV card: scale + lift on focus (transform only — GPU-cheap, no
    reflow). The lavender focus ring is the generic [data-focused] rule above. */

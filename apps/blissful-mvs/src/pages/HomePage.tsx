@@ -43,6 +43,29 @@ const HERO_WATCH_KEY = 'tv-hero-watch';
 
 export default function HomePage() {
   const maxRowItems = 10;
+  // TV vertical row-windowing: keep only the focused row ±OVERSCAN catalog rows
+  // mounted so off-screen rows cost no layout/paint (the remaining vertical-move
+  // cost). UNMOUNT windowing — NOT content-visibility — is the Norigin-SAFE
+  // choice: Norigin measures focusables via an offsetParent/offsetTop walk
+  // (verified in its source), which reads 0 for a content-visibility-skipped
+  // subtree and would break Down/Up navigation; a *mounted* row always has real
+  // offset geometry. OVERSCAN=2 keeps the next move's target mounted+measured
+  // ahead of Norigin's ~100ms keydown throttle. Spacer divs (real row height)
+  // hold .board-content's total height + each mounted row's offsetTop constant
+  // so the focused card never jumps as the window slides. Inert off-TV.
+  const OVERSCAN = 2;
+  const DEFAULT_ROW_H = 420;
+  const windowed = isTvMode();
+  const [focusedRowIndex, setFocusedRowIndex] = useState(0);
+  const [rowH, setRowH] = useState(0);
+  const rowHMeasuredRef = useRef(false);
+  const measureRow = useCallback((el: HTMLDivElement | null) => {
+    if (el && !rowHMeasuredRef.current && el.offsetHeight > 0) {
+      rowHMeasuredRef.current = true;
+      setRowH(el.offsetHeight);
+    }
+  }, []);
+  const spacerH = rowH || DEFAULT_ROW_H;
   const { addons, addonsLoading } = useAddons();
   const { authKey } = useAuth();
   const { uiStyle, homeEditMode } = useUI();
@@ -389,6 +412,10 @@ export default function HomePage() {
             className="board-row-poster"
             autoFocusFirst={false}
             upFocusKey={HERO_WATCH_KEY}
+            // CW is the always-mounted top rail; when focus is here, anchor the
+            // catalog-row window to the top so Down lands on row 0 (not a stale
+            // window that would skip the first rows).
+            onRowFocus={() => setFocusedRowIndex(0)}
           />
         ) : null}
 
@@ -399,9 +426,28 @@ export default function HomePage() {
             <SkeletonHomeRow />
           </div>
         ) : (
-          rowsToRender.map((row, rowIndex) => (
+          rowsToRender.map((row, rowIndex) => {
+            // TV: render only the focused row ±OVERSCAN; replace the rest with a
+            // same-height spacer so scroll geometry (and Norigin's offsetTop
+            // walk) stays correct. Off-TV `windowed` is false → render all rows.
+            const inWindow =
+              !windowed ||
+              (rowIndex >= focusedRowIndex - OVERSCAN &&
+                rowIndex <= focusedRowIndex + OVERSCAN);
+            if (!inWindow) {
+              return (
+                <div
+                  key={row.id}
+                  className="board-row-spacer"
+                  style={{ height: spacerH }}
+                  aria-hidden
+                />
+              );
+            }
+            return (
             <ErrorBoundary key={row.id} fallback={<ErrorRow />}>
               <motion.div
+                ref={windowed ? measureRow : undefined}
                 className="board-row"
                 // TV: skip the staggered enter animation. Framer drives these on
                 // the JS main thread via rAF; ~7 rows animating at once while
@@ -457,6 +503,7 @@ export default function HomePage() {
                     className="board-row-poster"
                     autoFocusFirst={false}
                     upFocusKey={!cwIsTopRail && rowIndex === 0 ? HERO_WATCH_KEY : undefined}
+                    onRowFocus={() => setFocusedRowIndex(rowIndex)}
                     actions={
                       homeEditMode ? (
                         <Button
@@ -473,7 +520,8 @@ export default function HomePage() {
                 )}
               </motion.div>
             </ErrorBoundary>
-          ))
+            );
+          })
         )}
       </div>
     </div>

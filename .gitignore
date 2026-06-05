@@ -36,6 +36,7 @@ vendor-binaries/
 *.apk
 *.apk.idsig
 apps/blissful-tv-shell/*.apk
+apps/blissful-tv-shell/*.zip
 
 # Editor / OS
 .DS_Store

@@ -29,6 +29,10 @@ type MediaRailProps = {
   /** TV: focusKey that UP from any card in this rail jumps to (used by the TOP
    *  home rail to route UP back onto the hero "Watch now"). */
   upFocusKey?: string;
+  /** TV: fired when D-pad focus ENTERS this rail (any of its cards). Drives the
+   *  HomePage vertical row-windowing — it reports which row is focused so the
+   *  page can keep only focused±OVERSCAN rows mounted. */
+  onRowFocus?: () => void;
 };
 
 export default function MediaRail({
@@ -46,6 +50,7 @@ export default function MediaRail({
   onInfo,
   autoFocusFirst = true,
   upFocusKey,
+  onRowFocus,
 }: MediaRailProps) {
   const rowRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -65,6 +70,9 @@ export default function MediaRail({
     focusable: tvRail,
     trackChildren: true,
     saveLastFocusedChild: true,
+    // Fires when focus ENTERS this rail (trackChildren container) — the
+    // row-entered signal HomePage uses to drive vertical row-windowing.
+    onFocus: () => onRowFocus?.(),
   });
 
   // De-duplicate by id. The same title can legitimately arrive twice (e.g. a
