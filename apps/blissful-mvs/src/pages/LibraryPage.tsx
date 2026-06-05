@@ -196,24 +196,28 @@ export default function LibraryPage() {
   // on first Library open — a mount/memory cliff that can kill the WebView
   // renderer on a 2GB device. Window the grid around the focused card the
   // same way Discover does. Off-TV everything stays mounted as before.
-  const [focusedIdx, setFocusedIdx] = useState(0);
-  // Re-anchor the window when the list itself changes (filter/sort/poll):
-  // a stale index from a longer list would otherwise place the window past
-  // the new list's end — every cell a placeholder, nothing mounted to focus.
-  // (Discover self-heals here: its index derives from `selectedId`, which
-  // the selection hook re-seeds to the first item on list changes.)
-  useEffect(() => {
-    setFocusedIdx((prev) => (prev >= cells.length ? 0 : prev));
-  }, [cells.length]);
+  //
+  // Track the focused ITEM (by id), not a positional index: a sort/filter
+  // switch reorders `cells` without any new focus event, and a stored index
+  // would leave the window centered on the old POSITION — unmounting the
+  // still-focused card when its new index lands >buffer away (focus then
+  // falls back to the top-left card). Deriving the index per render keeps
+  // the window glued to the item across reorders; if the item is filtered
+  // out entirely, the window re-anchors to the top (index 0).
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const focusedIdx = useMemo(
+    () => (focusedId ? indexById.get(focusedId) ?? 0 : 0),
+    [focusedId, indexById]
+  );
   const { windowed, cellH, measureCell, isMounted } = useTvGridWindow(focusedIdx);
   const focusLibraryCard = useCallback(
     (m: MediaItem) => {
       // Only the TV window consumes focus position; skip the per-hover
       // re-render on desktop (where `isMounted` is always true anyway).
       if (!windowed) return;
-      setFocusedIdx(indexById.get(m.id) ?? 0);
+      setFocusedId(m.id);
     },
-    [windowed, indexById]
+    [windowed]
   );
   const openLibraryItem = useCallback(
     (m: MediaItem) => {

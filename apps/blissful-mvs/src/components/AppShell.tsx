@@ -76,9 +76,12 @@ export default function AppShell() {
       requestIdleCallback?: (cb: () => void) => number;
       cancelIdleCallback?: (handle: number) => void;
     };
+    // Fire-and-forget: a failed prefetch is retried by PlayerPageLazy /
+    // DetailPage anyway, so just swallow the rejection here.
+    const prefetch = () => preloadPlayerPage().catch(() => {});
     const handle = w.requestIdleCallback
-      ? w.requestIdleCallback(() => void preloadPlayerPage())
-      : window.setTimeout(() => void preloadPlayerPage(), 2000);
+      ? w.requestIdleCallback(prefetch)
+      : window.setTimeout(prefetch, 2000);
     return () => {
       if (w.cancelIdleCallback) w.cancelIdleCallback(handle);
       else window.clearTimeout(handle);

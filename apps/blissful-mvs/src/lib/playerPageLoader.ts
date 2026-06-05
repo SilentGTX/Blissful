@@ -13,10 +13,20 @@ export function getCachedPlayerPage(): ComponentType | null {
 
 export function preloadPlayerPage(): Promise<ComponentType> {
   if (!pending) {
-    pending = import('../pages/PlayerPage').then((mod) => {
-      cached = mod.default;
-      return mod.default;
-    });
+    pending = import('../pages/PlayerPage').then(
+      (mod) => {
+        cached = mod.default;
+        return mod.default;
+      },
+      (err: unknown) => {
+        // Don't memoise a FAILED import: a transient fetch error (dev server
+        // hiccup, flaky network on web) would otherwise poison every future
+        // preload/mount with the same rejected promise — a permanent black
+        // screen on /player. Clearing lets the next call retry the import.
+        pending = null;
+        throw err;
+      }
+    );
   }
   return pending;
 }

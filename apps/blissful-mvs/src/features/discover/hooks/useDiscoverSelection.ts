@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { fetchMeta, type StremioMetaDetail } from '../../../lib/stremioAddon';
+import { isTvMode } from '../../../lib/platform';
 import type { MediaItem, MediaType } from '../../../types/media';
 
 type UseDiscoverSelectionParams = {
@@ -41,15 +42,16 @@ export function useDiscoverSelection({ discoverType, baseUrl, filteredItems }: U
       }
     };
 
-    // Debounce the fetch behind a short settle window: focus/hover scanning
-    // across the grid changes `selectedId` on every D-pad step (or mouse
-    // pass), and undebounced this fired one meta request PER STEP through
-    // the loopback proxy — wasted network + JSON parse on titles the user
-    // skimmed past. The spinner still shows immediately; only the request
-    // waits for the selection to rest. 200ms sits under perception for the
-    // preview panel but absorbs a held-down D-pad (Norigin steps ~100ms).
+    // TV: debounce the fetch behind a short settle window — D-pad scanning
+    // changes `selectedId` on every step, and undebounced this fired one
+    // meta request PER STEP through the loopback proxy — wasted network +
+    // JSON parse on titles the user skimmed past. The spinner still shows
+    // immediately; only the request waits for the selection to rest. 200ms
+    // sits under perception for the preview panel but absorbs a held-down
+    // D-pad (Norigin steps ~100ms). Desktop keeps the immediate fetch
+    // (0ms) so hover-preview timing is unchanged off-TV.
     setSelectedLoading(true);
-    const timer = window.setTimeout(() => void run(), 200);
+    const timer = window.setTimeout(() => void run(), isTvMode() ? 200 : 0);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);

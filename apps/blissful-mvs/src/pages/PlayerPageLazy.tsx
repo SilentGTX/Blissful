@@ -21,17 +21,29 @@ import { getCachedPlayerPage, preloadPlayerPage } from '../lib/playerPageLoader'
  *  over anyway. */
 export default function PlayerPageLazy() {
   const [Comp, setComp] = useState<ComponentType | null>(() => getCachedPlayerPage());
+  // Bumped to re-arm the load effect after a failed import (the loader
+  // clears its poisoned promise; this retriggers a fresh attempt).
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (Comp) return;
     let cancelled = false;
-    preloadPlayerPage().then((c) => {
-      if (!cancelled) setComp(() => c);
-    });
+    let retryTimer: number | undefined;
+    preloadPlayerPage().then(
+      (c) => {
+        if (!cancelled) setComp(() => c);
+      },
+      () => {
+        // Transient import failure: retry after a beat instead of sitting on
+        // the black fallback forever. Back button stays functional throughout.
+        if (!cancelled) retryTimer = window.setTimeout(() => setAttempt((n) => n + 1), 1000);
+      }
+    );
     return () => {
       cancelled = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
     };
-  }, [Comp]);
+  }, [Comp, attempt]);
 
   // Matches the black surface the player itself opens over, so the
   // unprefetched first-open fallback is imperceptible.
