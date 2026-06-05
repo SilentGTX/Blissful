@@ -59,10 +59,19 @@ addon/storage/stremio metadata + small JSON.
 
 ---
 
-## 3. What the Phase-0 scaffold delivers (this commit)
+## 3. What the Phase-0 scaffold delivers
+
+> **Live status (kept current):** Phases 0–1 are done and Phase 2/3a are in
+> progress — `ensureStreamingServer` now returns `true`, the libmpv-android
+> player is plumbed (`src-tauri/src/mpv.rs` registers the Kotlin
+> `BlissfulMpvPlugin`; bridge play/pause/seek route to it), and the spatial-nav
+> TV UI (D-pad home rows, `?tv=1`) has landed (see [`docs/PHASE3-STATUS.md`](./docs/PHASE3-STATUS.md)).
+> Still open: the Surface-under-WebView compositing spike, full player parity,
+> and the embedded torrent server. This subsection describes the original Phase-0
+> scaffold for reference; §8 has the phase plan.
 
 Compiles into a Tauri app; gets to **"UI renders + bridge handshake + proxy
-running."** Player and torrent server are not built yet.
+running."**
 
 Created under `apps/blissful-tv-shell/`:
 

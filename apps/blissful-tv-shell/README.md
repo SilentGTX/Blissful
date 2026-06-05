@@ -5,11 +5,20 @@ Tauri v2 shell that runs the Blissful React UI (`apps/blissful-mvs`) on
 `apps/blissful-shell` does natively: the `window.blissfulDesktop` bridge, the
 same-origin backend proxy, and an update check (notify-only on Android).
 
-> **Status: Phase 0 scaffold.** This compiles into a Tauri app and gets you to
-> "UI renders + bridge handshake + proxy running." The native **player** and
-> the embedded **torrent streaming server** are not built yet — see
-> [`SPEC.md`](./SPEC.md) for the full plan and [`docs/PORT-MAP.md`](./docs/PORT-MAP.md)
-> for the grounded codebase analysis this scaffold is based on.
+> **Status: Phases 0–1 complete; Phase 2 (native player) + Phase 3a (TV UI / D-pad)
+> in progress.** Up and running: the bridge handshake, the same-origin proxy with
+> the backends wired through it, the spatial-navigation layer (D-pad home rows,
+> `?tv=1` browser test mode), and the libmpv-android player plumbing (`src-tauri/
+> src/mpv.rs` registers the Kotlin `BlissfulMpvPlugin`; bridge play/pause/seek →
+> it). **Still open:** the Surface-under-WebView compositing spike, full player
+> parity, and the embedded torrent streaming server (RD-only for v1). See
+> [`SPEC.md`](./SPEC.md) §8 for the phase plan, [`docs/PHASE3-STATUS.md`](./docs/PHASE3-STATUS.md)
+> for the live TV-UI state, and [`docs/PORT-MAP.md`](./docs/PORT-MAP.md) for the
+> grounded codebase analysis this is built on.
+>
+> **Note:** this branch also ships a full **Trakt** integration in the shared UI
+> (device-code OAuth, scrobbling, watchlist). It is inert until credentials are
+> set — see [Trakt](#trakt-integration) below.
 
 ## What's here
 
@@ -83,9 +92,35 @@ automatically, so you don't need to build it separately.
   Android WebView to `https` or those become mixed-content-blocked.
 - **The proxy is mandatory.** Catalogs/login/streams 404 until `proxy.rs` is
   running *and* the UI's network base points at it (Phase 1 — see SPEC.md).
-- **No torrents in v1.** `ensureStreamingServer` returns `false`; the UI must
-  route magnet links to a "Real-Debrid required" state (Phase 2 task). RD
-  streams are direct HTTPS and work without the local server.
+- **No torrents in v1.** `ensureStreamingServer` now returns `true` (so the UI
+  doesn't block RD playback), but there is **no embedded `:11470` torrent engine
+  on Android** — magnet / streaming-server-shaped URLs must be routed to a
+  "Real-Debrid required" state (Phase 2 task). RD streams are direct HTTPS and
+  play without the local server.
 - **PWA service worker:** disable VitePWA for the Tauri build (it caches
   `/addon-proxy|storage|stremio` with NetworkFirst and may not register under
   the Tauri origin). See SPEC.md.
+
+## Trakt integration
+
+The shared UI ships a full **Trakt** integration (works on any build — desktop,
+browser, TV — not TV-specific, but landed alongside this branch):
+
+- `apps/blissful-mvs/src/lib/traktApi.ts` — TV-friendly **device-code** OAuth
+  (no browser redirect), token storage + refresh, `scrobble` start/pause/stop,
+  watchlist add/remove. On Android it routes through the proxy
+  (`${PROXY_BASE}/trakt`); elsewhere `/trakt`.
+- `lib/useTraktScrobble.ts` — wired into **both** players (`NativeMpvPlayer.tsx`,
+  `SimplePlayer.tsx`): reports playback progress to Trakt.
+- `lib/watchedBitfield.ts` (+ `watchedBitfield.test.ts`) — Stremio-compatible
+  watched-state bitfield.
+- `components/SettingsTraktPanel.tsx` — the connect/disconnect UI, mounted in
+  `pages/SettingsPage.tsx`.
+
+> **Inert until configured.** `lib/traktConfig.ts` holds `TRAKT_CLIENT_ID` /
+> `TRAKT_CLIENT_SECRET`, both **empty by default**. `isTraktConfigured()` gates
+> every code path, so with empty creds nothing hits the network, nothing throws,
+> and there's no UI cost. To enable: create a Trakt API app
+> (https://trakt.tv/oauth/applications, redirect URI `urn:ietf:wg:oauth:2.0:oob`),
+> paste the Client ID + Secret into `traktConfig.ts`. A `/trakt` proxy/back-end
+> route must exist for the device-code calls.

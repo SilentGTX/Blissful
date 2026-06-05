@@ -12,6 +12,18 @@ Custom Stremio web client with liquid glass UI, mobile-optimized, Continue Watch
 - React Router (navigation)
 - Tailwind CSS (styling)
 
+> **Note (2026):** much of this file describes the original hosted web version. The maintained target is the **Windows desktop shell** (`apps/blissful-shell`); see the root [`CLAUDE.md`](../../CLAUDE.md) for the current architecture. This UI is now also reused by an **Android TV Tauri shell** (`apps/blissful-tv-shell`, `android-tv` branch).
+
+## TV-awareness (shared UI is TV-aware)
+
+This UI runs in three contexts: Windows desktop shell, browser, and the Android TV Tauri shell. TV support is **additive and gated** — keep it that way so the desktop build is never affected.
+
+- **Gating lives in `lib/platform.ts`:** `isTvMode()` (the master switch), `isAndroidTv()`, `isTauri()`, `forceTv()`. Force the TV layout in a normal browser with **`?tv=1`** (`http://localhost:5173/?tv=1`).
+- **`src/spatial/`** — D-pad navigation on `@noriginmedia/norigin-spatial-navigation` (`useTvFocusable`, `useTvOverlay`, `TvSelect`, `TvTextInput`, `FocusableButton`, `focusRecovery`). Norigin sets `data-focused`, not native focus — focus-ring CSS keys off `[data-focused]` under `html[data-tv]` in `index.css`.
+- **`lib/tauriBridge.ts` / `lib/proxyBase.ts`** — install `window.blissfulDesktop` over Tauri and point network calls at `PROXY_BASE` (`http://127.0.0.1:11471`) on Android; `PROXY_BASE` is `''` elsewhere so desktop/browser paths are unchanged.
+- **Trakt** (`lib/trakt*`, `useTraktScrobble.ts`, `watchedBitfield.ts`, `SettingsTraktPanel.tsx`) — full device-code OAuth + scrobble + watchlist, **inert until `lib/traktConfig.ts` credentials are filled in** (`isTraktConfigured()` gates everything).
+- Full plan + native shell details: `apps/blissful-tv-shell/SPEC.md` + `docs/PORT-MAP.md`.
+
 ## Quick Commands
 
 ```bash
