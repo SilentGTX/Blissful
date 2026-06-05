@@ -253,11 +253,15 @@ export default function AppShell() {
     sessionStorage.setItem('bliss:safe-back', path + location.search);
   }, [location.pathname, location.search]);
 
-  // The Resume / Continue-Watching modal must never linger into the player. Its
-  // open state can outlive the navigation that started playback; clear it on
-  // entering /player so it can't reappear "on the player screen".
+  // The Resume / Continue-Watching modal is a transient prompt: ANY route
+  // change means a decision was made (or the flow moved on), so dismiss it.
+  // Its open state was observed to outlive the navigation Resume kicked off
+  // (the autoplay detour lands on /detail first, where the old /player-only
+  // clear never fired — the modal sat stuck over the page until the player
+  // finally mounted). Pathname-keyed, so it can't fight the OPENING of the
+  // modal (which never changes the route).
   useEffect(() => {
-    if (location.pathname.startsWith('/player')) modals.setResumeModalItem(null);
+    modals.setResumeModalItem(null);
   }, [location.pathname, modals]);
 
   // (Previously fetched /storage/settings here on every /settings page

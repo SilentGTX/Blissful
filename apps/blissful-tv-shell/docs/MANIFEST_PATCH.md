@@ -86,19 +86,37 @@ TVs are landscape-only; add to the main `<activity>`:
 android:screenOrientation="landscape"
 ```
 
-## 6. Soft keyboard: pan, don't resize
+## 6. Soft keyboard: overlay, don't resize
 
-Add to the main `<activity>`:
+Two pieces (both required — the manifest flag alone is NOT enough):
+
+1. On the main `<activity>`:
 
 ```xml
 android:windowSoftInputMode="adjustPan"
 ```
 
-Android's default `adjustResize` shrinks the WebView viewport when the TV
-IME opens — the whole 1920px-design UI reflows/squishes behind the keyboard
-(and center-placed modals clip). `adjustPan` keeps the viewport intact and
-just pans the window if the focused field would be covered; the login modal
-sits in the top half so usually nothing moves at all.
+2. In `MainActivity.kt` (gen/, next to the `enableEdgeToEdge()` call the
+   Tauri template emits), strip the IME inset before it reaches the view
+   tree:
+
+```kotlin
+val content = findViewById<View>(android.R.id.content)
+ViewCompat.setOnApplyWindowInsetsListener(content) { v, insets ->
+  val stripped = WindowInsetsCompat.Builder(insets)
+    .setInsets(WindowInsetsCompat.Type.ime(), Insets.NONE)
+    .setInsetsIgnoringVisibility(WindowInsetsCompat.Type.ime(), Insets.NONE)
+    .build()
+  ViewCompat.onApplyWindowInsets(v, stripped)
+}
+```
+
+Why: under `enableEdgeToEdge()` the window soft-input mode is effectively
+ignored — the IME is delivered as a WindowInsets `ime()` inset that the
+Chromium WebView consumes by shrinking its viewport, reflowing ("squishing")
+the whole 1920px-design UI behind the keyboard. Stripping the inset makes
+the keyboard a pure overlay; the login form sits in the top half of the
+screen so the focused field stays visible.
 
 ## Verify
 
