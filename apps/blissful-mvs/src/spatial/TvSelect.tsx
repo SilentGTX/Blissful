@@ -32,6 +32,9 @@ type TvSelectProps = {
   placeholder?: string;
   /** Optional leading icon shown before the value in the trigger. */
   leftIcon?: ReactNode;
+  /** Stable Norigin focusKey so other elements can route focus here (e.g. the
+   *  episode cards' UP targets the range/season selector). */
+  focusKey?: string;
 };
 
 // TV: centered, D-pad-driven overlay (Norigin paused while open).
@@ -214,12 +217,13 @@ export function TvSelect({
   triggerClassName,
   placeholder,
   leftIcon,
+  focusKey,
 }: TvSelectProps) {
   const [open, setOpen] = useState(false);
   const tv = isTvMode();
   // The trigger is the focusable node on TV; its DOM ref also anchors the
   // desktop dropdown.
-  const { ref } = useTvFocusable({ onPress: () => setOpen(true) });
+  const { ref } = useTvFocusable({ onPress: () => setOpen(true), focusKey });
   const anchorRef = ref as RefObject<HTMLElement | null>;
 
   const current = options.find((o) => o.key === value);

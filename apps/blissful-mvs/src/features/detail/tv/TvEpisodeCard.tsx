@@ -3,6 +3,7 @@
 // title + runtime/date/IMDb sit BELOW the thumbnail (image-30 style). Own
 // useTvFocusable with a horizontal-rail scroll override (inline:'center').
 
+import { setFocus } from '@noriginmedia/norigin-spatial-navigation';
 import { Rating } from '../../../components/Rating';
 import { EpisodeThumb } from '../components/EpisodePanel';
 import { useTvFocusable } from '../../../spatial/useTvFocusable';
@@ -37,6 +38,9 @@ type Props = {
   /** Stable Norigin focusKey (e.g. `tv-ep-<videoId>`) so the detail page can
    *  setFocus this card once the async next-to-watch decode resolves. */
   focusKey?: string;
+  /** UP from any card routes here (the season/range selector) — geometric nav
+   *  fails to find the top-left selector from a far-right card in a long rail. */
+  upFocusKey?: string;
 };
 
 export function TvEpisodeCard({
@@ -53,6 +57,7 @@ export function TvEpisodeCard({
   onPress,
   autoFocus,
   focusKey,
+  upFocusKey,
 }: Props) {
   const { ref } = useTvFocusable({
     onPress,
@@ -61,6 +66,17 @@ export function TvEpisodeCard({
     // Center the focused card in the horizontal rail (the hook default
     // inline:'nearest' is wrong for a row that scrolls sideways).
     onFocus: () => ref.current?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: isAndroidTv() ? 'instant' : 'smooth' }),
+    // UP -> the range/season selector (geometric search misses it from a
+    // far-scrolled card). Return false to skip Norigin's default move.
+    onArrowPress: upFocusKey
+      ? (dir) => {
+          if (dir === 'up') {
+            setFocus(upFocusKey);
+            return false;
+          }
+          return true;
+        }
+      : undefined,
   });
 
   const thumb = normalizeImage(v.thumbnail ?? undefined);

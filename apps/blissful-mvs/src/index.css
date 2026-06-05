@@ -3479,7 +3479,10 @@ html[data-tv] .tv-detail-backdrop {
   position: absolute;
   top: 0;
   right: 0;
-  width: 64%;
+  /* Wider than the visible window: the image's hard left edge (at 100% - width)
+     sits UNDER the scrim's solid region so it's never seen as a vertical line —
+     the scrim fades the image in smoothly instead. */
+  width: 72%;
   height: 100%;
   z-index: 0;
 }
@@ -3495,7 +3498,7 @@ html[data-tv] .tv-detail-scrim {
   inset: 0;
   z-index: 1;
   background:
-    linear-gradient(to right, #07090d 30%, rgba(7, 9, 13, 0.7) 48%, transparent 70%),
+    linear-gradient(to right, #07090d 32%, rgba(7, 9, 13, 0.55) 52%, transparent 76%),
     linear-gradient(to top, #07090d 6%, rgba(7, 9, 13, 0.4) 32%, transparent 60%);
 }
 html[data-tv] .tv-detail-content {
@@ -3562,8 +3565,8 @@ html[data-tv] .tv-detail-rating {
 }
 html[data-tv] .tv-detail-tags {
   display: flex;
-  flex-wrap: wrap;
-  gap: clamp(0.75rem, 1.6vh, 1.25rem) clamp(2rem, 4vw, 4rem);
+  flex-direction: column;
+  gap: clamp(0.75rem, 1.6vh, 1.25rem);
 }
 html[data-tv] .tv-detail-label {
   font-size: clamp(0.75rem, 0.85vw, 1rem);
@@ -3593,7 +3596,7 @@ html[data-tv] .tv-detail-summary {
   line-height: 1.5;
   color: rgba(255, 255, 255, 0.82);
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 6;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
