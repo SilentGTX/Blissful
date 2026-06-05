@@ -197,6 +197,14 @@ export default function LibraryPage() {
   // renderer on a 2GB device. Window the grid around the focused card the
   // same way Discover does. Off-TV everything stays mounted as before.
   const [focusedIdx, setFocusedIdx] = useState(0);
+  // Re-anchor the window when the list itself changes (filter/sort/poll):
+  // a stale index from a longer list would otherwise place the window past
+  // the new list's end — every cell a placeholder, nothing mounted to focus.
+  // (Discover self-heals here: its index derives from `selectedId`, which
+  // the selection hook re-seeds to the first item on list changes.)
+  useEffect(() => {
+    setFocusedIdx((prev) => (prev >= cells.length ? 0 : prev));
+  }, [cells.length]);
   const { windowed, cellH, measureCell, isMounted } = useTvGridWindow(focusedIdx);
   const focusLibraryCard = useCallback(
     (m: MediaItem) => {
