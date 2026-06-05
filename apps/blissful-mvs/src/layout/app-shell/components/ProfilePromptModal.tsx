@@ -119,6 +119,84 @@ export function ProfilePromptModal({ isOpen, initialName, onSave, onClose }: Pro
       ? ' outline-none ring-2 ring-[var(--bliss-accent)] ring-offset-2 ring-offset-black/40'
       : '';
 
+  const card = (
+    <div className="solid-surface bliss-glass relative mx-auto w-full max-w-md rounded-[28px] p-6">
+      {onClose ? (
+        <button
+          type="button"
+          aria-label="Close"
+          onClick={onClose}
+          className={
+            'absolute right-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-full bg-black/40 text-white/80 transition hover:bg-black/60 hover:text-white' +
+            ring('close')
+          }
+        >
+          <CloseIcon size={16} />
+        </button>
+      ) : null}
+
+      <div className="font-[Fraunces] text-2xl font-semibold">Choose your avatar</div>
+
+      <div className="mt-5 grid grid-cols-4 gap-3">
+        {PRESET_PROFILE_AVATARS.map((entry, index) => {
+          const rendered = renderProfileAvatar(entry, '?');
+          const selected = avatar === entry;
+          return (
+            <button
+              key={entry}
+              type="button"
+              onClick={() => setAvatar(entry)}
+              onMouseEnter={() => tv && setFocusKey(`av${index}`)}
+              className={
+                'relative grid aspect-square w-full place-items-center overflow-hidden rounded-xl text-2xl transition ' +
+                (selected ? 'ring-2 ring-[var(--bliss-accent)]' : 'opacity-90 hover:opacity-100') +
+                ring(`av${index}`)
+              }
+            >
+              {rendered.kind === 'image' ? (
+                <img src={entry} alt="Preset avatar" className="h-full w-full object-cover" />
+              ) : (
+                entry
+              )}
+              {selected ? (
+                <span className="absolute right-1 top-1 grid h-4 w-4 place-items-center rounded-full bg-[var(--bliss-accent)] text-[10px] font-bold text-black">
+                  ✓
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-6">
+        <Button
+          className={'rounded-full bg-white text-black' + ring('save')}
+          isPending={saving}
+          onPress={handleSave}
+        >
+          Save
+        </Button>
+      </div>
+    </div>
+  );
+
+  // TV: render our OWN full-screen fixed backdrop. HeroUI's <Modal.Backdrop>
+  // only blurs/dims a BOX inside the 1440px TV layout viewport (not the whole
+  // screen) — same fix as ResumeOrStartOverModal. Click-outside / Back close
+  // are handled by the keydown effect + this overlay's onClick.
+  if (tv) {
+    return (
+      <div
+        className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 backdrop-blur-sm"
+        onClick={() => onClose?.()}
+      >
+        <div className="w-full max-w-md px-4" onClick={(e) => e.stopPropagation()}>
+          {card}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <Modal>
       <Modal.Backdrop
@@ -132,66 +210,7 @@ export function ProfilePromptModal({ isOpen, initialName, onSave, onClose }: Pro
             <Modal.Header className="sr-only">
               <Modal.Heading>Choose avatar</Modal.Heading>
             </Modal.Header>
-            <Modal.Body className="px-0">
-              <div className="solid-surface bliss-glass relative mx-auto w-full max-w-md rounded-[28px] p-6">
-                {onClose ? (
-                  <button
-                    type="button"
-                    aria-label="Close"
-                    onClick={onClose}
-                    className={
-                      'absolute right-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-full bg-black/40 text-white/80 transition hover:bg-black/60 hover:text-white' +
-                      ring('close')
-                    }
-                  >
-                    <CloseIcon size={16} />
-                  </button>
-                ) : null}
-
-                <div className="font-[Fraunces] text-2xl font-semibold">Choose your avatar</div>
-
-                <div className="mt-5 grid grid-cols-4 gap-3">
-                  {PRESET_PROFILE_AVATARS.map((entry, index) => {
-                    const rendered = renderProfileAvatar(entry, '?');
-                    const selected = avatar === entry;
-                    return (
-                      <button
-                        key={entry}
-                        type="button"
-                        onClick={() => setAvatar(entry)}
-                        onMouseEnter={() => tv && setFocusKey(`av${index}`)}
-                        className={
-                          'relative grid aspect-square w-full place-items-center overflow-hidden rounded-xl text-2xl transition ' +
-                          (selected ? 'ring-2 ring-[var(--bliss-accent)]' : 'opacity-90 hover:opacity-100') +
-                          ring(`av${index}`)
-                        }
-                      >
-                        {rendered.kind === 'image' ? (
-                          <img src={entry} alt="Preset avatar" className="h-full w-full object-cover" />
-                        ) : (
-                          entry
-                        )}
-                        {selected ? (
-                          <span className="absolute right-1 top-1 grid h-4 w-4 place-items-center rounded-full bg-[var(--bliss-accent)] text-[10px] font-bold text-black">
-                            ✓
-                          </span>
-                        ) : null}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="mt-6">
-                  <Button
-                    className={'rounded-full bg-white text-black' + ring('save')}
-                    isPending={saving}
-                    onPress={handleSave}
-                  >
-                    Save
-                  </Button>
-                </div>
-              </div>
-            </Modal.Body>
+            <Modal.Body className="px-0">{card}</Modal.Body>
           </Modal.Dialog>
         </Modal.Container>
       </Modal.Backdrop>
