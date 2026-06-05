@@ -7,7 +7,6 @@ import { useModals } from '../context/ModalsProvider';
 import { CloseIcon } from '../icons/CloseIcon';
 import { FocusableButton } from '../spatial/FocusableButton';
 import { TvSelect } from '../spatial/TvSelect';
-import { useTvFocusable } from '../spatial/useTvFocusable';
 import { useTvGridWindow } from '../spatial/useTvGridWindow';
 import { isTvMode } from '../lib/platform';
 import {
@@ -54,17 +53,16 @@ function typeLabel(type: string): string {
   return raw.slice(0, 1).toUpperCase() + raw.slice(1);
 }
 
-// Remove-from-library "X" on a poster. Its own component so it can host a TV
-// focus node (hooks can't run inside the cells `.map`). On TV it's a second
-// D-pad stop on each cell (after the card); on desktop it's the mouse-only
-// hover button. Stop-propagation so it never bubbles to the card's press.
+// Remove-from-library "X" on a poster. Mouse-only — an overlay button can't be
+// reliably reached by Norigin's geometric grid nav (it sits on top of the
+// card), so on TV removal is hold-OK on the card (onItemLongPress). The X stays
+// as the desktop affordance. Stop-propagation so it never bubbles to the press.
 function LibraryRemoveButton({ onRemove }: { onRemove: () => void }) {
-  const { ref } = useTvFocusable({ onPress: onRemove, focusable: isTvMode() });
+  if (isTvMode()) return null;
   return (
     <button
-      ref={ref}
       type="button"
-      className="tv-focusable-card absolute right-3 top-3 z-20 cursor-pointer rounded-full bg-black/45 p-2 text-white/80 backdrop-blur transition hover:bg-black/65 hover:text-white"
+      className="absolute right-3 top-3 z-20 cursor-pointer rounded-full bg-black/45 p-2 text-white/80 backdrop-blur transition hover:bg-black/65 hover:text-white"
       aria-label="Remove from library"
       onClick={(e) => {
         e.preventDefault();
@@ -364,8 +362,8 @@ export default function LibraryPage() {
 
           return (
             <div key={item._id} className="relative" ref={measureCell}>
-              {/* Remove-from-library X — top-right of the poster. D-pad
-                  focusable on TV, mouse-driven on desktop. */}
+              {/* Remove-from-library X — desktop (mouse). On TV, hold OK on the
+                  card removes it (onItemLongPress below). */}
               <LibraryRemoveButton onRemove={() => removeLibraryItem(item)} />
 
               <MediaCard
@@ -375,6 +373,7 @@ export default function LibraryPage() {
                 autoFocusTv={index === 0}
                 onItemFocus={focusLibraryCard}
                 onItemPress={openLibraryItem}
+                onItemLongPress={() => removeLibraryItem(item)}
               />
             </div>
           );

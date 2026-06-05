@@ -40,6 +40,9 @@ type MediaCardProps = {
    *  `() => onFocus(item)` closure per card per render, so React.memo can
    *  skip every card whose focus didn't change on a D-pad move. */
   onItemFocus?: (item: MediaItem) => void;
+  /** TV: overrides the default hold-OK quick-actions menu with a direct
+   *  action (e.g. Library uses it to remove the title on long-press). */
+  onItemLongPress?: (item: MediaItem) => void;
 };
 
 
@@ -57,6 +60,7 @@ function MediaCard({
   upFocusKey,
   onFocus,
   onItemFocus,
+  onItemLongPress,
 }: MediaCardProps) {
   // Resolve a single press handler. Prefer explicit `onPress`; else build it
   // from the stable item-based `onItemPress` (so the rail passes ONE stable
@@ -75,9 +79,14 @@ function MediaCard({
   const { ref: tvRef } = useTvFocusable({
     onPress,
     onFocus: handleFocus,
-    // TV: holding OK opens a quick-actions menu (Open / Library / mark watched);
-    // a short tap still fires onPress (navigate). Only for interactive cards.
-    onLongPress: onPress ? () => setMenuOpen(true) : undefined,
+    // TV: holding OK runs onItemLongPress when given (Library = remove), else
+    // opens the quick-actions menu (Open / Library / mark watched). A short tap
+    // still fires onPress (navigate). Only for interactive cards.
+    onLongPress: onItemLongPress
+      ? () => onItemLongPress(item)
+      : onPress
+        ? () => setMenuOpen(true)
+        : undefined,
     focusable: Boolean(onPress),
     autoFocus: Boolean(autoFocusTv),
     onArrowPress: upFocusKey

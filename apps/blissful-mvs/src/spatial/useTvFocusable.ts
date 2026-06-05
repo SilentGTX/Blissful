@@ -3,6 +3,27 @@ import { useFocusable } from '@noriginmedia/norigin-spatial-navigation';
 import { isTvMode, isAndroidTv } from '../lib/platform';
 import { recordFocusKey } from './focusRecovery';
 
+// Carry-over guard (shared across every useTvFocusable). A single OK press can
+// fire onPress on TWO different elements: a non-long-press button fires on
+// keyDOWN (navigates), the next screen's element auto-focuses, then the SAME
+// press's keyUP fires that element's release handler (long-press cards fire
+// onPress on release) — e.g. Back -> /library -> the key-up opens the first
+// card's detail. We collapse this by ignoring an onPress on a DIFFERENT element
+// within OK_CARRYOVER_MS of the last one. A genuine second press on a new
+// screen comes later (the user has to see it first); repeat-OK on the SAME
+// element is always allowed.
+const OK_CARRYOVER_MS = 250;
+let lastOkPressMs = 0;
+let lastOkPressKey = '';
+function okPressAllowed(thisKey: string): boolean {
+  // Date.now is fine in app code (this module never runs in a workflow).
+  const now = Date.now();
+  if (now - lastOkPressMs < OK_CARRYOVER_MS && lastOkPressKey !== thisKey) return false;
+  lastOkPressMs = now;
+  lastOkPressKey = thisKey;
+  return true;
+}
+
 type Options = {
   /** Fired on D-pad OK/Enter when focused (mirror of the element's onClick). */
   onPress?: () => void;
@@ -55,16 +76,21 @@ export function useTvFocusable({ onPress, onLongPress, longPressMs = 450, focusa
     }
   };
   useEffect(() => clearLongTimer, []);
+  // Holds the focusKey so the carry-over guard (a config closure, where `key`
+  // from the return isn't yet in scope) can identify this element at call time.
+  const keyRef = useRef('');
   const { ref, focused, focusSelf, focusKey: key } = useFocusable({
     focusable: tv && focusable,
     focusKey,
     onEnterPress: (_props?: unknown, details?: { pressedKeys?: Record<string, number> }) => {
+      // Ignore OS key-repeat (enter count > 1 while OK is held).
+      if ((details?.pressedKeys?.enter ?? 1) > 1) return;
       if (!onLongPress) {
+        // keyDOWN press (buttons). Guard against carry-over (see okPressAllowed).
+        if (!okPressAllowed(keyRef.current)) return;
         onPress?.();
         return;
       }
-      // OS key-repeat: only the first keydown arms the hold timer.
-      if ((details?.pressedKeys?.enter ?? 1) > 1) return;
       longFiredRef.current = false;
       clearLongTimer();
       longTimerRef.current = window.setTimeout(() => {
@@ -76,7 +102,10 @@ export function useTvFocusable({ onPress, onLongPress, longPressMs = 450, focusa
     onEnterRelease: onLongPress
       ? () => {
           clearLongTimer();
-          if (!longFiredRef.current) onPress?.();
+          // keyUP tap (long-press cards). This is the half that produced the
+          // Back -> /library -> first-card-detail loop: the navigating press's
+          // key-up landed on the freshly-auto-focused card. Guard it.
+          if (!longFiredRef.current && okPressAllowed(keyRef.current)) onPress?.();
           longFiredRef.current = false;
         }
       : undefined,
@@ -106,6 +135,7 @@ export function useTvFocusable({ onPress, onLongPress, longPressMs = 450, focusa
     },
     onBlur: () => onBlur?.(),
   });
+  keyRef.current = key;
 
   // Keep data-focus-key on the node for the lifetime of the mount (TV only) so
   // the focus-recovery watchdog can resolve this key to a live node, and remove
