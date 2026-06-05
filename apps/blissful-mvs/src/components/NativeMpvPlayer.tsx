@@ -83,6 +83,7 @@ import {
 import { useStorage } from '../context/StorageProvider';
 import { proxyUrl } from '../lib/proxyBase';
 import { isAndroidTv, isTvMode } from '../lib/platform';
+import { consumeNativeBackOnce } from '../lib/useTvBack';
 import { pause as pauseSpatial, resume as resumeSpatial } from '@noriginmedia/norigin-spatial-navigation';
 import type { NextEpisodeInfo } from '../pages/PlayerPage';
 
@@ -3342,6 +3343,9 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     if (!isTvMode()) return;
     const w = window as unknown as { __blissOnBack?: () => boolean };
     w.__blissOnBack = () => {
+      // One press = one ladder step; duplicate native deliveries of the same
+      // press (multiple BACK channels) must not peel TWO layers at once.
+      if (!consumeNativeBackOnce()) return true;
       if (settingsPanelOpenRef.current) {
         setSettingsPanelOpen(false);
         return true;

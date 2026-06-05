@@ -22,6 +22,20 @@ import { isTvMode, isAndroidTv } from './platform';
  * hook stands down on /player and re-installs when the route changes away
  * (the player deletes the global on unmount).
  */
+// Native BACK can reach the page through more than one channel at once (the
+// OnBackInvokedCallback on 33+, the legacy dispatchKeyEvent path, historical
+// view-level listeners) — two ladder invocations for ONE press race each
+// other: the first navigates, the second sees "already at target", returns
+// false, and the native fallback's goBack() UNDOES the navigation. One press
+// = one ladder run; duplicates inside the window report "handled".
+let lastNativeBackMs = 0;
+export function consumeNativeBackOnce(): boolean {
+  const now = Date.now();
+  if (now - lastNativeBackMs < 350) return false;
+  lastNativeBackMs = now;
+  return true;
+}
+
 export function useTvBackHandler(): void {
   const navigate = useNavigate();
   const location = useLocation();
@@ -49,6 +63,9 @@ export function useTvBackHandler(): void {
     if (location.pathname.startsWith('/player')) return;
     const w = window as Window & { __blissOnBack?: () => boolean };
     const appBack = () => {
+      // Swallow duplicate native deliveries of the same press (see
+      // consumeNativeBackOnce) — "true" so no fallback fires for the dupe.
+      if (!consumeNativeBackOnce()) return true;
       // 1. An open overlay owns Back: close it via a synthesized Escape —
       //    useTvOverlay, the settings panel, TvSelect etc. all close on it.
       if (
