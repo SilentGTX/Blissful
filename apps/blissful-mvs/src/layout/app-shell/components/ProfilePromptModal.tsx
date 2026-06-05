@@ -1,4 +1,4 @@
-import { Button, Input, Modal } from '@heroui/react';
+import { Button, Modal } from '@heroui/react';
 import { useEffect, useRef, useState } from 'react';
 import { pause, resume } from '@noriginmedia/norigin-spatial-navigation';
 import { PRESET_PROFILE_AVATARS, renderProfileAvatar } from '../../../lib/profileAvatars';
@@ -10,32 +10,24 @@ type ProfilePromptModalProps = {
   initialName: string;
   onSave: (profile: { displayName: string; avatar?: string }) => Promise<void>;
   /** Dismiss without saving. When provided, a close (X) button is shown and
-   *  the backdrop becomes dismissable — used when re-opened to edit the
+   *  the backdrop becomes dismissable — used when re-opened to change the
    *  avatar later (vs the forced onboarding prompt after first login). */
   onClose?: () => void;
 };
 
 const COLS = 4;
-// Logical D-pad focus targets, in vertical order: close, the username field,
-// the avatar grid (av0..avN), then the Save button.
-type FocusKey = 'close' | 'username' | 'save' | `av${number}`;
+// Logical D-pad focus targets, in vertical order: close, the avatar grid
+// (av0..avN), then the Save button. No text field => no IME on TV.
+type FocusKey = 'close' | 'save' | `av${number}`;
 
 export function ProfilePromptModal({ isOpen, initialName, onSave, onClose }: ProfilePromptModalProps) {
-  const [displayName, setDisplayName] = useState(initialName);
   const [avatar, setAvatar] = useState<string | undefined>(PRESET_PROFILE_AVATARS[0]);
   const [saving, setSaving] = useState(false);
 
   const tv = isTvMode();
-  const inputRef = useRef<HTMLInputElement>(null);
-  // The D-pad cursor — a highlighted KEY, not native DOM focus, so merely
-  // moving onto the username field doesn't pop the Android IME (that only
-  // happens on OK). `typing` is true while the IME owns the field.
   const [focusKey, setFocusKey] = useState<FocusKey>('av0');
-  const [typing, setTyping] = useState(false);
   const focusKeyRef = useRef(focusKey);
   focusKeyRef.current = focusKey;
-  const typingRef = useRef(typing);
-  typingRef.current = typing;
 
   // Seed the cursor on the currently-selected avatar each open; pause Norigin
   // for the modal's lifetime (TV).
@@ -43,28 +35,28 @@ export function ProfilePromptModal({ isOpen, initialName, onSave, onClose }: Pro
     if (!isOpen || !tv) return;
     const idx = Math.max(0, PRESET_PROFILE_AVATARS.indexOf(avatar ?? ''));
     setFocusKey(`av${idx}`);
-    setTyping(false);
     pause();
     return () => resume();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, tv]);
 
-  const handleContinue = async () => {
-    const name = displayName.trim() || initialName.trim();
+  const handleSave = async () => {
+    // Display name is unchanged here — this is an avatar-only picker. Keep
+    // whatever the account already had (passed in as initialName).
     setSaving(true);
     try {
-      await onSave({ displayName: name, avatar });
+      await onSave({ displayName: initialName.trim(), avatar });
     } finally {
       setSaving(false);
     }
   };
-  const handleContinueRef = useRef(handleContinue);
-  handleContinueRef.current = handleContinue;
+  const handleSaveRef = useRef(handleSave);
+  handleSaveRef.current = handleSave;
 
-  // TV 2D grid navigation. Capture-phase on document so it also fires for the
-  // portaled modal; scoped to this modal because Norigin is paused and only
-  // this handler is live. Up/Down move by a row (±COLS), Left/Right within a
-  // row, OK selects an avatar / activates a button, Back closes.
+  // TV 2D grid navigation. Capture-phase on document (fires for the portaled
+  // modal); scoped here because Norigin is paused. Up/Down move by a row,
+  // Left/Right within a row, OK selects an avatar / activates a button, Back
+  // closes.
   useEffect(() => {
     if (!isOpen || !tv) return;
     const total = PRESET_PROFILE_AVATARS.length;
@@ -76,10 +68,6 @@ export function ProfilePromptModal({ isOpen, initialName, onSave, onClose }: Pro
       const isDown = k === 'ArrowDown' || e.keyCode === 20;
       const isLeft = k === 'ArrowLeft' || e.keyCode === 21;
       const isRight = k === 'ArrowRight' || e.keyCode === 22;
-
-      // While the IME is up, let the field own everything except an explicit
-      // exit (handled by the input's own onKeyDown). Don't fight the keyboard.
-      if (typingRef.current) return;
 
       if (isBack) {
         e.preventDefault();
@@ -96,25 +84,13 @@ export function ProfilePromptModal({ isOpen, initialName, onSave, onClose }: Pro
       };
 
       if (cur === 'close') {
-        if (isDown) set('username');
+        if (isDown) set('av0');
         else if (isOk) { e.preventDefault(); e.stopPropagation(); onClose?.(); }
         return;
       }
-      if (cur === 'username') {
-        if (isUp) set(onClose ? 'close' : 'username');
-        else if (isDown) set('av0');
-        else if (isOk) {
-          // Open the IME to edit the name.
-          e.preventDefault();
-          e.stopPropagation();
-          setTyping(true);
-          inputRef.current?.focus();
-        }
-        return;
-      }
       if (cur === 'save') {
-        if (isUp) set(`av${Math.min(total - 1, COLS)}`); // back up to bottom row
-        else if (isOk) { e.preventDefault(); e.stopPropagation(); void handleContinueRef.current(); }
+        if (isUp) set(`av${Math.min(total - 1, COLS)}`); // up to bottom row
+        else if (isOk) { e.preventDefault(); e.stopPropagation(); void handleSaveRef.current(); }
         return;
       }
       // Avatar grid.
@@ -123,7 +99,7 @@ export function ProfilePromptModal({ isOpen, initialName, onSave, onClose }: Pro
       const col = idx % COLS;
       if (isLeft) { if (col > 0) set(`av${idx - 1}`); else e.preventDefault(); }
       else if (isRight) { if (col < COLS - 1 && idx + 1 < total) set(`av${idx + 1}`); else e.preventDefault(); }
-      else if (isUp) { if (row > 0) set(`av${idx - COLS}`); else set('username'); }
+      else if (isUp) { if (row > 0) set(`av${idx - COLS}`); else if (onClose) set('close'); else e.preventDefault(); }
       else if (isDown) { const below = idx + COLS; if (below < total) set(`av${below}`); else set('save'); }
       else if (isOk) {
         e.preventDefault();
@@ -139,7 +115,7 @@ export function ProfilePromptModal({ isOpen, initialName, onSave, onClose }: Pro
   if (!isOpen) return null;
 
   const ring = (key: FocusKey) =>
-    tv && focusKey === key && !typing
+    tv && focusKey === key
       ? ' outline-none ring-2 ring-[var(--bliss-accent)] ring-offset-2 ring-offset-black/40'
       : '';
 
@@ -151,10 +127,10 @@ export function ProfilePromptModal({ isOpen, initialName, onSave, onClose }: Pro
         className="bg-black/55"
         onOpenChange={(open) => { if (!open) onClose?.(); }}
       >
-        <Modal.Container placement="center" size="md">
+        <Modal.Container placement="center" size="sm">
           <Modal.Dialog className="bg-transparent shadow-none">
             <Modal.Header className="sr-only">
-              <Modal.Heading>Edit profile</Modal.Heading>
+              <Modal.Heading>Choose avatar</Modal.Heading>
             </Modal.Header>
             <Modal.Body className="px-0">
               <div className="solid-surface bliss-glass relative mx-auto w-full max-w-md rounded-[28px] p-6">
@@ -172,31 +148,9 @@ export function ProfilePromptModal({ isOpen, initialName, onSave, onClose }: Pro
                   </button>
                 ) : null}
 
-                <div className="font-[Fraunces] text-2xl font-semibold">Edit profile</div>
-                <div className="mt-1 text-sm text-foreground/70">Pick an avatar and display name.</div>
+                <div className="font-[Fraunces] text-2xl font-semibold">Choose your avatar</div>
 
-                <div className="mt-4">
-                  <label className="text-sm text-foreground/70">Display name</label>
-                  <Input
-                    ref={inputRef}
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    onBlur={() => setTyping(false)}
-                    onKeyDown={(e) => {
-                      if (!tv) return;
-                      if (e.key === 'Enter' || e.key === 'Escape') {
-                        e.preventDefault();
-                        inputRef.current?.blur();
-                        setTyping(false);
-                        setFocusKey('username');
-                      }
-                    }}
-                    className={'mt-1 w-full rounded-xl bg-white/10 px-4 py-2' + ring('username')}
-                    placeholder="Your profile name"
-                  />
-                </div>
-
-                <div className="mt-4 grid grid-cols-4 gap-3">
+                <div className="mt-5 grid grid-cols-4 gap-3">
                   {PRESET_PROFILE_AVATARS.map((entry, index) => {
                     const rendered = renderProfileAvatar(entry, '?');
                     const selected = avatar === entry;
@@ -231,7 +185,7 @@ export function ProfilePromptModal({ isOpen, initialName, onSave, onClose }: Pro
                   <Button
                     className={'rounded-full bg-white text-black' + ring('save')}
                     isPending={saving}
-                    onPress={handleContinue}
+                    onPress={handleSave}
                   >
                     Save
                   </Button>
