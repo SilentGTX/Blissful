@@ -2983,14 +2983,25 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   const lastPlayToggleRef = useRef(0);
 
   // --- TV transport-row navigation model ---------------------------------
-  // Ordered list of D-pad-navigable controls in the bottom bar. The volume
-  // slider, mute and fullscreen are intentionally left out on TV: volume/mute
-  // are on the remote and the app is always fullscreen. Episodes is omitted
-  // for now too — the drawer has no D-pad handler yet, so surfacing it here
-  // would be a dead-end (tracked as a follow-up); the Up-next overlay and the
-  // detail page still cover episode switching.
+  // Ordered list of D-pad-navigable controls in the bottom bar, matching the
+  // strip's visual left→right order. Mute/volume are intentionally left out
+  // on TV (the remote owns volume; the slider isn't even rendered there) and
+  // fullscreen likewise (a TV app is always fullscreen — button hidden too).
+  // Next-episode joins only when it exists AND has aired (the strip renders
+  // the unaired one disabled — no point focusing it); Episodes joins for
+  // series now that the drawer has its own D-pad handler (see the
+  // episodesOpen branch in the keyboard handler below).
+  const tvIsSeriesLike = props.type === 'series' || props.type === 'anime';
+  const tvNextReleaseMs = props.nextEpisodeInfo?.nextReleased
+    ? Date.parse(props.nextEpisodeInfo.nextReleased)
+    : NaN;
+  const tvNextAvailable =
+    !!props.nextEpisodeInfo &&
+    !(Number.isFinite(tvNextReleaseMs) && tvNextReleaseMs > Date.now());
   const tvControlList: { id: string; run: () => void }[] = [
     { id: 'play', run: togglePlay },
+    ...(tvNextAvailable ? [{ id: 'next', run: advanceToNextEpisode }] : []),
+    ...(tvIsSeriesLike ? [{ id: 'episodes', run: toggleEpisodes }] : []),
     { id: 'subtitles', run: () => openSettings('subtitles') },
     { id: 'audio', run: () => openSettings('audio') },
   ];
@@ -3026,6 +3037,33 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       setTvControlIndex(index);
     }
   }, []);
+
+  // --- TV top-row navigation (Back pill + slot-injected buttons) ---------
+  // Up from plain playback focuses the TOP overlay row. Unlike the bottom
+  // row (a fixed id list), the top row is walked from the DOM so buttons
+  // injected via `rightSlot` (watch party) are reachable without threading
+  // ids through opaque ReactNodes. Highlight is the same
+  // `bliss-tv-ctrl-focused` class the bottom row uses, applied imperatively
+  // — the buttons persist across show/hide (opacity transition, no
+  // unmount), so the class sticks while the row is focused.
+  const tvTopFocusedRef = useRef(false);
+  const tvTopIndexRef = useRef(0);
+  const getTvTopButtons = () =>
+    Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.bliss-player-top-slide-in button'),
+    );
+  const setTvTopFocus = useCallback((focused: boolean, index?: number) => {
+    tvTopFocusedRef.current = focused;
+    if (index != null) tvTopIndexRef.current = index;
+    const btns = getTvTopButtons();
+    btns.forEach((b, i) =>
+      b.classList.toggle('bliss-tv-ctrl-focused', focused && i === tvTopIndexRef.current),
+    );
+  }, []);
+
+  // Mirror of the episodes coverflow focus for the keyboard handler.
+  const episodesFocusIndexRef = useRef(episodesFocusIndex);
+  episodesFocusIndexRef.current = episodesFocusIndex;
 
   // Keyboard / D-pad / remote shortcuts: OK/Space/▶❚❚ = play/pause,
   // ←/→ + ⏪/⏩ = seek, F = fullscreen, Esc/Back = leave player.
@@ -3078,16 +3116,12 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         return;
       }
       const tv = isTvMode();
-      // While a right-side overlay (settings / episodes / watch party) owns the
-      // D-pad, the player stands down — return WITHOUT consuming the key so the
-      // overlay's own capture-phase listener (registered later → runs after us)
-      // can act on it.
-      if (
-        tv &&
-        (settingsPanelOpenRef.current ||
-          episodesOpenRef.current ||
-          watchPartyOpenRef.current)
-      ) {
+      // While a right-side overlay (settings / watch party) owns the D-pad,
+      // the player stands down — return WITHOUT consuming the key so the
+      // overlay's own capture-phase listener (registered later → runs after
+      // us) can act on it. (The episodes drawer is driven INLINE below — it
+      // has no listener of its own.)
+      if (tv && (settingsPanelOpenRef.current || watchPartyOpenRef.current)) {
         return;
       }
       const k = e.key;
@@ -3101,6 +3135,70 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       const isUp = e.code === 'ArrowUp' || k === 'ArrowUp' || e.keyCode === 19;
       const isDown = e.code === 'ArrowDown' || k === 'ArrowDown' || e.keyCode === 20;
       const isBack = e.code === 'Escape' || k === 'Escape' || k === 'GoBack' || k === 'BrowserBack' || e.keyCode === 10009;
+
+      // === TV: episodes drawer (coverflow) ============================
+      // Up/Down step the focused card via the same focus-index the wheel
+      // and touch paths bump; OK clicks the focused card (which the drawer
+      // maps to onSelectEpisode); Back closes. Left/Right are swallowed so
+      // a stray press can't trigger a hidden seek under the drawer.
+      if (tv && episodesOpenRef.current) {
+        const stepEpisodes = (dir: 1 | -1) => {
+          setEpisodesFocusIndex((prev) => {
+            const total = episodesCountRef.current;
+            if (total <= 0) return prev;
+            // First move seeds from the CURRENTLY-PLAYING card — `null`
+            // means "current episode", not index 0 (the drawer's own
+            // effective-focus fallback), so Down from a fresh drawer steps
+            // to the episode AFTER the one playing.
+            const seedRaw = currentEpisodeCardRef.current?.dataset.episodeIdx;
+            const seedNum = seedRaw != null ? Number(seedRaw) : NaN;
+            const current = prev ?? (Number.isFinite(seedNum) ? seedNum : 0);
+            return Math.max(0, Math.min(total - 1, current + dir));
+          });
+        };
+        e.preventDefault();
+        e.stopPropagation();
+        if (isUp) {
+          stepEpisodes(-1);
+        } else if (isDown) {
+          stepEpisodes(1);
+        } else if (isOk) {
+          const idx = episodesFocusIndexRef.current;
+          const card =
+            idx != null
+              ? episodesListRef.current?.querySelector<HTMLButtonElement>(
+                  `[data-episode-idx="${idx}"]`,
+                )
+              : currentEpisodeCardRef.current;
+          card?.click();
+        } else if (isBack) {
+          setEpisodesOpen(false);
+        }
+        return;
+      }
+
+      // === TV: top-row navigation (Back / watch party) ================
+      if (tv && tvTopFocusedRef.current) {
+        const btns = getTvTopButtons();
+        e.preventDefault();
+        e.stopPropagation();
+        if (isRew) {
+          setTvTopFocus(true, Math.max(0, tvTopIndexRef.current - 1));
+          showControls();
+        } else if (isFwd) {
+          setTvTopFocus(true, Math.min(btns.length - 1, tvTopIndexRef.current + 1));
+          showControls();
+        } else if (isOk) {
+          const btn = btns[tvTopIndexRef.current];
+          setTvTopFocus(false);
+          btn?.click();
+        } else if (isDown || isBack) {
+          // Step out of the row back to plain playback (Back here does NOT
+          // leave the player — a second Back, row dismissed, does).
+          setTvTopFocus(false);
+        }
+        return;
+      }
 
       // === TV: transport-row navigation ===============================
       // Once the row is focused, the D-pad walks it (Left/Right) and OK
@@ -3131,17 +3229,19 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
           setTvRowFocus(false);
           ctrl?.run();
           showControls();
-        } else if (isUp) {
-          // No-op inside the row — but swallowed so the WebView can't shift
-          // DOM focus onto the scrub-bar <input> ("seek overlay").
-          e.preventDefault();
-          e.stopPropagation();
-        } else if (isDown || isBack) {
-          // Step out of the row back to plain playback. Back here does NOT
-          // leave the player — a second Back (row dismissed) does.
+        } else if (isUp || isBack) {
+          // Step UP out of the bottom row back to plain playback (the video
+          // is "above" the bottom strip; a second Up from there reaches the
+          // top row). Back here does NOT leave the player — a second Back
+          // (row dismissed) does.
           e.preventDefault();
           e.stopPropagation();
           setTvRowFocus(false);
+        } else if (isDown) {
+          // Nothing below the bottom strip — swallowed so the WebView can't
+          // shift DOM focus onto the scrub-bar <input> ("seek overlay").
+          e.preventDefault();
+          e.stopPropagation();
         }
         return;
       }
@@ -3168,19 +3268,21 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
           togglePlay();
         }
         showControls();
-      } else if (tv && isUp) {
-        // Up while watching: reveal controls + focus the row at the play
-        // button — never the scrub bar (preventDefault blocks the WebView's
-        // default arrow-focus from grabbing the native <input>).
+      } else if (tv && isDown) {
+        // Down while watching: reveal + focus the BOTTOM transport row at
+        // the play button — the controls live at the bottom of the screen,
+        // so Down is the natural direction (preventDefault blocks the
+        // WebView's default arrow-focus from grabbing the native <input>).
         e.preventDefault();
         e.stopPropagation();
         setTvRowFocus(true, 0);
         showControls();
-      } else if (tv && isDown) {
-        // Down while watching: just (re)reveal the controls. Swallowed so it
-        // can't move DOM focus to the scrub / volume sliders either.
+      } else if (tv && isUp) {
+        // Up while watching: reveal + focus the TOP overlay row (the Back
+        // pill + any slot-injected buttons like watch party).
         e.preventDefault();
         e.stopPropagation();
+        setTvTopFocus(true, 0);
         showControls();
       } else if (isRew) {
         e.preventDefault();
@@ -3210,7 +3312,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       // the last seek press, reading the current refs — so it survives re-runs.
       window.removeEventListener('keydown', handler, true);
     };
-  }, [togglePlay, showControls, onBack, markSeekStart, props.playerSettings.seekTimeDurationMs, watchParty, setTvRowFocus]);
+  }, [togglePlay, showControls, onBack, markSeekStart, props.playerSettings.seekTimeDurationMs, watchParty, setTvRowFocus, setTvTopFocus]);
 
   // TV: own the hardware BACK key while the player is mounted. The Android
   // System WebView swallows BACK in its native onKeyDown (goBack over the SPA
@@ -3241,13 +3343,17 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         setTvRowFocus(false);
         return true;
       }
+      if (tvTopFocusedRef.current) {
+        setTvTopFocus(false);
+        return true;
+      }
       onBack();
       return true;
     };
     return () => {
       if (w.__blissOnBack) delete w.__blissOnBack;
     };
-  }, [onBack, setTvRowFocus]);
+  }, [onBack, setTvRowFocus, setTvTopFocus]);
 
   // Prefer the clean movie/episode name from meta over the verbose
   // stream title (which embeds resolution + seeders + size like

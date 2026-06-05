@@ -250,27 +250,28 @@ export function BottomControls(props: BottomControlsProps) {
           >
             <StremioIcon name={volumeIcon} className="h-5 w-5" />
           </button>
-          <input
-            className="bliss-player-volume h-1 w-28 cursor-pointer appearance-none rounded-full"
-            type="range"
-            // TV: same as the scrub slider — not D-pad focusable (remote volume
-            // keys handle volume); prevents the INPUT-focus player freeze.
-            tabIndex={isTvMode() ? -1 : undefined}
-            min={0}
-            max={2}
-            step={0.01}
-            value={muted ? 0 : volume01}
-            style={{
-              ['--bliss-track-fill' as string]: `${(muted ? 0 : volume01 / 2) * 100}%`,
-              ['--bliss-volume-fill' as string]: volumeFillColor(muted ? 0 : volume01 / 2),
-            } as React.CSSProperties}
-            onChange={(event) => {
-              const next = Number.parseFloat(event.target.value);
-              if (!Number.isFinite(next)) return;
-              onVolumeChange(next);
-            }}
-            aria-label="Volume"
-          />
+          {/* TV: no volume slider — the remote owns volume, and a slider the
+              D-pad can't reach is dead chrome on a 10-foot UI. */}
+          {!isTvMode() ? (
+            <input
+              className="bliss-player-volume h-1 w-28 cursor-pointer appearance-none rounded-full"
+              type="range"
+              min={0}
+              max={2}
+              step={0.01}
+              value={muted ? 0 : volume01}
+              style={{
+                ['--bliss-track-fill' as string]: `${(muted ? 0 : volume01 / 2) * 100}%`,
+                ['--bliss-volume-fill' as string]: volumeFillColor(muted ? 0 : volume01 / 2),
+              } as React.CSSProperties}
+              onChange={(event) => {
+                const next = Number.parseFloat(event.target.value);
+                if (!Number.isFinite(next)) return;
+                onVolumeChange(next);
+              }}
+              aria-label="Volume"
+            />
+          ) : null}
         </div>
         <div className="flex items-center gap-1">
           {/* Next-episode (series only) -- instant jump to next ep. When
@@ -297,9 +298,11 @@ export function BottomControls(props: BottomControlsProps) {
               <BlissTooltip content={tooltipText} placement="top">
                 <button
                   type="button"
+                  data-tvfocus={tvFocusedControl === 'next' || undefined}
                   className={
                     'bliss-player-icon-btn flex h-10 w-10 items-center justify-center rounded-full' +
-                    (isDisabled ? ' cursor-not-allowed opacity-40' : '')
+                    (isDisabled ? ' cursor-not-allowed opacity-40' : '') +
+                    focusCls('next')
                   }
                   onClick={isDisabled ? undefined : advanceToNextEpisode}
                   aria-label="Next episode"
@@ -347,23 +350,26 @@ export function BottomControls(props: BottomControlsProps) {
               <StremioIcon name="audio-tracks" className="h-5 w-5" />
             </button>
           </BlissTooltip>
-          <BlissTooltip
-            content={isFullscreen ? 'Exit full screen mode' : 'Enter full screen mode'}
-            placement="top"
-          >
-            <button
-              type="button"
-              className="bliss-player-icon-btn flex h-10 w-10 items-center justify-center rounded-full"
-              onClick={onToggleFullscreen}
-              aria-label={isFullscreen ? 'Exit full screen mode' : 'Enter full screen mode'}
+          {/* TV: no fullscreen toggle — a TV app is always fullscreen. */}
+          {!isTvMode() ? (
+            <BlissTooltip
+              content={isFullscreen ? 'Exit full screen mode' : 'Enter full screen mode'}
+              placement="top"
             >
-              {isFullscreen ? (
-                <StremioIcon name="minimize" className="h-5 w-5" />
-              ) : (
-                <StremioIcon name="maximize" className="h-5 w-5" />
-              )}
-            </button>
-          </BlissTooltip>
+              <button
+                type="button"
+                className="bliss-player-icon-btn flex h-10 w-10 items-center justify-center rounded-full"
+                onClick={onToggleFullscreen}
+                aria-label={isFullscreen ? 'Exit full screen mode' : 'Enter full screen mode'}
+              >
+                {isFullscreen ? (
+                  <StremioIcon name="minimize" className="h-5 w-5" />
+                ) : (
+                  <StremioIcon name="maximize" className="h-5 w-5" />
+                )}
+              </button>
+            </BlissTooltip>
+          ) : null}
         </div>
       </div>
     </div>
