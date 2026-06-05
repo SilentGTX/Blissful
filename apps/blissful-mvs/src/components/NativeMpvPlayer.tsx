@@ -2062,7 +2062,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   }, [muted]);
 
   // Volume slider handler. Hoisted from the inline JSX so
-  // `<PlayerControlsBar>`'s memoised slider props stay reference-stable
+  // `<BottomControls>`'s memoised slider props stay reference-stable
   // between parent renders that don't change the volume itself.
   // mpv's `volume-max` is set to 200 in the shell init — 0..2 in the
   // slider maps to 0..200 % with software amplification above 100.
@@ -3336,7 +3336,10 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50"
+      // `native-player-root` scopes the html[data-tv] rule in index.css that
+      // strips backdrop-blur from ALL player chrome (it composites over the
+      // live video surface — the worst backdrop-filter case on TV GPUs).
+      className="native-player-root fixed inset-0 z-50"
       style={{
         background: hasVideo ? 'transparent' : '#000',
         cursor: controlsVisible ? 'default' : 'none',

@@ -2887,6 +2887,20 @@ html[data-tv] .netflix-card {
   background: rgba(255, 255, 255, 0.06);
 }
 
+/* Player chrome: every overlay (bottom controls strip, settings panel,
+   audio/sub popovers, HDR badges, scrub tooltip, episodes drawer, pause /
+   up-next / skip-chapter overlays) carries backdrop-blur and composites OVER
+   the live decoded video surface — the single worst backdrop-filter case on
+   a Mali-class TV GPU: a full-surface readback against a layer that repaints
+   every frame, paid continuously while controls are visible. The chrome all
+   sits on its own bg-black/40..95 fills, so the blur is barely perceptible
+   on a 10-foot UI; drop it wholesale — disabling only the filter, never the
+   chrome's own backgrounds. */
+html[data-tv] .native-player-root [class*="backdrop-blur"] {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
 /* Lift headroom so a focused card's scale(1.08) isn't clipped by the rail. */
 html[data-tv] .board-row-poster,
 html[data-tv] .netflix-rail {
