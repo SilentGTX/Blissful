@@ -127,26 +127,47 @@ by `useTvBackHandler`, overridden by the player while mounted), falling back
 to WebView `goBack()` / `finish()` when it returns false:
 
 ```kotlin
+// Shared handler: run the JS ladder, exit (to launcher) if it declines.
+private fun handleBlissBack() {
+  val wv = findWebView(findViewById(android.R.id.content)) ?: run { moveTaskToBack(true); return }
+  wv.evaluateJavascript("window.__blissOnBack ? window.__blissOnBack() : false") { res ->
+    if (res != "true") runOnUiThread { moveTaskToBack(true) }
+  }
+}
+
+// Legacy (pre-33 / predictive-back off) delivery:
 override fun dispatchKeyEvent(event: KeyEvent): Boolean {
   if (event.keyCode == KeyEvent.KEYCODE_BACK) {
-    if (event.action == KeyEvent.ACTION_UP) {
-      val wv = findWebView(findViewById(android.R.id.content)) ?: return super.dispatchKeyEvent(event)
-      wv.evaluateJavascript("window.__blissOnBack ? window.__blissOnBack() : false") { res ->
-        if (res != "true") runOnUiThread { if (wv.canGoBack()) wv.goBack() else finish() }
-      }
-    }
+    if (event.action == KeyEvent.ACTION_UP) handleBlissBack()
     return true // swallow DOWN+UP so the WebView's own history-back can't race
   }
   return super.dispatchKeyEvent(event)
 }
+
+// Android 13+ predictive back (register inside onCreate, SDK_INT >= 33):
+//   onBackInvokedDispatcher.registerOnBackInvokedCallback(
+//     OnBackInvokedDispatcher.PRIORITY_OVERLAY) { handleBlissBack() }
 ```
 
 (`findWebView` = trivial recursive search over `android.R.id.content`.)
 
-Why dispatchKeyEvent: a View-level `OnKeyListener` on the WebView (the
-original approach, in BlissfulMpvPlugin) only fires while the WebView holds
-NATIVE focus — on a D-pad TV it usually doesn't, so BACK fell through to the
-default activity handling and exited the app from any non-player screen.
+Three things this gets right, each learned the hard way on-device:
+
+1. **Both delivery channels.** A View-level `OnKeyListener` on the WebView
+   (the original approach, in BlissfulMpvPlugin) only fires while the WebView
+   holds NATIVE focus — on a D-pad TV it usually doesn't. And on Android 13+
+   (the emulator runs 16) BACK is delivered to a registered
+   `OnBackInvokedCallback`, NEVER as `KEYCODE_BACK`. Wire BOTH; `dispatchKeyEvent`
+   is the focus-independent legacy hook, the callback handles 33+.
+
+2. **No `WebView.goBack()` fallback.** Every react-router navigation is a
+   pushState, so the WebView history is full even at home — `goBack()` walks
+   SPA history forever instead of exiting. The JS ladder owns all in-app
+   back; a `false` return means "exit", so go straight to `moveTaskToBack`.
+
+3. **The page must dedupe.** BACK can arrive on both channels for one press;
+   `window.__blissOnBack` (in `useTvBackHandler`) collapses deliveries within
+   350 ms so it doesn't peel two layers / navigate-then-undo.
 
 ## Verify
 
