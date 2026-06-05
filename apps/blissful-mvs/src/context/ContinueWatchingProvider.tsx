@@ -16,11 +16,12 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import type { LibraryItem } from '../lib/mediaTypes';
 import { hasMeaningfulResume } from '../layout/app-shell/utils';
 import { useContinueWatching } from '../layout/app-shell/hooks/useContinueWatching';
@@ -43,6 +44,11 @@ type ContinueWatchingContextValue = {
   runResume: (item: LibraryItem) => void;
   /** Drives the resume-vs-start-over modal's Start-over button. */
   runStartOver: (item: LibraryItem) => void;
+  /** Pre-navigation buffering veil (black + stream logo). Non-null from the
+   *  moment Resume/Start-over is clicked until the destination route
+   *  commits — AppShell renders PlayerBufferingScreen from it so the click
+   *  feels instant and the veil merges into /player's own buffer screen. */
+  pendingContinueVeil: { logo: string | null } | null;
 };
 
 export const ContinueWatchingContext = createContext<ContinueWatchingContextValue | null>(null);
@@ -60,6 +66,7 @@ export function useContinueWatchingContext(): ContinueWatchingContextValue {
 export function ContinueWatchingProvider({ children }: { children: ReactNode }) {
   const { authKey } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const {
     setResumeModalItem,
     setUnavailableItem,
@@ -68,6 +75,31 @@ export function ContinueWatchingProvider({ children }: { children: ReactNode }) 
 
   const { continueWatching, setContinueWatching } = useContinueWatching(authKey);
   const [continueSyncError, setContinueSyncError] = useState<string | null>(null);
+
+  // Pre-navigation buffering veil. The stored-stream resume path runs a
+  // dead-link probe + a meta-image fetch BEFORE navigate('/player') — network
+  // round-trips during which the user otherwise just stares at the page they
+  // clicked on (seconds on a TV). Raise the black+logo veil the instant the
+  // click lands; AppShell renders it via PlayerBufferingScreen so it pixel-
+  // matches /player's own buffer screen and the handoff is seamless.
+  //
+  // An earlier veil was removed because it could strand a black screen. The
+  // failure modes are each closed here: (a) cleared on LOCATION IDENTITY
+  // change — every navigate() commits a new location object (new key) even
+  // for an identical path, so "re-opened the route you were on" clears too;
+  // (b) cleared when the RD-required guard bails without navigating;
+  // (c) cleared if the navigation path throws; (d) a backstop timeout
+  // catches anything left.
+  const [pendingContinueVeil, setPendingContinueVeil] =
+    useState<{ logo: string | null } | null>(null);
+  useEffect(() => {
+    setPendingContinueVeil(null);
+  }, [location]);
+  useEffect(() => {
+    if (!pendingContinueVeil) return;
+    const t = window.setTimeout(() => setPendingContinueVeil(null), 12000);
+    return () => window.clearTimeout(t);
+  }, [pendingContinueVeil]);
 
   const { onOpenContinueItem: navigateContinueItem, onRemoveContinueItem } =
     useContinueWatchingActions({
@@ -79,21 +111,28 @@ export function ContinueWatchingProvider({ children }: { children: ReactNode }) 
         // The only caller today is the RD-only Android resume guard, so
         // flag the reason before opening the global modal — the mount in
         // AppShell reads it to swap in the Real-Debrid-specific copy.
+        // No navigation happens on this path, so drop the veil here.
+        setPendingContinueVeil(null);
         setUnavailableReason('rd-required');
         setUnavailableItem(item);
       },
+      // Player-bound stored-stream path: upgrade the veil with the stream
+      // history's logo (fires synchronously, same render as the click).
+      onPendingNavigation: (logo) => setPendingContinueVeil({ logo }),
     });
 
-  // Simplified: navigate straight to the destination. The old code raised a
-  // full-screen black "pending" veil here (+ a route-change effect + a 10s
-  // timeout backstop that could strand a black screen if you re-opened the
-  // route you were already on). The destination already renders its own
-  // loading state — the player's mpv-buffering screen, the detail autoplay
-  // overlay — so the veil only masked a sub-second flash at the cost of a real
-  // stuck-screen failure mode. Dropped entirely; just navigate.
   const runContinue = useCallback(
     async (item: LibraryItem, options?: ContinueRunOptions) => {
-      await navigateContinueItem(item, options);
+      // 'advance' opens the detail page's episode rail — a normal screen,
+      // no veil. Everything else is playback-bound: cover instantly (logo
+      // upgraded by onPendingNavigation when the stored stream has one).
+      if (options?.mode !== 'advance') setPendingContinueVeil({ logo: null });
+      try {
+        await navigateContinueItem(item, options);
+      } catch {
+        // Navigation never happened — never leave the veil stranded.
+        setPendingContinueVeil(null);
+      }
     },
     [navigateContinueItem],
   );
@@ -158,6 +197,7 @@ export function ContinueWatchingProvider({ children }: { children: ReactNode }) 
       onRemoveContinueItem,
       runResume,
       runStartOver,
+      pendingContinueVeil,
     }),
     [
       continueWatching,
@@ -167,6 +207,7 @@ export function ContinueWatchingProvider({ children }: { children: ReactNode }) 
       onRemoveContinueItem,
       runResume,
       runStartOver,
+      pendingContinueVeil,
     ],
   );
 

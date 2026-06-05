@@ -24,6 +24,12 @@ type UseContinueWatchingActionsParams = {
    *  Caller surfaces a modal in the current context — we do NOT navigate
    *  when this fires, so the user can pick a different stream in place. */
   onStreamUnavailable?: (item: LibraryItem) => void;
+  /** Fired SYNCHRONOUSLY when the player-bound stored-stream path starts —
+   *  i.e. before the dead-link probe + meta fetch that delay the actual
+   *  navigate('/player') by network round-trips. The provider raises the
+   *  black buffering veil here (with the stored stream's logo when known)
+   *  so the click feels instant; the veil clears on route commit. */
+  onPendingNavigation?: (logo: string | null) => void;
 };
 
 export function useContinueWatchingActions({
@@ -32,6 +38,7 @@ export function useContinueWatchingActions({
   setContinueWatching,
   setContinueSyncError,
   onStreamUnavailable,
+  onPendingNavigation,
 }: UseContinueWatchingActionsParams) {
   const onOpenContinueItem = async (
     item: LibraryItem,
@@ -137,6 +144,13 @@ export function useContinueWatchingActions({
     // every platform, both branches just go straight to /player.
 
     if (stored?.url) {
+      // Player-bound: everything below this line is network (dead-link
+      // probe, meta-image fetch) BEFORE the navigate — raise the buffering
+      // veil now so the click responds instantly. The stored logo (when the
+      // stream history has one) is available synchronously, so the veil can
+      // show the same logo /player?logo= will.
+      onPendingNavigation?.(stored.logo ?? null);
+
       // Pre-flight HEAD probe — Real-Debrid serves a ~30 s "File was
       // removed" placeholder (<20 MB) when a cached release is DMCA'd.
       // If we hit one, transparently fall back to the auto-pick flow:

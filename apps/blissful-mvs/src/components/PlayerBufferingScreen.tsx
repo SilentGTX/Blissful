@@ -10,12 +10,16 @@ import { useSearchParams } from 'react-router-dom';
 // Mirrors BlissfulPlayer's in-player buffering UI so the swap from this
 // placeholder → BlissfulPlayer is visually seamless: same black backdrop,
 // same logo-on-top with the pulsing `bliss-buffer-fade` animation.
-export function PlayerBufferingScreen() {
+//
+// `logo` prop: the pre-navigation continue-watching veil renders this same
+// screen BEFORE /player?logo=… exists in the URL, so it passes the stored
+// stream's logo directly. Omitted (undefined) = read the URL as before.
+export function PlayerBufferingScreen({ logo }: { logo?: string | null }) {
   const [searchParams] = useSearchParams();
   // Logo only — no poster fallback. A vertical poster painted at logo
   // dimensions looks like the wrong image was loaded; titles without
   // a meta logo fall through to the "Buffering" text instead.
-  const displayLogo = searchParams.get('logo');
+  const displayLogo = logo !== undefined ? logo : searchParams.get('logo');
   return (
     // Very high z-index so this screen sits above BlissfulPlayer
     // (z-50, nested inside the AnimatePresence motion.div whose

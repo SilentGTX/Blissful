@@ -143,6 +143,7 @@ export default function AppShell() {
     onRemoveContinueItem,
     runResume,
     runStartOver,
+    pendingContinueVeil,
   } = useContinueWatchingContext();
 
   // On app boot, apply the persisted cache size to the streaming server.
@@ -828,6 +829,14 @@ export default function AppShell() {
 
       <PartyInviteListener />
       {location.pathname.startsWith('/player') && !playerReady ? <PlayerBufferingScreen /> : null}
+      {/* Pre-navigation continue-watching veil: covers the click→navigate gap
+          (dead-link probe + meta fetch) with the same black+logo screen the
+          /player route renders, so Resume feels instant and the two screens
+          merge. Cleared by the provider on route commit (see
+          ContinueWatchingProvider). */}
+      {pendingContinueVeil && !location.pathname.startsWith('/player') ? (
+        <PlayerBufferingScreen logo={pendingContinueVeil.logo} />
+      ) : null}
     </>
   );
 }
