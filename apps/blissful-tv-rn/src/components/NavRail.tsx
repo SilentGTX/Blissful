@@ -51,7 +51,9 @@ function Row({
   onPress?: () => void;
 }) {
   const [focused, setFocused] = useState(false);
-  const lc = labelColor ?? (active ? colors.accent : focused ? colors.text : colors.textDim);
+  // No color change on focus ("just leave the purple") — label color is constant;
+  // the purple ring overlay is the only focus indicator.
+  const lc = labelColor ?? (active ? colors.accent : colors.textDim);
   const body = (
     <View
       style={{
@@ -60,7 +62,6 @@ function Row({
         flexDirection: 'row',
         alignItems: 'center',
         borderRadius: radius.card,
-        backgroundColor: focused ? colors.surface10 : 'transparent',
       }}
     >
       {/* Focus ring as an absolute overlay so it does NOT inset the row content
@@ -228,7 +229,7 @@ function FriendsBody({ m, mx, friends, incoming, presence, tab, setTab, query, s
                 key={f.id}
                 onFocus={() => onRailFocus(true)}
                 onBlur={() => onRailFocus(false)}
-                style={({ focused }: any) => ({ flexDirection: 'row', alignItems: 'center', gap: m.s(11), paddingVertical: m.s(8), paddingHorizontal: m.s(10), borderRadius: m.s(14), backgroundColor: focused ? colors.surface12 : 'rgba(255,255,255,0.043)', borderWidth: 2, borderColor: focused ? colors.accent : 'transparent' })}
+                style={({ focused }: any) => ({ flexDirection: 'row', alignItems: 'center', gap: m.s(11), paddingVertical: m.s(8), paddingHorizontal: m.s(10), borderRadius: m.s(14), backgroundColor: 'rgba(255,255,255,0.043)', borderWidth: 2, borderColor: focused ? colors.accent : 'transparent' })}
               >
                 <FriendAvatar name={f.nickname || f.displayName} size={m.s(46)} online={Boolean(p?.online)} />
                 <View style={{ flex: 1, minWidth: 0 }}>

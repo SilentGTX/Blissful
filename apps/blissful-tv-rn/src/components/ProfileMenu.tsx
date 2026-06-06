@@ -4,19 +4,30 @@ import { BackHandler, Image, Modal, Pressable, StyleSheet, Text, View } from 're
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { useAuth } from '../context/AuthContext';
-import { resolveAvatar } from '../lib/avatars';
+import { resolveAvatar, PRESET_AVATARS } from '../lib/avatars';
 
+const PRESET_RE = /avatar[_-]?(\d{1,2})/i;
+function presetIndexOf(avatar?: string | null): number {
+  if (avatar) {
+    const m = PRESET_RE.exec(avatar);
+    if (m) {
+      const i = Number.parseInt(m[1], 10) - 1;
+      if (i >= 0 && i < PRESET_AVATARS.length) return i;
+    }
+  }
+  return 0;
+}
+
+// "just leave the purple": no bg/color change on focus — only the purple ring.
 function Row({
   label,
   icon,
-  autoFocus,
   danger,
   m,
   onPress,
 }: {
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
-  autoFocus?: boolean;
   danger?: boolean;
   m: ReturnType<typeof useMetrics>;
   onPress: () => void;
@@ -24,66 +35,135 @@ function Row({
   const [f, setF] = useState(false);
   return (
     <Pressable
+      onFocus={() => setF(true)}
+      onBlur={() => setF(false)}
+      onPress={onPress}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(16), paddingVertical: m.s(14), paddingHorizontal: m.s(18), borderRadius: m.s(14), borderWidth: 2, borderColor: f ? colors.accent : 'transparent' }}
+    >
+      <Ionicons name={icon} size={m.s(30)} color={danger ? colors.danger : colors.textDim} />
+      <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(26), color: danger ? colors.danger : colors.text }}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function AvatarCell({ src, size, selected, autoFocus, onPress }: { src: number; size: number; selected: boolean; autoFocus: boolean; onPress: () => void }) {
+  const [f, setF] = useState(false);
+  const ring = f || selected;
+  return (
+    <Pressable
       hasTVPreferredFocus={autoFocus}
       onFocus={() => setF(true)}
       onBlur={() => setF(false)}
       onPress={onPress}
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: m.s(16),
-        paddingVertical: m.s(14),
-        paddingHorizontal: m.s(18),
-        borderRadius: m.s(14),
-        backgroundColor: f ? colors.surface10 : 'transparent',
-      }}
+      style={{ width: size, height: size, borderRadius: radius.field, overflow: 'hidden', borderWidth: 3, borderColor: ring ? colors.accent : 'transparent' }}
     >
-      <Ionicons name={icon} size={m.s(30)} color={danger ? colors.danger : f ? colors.accent : colors.textDim} />
-      <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(26), color: danger ? colors.danger : f ? colors.text : colors.textDim }}>
-        {label}
-      </Text>
+      <Image source={src} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+      {selected ? (
+        <View style={{ position: 'absolute', right: size * 0.06, top: size * 0.06, width: size * 0.24, height: size * 0.24, borderRadius: 999, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ fontSize: size * 0.13, color: colors.accentInk, fontFamily: font.bodySemi }}>✓</Text>
+        </View>
+      ) : null}
     </Pressable>
   );
 }
 
 export function ProfileMenu({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const m = useMetrics();
-  const { user, logout } = useAuth();
+  const { user, logout, updateProfile } = useAuth();
+  const [mode, setMode] = useState<'menu' | 'avatar'>('menu');
+  const [selected, setSelected] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [headFocused, setHeadFocused] = useState(false);
+  const [saveFocused, setSaveFocused] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setMode('menu');
+      setSelected(presetIndexOf(user?.avatar));
+    }
+  }, [visible, user?.avatar]);
 
   useEffect(() => {
     if (!visible) return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (mode === 'avatar') {
+        setMode('menu');
+        return true;
+      }
       onClose();
       return true;
     });
     return () => sub.remove();
-  }, [visible, onClose]);
+  }, [visible, onClose, mode]);
 
   if (!visible || !user) return null;
 
   const name = user.displayName || user.username || 'You';
   const av = resolveAvatar(user.avatar, name.charAt(0).toUpperCase());
 
+  const save = async () => {
+    setSaving(true);
+    try {
+      await updateProfile({ avatar: `/avatar/avatar_${selected + 1}.png` });
+      onClose();
+    } catch {
+      // leave the menu open on failure
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const panelW = m.s(560);
+  const cellSize = (panelW - m.s(16) * 2 - m.s(12) * 3) / 4;
+
   return (
     <Modal transparent visible={visible} onRequestClose={onClose} animationType="fade">
       <Pressable style={styles.backdrop} onPress={onClose} />
-      <View style={[styles.panel, { top: m.safeY + m.topbarH + m.s(10), right: m.safeX, width: m.s(560), borderRadius: m.s(24), padding: m.s(16) }]}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(16), paddingHorizontal: m.s(8), paddingBottom: m.s(14), marginBottom: m.s(6), borderBottomWidth: 1, borderBottomColor: colors.hairline }}>
-          {av.kind === 'image' ? (
-            <Image source={av.source} style={{ width: m.s(76), height: m.s(76), borderRadius: radius.pill }} resizeMode="cover" />
-          ) : (
-            <View style={{ width: m.s(76), height: m.s(76), borderRadius: radius.pill, backgroundColor: colors.surface12, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontFamily: font.serif, fontSize: m.s(34), color: colors.text }}>{av.value}</Text>
+      <View style={[styles.panel, { top: m.safeY + m.topbarH + m.s(10), right: m.safeX, width: panelW, borderRadius: m.s(24), padding: m.s(16) }]}>
+        {mode === 'menu' ? (
+          <>
+            <Pressable
+              hasTVPreferredFocus
+              onFocus={() => setHeadFocused(true)}
+              onBlur={() => setHeadFocused(false)}
+              onPress={() => setMode('avatar')}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(16), padding: m.s(8), marginBottom: m.s(6), borderRadius: m.s(16), borderWidth: 2, borderColor: headFocused ? colors.accent : 'transparent' }}
+            >
+              {av.kind === 'image' ? (
+                <Image source={av.source} style={{ width: m.s(76), height: m.s(76), borderRadius: radius.pill }} resizeMode="cover" />
+              ) : (
+                <View style={{ width: m.s(76), height: m.s(76), borderRadius: radius.pill, backgroundColor: colors.surface12, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontFamily: font.serif, fontSize: m.s(34), color: colors.text }}>{av.value}</Text>
+                </View>
+              )}
+              <View>
+                <Text style={{ fontFamily: font.serif, fontSize: m.s(32), color: colors.text }}>{name}</Text>
+                {user.username ? <Text style={{ fontFamily: font.body, fontSize: m.s(22), color: colors.textFaint }}>@{user.username}</Text> : null}
+              </View>
+            </Pressable>
+            <View style={{ height: 1, backgroundColor: colors.hairline, marginBottom: m.s(6) }} />
+            <Row label="Settings" icon="settings-outline" m={m} onPress={onClose} />
+            <Row label="Customize Home" icon="grid-outline" m={m} onPress={onClose} />
+            <Row label="Log out" icon="log-out-outline" danger m={m} onPress={() => { logout(); onClose(); }} />
+          </>
+        ) : (
+          <>
+            <Text style={{ fontFamily: font.serif, fontSize: m.s(30), color: colors.text, marginBottom: m.s(14) }}>Choose your avatar</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: m.s(12) }}>
+              {PRESET_AVATARS.map((src, i) => (
+                <AvatarCell key={i} src={src as number} size={cellSize} selected={selected === i} autoFocus={selected === i} onPress={() => setSelected(i)} />
+              ))}
             </View>
-          )}
-          <View>
-            <Text style={{ fontFamily: font.serif, fontSize: m.s(32), color: colors.text }}>{name}</Text>
-            {user.username ? <Text style={{ fontFamily: font.body, fontSize: m.s(22), color: colors.textFaint }}>@{user.username}</Text> : null}
-          </View>
-        </View>
-        <Row label="Settings" icon="settings-outline" autoFocus m={m} onPress={onClose} />
-        <Row label="Customize Home" icon="grid-outline" m={m} onPress={onClose} />
-        <Row label="Log out" icon="log-out-outline" danger m={m} onPress={() => { logout(); onClose(); }} />
+            <Pressable
+              onFocus={() => setSaveFocused(true)}
+              onBlur={() => setSaveFocused(false)}
+              onPress={save}
+              style={{ marginTop: m.s(18), alignSelf: 'stretch', alignItems: 'center', paddingVertical: m.s(13), borderRadius: radius.pill, backgroundColor: '#fff', borderWidth: 3, borderColor: saveFocused ? colors.accent : 'transparent' }}
+            >
+              <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(24), color: '#000' }}>{saving ? 'Saving…' : 'Save'}</Text>
+            </Pressable>
+          </>
+        )}
       </View>
     </Modal>
   );

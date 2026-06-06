@@ -3,6 +3,7 @@ import {
   fetchCurrentBlissfulUser,
   loginBlissfulAccount,
   registerBlissfulAccount,
+  updateCurrentBlissfulUser,
   type BlissfulUser,
 } from '@blissful/core';
 import { kv } from '../lib/storage';
@@ -16,6 +17,7 @@ type AuthState = {
   hydrating: boolean;
   login: (identifier: string, password: string) => Promise<void>;
   register: (username: string, password: string, displayName?: string) => Promise<void>;
+  updateProfile: (updates: { displayName?: string; avatar?: string | null }) => Promise<void>;
   logout: () => void;
 };
 
@@ -73,6 +75,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(res.user);
   }, []);
 
+  const updateProfile = useCallback(
+    async (updates: { displayName?: string; avatar?: string | null }) => {
+      if (!token) throw new Error('Not signed in');
+      const updated = await updateCurrentBlissfulUser(token, updates);
+      setUser(updated);
+    },
+    [token],
+  );
+
   const logout = useCallback(() => {
     kv.remove(TOKEN_KEY);
     setToken(null);
@@ -80,7 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthCtx.Provider value={{ token, user, hydrating, login, register, logout }}>
+    <AuthCtx.Provider value={{ token, user, hydrating, login, register, updateProfile, logout }}>
       {children}
     </AuthCtx.Provider>
   );
