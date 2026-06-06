@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { fetchMeta, normalizeStremioImage, type StremioMetaDetail, type StremioMetaPreview } from '@blissful/core';
 import { colors, font, radius } from '../theme/colors';
+import { useMetrics } from '../theme/metrics';
 import type { RootStackParamList } from '../navigation/types';
 
 type Nav = StackNavigationProp<RootStackParamList, 'Home'>;
@@ -15,12 +16,14 @@ function HeroBtn({
   icon,
   primary,
   autoFocus,
+  h,
   onPress,
 }: {
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
   primary?: boolean;
   autoFocus?: boolean;
+  h: number;
   onPress: () => void;
 }) {
   const [focused, setFocused] = useState(false);
@@ -30,82 +33,118 @@ function HeroBtn({
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       onPress={onPress}
-      style={[
-        styles.btn,
-        primary ? styles.btnPrimary : styles.btnGlass,
-        focused && (primary ? styles.btnPrimaryFocused : styles.btnGlassFocused),
-      ]}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: h * 0.18,
+        height: h,
+        paddingHorizontal: h * 0.5,
+        borderRadius: radius.pill,
+        borderWidth: 3,
+        borderColor: focused ? (primary ? colors.text : colors.accent) : 'transparent',
+        backgroundColor: primary ? colors.accent : colors.surface08,
+      }}
     >
-      <Ionicons name={icon} size={20} color={primary ? colors.accentInk : colors.text} />
-      <Text style={[styles.btnText, { color: primary ? colors.accentInk : colors.text }]}>{label}</Text>
+      <Ionicons name={icon} size={h * 0.4} color={primary ? colors.accentInk : colors.text} />
+      <Text style={{ fontFamily: font.bodySemi, fontSize: h * 0.34, color: primary ? colors.accentInk : colors.text }}>
+        {label}
+      </Text>
     </Pressable>
   );
 }
 
-export function Hero({ item }: { item: StremioMetaPreview }) {
+export function Hero({ item }: { item: StremioMetaPreview | null }) {
   const navigation = useNavigation<Nav>();
+  const m = useMetrics();
   const [meta, setMeta] = useState<StremioMetaDetail['meta'] | null>(null);
 
   useEffect(() => {
+    if (!item) return;
     let cancelled = false;
+    setMeta(null);
     fetchMeta({ type: item.type, id: item.id })
-      .then((r) => {
-        if (!cancelled) setMeta(r.meta);
-      })
+      .then((r) => !cancelled && setMeta(r.meta))
       .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [item.id, item.type]);
+  }, [item?.id, item?.type]);
 
-  const bg = normalizeStremioImage(meta?.background) ?? normalizeStremioImage(item.poster);
-  const genres = (meta?.genres ?? meta?.genre ?? item.genres ?? []).slice(0, 3);
-  const year = meta?.releaseInfo ?? item.releaseInfo ?? (meta?.year != null ? String(meta.year) : '');
-  const rating = meta?.imdbRating ?? item.imdbRating;
+  const bg = normalizeStremioImage(meta?.background) ?? normalizeStremioImage(item?.poster);
+  const genres = (meta?.genres ?? meta?.genre ?? item?.genres ?? []).slice(0, 3);
+  const year = meta?.releaseInfo ?? item?.releaseInfo ?? (meta?.year != null ? String(meta.year) : '');
+  const rating = meta?.imdbRating ?? item?.imdbRating;
   const runtime = meta?.runtime;
-  const desc = meta?.description ?? item.description ?? '';
+  const desc = meta?.description ?? item?.description ?? '';
   const metaLine = [year, rating ? `${rating} IMDb` : null, runtime].filter(Boolean).join('   ·   ');
+  const btnH = m.s(56); // TV action button h-14
 
   return (
-    <View style={styles.hero}>
+    <View style={[styles.hero, { height: m.heroMinH, borderRadius: m.s(36), marginBottom: m.s(24) }]}>
       {bg ? <Image source={{ uri: bg }} style={styles.bg} resizeMode="cover" /> : null}
+      {/* .now-popular-scrim — bottom-up dark + left-to-right dark */}
       <LinearGradient
-        colors={['rgba(0,0,0,0.10)', 'rgba(0,0,0,0.25)', 'rgba(0,0,0,0.72)']}
-        locations={[0, 0.45, 1]}
+        colors={['rgba(0,0,0,0.92)', 'rgba(0,0,0,0.5)', 'transparent']}
+        locations={[0, 0.38, 0.68]}
+        start={{ x: 0, y: 1 }}
+        end={{ x: 0, y: 0 }}
         style={StyleSheet.absoluteFill}
       />
-      <View style={styles.content}>
-        <Text style={styles.eyebrow}>🔥  NOW POPULAR</Text>
-        <View style={styles.spacer} />
+      <LinearGradient
+        colors={['rgba(0,0,0,0.7)', 'transparent']}
+        locations={[0, 0.55]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={{ flex: 1, paddingLeft: m.safeX, paddingRight: m.s(24), paddingTop: m.s(20), paddingBottom: m.safeY }}>
+        <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(20), letterSpacing: m.s(7), color: colors.textDim }}>
+          🔥  NOW POPULAR
+        </Text>
+        <View style={{ flex: 1 }} />
         {genres.length ? (
-          <View style={styles.chips}>
+          <View style={{ flexDirection: 'row', gap: m.s(14), marginBottom: m.s(18) }}>
             {genres.map((g) => (
-              <View key={g} style={styles.chip}>
-                <Text style={styles.chipText}>{g}</Text>
+              <View
+                key={g}
+                style={{ backgroundColor: colors.surface12, borderRadius: radius.pill, paddingHorizontal: m.s(24), paddingVertical: m.s(10) }}
+              >
+                <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(22), color: 'rgba(255,255,255,0.9)' }}>{g}</Text>
               </View>
             ))}
           </View>
         ) : null}
-        <Text style={styles.title} numberOfLines={2}>
-          {item.name}
+        <Text
+          style={{ fontFamily: font.serif, fontSize: m.heroTitle, color: colors.text, lineHeight: m.heroTitle * 1.05, maxWidth: '60%' }}
+          numberOfLines={2}
+        >
+          {item?.name ?? ' '}
         </Text>
-        {metaLine ? <Text style={styles.meta}>{metaLine}</Text> : null}
+        {metaLine ? (
+          <Text style={{ fontFamily: font.bodyMed, fontSize: m.s(26), color: 'rgba(255,255,255,0.8)', marginTop: m.s(16) }}>
+            {metaLine}
+          </Text>
+        ) : null}
         {desc ? (
-          <Text style={styles.desc} numberOfLines={2}>
+          <Text
+            style={{ fontFamily: font.body, fontSize: m.s(26), color: colors.textDim, marginTop: m.s(14), maxWidth: '58%', lineHeight: m.s(38) }}
+            numberOfLines={2}
+          >
             {desc}
           </Text>
         ) : null}
-        <View style={styles.actions}>
+        <View style={{ flexDirection: 'row', gap: m.s(24), marginTop: m.s(28) }}>
           <HeroBtn
             label="Watch now"
             icon="play"
             primary
             autoFocus
+            h={btnH}
             onPress={() =>
-              navigation.navigate('Detail', { id: item.id, type: item.type, name: item.name, poster: item.poster })
+              item && navigation.navigate('Detail', { id: item.id, type: item.type, name: item.name, poster: item.poster })
             }
           />
-          <HeroBtn label="Add to library" icon="bookmark-outline" onPress={() => { /* library — needs auth */ }} />
+          <HeroBtn label="Add to library" icon="bookmark-outline" h={btnH} onPress={() => { /* library — needs auth */ }} />
         </View>
       </View>
     </View>
@@ -113,47 +152,6 @@ export function Hero({ item }: { item: StremioMetaPreview }) {
 }
 
 const styles = StyleSheet.create({
-  hero: {
-    height: 420,
-    borderRadius: radius.hero,
-    overflow: 'hidden',
-    backgroundColor: '#0f1115',
-    marginBottom: 36,
-  },
+  hero: { overflow: 'hidden', backgroundColor: '#0f1115' },
   bg: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
-  content: { flex: 1, padding: 34 },
-  eyebrow: {
-    fontFamily: font.bodySemi,
-    fontSize: 13,
-    letterSpacing: 4,
-    color: colors.textDim,
-  },
-  spacer: { flex: 1 },
-  chips: { flexDirection: 'row', gap: 8, marginBottom: 14 },
-  chip: {
-    backgroundColor: colors.surface12,
-    borderRadius: radius.pill,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-  },
-  chipText: { fontFamily: font.bodySemi, fontSize: 12, color: 'rgba(255,255,255,0.9)' },
-  title: { fontFamily: font.serif, fontSize: 44, color: colors.text, lineHeight: 48 },
-  meta: { fontFamily: font.bodyMed, fontSize: 15, color: 'rgba(255,255,255,0.8)', marginTop: 12 },
-  desc: { fontFamily: font.body, fontSize: 15, color: colors.textDim, marginTop: 12, maxWidth: '60%', lineHeight: 22 },
-  actions: { flexDirection: 'row', gap: 14, marginTop: 22 },
-  btn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    height: 52,
-    paddingHorizontal: 26,
-    borderRadius: radius.pill,
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  btnPrimary: { backgroundColor: colors.accent },
-  btnPrimaryFocused: { borderColor: colors.text },
-  btnGlass: { backgroundColor: colors.surface08, borderColor: colors.hairline },
-  btnGlassFocused: { borderColor: colors.accent },
-  btnText: { fontFamily: font.bodySemi, fontSize: 16 },
 });

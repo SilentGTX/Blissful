@@ -43,11 +43,13 @@ export const font = {
   bodySemi: 'IBMPlexSans_600SemiBold',
 } as const;
 
+// NOTE: the Android TV emulator (and most 1080p TVs) run at density 320 (2x),
+// so the logical canvas is ~960x540 dp — size everything for THAT, not a phone.
 export const layout = {
-  safeX: 48,
-  safeY: 40,
-  posterW: 150,
-  posterH: 220, // ~ 1 / 1.464 aspect
+  safeX: 40,
+  safeY: 28,
+  posterW: 124,
+  posterH: 182, // ~ 1 / 1.464 aspect
   radius: radius.card,
 } as const;
 

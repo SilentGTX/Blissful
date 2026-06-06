@@ -4,92 +4,90 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, font, radius } from '../theme/colors';
+import { useMetrics } from '../theme/metrics';
 import { useAuth } from '../context/AuthContext';
 
-// Liquid-glass recipe from the TV top bar (.tv-topbar-search / -profile).
-const GLASS = ['rgba(255,255,255,0.16)', 'rgba(255,255,255,0.05)'] as const;
+// .tv-topbar-search / -profile: two stacked gradients (cool-glass base + white sheen).
+function Glass({ focused, style, children }: { focused: boolean; style?: any; children: React.ReactNode }) {
+  return (
+    <View style={style}>
+      <LinearGradient
+        colors={['rgba(124,144,176,0.10)', 'rgba(18,24,36,0.18)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <LinearGradient
+        colors={['rgba(255,255,255,0.16)', 'rgba(255,255,255,0.05)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      {children}
+    </View>
+  );
+}
 
 export function TopBar() {
   const navigation = useNavigation<any>();
   const { user } = useAuth();
+  const m = useMetrics();
   const [searchFocused, setSearchFocused] = useState(false);
   const [avatarFocused, setAvatarFocused] = useState(false);
 
   const initial = (user?.displayName || user?.username || '?').trim().charAt(0).toUpperCase();
+  const ring = (focused: boolean) => ({
+    borderWidth: focused ? 3 : 1,
+    borderColor: focused ? colors.accent : 'rgba(255,255,255,0.18)',
+  });
 
   return (
-    <View style={styles.bar}>
+    <View style={[styles.bar, { top: m.safeY, left: m.contentLeft, right: m.safeX, height: m.topbarH }]}>
       <Pressable
         onFocus={() => setSearchFocused(true)}
         onBlur={() => setSearchFocused(false)}
         onPress={() => { /* search screen — next */ }}
-        style={styles.searchPress}
+        style={{ width: m.searchW, height: '100%' }}
       >
-        <LinearGradient
-          colors={GLASS}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[styles.searchPill, searchFocused && styles.glassFocused]}
+        <Glass
+          focused={searchFocused}
+          style={[
+            styles.pill,
+            { height: '100%', paddingHorizontal: m.s(26), gap: m.s(14), borderRadius: radius.pill },
+            ring(searchFocused),
+          ]}
         >
-          <Ionicons name="search" size={22} color={colors.textFaint} />
-          <Text style={styles.placeholder}>Search movies, series, actors...</Text>
-        </LinearGradient>
+          <Ionicons name="search" size={m.s(26)} color="rgba(255,255,255,0.6)" />
+          <Text style={{ fontFamily: font.body, fontSize: m.searchFont, color: 'rgba(255,255,255,0.45)' }}>
+            Search movies, series, actors...
+          </Text>
+        </Glass>
       </Pressable>
 
       <Pressable
         onFocus={() => setAvatarFocused(true)}
         onBlur={() => setAvatarFocused(false)}
         onPress={() => navigation.navigate('Login')}
-        style={styles.avatarPress}
+        style={[styles.avatarPress, { width: m.topbarH, height: m.topbarH }]}
       >
-        <LinearGradient
-          colors={GLASS}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[styles.avatar, avatarFocused && styles.glassFocused]}
+        <Glass
+          focused={avatarFocused}
+          style={[styles.avatar, { borderRadius: radius.pill }, ring(avatarFocused)]}
         >
           {user ? (
-            <Text style={styles.avatarInitial}>{initial}</Text>
+            <Text style={{ fontFamily: font.serif, fontSize: m.profileFont, color: colors.text }}>{initial}</Text>
           ) : (
-            <Ionicons name="person" size={24} color={colors.text} />
+            <Ionicons name="person" size={m.s(34)} color={colors.text} />
           )}
-        </LinearGradient>
+        </Glass>
       </Pressable>
     </View>
   );
 }
 
-const BAR_H = 64;
-
 const styles = StyleSheet.create({
-  bar: {
-    height: BAR_H,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  searchPress: { width: 620, maxWidth: '70%', height: '100%' },
-  searchPill: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    paddingHorizontal: 24,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.surface18,
-  },
-  placeholder: { fontFamily: font.body, fontSize: 17, color: colors.textGhost },
-  avatarPress: { position: 'absolute', right: 0, height: '100%', aspectRatio: 1 },
-  avatar: {
-    flex: 1,
-    aspectRatio: 1,
-    borderRadius: radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.surface18,
-  },
-  avatarInitial: { fontFamily: font.serif, fontSize: 22, color: colors.text },
-  glassFocused: { borderColor: colors.accent, borderWidth: 3 },
+  bar: { position: 'absolute', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', zIndex: 45 },
+  pill: { flexDirection: 'row', alignItems: 'center', overflow: 'hidden' },
+  avatarPress: { position: 'absolute', right: 0 },
+  avatar: { flex: 1, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
 });
