@@ -1,17 +1,21 @@
-// Tracks whether the currently-focused CONTENT element sits at the LEFT EDGE of
-// its row (the first card in a row / the first dropdown / the leftmost hero
-// button). The NavRail opens ONLY when D-pad Left is pressed while focus is on a
-// left-edge element — so Left on the 2nd card just moves to the 1st card, and
-// only a Left on the 1st card (already at the edge) opens the rail.
+// Tracks the currently-focused CONTENT element: whether it's at its row's LEFT
+// EDGE (first card / first dropdown / leftmost hero button) and WHEN it got
+// focus. The NavRail opens on D-pad Left only if focus has been RESTING on an
+// edge element — not if this very Left just moved focus onto it.
 //
-// This is deterministic (a flag set on focus), unlike a timing heuristic that
-// races the FlatList's focus event.
+// Why the timestamp: on some tvos builds the focus change fires BEFORE the
+// `left` TV event, so a synchronous "is edge?" check sees the card the Left just
+// landed on (the 1st card) and wrongly opens. Requiring the edge focus to be a
+// little stale means a Left that moves 2nd -> 1st card can't open it; only a
+// deliberate second Left (while already resting on the 1st card) does.
 let atLeftEdge = false;
+let lastFocusAt = 0;
 
 export function markContentFocus(rowStart: boolean): void {
   atLeftEdge = rowStart;
+  lastFocusAt = Date.now();
 }
 
-export function isAtLeftEdge(): boolean {
-  return atLeftEdge;
+export function isAtLeftEdge(minAgeMs = 130): boolean {
+  return atLeftEdge && Date.now() - lastFocusAt > minAgeMs;
 }

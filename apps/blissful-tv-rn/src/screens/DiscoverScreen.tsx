@@ -47,15 +47,18 @@ export function DiscoverScreen() {
   const onSelect = (item: CardItem) => navigation.navigate('Detail', { id: item.id, type: item.type, name: item.name, poster: item.poster ?? undefined });
 
   const posterW = m.s(180);
-  const cols = Math.max(2, Math.floor((m.width - m.contentLeft - m.safeX) / (posterW + m.s(24))));
+  // Leave room on the left so the focused card's 1.06 scale + border isn't
+  // clipped by the FlatList's edge; align the header to the same inset.
+  const padL = m.s(12);
+  const cols = Math.max(2, Math.floor((m.width - m.contentLeft - m.safeX - padL) / (posterW + m.s(24))));
 
   return (
     <View style={styles.root}>
       <NavRail active="Discover" />
-      <View style={{ position: 'absolute', left: m.contentLeft, top: m.safeY, right: m.safeX, bottom: 0, paddingLeft: m.s(8) }}>
-        <Text style={{ fontFamily: font.serif, fontSize: m.s(40), color: colors.text, marginBottom: m.s(14) }}>Discover</Text>
+      <View style={{ position: 'absolute', left: m.contentLeft, top: m.safeY, right: m.safeX, bottom: 0 }}>
+        <Text style={{ fontFamily: font.serif, fontSize: m.s(40), color: colors.text, marginLeft: padL, marginBottom: m.s(14) }}>Discover</Text>
 
-        <View style={{ flexDirection: 'row', gap: m.s(12), marginBottom: m.s(18) }}>
+        <View style={{ flexDirection: 'row', gap: m.s(12), marginLeft: padL, marginBottom: m.s(18) }}>
           <TvSelect iconName="film-outline" options={TYPE_OPTS} value={type} onChange={(k) => setType(k as MediaType)} m={m} minWidth={m.s(184)} atRowStart onOpen={setDropdown} />
           <TvSelect iconName="trending-up-outline" options={CATALOG_OPTS} value="top" onChange={() => {}} m={m} minWidth={m.s(200)} onOpen={setDropdown} />
           <TvSelect iconName="pricetags-outline" options={genreOptions} value={genre ?? 'all'} onChange={(k) => setGenre(k === 'all' ? null : k)} m={m} minWidth={m.s(200)} onOpen={setDropdown} />
@@ -71,7 +74,7 @@ export function DiscoverScreen() {
             style={{ height: m.height - m.safeY - m.s(140) }}
             removeClippedSubviews={false}
             keyExtractor={(it) => it.id}
-            contentContainerStyle={{ gap: m.s(20), paddingTop: m.s(4), paddingBottom: m.s(40) }}
+            contentContainerStyle={{ gap: m.s(20), paddingTop: m.s(8), paddingBottom: m.s(40), paddingLeft: padL }}
             columnWrapperStyle={{ gap: m.s(24) }}
             showsVerticalScrollIndicator={false}
             renderItem={({ item, index }) => <PosterCard item={item} width={posterW} atRowStart={index % cols === 0} onSelect={onSelect} />}
