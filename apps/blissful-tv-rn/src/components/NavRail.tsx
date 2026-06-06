@@ -60,12 +60,16 @@ function Row({
         flexDirection: 'row',
         alignItems: 'center',
         borderRadius: radius.card,
-        borderWidth: 2,
-        borderColor: focused ? colors.accent : 'transparent',
         backgroundColor: focused ? colors.surface10 : 'transparent',
       }}
     >
-      <View style={[{ alignItems: 'center', justifyContent: 'center' }, expanded ? { width: iconW } : { flex: 1 }]}>{icon}</View>
+      {/* Focus ring as an absolute overlay so it does NOT inset the row content
+          (a layout border would shift the icon off-center). */}
+      {focused ? <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: radius.card, borderWidth: 2, borderColor: colors.accent }} /> : null}
+      {/* Fixed-width icon column in BOTH states: anchored to the row's left, so
+          the icon X never moves on expand/collapse (no jump). iconW == the
+          collapsed row content width, so when collapsed the icon is centered. */}
+      <View style={{ width: iconW, alignItems: 'center', justifyContent: 'center' }}>{icon}</View>
       {expanded ? (
         <Text numberOfLines={1} style={{ fontFamily: labelFont ?? font.bodySemi, fontSize: labelSize, color: lc, flex: 1, marginLeft: 2 }}>
           {label}
