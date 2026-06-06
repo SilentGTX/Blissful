@@ -1,142 +1,41 @@
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  Image,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-// The shared brain — same TypeScript the web/desktop app runs. On RN there is
-// no CORS, so fetchCatalog hits Cinemeta DIRECTLY (the core's default identity
-// resolver); the web app injects the /addon-proxy wrap via configureCore().
-import { fetchCatalog, normalizeStremioImage, type StremioMetaPreview } from '@blissful/core';
+import { DarkTheme, NavigationContainer } from '@react-navigation/native';
+import { createStackNavigator } from '@react-navigation/stack';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { HomeScreen } from './src/screens/HomeScreen';
+import { DetailScreen } from './src/screens/DetailScreen';
+import type { RootStackParamList } from './src/navigation/types';
+import { colors } from './src/theme/colors';
 
-const BRAND = '#19f7d2';
-const ACCENT = '#95a2ff';
-const POSTER_W = 150;
-const POSTER_H = 225;
+const Stack = createStackNavigator<RootStackParamList>();
 
-function PosterCard({ item, autoFocus }: { item: StremioMetaPreview; autoFocus?: boolean }) {
-  const [focused, setFocused] = useState(false);
-  const poster = normalizeStremioImage(item.poster);
-  return (
-    <Pressable
-      hasTVPreferredFocus={autoFocus}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-      onPress={() => {}}
-      style={styles.card}
-    >
-      <View style={[styles.posterWrap, focused && styles.posterWrapFocused]}>
-        {poster ? (
-          <Image source={{ uri: poster }} style={styles.poster} resizeMode="cover" />
-        ) : (
-          <View style={[styles.poster, styles.posterEmpty]}>
-            <Text style={styles.posterEmptyText} numberOfLines={3}>
-              {item.name}
-            </Text>
-          </View>
-        )}
-      </View>
-      <Text style={[styles.cardTitle, focused && styles.cardTitleFocused]} numberOfLines={1}>
-        {item.name}
-      </Text>
-    </Pressable>
-  );
-}
-
-function Rail({
-  title,
-  type,
-  catalogId,
-  autoFocusFirst,
-}: {
-  title: string;
-  type: string;
-  catalogId: string;
-  autoFocusFirst?: boolean;
-}) {
-  const [metas, setMetas] = useState<StremioMetaPreview[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchCatalog({ type, id: catalogId })
-      .then((res) => {
-        if (!cancelled) setMetas(res.metas.slice(0, 30));
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [type, catalogId]);
-
-  return (
-    <View style={styles.rail}>
-      <Text style={styles.railTitle}>{title}</Text>
-      {error ? (
-        <Text style={styles.railError}>{error}</Text>
-      ) : metas ? (
-        <FlatList
-          horizontal
-          data={metas}
-          keyExtractor={(m) => m.id}
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.railInner}
-          renderItem={({ item, index }) => (
-            <PosterCard item={item} autoFocus={autoFocusFirst && index === 0} />
-          )}
-        />
-      ) : (
-        <ActivityIndicator color={BRAND} style={styles.railLoading} />
-      )}
-    </View>
-  );
-}
+// JS navigator stack (NOT native-stack) + no react-native-screens — the
+// focus-safe path on react-native-tvos New Arch (plan D19): native-stack's
+// screen detach loses the TV focus reference (tvos #852).
+const navTheme = {
+  ...DarkTheme,
+  colors: { ...DarkTheme.colors, background: colors.bg, card: colors.bg },
+};
 
 export default function App() {
   return (
-    <View style={styles.root}>
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <Text style={styles.brand}>Blissful</Text>
-        <Text style={styles.subtitle}>React Native · Android TV · live Cinemeta via @blissful/core</Text>
-        <Rail title="Popular Movies" type="movie" catalogId="top" autoFocusFirst />
-        <Rail title="Popular Series" type="series" catalogId="top" />
-      </ScrollView>
-      <StatusBar style="light" />
-    </View>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <NavigationContainer theme={navTheme}>
+          <Stack.Navigator
+            screenOptions={{
+              headerShown: false,
+              animation: 'none',
+              cardStyle: { backgroundColor: colors.bg },
+            }}
+          >
+            <Stack.Screen name="Home" component={HomeScreen} />
+            <Stack.Screen name="Detail" component={DetailScreen} />
+          </Stack.Navigator>
+        </NavigationContainer>
+        <StatusBar style="light" />
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
-
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#07090d' },
-  scroll: { paddingTop: 44, paddingLeft: 48, paddingBottom: 60 },
-  brand: { color: '#fff', fontSize: 40, fontWeight: '700' },
-  subtitle: { color: BRAND, fontSize: 15, marginTop: 4, marginBottom: 28 },
-  rail: { marginBottom: 34 },
-  railTitle: { color: '#fff', fontSize: 22, fontWeight: '600', marginBottom: 14 },
-  railInner: { gap: 16, paddingRight: 48, paddingVertical: 6 },
-  railLoading: { alignSelf: 'flex-start', marginVertical: 40 },
-  railError: { color: '#ff8a8a', fontSize: 14 },
-  card: { width: POSTER_W },
-  posterWrap: {
-    width: POSTER_W,
-    height: POSTER_H,
-    borderRadius: 12,
-    borderWidth: 3,
-    borderColor: 'transparent',
-    overflow: 'hidden',
-  },
-  posterWrapFocused: { borderColor: ACCENT, transform: [{ scale: 1.06 }] },
-  poster: { width: '100%', height: '100%', backgroundColor: 'rgba(255,255,255,0.06)' },
-  posterEmpty: { alignItems: 'center', justifyContent: 'center', padding: 8 },
-  posterEmptyText: { color: 'rgba(255,255,255,0.6)', fontSize: 13, textAlign: 'center' },
-  cardTitle: { color: 'rgba(255,255,255,0.7)', fontSize: 14, marginTop: 8 },
-  cardTitleFocused: { color: '#fff' },
-});

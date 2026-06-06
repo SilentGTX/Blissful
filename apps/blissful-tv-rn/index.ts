@@ -1,3 +1,6 @@
+// react-native-gesture-handler must be the very first import (before anything
+// that touches the renderer) — required by @react-navigation/stack.
+import 'react-native-gesture-handler';
 import 'react-native-url-polyfill/auto';
 import { registerRootComponent } from 'expo';
 
