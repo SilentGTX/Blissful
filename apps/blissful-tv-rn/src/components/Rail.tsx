@@ -48,7 +48,7 @@ export function Rail({
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ gap: m.s(24), paddingTop: m.s(20), paddingBottom: m.s(12), paddingLeft: m.s(12), paddingRight: m.safeX }}
           renderItem={({ item, index }) => (
-            <PosterCard item={item} width={posterW} autoFocus={autoFocusFirst && index === 0} onSelect={onSelect} />
+            <PosterCard item={item} width={posterW} autoFocus={autoFocusFirst && index === 0} atRowStart={index === 0} onSelect={onSelect} />
           )}
         />
       ) : (

@@ -7,7 +7,8 @@ import { useMetrics } from '../theme/metrics';
 import { ICONS, StrokeIcon } from '../icons/StrokeIcon';
 import { useAuth } from '../context/AuthContext';
 import { useFriends, statusLine } from '../lib/friends';
-import { contentFocusMovedSince } from '../lib/focusBus';
+import { isAtLeftEdge } from '../lib/focusBus';
+import { setRailOpen } from '../lib/railStore';
 import { FriendAvatar } from './FriendAvatar';
 
 type NavKey = 'Home' | 'Discover' | 'Library' | 'Addons' | 'JoinParty' | 'Settings';
@@ -145,39 +146,29 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
   // (bumped key) with hasTVPreferredFocus so focus jumps into the rail. While
   // open, leaving the rail (focus to content) collapses it; Right also closes it.
   const justCollapsedRef = useRef(0);
-  const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [openKey, setOpenKey] = useState(0);
   const onRailFocus = (focused: boolean) => {
     focusedRef.current = focused;
-    if (collapseTimer.current) {
-      clearTimeout(collapseTimer.current);
-      collapseTimer.current = null;
-    }
-    if (!focused && expandedRef.current) {
-      collapseTimer.current = setTimeout(() => {
-        if (!focusedRef.current) setExp(false);
-      }, 90);
-    }
   };
+
+  // While open, the content is non-focusable (railStore), so focus is trapped in
+  // the rail and CANNOT leave by going up/down/left — only D-pad Right closes it.
+  useEffect(() => {
+    setRailOpen(expanded);
+  }, [expanded]);
 
   useTVEventHandler((evt) => {
     const t = evt.eventType;
     if (t === 'left' || t === 'swipeLeft') {
-      const at = Date.now();
-      setTimeout(() => {
-        // Left at the content's left edge: focus didn't move to another card.
-        if (!expandedRef.current && !contentFocusMovedSince(at) && !focusedRef.current && Date.now() - justCollapsedRef.current > 400) {
-          setOpenKey((k) => k + 1);
-          setExp(true);
-        }
-      }, 70);
+      // Synchronous: open only if focus is on a left-edge content element. (Left
+      // on a non-edge card just moves to the card on its left — no open.)
+      if (!expandedRef.current && isAtLeftEdge() && !focusedRef.current && Date.now() - justCollapsedRef.current > 400) {
+        setOpenKey((k) => k + 1);
+        setExp(true);
+      }
     } else if ((t === 'right' || t === 'swipeRight') && expandedRef.current && !tabFocusedRef.current) {
       focusedRef.current = false;
       justCollapsedRef.current = Date.now();
-      if (collapseTimer.current) {
-        clearTimeout(collapseTimer.current);
-        collapseTimer.current = null;
-      }
       setExp(false);
     }
   });

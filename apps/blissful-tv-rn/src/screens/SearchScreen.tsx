@@ -33,7 +33,7 @@ function ResultRail({
         keyExtractor={(it) => it.id}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ gap: m.s(24), paddingTop: m.s(20), paddingBottom: m.s(12), paddingLeft: m.s(12), paddingRight: m.safeX }}
-        renderItem={({ item }) => <PosterCard item={item} width={posterW} onSelect={onSelect} />}
+        renderItem={({ item, index }) => <PosterCard item={item} width={posterW} atRowStart={index === 0} onSelect={onSelect} />}
       />
     </View>
   );

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { normalizeStremioImage } from '@blissful/core';
 import { markContentFocus } from '../lib/focusBus';
+import { useRailOpen } from '../lib/railStore';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 
@@ -26,16 +27,19 @@ export function PosterCard({
   item,
   width,
   autoFocus,
+  atRowStart,
   progress,
   onSelect,
 }: {
   item: CardItem;
   width: number;
   autoFocus?: boolean;
+  atRowStart?: boolean;
   progress?: number;
   onSelect: (item: CardItem) => void;
 }) {
   const m = useMetrics();
+  const railOpen = useRailOpen();
   const [focused, setFocused] = useState(false);
   const poster = normalizeStremioImage(item.poster);
   const rating = ratingText(item.imdbRating);
@@ -44,7 +48,8 @@ export function PosterCard({
   return (
     <Pressable
       hasTVPreferredFocus={autoFocus}
-      onFocus={() => { setFocused(true); markContentFocus(); }}
+      isTVSelectable={!railOpen}
+      onFocus={() => { setFocused(true); markContentFocus(Boolean(atRowStart)); }}
       onBlur={() => setFocused(false)}
       onPress={() => onSelect(item)}
       style={{ width }}

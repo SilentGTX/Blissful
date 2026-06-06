@@ -38,6 +38,7 @@ export function ItemsRail({
             width={posterW}
             progress={item.progress}
             autoFocus={autoFocusFirst && index === 0}
+            atRowStart={index === 0}
             onSelect={onSelect}
           />
         )}

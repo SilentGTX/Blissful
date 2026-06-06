@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { fetchMeta, normalizeStremioImage, type StremioMetaDetail, type StremioMetaPreview } from '@blissful/core';
 import { markContentFocus } from '../lib/focusBus';
+import { useRailOpen } from '../lib/railStore';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import type { RootStackParamList } from '../navigation/types';
@@ -17,6 +18,7 @@ function HeroBtn({
   icon,
   primary,
   autoFocus,
+  atRowStart,
   h,
   upTag,
   onPress,
@@ -25,16 +27,19 @@ function HeroBtn({
   icon: keyof typeof Ionicons.glyphMap;
   primary?: boolean;
   autoFocus?: boolean;
+  atRowStart?: boolean;
   h: number;
   upTag?: number;
   onPress: () => void;
 }) {
+  const railOpen = useRailOpen();
   const [focused, setFocused] = useState(false);
   return (
     <Pressable
       hasTVPreferredFocus={autoFocus}
+      isTVSelectable={!railOpen}
       nextFocusUp={upTag}
-      onFocus={() => { setFocused(true); markContentFocus(); }}
+      onFocus={() => { setFocused(true); markContentFocus(Boolean(atRowStart)); }}
       onBlur={() => setFocused(false)}
       onPress={onPress}
       style={{
@@ -57,11 +62,13 @@ function HeroBtn({
   );
 }
 
-function GenreChip({ label, m, onPress }: { label: string; m: ReturnType<typeof useMetrics>; onPress: () => void }) {
+function GenreChip({ label, m, atRowStart, onPress }: { label: string; m: ReturnType<typeof useMetrics>; atRowStart?: boolean; onPress: () => void }) {
+  const railOpen = useRailOpen();
   const [f, setF] = useState(false);
   return (
     <Pressable
-      onFocus={() => { setF(true); markContentFocus(); }}
+      isTVSelectable={!railOpen}
+      onFocus={() => { setF(true); markContentFocus(Boolean(atRowStart)); }}
       onBlur={() => setF(false)}
       onPress={onPress}
       style={{ backgroundColor: colors.surface12, borderRadius: radius.pill, paddingHorizontal: m.s(24), paddingVertical: m.s(10), borderWidth: 1, borderColor: f ? colors.accent : 'transparent' }}
@@ -122,8 +129,8 @@ export function Hero({ item, upTag }: { item: StremioMetaPreview | null; upTag?:
         <View style={{ flex: 1 }} />
         {genres.length ? (
           <View style={{ flexDirection: 'row', gap: m.s(14), marginBottom: m.s(18) }}>
-            {genres.map((g) => (
-              <GenreChip key={g} label={g} m={m} onPress={() => navigation.navigate('Discover', { type: item?.type ?? 'movie', genre: g })} />
+            {genres.map((g, i) => (
+              <GenreChip key={g} label={g} m={m} atRowStart={i === 0} onPress={() => navigation.navigate('Discover', { type: item?.type ?? 'movie', genre: g })} />
             ))}
           </View>
         ) : null}
@@ -152,6 +159,7 @@ export function Hero({ item, upTag }: { item: StremioMetaPreview | null; upTag?:
             icon="play"
             primary
             autoFocus
+            atRowStart
             h={btnH}
             upTag={upTag}
             onPress={() =>

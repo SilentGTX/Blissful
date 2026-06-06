@@ -6,6 +6,7 @@ import { Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-nativ
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { markContentFocus } from '../lib/focusBus';
+import { useRailOpen } from '../lib/railStore';
 import { useAuth } from '../context/AuthContext';
 import { resolveAvatar } from '../lib/avatars';
 import { ProfileMenu } from './ProfileMenu';
@@ -45,6 +46,7 @@ export function TopBar({
   const navigation = useNavigation<any>();
   const { user } = useAuth();
   const m = useMetrics();
+  const railOpen = useRailOpen();
   const [searchFocused, setSearchFocused] = useState(false);
   const [avatarFocused, setAvatarFocused] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -66,9 +68,10 @@ export function TopBar({
           <Ionicons name="search" size={m.s(26)} color="rgba(255,255,255,0.6)" />
           <TextInput
             autoFocus={searchAutoFocus}
+            isTVSelectable={!railOpen}
             value={searchValue}
             onChangeText={onSearchChange}
-            onFocus={() => { setSearchFocused(true); markContentFocus(); }}
+            onFocus={() => { setSearchFocused(true); markContentFocus(true); }}
             onBlur={() => setSearchFocused(false)}
             placeholder="Search movies, series, actors..."
             placeholderTextColor="rgba(255,255,255,0.45)"
@@ -79,7 +82,8 @@ export function TopBar({
       ) : (
         <Pressable
           ref={searchRef}
-          onFocus={() => { setSearchFocused(true); markContentFocus(); }}
+          isTVSelectable={!railOpen}
+          onFocus={() => { setSearchFocused(true); markContentFocus(true); }}
           onBlur={() => setSearchFocused(false)}
           onPress={() => navigation.navigate('Search')}
           style={{ width: m.searchW, height: '100%' }}
@@ -97,7 +101,8 @@ export function TopBar({
       )}
 
       <Pressable
-        onFocus={() => { setAvatarFocused(true); markContentFocus(); }}
+        isTVSelectable={!railOpen}
+        onFocus={() => { setAvatarFocused(true); markContentFocus(false); }}
         onBlur={() => setAvatarFocused(false)}
         onPress={() => (user ? setMenuOpen(true) : navigation.navigate('Login'))}
         style={[styles.avatarPress, { width: m.topbarH, height: m.topbarH }]}

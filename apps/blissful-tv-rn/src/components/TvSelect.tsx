@@ -4,6 +4,7 @@ import { BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from 'reac
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { markContentFocus } from '../lib/focusBus';
+import { useRailOpen } from '../lib/railStore';
 
 export type SelectOption = { key: string; label: string };
 type M = ReturnType<typeof useMetrics>;
@@ -26,6 +27,7 @@ export function TvSelect({
   onChange,
   m,
   minWidth,
+  atRowStart,
   onOpen,
 }: {
   iconName: keyof typeof Ionicons.glyphMap;
@@ -34,8 +36,10 @@ export function TvSelect({
   onChange: (key: string) => void;
   m: M;
   minWidth: number;
+  atRowStart?: boolean;
   onOpen: (anchor: DropdownAnchor) => void;
 }) {
+  const railOpen = useRailOpen();
   const [focused, setFocused] = useState(false);
   const triggerRef = useRef<View>(null);
   const current = options.find((o) => o.key === value);
@@ -43,7 +47,8 @@ export function TvSelect({
   return (
     <Pressable
       ref={triggerRef}
-      onFocus={() => { setFocused(true); markContentFocus(); }}
+      isTVSelectable={!railOpen}
+      onFocus={() => { setFocused(true); markContentFocus(Boolean(atRowStart)); }}
       onBlur={() => setFocused(false)}
       onPress={open}
       style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(10), minWidth, height: m.s(52), paddingHorizontal: m.s(18), borderRadius: radius.pill, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: focused ? colors.accent : 'rgba(255,255,255,0.12)' }}

@@ -56,7 +56,7 @@ export function DiscoverScreen() {
         <Text style={{ fontFamily: font.serif, fontSize: m.s(40), color: colors.text, marginBottom: m.s(14) }}>Discover</Text>
 
         <View style={{ flexDirection: 'row', gap: m.s(12), marginBottom: m.s(18) }}>
-          <TvSelect iconName="film-outline" options={TYPE_OPTS} value={type} onChange={(k) => setType(k as MediaType)} m={m} minWidth={m.s(184)} onOpen={setDropdown} />
+          <TvSelect iconName="film-outline" options={TYPE_OPTS} value={type} onChange={(k) => setType(k as MediaType)} m={m} minWidth={m.s(184)} atRowStart onOpen={setDropdown} />
           <TvSelect iconName="trending-up-outline" options={CATALOG_OPTS} value="top" onChange={() => {}} m={m} minWidth={m.s(200)} onOpen={setDropdown} />
           <TvSelect iconName="pricetags-outline" options={genreOptions} value={genre ?? 'all'} onChange={(k) => setGenre(k === 'all' ? null : k)} m={m} minWidth={m.s(200)} onOpen={setDropdown} />
         </View>
@@ -74,7 +74,7 @@ export function DiscoverScreen() {
             contentContainerStyle={{ gap: m.s(20), paddingTop: m.s(4), paddingBottom: m.s(40) }}
             columnWrapperStyle={{ gap: m.s(24) }}
             showsVerticalScrollIndicator={false}
-            renderItem={({ item }) => <PosterCard item={item} width={posterW} onSelect={onSelect} />}
+            renderItem={({ item, index }) => <PosterCard item={item} width={posterW} atRowStart={index % cols === 0} onSelect={onSelect} />}
           />
         ) : (
           <Text style={{ fontFamily: font.body, fontSize: m.s(24), color: colors.textFaint, marginTop: m.s(40) }}>Nothing here.</Text>
