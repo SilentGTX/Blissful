@@ -114,14 +114,17 @@ export function ProfileMenu({ visible, onClose }: { visible: boolean; onClose: (
   };
 
   const panelW = m.s(560);
-  const cellSize = (panelW - m.s(16) * 2 - m.s(12) * 3) / 4;
+  const cardW = m.s(600);
+  const cardPad = m.s(28);
+  const cellGap = m.s(16);
+  // shave a couple px so 4 cells never wrap to a 3rd row; space-between fills it.
+  const cellSize = (cardW - cardPad * 2 - cellGap * 3) / 4 - m.s(4);
 
   return (
     <Modal transparent visible={visible} onRequestClose={onClose} animationType="fade">
       <Pressable style={styles.backdrop} onPress={onClose} />
-      <View style={[styles.panel, { top: m.safeY + m.topbarH + m.s(10), right: m.safeX, width: panelW, borderRadius: m.s(24), padding: m.s(16) }]}>
-        {mode === 'menu' ? (
-          <>
+      {mode === 'menu' ? (
+        <View style={[styles.panel, { top: m.safeY + m.topbarH + m.s(10), right: m.safeX, width: panelW, borderRadius: m.s(24), padding: m.s(16) }]}>
             <Pressable
               hasTVPreferredFocus
               onFocus={() => setHeadFocused(true)}
@@ -145,11 +148,12 @@ export function ProfileMenu({ visible, onClose }: { visible: boolean; onClose: (
             <Row label="Settings" icon="settings-outline" m={m} onPress={onClose} />
             <Row label="Customize Home" icon="grid-outline" m={m} onPress={onClose} />
             <Row label="Log out" icon="log-out-outline" danger m={m} onPress={() => { logout(); onClose(); }} />
-          </>
-        ) : (
-          <>
-            <Text style={{ fontFamily: font.serif, fontSize: m.s(30), color: colors.text, marginBottom: m.s(14) }}>Choose your avatar</Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: m.s(12) }}>
+        </View>
+      ) : (
+        <View style={styles.center}>
+          <View style={{ width: cardW, borderRadius: radius.panel, padding: cardPad, backgroundColor: 'rgba(20,24,33,0.98)', borderWidth: 1, borderColor: colors.hairline }}>
+            <Text style={{ fontFamily: font.serif, fontSize: m.s(34), color: colors.text, marginBottom: m.s(18) }}>Choose your avatar</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: cellGap }}>
               {PRESET_AVATARS.map((src, i) => (
                 <AvatarCell key={i} src={src as number} size={cellSize} selected={selected === i} autoFocus={selected === i} onPress={() => setSelected(i)} />
               ))}
@@ -158,18 +162,19 @@ export function ProfileMenu({ visible, onClose }: { visible: boolean; onClose: (
               onFocus={() => setSaveFocused(true)}
               onBlur={() => setSaveFocused(false)}
               onPress={save}
-              style={{ marginTop: m.s(18), alignSelf: 'stretch', alignItems: 'center', paddingVertical: m.s(13), borderRadius: radius.pill, backgroundColor: '#fff', borderWidth: 3, borderColor: saveFocused ? colors.accent : 'transparent' }}
+              style={{ marginTop: m.s(22), alignSelf: 'stretch', alignItems: 'center', paddingVertical: m.s(13), borderRadius: radius.pill, backgroundColor: '#fff', borderWidth: 3, borderColor: saveFocused ? colors.accent : 'transparent' }}
             >
               <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(24), color: '#000' }}>{saving ? 'Saving…' : 'Save'}</Text>
             </Pressable>
-          </>
-        )}
-      </View>
+          </View>
+        </View>
+      )}
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)' },
+  backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)' },
+  center: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
   panel: { position: 'absolute', backgroundColor: 'rgba(20,24,33,0.98)', borderWidth: 1, borderColor: colors.hairline },
 });
