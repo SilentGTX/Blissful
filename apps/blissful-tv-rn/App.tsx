@@ -20,6 +20,7 @@ import { DetailScreen } from './src/screens/DetailScreen';
 import { PlayerScreen } from './src/screens/PlayerScreen';
 import { LoginScreen } from './src/screens/LoginScreen';
 import { SearchScreen } from './src/screens/SearchScreen';
+import { DiscoverScreen } from './src/screens/DiscoverScreen';
 import type { RootStackParamList } from './src/navigation/types';
 import { colors } from './src/theme/colors';
 
@@ -63,6 +64,7 @@ export default function App() {
               <Stack.Screen name="Player" component={PlayerScreen} />
               <Stack.Screen name="Login" component={LoginScreen} />
               <Stack.Screen name="Search" component={SearchScreen} />
+              <Stack.Screen name="Discover" component={DiscoverScreen} />
             </Stack.Navigator>
           </NavigationContainer>
         </AuthProvider>

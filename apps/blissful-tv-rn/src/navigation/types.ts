@@ -6,4 +6,5 @@ export type RootStackParamList = {
   Player: { url: string; title: string };
   Login: undefined;
   Search: { query?: string } | undefined;
+  Discover: { type: MediaType; genre?: string } | undefined;
 };

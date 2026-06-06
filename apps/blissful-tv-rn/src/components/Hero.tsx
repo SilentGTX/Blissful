@@ -122,7 +122,7 @@ export function Hero({ item, upTag }: { item: StremioMetaPreview | null; upTag?:
         {genres.length ? (
           <View style={{ flexDirection: 'row', gap: m.s(14), marginBottom: m.s(18) }}>
             {genres.map((g) => (
-              <GenreChip key={g} label={g} m={m} onPress={() => navigation.navigate('Search', { query: g })} />
+              <GenreChip key={g} label={g} m={m} onPress={() => navigation.navigate('Discover', { type: item?.type ?? 'movie', genre: g })} />
             ))}
           </View>
         ) : null}

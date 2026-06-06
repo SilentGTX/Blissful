@@ -220,7 +220,7 @@ export function DetailScreen() {
             {genres.length ? (
               <View>
                 <Label m={m}>Genres</Label>
-                <Chips items={genres} m={m} onPress={(g) => navigation.navigate('Search', { query: g })} />
+                <Chips items={genres} m={m} onPress={(g) => navigation.navigate('Discover', { type: params.type, genre: g })} />
               </View>
             ) : null}
             {cast.length ? (
