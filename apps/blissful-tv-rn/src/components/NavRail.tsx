@@ -47,7 +47,7 @@ function Row({
   labelFont?: string;
   labelSize: number;
   icon: ReactNode;
-  onRailFocus?: (d: number) => void;
+  onRailFocus?: (focused: boolean) => void;
   onPress?: () => void;
 }) {
   const [focused, setFocused] = useState(false);
@@ -78,11 +78,11 @@ function Row({
     <Pressable
       onFocus={() => {
         setFocused(true);
-        onRailFocus?.(1);
+        onRailFocus?.(true);
       }}
       onBlur={() => {
         setFocused(false);
-        onRailFocus?.(-1);
+        onRailFocus?.(false);
       }}
       onPress={onPress}
     >
@@ -107,13 +107,24 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
   const [expanded, setExpanded] = useState(false);
   const [tab, setTab] = useState<'friends' | 'requests'>('friends');
   const [query, setQuery] = useState('');
-  const countRef = useRef(0);
   const widthAnim = useRef(new Animated.Value(collapsedW)).current;
 
-  const onRailFocus = (d: number) => {
-    countRef.current += d;
-    if (countRef.current > 0) setExpanded(true);
-    else setTimeout(() => countRef.current <= 0 && setExpanded(false), 60);
+  // Track whether ANY rail element is focused with a boolean (not a count): the
+  // search TextInput fires unbalanced focus/blur, which made a counter drift and
+  // never return to 0 -> the rail wouldn't collapse on Right. Relies on the
+  // standard blur-before-focus order: leaving a row blurs (schedules collapse),
+  // entering the next focuses (cancels it). Focus genuinely leaving the rail
+  // (the only exit is Right, since the rail hugs the left edge) -> collapse.
+  const focusedRef = useRef(false);
+  const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onRailFocus = (focused: boolean) => {
+    focusedRef.current = focused;
+    if (collapseTimer.current) {
+      clearTimeout(collapseTimer.current);
+      collapseTimer.current = null;
+    }
+    if (focused) setExpanded(true);
+    else collapseTimer.current = setTimeout(() => !focusedRef.current && setExpanded(false), 120);
   };
 
   useEffect(() => {
@@ -155,7 +166,7 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
             {token ? (
               <FriendsBody m={m} mx={rowMargin} friends={friends} incoming={incoming} presence={presence} tab={tab} setTab={setTab} query={query} setQuery={setQuery} onRailFocus={onRailFocus} />
             ) : (
-              <Pressable onFocus={() => onRailFocus(1)} onBlur={() => onRailFocus(-1)} onPress={() => navigation.navigate('Login')} style={{ paddingHorizontal: rowMargin + m.s(6), paddingVertical: m.s(10) }}>
+              <Pressable onFocus={() => onRailFocus(true)} onBlur={() => onRailFocus(false)} onPress={() => navigation.navigate('Login')} style={{ paddingHorizontal: rowMargin + m.s(6), paddingVertical: m.s(10) }}>
                 <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(16), color: colors.textDim }}>Login to see friends</Text>
               </Pressable>
             )}
@@ -175,7 +186,7 @@ function FriendsBody({ m, mx, friends, incoming, presence, tab, setTab, query, s
     <View style={{ flex: 1, minHeight: 0, marginHorizontal: mx }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', height: m.s(38), borderRadius: radius.pill, paddingHorizontal: m.s(14), gap: m.s(10), marginTop: m.s(6), backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: 1, borderColor: sf ? colors.accent : 'rgba(255,255,255,0.12)' }}>
         <StrokeIcon path="M21 21l-4.3-4.3M11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14Z" size={m.s(20)} color={colors.textFaint} />
-        <TextInput value={query} onChangeText={setQuery} onFocus={() => { setSf(true); onRailFocus(1); }} onBlur={() => { setSf(false); onRailFocus(-1); }} placeholder="Search people..." placeholderTextColor={colors.textGhost} style={{ flex: 1, fontFamily: font.body, fontSize: m.s(15), color: colors.text, padding: 0 }} />
+        <TextInput value={query} onChangeText={setQuery} onFocus={() => { setSf(true); onRailFocus(true); }} onBlur={() => { setSf(false); onRailFocus(false); }} placeholder="Search people..." placeholderTextColor={colors.textGhost} style={{ flex: 1, fontFamily: font.body, fontSize: m.s(15), color: colors.text, padding: 0 }} />
       </View>
       <View style={{ flexDirection: 'row', gap: m.s(8), marginTop: m.s(10) }}>
         {(['friends', 'requests'] as const).map((t) => (
@@ -191,8 +202,8 @@ function FriendsBody({ m, mx, friends, incoming, presence, tab, setTab, query, s
             return (
               <Pressable
                 key={f.id}
-                onFocus={() => onRailFocus(1)}
-                onBlur={() => onRailFocus(-1)}
+                onFocus={() => onRailFocus(true)}
+                onBlur={() => onRailFocus(false)}
                 style={({ focused }: any) => ({ flexDirection: 'row', alignItems: 'center', gap: m.s(11), paddingVertical: m.s(8), paddingHorizontal: m.s(10), borderRadius: m.s(14), backgroundColor: focused ? colors.surface12 : 'rgba(255,255,255,0.043)', borderWidth: 2, borderColor: focused ? colors.accent : 'transparent' })}
               >
                 <FriendAvatar name={f.nickname || f.displayName} size={m.s(46)} online={Boolean(p?.online)} />
@@ -213,8 +224,8 @@ function Tab({ m, active, label, onRailFocus, onPress }: any) {
   const [focused, setFocused] = useState(false);
   return (
     <Pressable
-      onFocus={() => { setFocused(true); onRailFocus(1); }}
-      onBlur={() => { setFocused(false); onRailFocus(-1); }}
+      onFocus={() => { setFocused(true); onRailFocus(true); }}
+      onBlur={() => { setFocused(false); onRailFocus(false); }}
       onPress={onPress}
       style={{ flex: 1, alignItems: 'center', paddingVertical: m.s(7), borderRadius: radius.pill, backgroundColor: active ? 'rgba(255,255,255,0.16)' : colors.surface08, borderWidth: 2, borderColor: focused ? colors.accent : 'transparent' }}
     >
