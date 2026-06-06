@@ -46,3 +46,4 @@ yarn-error.*
 *.cmp.png
 .t*.png
 .r*.png
+.s*.png

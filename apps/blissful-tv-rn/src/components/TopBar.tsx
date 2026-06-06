@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { useAuth } from '../context/AuthContext';
@@ -30,7 +30,17 @@ function Glass({ focused, style, children }: { focused: boolean; style?: any; ch
   );
 }
 
-export function TopBar({ searchRef }: { searchRef?: React.Ref<View> }) {
+export function TopBar({
+  searchRef,
+  searchValue,
+  onSearchChange,
+  searchAutoFocus,
+}: {
+  searchRef?: React.Ref<View>;
+  searchValue?: string;
+  onSearchChange?: (v: string) => void;
+  searchAutoFocus?: boolean;
+}) {
   const navigation = useNavigation<any>();
   const { user } = useAuth();
   const m = useMetrics();
@@ -46,27 +56,44 @@ export function TopBar({ searchRef }: { searchRef?: React.Ref<View> }) {
 
   return (
     <View style={[styles.bar, { top: m.safeY, left: m.contentLeft, right: m.safeX, height: m.topbarH }]}>
-      <Pressable
-        ref={searchRef}
-        onFocus={() => setSearchFocused(true)}
-        onBlur={() => setSearchFocused(false)}
-        onPress={() => navigation.navigate('Search')}
-        style={{ width: m.searchW, height: '100%' }}
-      >
+      {onSearchChange ? (
+        // Editable search (Search screen): the pill IS the input.
         <Glass
           focused={searchFocused}
-          style={[
-            styles.pill,
-            { height: '100%', paddingHorizontal: m.s(26), gap: m.s(14), borderRadius: radius.pill },
-            ring(searchFocused),
-          ]}
+          style={[styles.pill, { width: m.searchW, height: '100%', paddingHorizontal: m.s(26), gap: m.s(14), borderRadius: radius.pill }, ring(searchFocused)]}
         >
           <Ionicons name="search" size={m.s(26)} color="rgba(255,255,255,0.6)" />
-          <Text style={{ fontFamily: font.body, fontSize: m.searchFont, color: 'rgba(255,255,255,0.45)' }}>
-            Search movies, series, actors...
-          </Text>
+          <TextInput
+            autoFocus={searchAutoFocus}
+            value={searchValue}
+            onChangeText={onSearchChange}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
+            placeholder="Search movies, series, actors..."
+            placeholderTextColor="rgba(255,255,255,0.45)"
+            returnKeyType="search"
+            style={{ flex: 1, fontFamily: font.body, fontSize: m.searchFont, color: colors.text }}
+          />
         </Glass>
-      </Pressable>
+      ) : (
+        <Pressable
+          ref={searchRef}
+          onFocus={() => setSearchFocused(true)}
+          onBlur={() => setSearchFocused(false)}
+          onPress={() => navigation.navigate('Search')}
+          style={{ width: m.searchW, height: '100%' }}
+        >
+          <Glass
+            focused={searchFocused}
+            style={[styles.pill, { height: '100%', paddingHorizontal: m.s(26), gap: m.s(14), borderRadius: radius.pill }, ring(searchFocused)]}
+          >
+            <Ionicons name="search" size={m.s(26)} color="rgba(255,255,255,0.6)" />
+            <Text style={{ fontFamily: font.body, fontSize: m.searchFont, color: 'rgba(255,255,255,0.45)' }}>
+              Search movies, series, actors...
+            </Text>
+          </Glass>
+        </Pressable>
+      )}
 
       <Pressable
         onFocus={() => setAvatarFocused(true)}
