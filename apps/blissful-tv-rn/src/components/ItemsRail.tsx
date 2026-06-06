@@ -21,7 +21,7 @@ export function ItemsRail({
   if (items.length === 0) return null;
   return (
     <View style={{ marginBottom: m.s(34) }}>
-      <Text style={{ fontFamily: font.bodySemi, color: colors.text, fontSize: m.railTitle, marginBottom: m.s(14) }}>
+      <Text style={{ fontFamily: font.bodySemi, color: colors.text, fontSize: m.railTitle, marginBottom: m.s(14), marginLeft: m.s(12) }}>
         {title}
       </Text>
       <FlatList
@@ -29,7 +29,9 @@ export function ItemsRail({
         data={items}
         keyExtractor={(it) => it.id}
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: m.s(24), paddingTop: m.s(20), paddingBottom: m.s(12), paddingLeft: m.s(4), paddingRight: m.safeX }}
+        // paddingLeft gives the focused first card's 1.06 scale room so it isn't
+        // clipped on the left; the title's marginLeft matches so they stay aligned.
+        contentContainerStyle={{ gap: m.s(24), paddingTop: m.s(20), paddingBottom: m.s(12), paddingLeft: m.s(12), paddingRight: m.safeX }}
         renderItem={({ item, index }) => (
           <PosterCard
             item={item}

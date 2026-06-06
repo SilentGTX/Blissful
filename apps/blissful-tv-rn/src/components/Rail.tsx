@@ -35,7 +35,7 @@ export function Rail({
 
   return (
     <View style={{ marginBottom: m.s(34) }}>
-      <Text style={{ fontFamily: font.bodySemi, color: colors.text, fontSize: m.railTitle, marginBottom: m.s(14) }}>
+      <Text style={{ fontFamily: font.bodySemi, color: colors.text, fontSize: m.railTitle, marginBottom: m.s(14), marginLeft: m.s(12) }}>
         {title}
       </Text>
       {error ? (
@@ -46,7 +46,7 @@ export function Rail({
           data={metas}
           keyExtractor={(it) => it.id}
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: m.s(24), paddingTop: m.s(20), paddingBottom: m.s(12), paddingLeft: m.s(4), paddingRight: m.safeX }}
+          contentContainerStyle={{ gap: m.s(24), paddingTop: m.s(20), paddingBottom: m.s(12), paddingLeft: m.s(12), paddingRight: m.safeX }}
           renderItem={({ item, index }) => (
             <PosterCard item={item} width={posterW} autoFocus={autoFocusFirst && index === 0} onSelect={onSelect} />
           )}
