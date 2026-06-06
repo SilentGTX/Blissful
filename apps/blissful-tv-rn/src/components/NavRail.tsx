@@ -19,27 +19,32 @@ const ITEMS: { key: NavKey; icon: keyof typeof ICONS; label: string }[] = [
   { key: 'Settings', icon: 'settings', label: 'Settings' },
 ];
 
-// A rail row with a FIXED-width icon column so the icon never moves when the
-// rail expands — only the label appears to its right.
+// Fixed-width icon column => icon never moves on expand; only the label appears.
 function Row({
-  iconColW,
+  iconW,
   itemH,
   expanded,
   active,
+  glow,
   focusable = true,
   label,
   labelColor,
+  labelFont,
+  labelSize,
   icon,
   onRailFocus,
   onPress,
 }: {
-  iconColW: number;
+  iconW: number;
   itemH: number;
   expanded: boolean;
   active?: boolean;
+  glow?: boolean;
   focusable?: boolean;
   label: string;
   labelColor?: string;
+  labelFont?: string;
+  labelSize: number;
   icon: ReactNode;
   onRailFocus?: (d: number) => void;
   onPress?: () => void;
@@ -58,15 +63,18 @@ function Row({
         backgroundColor: focused ? colors.surface10 : 'transparent',
       }}
     >
-      <View style={{ width: iconColW, alignItems: 'center', justifyContent: 'center' }}>{icon}</View>
+      <View style={{ width: iconW, alignItems: 'center', justifyContent: 'center' }}>
+        {glow ? <View style={{ position: 'absolute', width: iconW * 1.0, height: iconW * 1.0, borderRadius: 999, backgroundColor: 'rgba(149,162,255,0.20)' }} /> : null}
+        {icon}
+      </View>
       {expanded ? (
-        <Text numberOfLines={1} style={{ fontFamily: font.bodySemi, fontSize: iconColW * 0.42, color: lc, flex: 1, marginLeft: -iconColW * 0.06 }}>
+        <Text numberOfLines={1} style={{ fontFamily: labelFont ?? font.bodySemi, fontSize: labelSize, color: lc, flex: 1 }}>
           {label}
         </Text>
       ) : null}
     </View>
   );
-  if (!focusable) return <View style={{ marginHorizontal: 0 }}>{body}</View>;
+  if (!focusable) return body;
   return (
     <Pressable
       onFocus={() => {
@@ -90,11 +98,12 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
   const { token } = useAuth();
   const { friends, incoming, presence } = useFriends(token);
 
-  const rowMargin = m.s(4);
-  const collapsedW = m.railCollapsed - rowMargin * 2;
-  const iconColW = collapsedW - rowMargin * 2;
+  const railLeft = m.s(6);
+  const collapsedW = m.railCollapsed - railLeft * 2;
+  const rowMargin = m.s(5);
+  const iconW = collapsedW - rowMargin * 2;
   const expandedW = m.railExpanded;
-  const sz = m.navIcon;
+  const sz = m.s(26); // .nav-icon-slot svg = 26px
 
   const [expanded, setExpanded] = useState(false);
   const [tab, setTab] = useState<'friends' | 'requests'>('friends');
@@ -112,65 +121,45 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
     Animated.timing(widthAnim, { toValue: expanded ? expandedW : collapsedW, duration: 200, useNativeDriver: false }).start();
   }, [expanded, expandedW, collapsedW, widthAnim]);
 
-  const ico = (path: string, color: string) => <StrokeIcon path={ICONS[path as keyof typeof ICONS]} size={sz} color={color} />;
+  const ico = (path: keyof typeof ICONS, color: string) => <StrokeIcon path={ICONS[path]} size={sz} color={color} />;
   const friendsIcon = (color: string) => (
     <View>
       <StrokeIcon path={ICONS.watchParty} size={sz} color={color} />
       {incoming.length > 0 ? (
-        <View style={{ position: 'absolute', top: -sz * 0.3, right: -sz * 0.35, minWidth: sz * 0.7, height: sz * 0.7, borderRadius: 999, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' }}>
+        <View style={{ position: 'absolute', top: -sz * 0.32, right: -sz * 0.4, minWidth: sz * 0.72, height: sz * 0.72, borderRadius: 999, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' }}>
           <Text style={{ fontFamily: font.bodySemi, fontSize: sz * 0.5, color: colors.accentInk }}>{incoming.length}</Text>
         </View>
       ) : null}
     </View>
   );
-
-  const divider = expanded ? <View style={{ height: 1, backgroundColor: colors.hairline, marginVertical: m.s(8), marginHorizontal: rowMargin }} /> : null;
+  const divider = expanded ? <View style={{ height: 1, backgroundColor: colors.hairline, marginVertical: m.s(8) }} /> : null;
 
   return (
-    <Animated.View style={[styles.rail, { left: rowMargin, top: m.safeY, bottom: m.safeY, width: widthAnim, borderRadius: m.s(28), zIndex: expanded ? 70 : 10 }]}>
+    <Animated.View style={[styles.rail, { left: railLeft, top: m.safeY, bottom: m.safeY, width: widthAnim, borderRadius: m.s(28), zIndex: expanded ? 70 : 10 }]}>
       <LinearGradient colors={['rgba(255,255,255,0.10)', 'rgba(255,255,255,0.02)']} start={{ x: 0.2, y: 0 }} end={{ x: 0.8, y: 1 }} style={StyleSheet.absoluteFill} />
-      <View style={{ flex: 1, padding: rowMargin }}>
-        {/* Logo + Blissful */}
-        <Row
-          iconColW={iconColW}
-          itemH={m.s(52)}
-          expanded={expanded}
-          focusable={false}
-          label="Blissful"
-          labelColor={colors.text}
-          icon={<Image source={require('../../assets/blissful-small-logo.png')} style={{ width: m.s(40), height: m.s(40), borderRadius: m.s(10) }} resizeMode="contain" />}
-        />
+      <View style={{ flex: 1, paddingHorizontal: rowMargin, paddingVertical: m.s(10) }}>
+        <Row iconW={iconW} itemH={m.s(50)} expanded={expanded} focusable={false} label="Blissful" labelColor={colors.text} labelFont={font.serif} labelSize={m.s(22)} icon={<Image source={require('../../assets/blissful-small-logo.png')} style={{ width: m.s(38), height: m.s(38), borderRadius: m.s(10) }} resizeMode="contain" />} />
         {divider}
         {ITEMS.map((it) => (
-          <Row
-            key={it.key}
-            iconColW={iconColW}
-            itemH={m.navItemH}
-            expanded={expanded}
-            active={active === it.key}
-            label={it.label}
-            icon={ico(it.icon, active === it.key ? colors.accent : colors.textDim)}
-            onRailFocus={onRailFocus}
-            onPress={() => it.key === 'Home' && navigation.navigate('Home')}
-          />
+          <Row key={it.key} iconW={iconW} itemH={m.navItemH} expanded={expanded} active={active === it.key} glow={active === it.key} label={it.label} labelSize={m.s(16)} icon={ico(it.icon, active === it.key ? colors.accent : colors.textDim)} onRailFocus={onRailFocus} onPress={() => it.key === 'Home' && navigation.navigate('Home')} />
         ))}
 
         {expanded ? (
           <>
             {divider}
-            <Row iconColW={iconColW} itemH={m.navItemH} expanded label="Friends" labelColor={colors.text} icon={friendsIcon(colors.text)} onRailFocus={onRailFocus} />
+            <Row iconW={iconW} itemH={m.navItemH} expanded label="Friends" labelColor={colors.text} labelSize={m.s(17)} icon={friendsIcon(colors.text)} onRailFocus={onRailFocus} />
             {token ? (
               <FriendsBody m={m} friends={friends} incoming={incoming} presence={presence} tab={tab} setTab={setTab} query={query} setQuery={setQuery} onRailFocus={onRailFocus} />
             ) : (
-              <Pressable onFocus={() => onRailFocus(1)} onBlur={() => onRailFocus(-1)} onPress={() => navigation.navigate('Login')} style={styles.loginRow}>
-                <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(22), color: colors.textDim }}>Login to see friends</Text>
+              <Pressable onFocus={() => onRailFocus(1)} onBlur={() => onRailFocus(-1)} onPress={() => navigation.navigate('Login')} style={{ padding: m.s(10) }}>
+                <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(16), color: colors.textDim }}>Login to see friends</Text>
               </Pressable>
             )}
           </>
         ) : (
           <>
             <View style={{ flex: 1 }} />
-            <Row iconColW={iconColW} itemH={m.navItemH} expanded={false} label="Friends" icon={friendsIcon(colors.accent)} onRailFocus={onRailFocus} />
+            <Row iconW={iconW} itemH={m.navItemH} expanded={false} label="Friends" labelSize={m.s(16)} icon={friendsIcon(colors.accent)} onRailFocus={onRailFocus} />
           </>
         )}
       </View>
@@ -179,47 +168,36 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
 }
 
 function FriendsBody({ m, friends, incoming, presence, tab, setTab, query, setQuery, onRailFocus }: any) {
-  const [searchFocused, setSearchFocused] = useState(false);
+  const [sf, setSf] = useState(false);
+  const list = tab === 'requests' ? incoming : friends;
   return (
     <View style={{ flex: 1, minHeight: 0 }}>
-      <View style={[styles.search, { borderRadius: radius.pill, borderColor: searchFocused ? colors.accent : 'transparent', borderWidth: 2, paddingHorizontal: m.s(14), height: m.s(56), marginTop: m.s(6) }]}>
-        <StrokeIcon path="M21 21l-4.3-4.3M11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14Z" size={m.s(24)} color={colors.textFaint} />
-        <TextInput
-          value={query}
-          onChangeText={setQuery}
-          onFocus={() => { setSearchFocused(true); onRailFocus(1); }}
-          onBlur={() => { setSearchFocused(false); onRailFocus(-1); }}
-          placeholder="Search people..."
-          placeholderTextColor={colors.textGhost}
-          style={{ flex: 1, marginLeft: m.s(10), fontFamily: font.body, fontSize: m.s(24), color: colors.text }}
-        />
+      <View style={{ flexDirection: 'row', alignItems: 'center', height: m.s(38), borderRadius: radius.pill, paddingHorizontal: m.s(14), gap: m.s(10), marginTop: m.s(6), backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: 1, borderColor: sf ? colors.accent : 'rgba(255,255,255,0.12)' }}>
+        <StrokeIcon path="M21 21l-4.3-4.3M11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14Z" size={m.s(20)} color={colors.textFaint} />
+        <TextInput value={query} onChangeText={setQuery} onFocus={() => { setSf(true); onRailFocus(1); }} onBlur={() => { setSf(false); onRailFocus(-1); }} placeholder="Search people..." placeholderTextColor={colors.textGhost} style={{ flex: 1, fontFamily: font.body, fontSize: m.s(15), color: colors.text, padding: 0 }} />
       </View>
       <View style={{ flexDirection: 'row', gap: m.s(8), marginTop: m.s(10) }}>
         {(['friends', 'requests'] as const).map((t) => (
           <Tab key={t} m={m} active={tab === t} label={`${t === 'friends' ? 'Friends' : 'Requests'} ${t === 'friends' ? friends.length : incoming.length}`} onRailFocus={onRailFocus} onPress={() => setTab(t)} />
         ))}
       </View>
-      <ScrollView style={{ flex: 1, marginTop: m.s(10) }} contentContainerStyle={{ gap: m.s(6), paddingBottom: m.s(10) }} showsVerticalScrollIndicator={false}>
-        {(tab === 'requests' ? incoming : friends).length === 0 ? (
-          <Text style={{ fontFamily: font.body, fontSize: m.s(22), color: colors.textFaint, padding: m.s(10) }}>
-            {tab === 'requests' ? 'No requests.' : 'No friends yet.'}
-          </Text>
+      <ScrollView style={{ flex: 1, marginTop: m.s(10) }} contentContainerStyle={{ gap: m.s(6), paddingBottom: m.s(10) }} showsVerticalScrollIndicator>
+        {list.length === 0 ? (
+          <Text style={{ fontFamily: font.body, fontSize: m.s(14), color: colors.textFaint, padding: m.s(10) }}>{tab === 'requests' ? 'No requests.' : 'No friends yet.'}</Text>
         ) : (
-          (tab === 'requests' ? incoming : friends).map((f: any) => {
+          list.map((f: any) => {
             const p = presence.get(f.userId);
             return (
               <Pressable
                 key={f.id}
                 onFocus={() => onRailFocus(1)}
                 onBlur={() => onRailFocus(-1)}
-                style={({ focused }: any) => [styles.friendRow, { gap: m.s(12), padding: m.s(8), borderRadius: m.s(14), backgroundColor: focused ? colors.surface10 : 'transparent', borderWidth: 2, borderColor: focused ? colors.accent : 'transparent' }]}
+                style={({ focused }: any) => ({ flexDirection: 'row', alignItems: 'center', gap: m.s(11), paddingVertical: m.s(8), paddingHorizontal: m.s(10), borderRadius: m.s(14), backgroundColor: focused ? colors.surface12 : 'rgba(255,255,255,0.043)', borderWidth: 2, borderColor: focused ? colors.accent : 'transparent' })}
               >
-                <FriendAvatar name={f.nickname || f.displayName} size={m.s(50)} online={Boolean(p?.online)} />
+                <FriendAvatar name={f.nickname || f.displayName} size={m.s(46)} online={Boolean(p?.online)} />
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text numberOfLines={1} style={{ fontFamily: font.bodySemi, fontSize: m.s(24), color: colors.text }}>{f.nickname || f.displayName}</Text>
-                  <Text numberOfLines={1} style={{ fontFamily: font.body, fontSize: m.s(20), color: colors.textFaint }}>
-                    {tab === 'requests' ? 'wants to be friends' : statusLine(p)}
-                  </Text>
+                  <Text numberOfLines={1} style={{ fontFamily: font.bodySemi, fontSize: m.s(15), color: colors.text }}>{f.nickname || f.displayName}</Text>
+                  <Text numberOfLines={1} style={{ fontFamily: font.body, fontSize: m.s(13), color: 'rgba(255,255,255,0.5)' }}>{tab === 'requests' ? 'wants to be friends' : statusLine(p)}</Text>
                 </View>
               </Pressable>
             );
@@ -237,16 +215,13 @@ function Tab({ m, active, label, onRailFocus, onPress }: any) {
       onFocus={() => { setFocused(true); onRailFocus(1); }}
       onBlur={() => { setFocused(false); onRailFocus(-1); }}
       onPress={onPress}
-      style={{ flex: 1, alignItems: 'center', paddingVertical: m.s(9), borderRadius: radius.pill, backgroundColor: active ? colors.surface18 : colors.surface08, borderWidth: 2, borderColor: focused ? colors.accent : 'transparent' }}
+      style={{ flex: 1, alignItems: 'center', paddingVertical: m.s(7), borderRadius: radius.pill, backgroundColor: active ? 'rgba(255,255,255,0.16)' : colors.surface08, borderWidth: 2, borderColor: focused ? colors.accent : 'transparent' }}
     >
-      <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(22), color: active ? colors.text : colors.textDim }}>{label}</Text>
+      <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(14), color: active ? colors.text : colors.textDim }}>{label}</Text>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   rail: { position: 'absolute', backgroundColor: 'rgba(28,33,46,0.97)', borderWidth: 1, borderColor: colors.hairline, overflow: 'hidden' },
-  loginRow: { padding: 10, marginTop: 8 },
-  search: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface10 },
-  friendRow: { flexDirection: 'row', alignItems: 'center' },
 });
