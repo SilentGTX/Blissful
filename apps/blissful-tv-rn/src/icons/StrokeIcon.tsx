@@ -1,21 +1,40 @@
-import Svg, { Path } from 'react-native-svg';
+import { useId } from 'react';
+import Svg, { Defs, FeDropShadow, Filter, Path } from 'react-native-svg';
 
 // 1:1 port of apps/blissful-mvs/src/icons/StrokeIcon.tsx — viewBox 24,
 // fill none, stroke currentColor, strokeWidth 1.8, round caps/joins.
+// `glow` adds the active-item drop-shadow (old: drop-shadow(0 0 10px accentGlow)).
 export function StrokeIcon({
   path,
   size = 20,
   color,
   strokeWidth = 1.8,
+  glow,
 }: {
   path: string;
   size?: number;
   color: string;
   strokeWidth?: number;
+  glow?: string;
 }) {
+  const id = useId().replace(/[:]/g, '');
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path d={path} stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+      {glow ? (
+        <Defs>
+          <Filter id={id} x="-60%" y="-60%" width="220%" height="220%">
+            <FeDropShadow dx="0" dy="0" stdDeviation="1.3" floodColor={glow} floodOpacity="0.95" />
+          </Filter>
+        </Defs>
+      ) : null}
+      <Path
+        d={path}
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        filter={glow ? `url(#${id})` : undefined}
+      />
     </Svg>
   );
 }
