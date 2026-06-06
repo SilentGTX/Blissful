@@ -43,7 +43,7 @@ function HeroBtn({
         height: h,
         paddingHorizontal: h * 0.5,
         borderRadius: radius.pill,
-        borderWidth: 3,
+        borderWidth: 1,
         borderColor: focused ? (primary ? colors.text : colors.accent) : 'transparent',
         backgroundColor: primary ? colors.accent : colors.surface08,
       }}

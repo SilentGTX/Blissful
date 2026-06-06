@@ -51,7 +51,7 @@ function PillBtn({
         height: h,
         paddingHorizontal: m.s(26),
         borderRadius: radius.pill,
-        borderWidth: m.s(3),
+        borderWidth: 1,
         borderColor: focused ? (primary ? colors.text : colors.accent) : ghost ? colors.hairline : 'transparent',
         backgroundColor: primary ? colors.accent : colors.surface08,
       }}
@@ -101,7 +101,7 @@ function EpisodeCard({ video, m, onPress }: { video: Video; m: ReturnType<typeof
           borderRadius: m.s(14),
           overflow: 'hidden',
           backgroundColor: colors.surface,
-          borderWidth: m.s(3),
+          borderWidth: 1,
           borderColor: focused ? colors.accent : 'transparent',
         }}
       >
@@ -277,7 +277,7 @@ function SeasonPill({ label, active, m, onPress }: { label: string; active: bool
         paddingHorizontal: m.s(20),
         paddingVertical: m.s(9),
         borderRadius: radius.pill,
-        borderWidth: m.s(2),
+        borderWidth: 1,
         borderColor: focused ? colors.accent : 'transparent',
         backgroundColor: active ? colors.surface18 : colors.surface08,
       }}

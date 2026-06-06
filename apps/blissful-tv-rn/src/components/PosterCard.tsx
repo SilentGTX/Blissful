@@ -51,7 +51,7 @@ export function PosterCard({
       <View
         style={[
           styles.posterWrap,
-          { width, height: h, borderRadius: m.s(16), borderWidth: m.s(3) },
+          { width, height: h, borderRadius: m.s(16), borderWidth: 1 },
           focused && { borderColor: colors.accent, transform: [{ scale: 1.06 }] },
         ]}
       >

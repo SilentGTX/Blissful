@@ -38,7 +38,7 @@ function Row({
       onFocus={() => setF(true)}
       onBlur={() => setF(false)}
       onPress={onPress}
-      style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(16), paddingVertical: m.s(14), paddingHorizontal: m.s(18), borderRadius: m.s(14), borderWidth: 2, borderColor: f ? colors.accent : 'transparent' }}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(16), paddingVertical: m.s(14), paddingHorizontal: m.s(18), borderRadius: m.s(14), borderWidth: 1, borderColor: f ? colors.accent : 'transparent' }}
     >
       <Ionicons name={icon} size={m.s(30)} color={danger ? colors.danger : colors.textDim} />
       <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(26), color: danger ? colors.danger : colors.text }}>{label}</Text>
@@ -55,7 +55,7 @@ function AvatarCell({ src, size, selected, autoFocus, onPress }: { src: number; 
       onFocus={() => setF(true)}
       onBlur={() => setF(false)}
       onPress={onPress}
-      style={{ width: size, height: size, borderRadius: radius.field, overflow: 'hidden', borderWidth: 3, borderColor: ring ? colors.accent : 'transparent' }}
+      style={{ width: size, height: size, borderRadius: radius.field, overflow: 'hidden', borderWidth: 1, borderColor: ring ? colors.accent : 'transparent' }}
     >
       <Image source={src} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
       {selected ? (
@@ -130,7 +130,7 @@ export function ProfileMenu({ visible, onClose }: { visible: boolean; onClose: (
               onFocus={() => setHeadFocused(true)}
               onBlur={() => setHeadFocused(false)}
               onPress={() => setMode('avatar')}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(16), padding: m.s(8), marginBottom: m.s(6), borderRadius: m.s(16), borderWidth: 2, borderColor: headFocused ? colors.accent : 'transparent' }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(16), padding: m.s(8), marginBottom: m.s(6), borderRadius: m.s(16), borderWidth: 1, borderColor: headFocused ? colors.accent : 'transparent' }}
             >
               {av.kind === 'image' ? (
                 <Image source={av.source} style={{ width: m.s(76), height: m.s(76), borderRadius: radius.pill }} resizeMode="cover" />
@@ -162,7 +162,7 @@ export function ProfileMenu({ visible, onClose }: { visible: boolean; onClose: (
               onFocus={() => setSaveFocused(true)}
               onBlur={() => setSaveFocused(false)}
               onPress={save}
-              style={{ marginTop: m.s(22), alignSelf: 'stretch', alignItems: 'center', paddingVertical: m.s(13), borderRadius: radius.pill, backgroundColor: '#fff', borderWidth: 3, borderColor: saveFocused ? colors.accent : 'transparent' }}
+              style={{ marginTop: m.s(22), alignSelf: 'stretch', alignItems: 'center', paddingVertical: m.s(13), borderRadius: radius.pill, backgroundColor: '#fff', borderWidth: 1, borderColor: saveFocused ? colors.accent : 'transparent' }}
             >
               <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(24), color: '#000' }}>{saving ? 'Saving…' : 'Save'}</Text>
             </Pressable>

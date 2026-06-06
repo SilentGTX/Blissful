@@ -66,7 +66,7 @@ function Row({
     >
       {/* Focus ring as an absolute overlay so it does NOT inset the row content
           (a layout border would shift the icon off-center). */}
-      {focused ? <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: radius.card, borderWidth: 2, borderColor: colors.accent }} /> : null}
+      {focused ? <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: radius.card, borderWidth: 1, borderColor: colors.accent }} /> : null}
       {/* Fixed-width icon column in BOTH states: anchored to the row's left, so
           the icon X never moves on expand/collapse (no jump). iconW == the
           collapsed row content width, so when collapsed the icon is centered. */}
@@ -229,7 +229,7 @@ function FriendsBody({ m, mx, friends, incoming, presence, tab, setTab, query, s
                 key={f.id}
                 onFocus={() => onRailFocus(true)}
                 onBlur={() => onRailFocus(false)}
-                style={({ focused }: any) => ({ flexDirection: 'row', alignItems: 'center', gap: m.s(11), paddingVertical: m.s(8), paddingHorizontal: m.s(10), borderRadius: m.s(14), backgroundColor: 'rgba(255,255,255,0.043)', borderWidth: 2, borderColor: focused ? colors.accent : 'transparent' })}
+                style={({ focused }: any) => ({ flexDirection: 'row', alignItems: 'center', gap: m.s(11), paddingVertical: m.s(8), paddingHorizontal: m.s(10), borderRadius: m.s(14), backgroundColor: 'rgba(255,255,255,0.043)', borderWidth: 1, borderColor: focused ? colors.accent : 'transparent' })}
               >
                 <FriendAvatar name={f.nickname || f.displayName} size={m.s(46)} online={Boolean(p?.online)} />
                 <View style={{ flex: 1, minWidth: 0 }}>
@@ -252,7 +252,7 @@ function Tab({ m, active, label, onRailFocus, onTabFocus, onPress }: any) {
       onFocus={() => { setFocused(true); onRailFocus(true); onTabFocus?.(true); }}
       onBlur={() => { setFocused(false); onRailFocus(false); onTabFocus?.(false); }}
       onPress={onPress}
-      style={{ flex: 1, alignItems: 'center', paddingVertical: m.s(7), borderRadius: radius.pill, backgroundColor: active ? 'rgba(255,255,255,0.16)' : colors.surface08, borderWidth: 2, borderColor: focused ? colors.accent : 'transparent' }}
+      style={{ flex: 1, alignItems: 'center', paddingVertical: m.s(7), borderRadius: radius.pill, backgroundColor: active ? 'rgba(255,255,255,0.16)' : colors.surface08, borderWidth: 1, borderColor: focused ? colors.accent : 'transparent' }}
     >
       <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(14), color: active ? colors.text : colors.textDim }}>{label}</Text>
     </Pressable>

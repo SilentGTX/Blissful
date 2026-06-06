@@ -50,7 +50,7 @@ export function TopBar({
 
   const initial = (user?.displayName || user?.username || '?').trim().charAt(0).toUpperCase();
   const ring = (focused: boolean) => ({
-    borderWidth: focused ? 3 : 1,
+    borderWidth: 1,
     borderColor: focused ? colors.accent : 'rgba(255,255,255,0.18)',
   });
 
@@ -107,7 +107,7 @@ export function TopBar({
             return (
               <Image
                 source={av.source}
-                style={{ width: '100%', height: '100%', borderRadius: radius.pill, borderWidth: avatarFocused ? 3 : 1, borderColor: avatarFocused ? colors.accent : 'rgba(255,255,255,0.18)' }}
+                style={{ width: '100%', height: '100%', borderRadius: radius.pill, borderWidth: 1, borderColor: avatarFocused ? colors.accent : 'rgba(255,255,255,0.18)' }}
                 resizeMode="cover"
               />
             );
