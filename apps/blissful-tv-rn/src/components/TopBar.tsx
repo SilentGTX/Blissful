@@ -7,6 +7,7 @@ import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { useAuth } from '../context/AuthContext';
 import { resolveAvatar } from '../lib/avatars';
+import { ProfileMenu } from './ProfileMenu';
 
 // .tv-topbar-search / -profile: two stacked gradients (cool-glass base + white sheen).
 function Glass({ focused, style, children }: { focused: boolean; style?: any; children: React.ReactNode }) {
@@ -29,12 +30,13 @@ function Glass({ focused, style, children }: { focused: boolean; style?: any; ch
   );
 }
 
-export function TopBar() {
+export function TopBar({ searchRef }: { searchRef?: React.Ref<View> }) {
   const navigation = useNavigation<any>();
   const { user } = useAuth();
   const m = useMetrics();
   const [searchFocused, setSearchFocused] = useState(false);
   const [avatarFocused, setAvatarFocused] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const initial = (user?.displayName || user?.username || '?').trim().charAt(0).toUpperCase();
   const ring = (focused: boolean) => ({
@@ -45,9 +47,10 @@ export function TopBar() {
   return (
     <View style={[styles.bar, { top: m.safeY, left: m.contentLeft, right: m.safeX, height: m.topbarH }]}>
       <Pressable
+        ref={searchRef}
         onFocus={() => setSearchFocused(true)}
         onBlur={() => setSearchFocused(false)}
-        onPress={() => { /* search screen — next */ }}
+        onPress={() => navigation.navigate('Search')}
         style={{ width: m.searchW, height: '100%' }}
       >
         <Glass
@@ -68,24 +71,33 @@ export function TopBar() {
       <Pressable
         onFocus={() => setAvatarFocused(true)}
         onBlur={() => setAvatarFocused(false)}
-        onPress={() => navigation.navigate('Login')}
+        onPress={() => (user ? setMenuOpen(true) : navigation.navigate('Login'))}
         style={[styles.avatarPress, { width: m.topbarH, height: m.topbarH }]}
       >
-        <Glass
-          focused={avatarFocused}
-          style={[styles.avatar, { borderRadius: radius.pill }, ring(avatarFocused)]}
-        >
-          {(() => {
-            if (!user) return <Ionicons name="person" size={m.s(34)} color={colors.text} />;
-            const av = resolveAvatar(user.avatar, initial);
-            return av.kind === 'image' ? (
-              <Image source={av.source} style={StyleSheet.absoluteFill} resizeMode="cover" />
-            ) : (
-              <Text style={{ fontFamily: font.serif, fontSize: m.profileFont, color: colors.text }}>{av.value}</Text>
+        {(() => {
+          const av = user ? resolveAvatar(user.avatar, initial) : null;
+          if (av && av.kind === 'image') {
+            return (
+              <Image
+                source={av.source}
+                style={{ width: '100%', height: '100%', borderRadius: radius.pill, borderWidth: avatarFocused ? 3 : 1, borderColor: avatarFocused ? colors.accent : 'rgba(255,255,255,0.18)' }}
+                resizeMode="cover"
+              />
             );
-          })()}
-        </Glass>
+          }
+          return (
+            <Glass focused={avatarFocused} style={[styles.avatar, { borderRadius: radius.pill }, ring(avatarFocused)]}>
+              {user ? (
+                <Text style={{ fontFamily: font.serif, fontSize: m.profileFont, color: colors.text }}>{av?.value ?? initial}</Text>
+              ) : (
+                <Ionicons name="person" size={m.s(34)} color={colors.text} />
+              )}
+            </Glass>
+          );
+        })()}
       </Pressable>
+
+      <ProfileMenu visible={menuOpen} onClose={() => setMenuOpen(false)} />
     </View>
   );
 }

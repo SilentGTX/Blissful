@@ -44,3 +44,4 @@ yarn-error.*
 .old-ref.png
 .new-home.png
 *.cmp.png
+.t*.png

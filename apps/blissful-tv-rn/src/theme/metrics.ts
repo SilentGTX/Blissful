@@ -18,6 +18,7 @@ export function useMetrics() {
   const safeX = (5 / 100) * width; // --tv-safe-x: 5vw
   const safeY = (4 / 100) * height; // --tv-safe-y: 4vh
   const railCollapsed = clampVw(96, 5, 132); // --tv-rail-collapsed: clamp(96px,5vw,132px)
+  const railExpanded = clampVw(340, 22, 420); // --tv-rail-expanded: clamp(340px,22vw,420px)
   const topbarH = clampVh(56, 7, 84); // --tv-topbar-h: clamp(56px,7vh,84px)
 
   return {
@@ -28,6 +29,7 @@ export function useMetrics() {
     safeX,
     safeY,
     railCollapsed,
+    railExpanded,
     topbarH,
     // .bliss-content { left: rail + safe-x; top: safe-y + topbar + 1rem }
     contentLeft: railCollapsed + safeX,

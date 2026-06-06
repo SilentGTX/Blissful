@@ -5,4 +5,5 @@ export type RootStackParamList = {
   Detail: { id: string; type: MediaType; name: string; poster?: string };
   Player: { url: string; title: string };
   Login: undefined;
+  Search: undefined;
 };

@@ -17,6 +17,7 @@ function HeroBtn({
   primary,
   autoFocus,
   h,
+  upTag,
   onPress,
 }: {
   label: string;
@@ -24,12 +25,14 @@ function HeroBtn({
   primary?: boolean;
   autoFocus?: boolean;
   h: number;
+  upTag?: number;
   onPress: () => void;
 }) {
   const [focused, setFocused] = useState(false);
   return (
     <Pressable
       hasTVPreferredFocus={autoFocus}
+      nextFocusUp={upTag}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       onPress={onPress}
@@ -53,7 +56,7 @@ function HeroBtn({
   );
 }
 
-export function Hero({ item }: { item: StremioMetaPreview | null }) {
+export function Hero({ item, upTag }: { item: StremioMetaPreview | null; upTag?: number }) {
   const navigation = useNavigation<Nav>();
   const m = useMetrics();
   const [meta, setMeta] = useState<StremioMetaDetail['meta'] | null>(null);
@@ -140,11 +143,12 @@ export function Hero({ item }: { item: StremioMetaPreview | null }) {
             primary
             autoFocus
             h={btnH}
+            upTag={upTag}
             onPress={() =>
               item && navigation.navigate('Detail', { id: item.id, type: item.type, name: item.name, poster: item.poster })
             }
           />
-          <HeroBtn label="Add to library" icon="bookmark-outline" h={btnH} onPress={() => { /* library — needs auth */ }} />
+          <HeroBtn label="Add to library" icon="bookmark-outline" h={btnH} upTag={upTag} onPress={() => { /* library — needs auth */ }} />
         </View>
       </View>
     </View>
