@@ -1,0 +1,27 @@
+{
+  "name": "blissful-tv-rn",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "prebuild:tv": "cross-env EXPO_TV=1 expo prebuild --platform android --clean",
+    "web": "expo start --web"
+  },
+  "dependencies": {
+    "expo": "~56.0.9",
+    "expo-status-bar": "~56.0.4",
+    "react": "19.2.3",
+    "react-native": "npm:react-native-tvos@0.85.3-0"
+  },
+  "devDependencies": {
+    "@react-native-tvos/config-tv": "^0.1.6",
+    "@types/react": "~19.2.2",
+    "cross-env": "^7.0.3",
+    "typescript": "~6.0.3"
+  },
+  "overrides": {
+    "react-native": "npm:react-native-tvos@0.85.3-0"
+  },
+  "private": true
+}
