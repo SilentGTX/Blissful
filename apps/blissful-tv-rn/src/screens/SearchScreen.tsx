@@ -1,6 +1,6 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Keyboard, ScrollView, StyleSheet, Text, useTVEventHandler, View } from 'react-native';
 import { fetchCatalog, type StremioMetaPreview } from '@blissful/core';
 import { colors, font } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
@@ -78,12 +78,19 @@ export function SearchScreen() {
   const onSelect = (item: CardItem) =>
     navigation.navigate('Detail', { id: item.id, type: item.type, name: item.name, poster: item.poster ?? undefined });
 
+  // D-pad Up dismisses the on-screen keyboard (so the user can reach the results).
+  useTVEventHandler((evt) => {
+    if (evt.eventType === 'up') Keyboard.dismiss();
+  });
+
   const hasResults = movies.length > 0 || series.length > 0;
 
   return (
     <View style={styles.root}>
       <NavRail active="Home" />
-      <TopBar searchValue={query} onSearchChange={setQuery} searchAutoFocus />
+      {/* Don't auto-open the IME when arriving with a pre-filled query (cast/
+          genre chip) — show results instead. Only auto-focus an empty search. */}
+      <TopBar searchValue={query} onSearchChange={setQuery} searchAutoFocus={!route.params?.query} />
       <ScrollView
         style={{ position: 'absolute', left: m.contentLeft, top: m.contentTop, right: 0, bottom: 0 }}
         contentContainerStyle={{ paddingTop: m.s(8), paddingBottom: m.s(40) }}
