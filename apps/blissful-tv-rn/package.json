@@ -9,14 +9,20 @@
     "web": "expo start --web"
   },
   "dependencies": {
+    "@expo-google-fonts/fraunces": "^0.4.1",
+    "@expo-google-fonts/ibm-plex-sans": "^0.4.1",
+    "@expo/vector-icons": "^15.0.2",
     "@react-navigation/native": "^7.2.5",
     "@react-navigation/stack": "^7.9.3",
     "expo": "~56.0.9",
+    "expo-font": "~56.0.5",
+    "expo-linear-gradient": "~56.0.4",
     "expo-status-bar": "~56.0.4",
     "expo-video": "~56.1.2",
     "react": "19.2.3",
     "react-native": "npm:react-native-tvos@0.85.3-0",
     "react-native-gesture-handler": "~2.31.1",
+    "react-native-mmkv": "^4.3.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-url-polyfill": "^3.0.0"
   },

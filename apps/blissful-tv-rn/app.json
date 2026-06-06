@@ -21,7 +21,8 @@
           "showVerboseWarnings": true
         }
       ],
-      "expo-video"
+      "expo-video",
+      "expo-font"
     ]
   }
 }

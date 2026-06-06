@@ -18,12 +18,23 @@ export function resolveAddonFetchUrl(targetUrl: string): string {
   return _resolveAddonFetchUrl(targetUrl);
 }
 
+// Base URL for the blissful-storage backend (auth, library, friends, …). RN
+// hits the real backend directly (no CORS); the web app injects its proxy/
+// relative base. Default is the direct production backend (the RN value).
+let _storageBaseUrl = 'https://blissful.budinoff.com/storage';
+
+export function getStorageBaseUrl(): string {
+  return _storageBaseUrl;
+}
+
 export type CoreAdapters = {
   resolveAddonFetchUrl?: (targetUrl: string) => string;
+  storageBaseUrl?: string;
 };
 
 /** Call once at app startup to inject platform behavior. Idempotent-friendly:
  *  only provided fields are overridden. */
 export function configureCore(adapters: CoreAdapters): void {
   if (adapters.resolveAddonFetchUrl) _resolveAddonFetchUrl = adapters.resolveAddonFetchUrl;
+  if (adapters.storageBaseUrl !== undefined) _storageBaseUrl = adapters.storageBaseUrl;
 }

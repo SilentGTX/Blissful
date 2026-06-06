@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
 import { fetchCatalog, type MediaType, type StremioMetaPreview } from '@blissful/core';
-import { colors, layout } from '../theme/colors';
+import { colors, font, layout } from '../theme/colors';
 import { PosterCard } from './PosterCard';
 
 export function Rail({
@@ -63,7 +63,7 @@ export function Rail({
 
 const styles = StyleSheet.create({
   rail: { marginBottom: 34 },
-  railTitle: { color: colors.text, fontSize: 22, fontWeight: '600', marginBottom: 14 },
+  railTitle: { fontFamily: font.bodySemi, color: colors.text, fontSize: 22, marginBottom: 14 },
   railInner: { gap: 16, paddingRight: layout.safeX, paddingVertical: 6 },
   railLoading: { alignSelf: 'flex-start', marginVertical: 40 },
   railError: { color: colors.danger, fontSize: 14 },
