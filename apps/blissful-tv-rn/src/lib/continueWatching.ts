@@ -35,8 +35,10 @@ export function progressPercent(item: LibraryItem): number | null {
 // useContinueWatching pipeline: in-progress items, newest first.
 export async function fetchContinueWatching(token: string): Promise<CwItem[]> {
   const items = await fetchBlissfulLibrary<LibraryItem>(token);
+  // NOTE: match useContinueWatching exactly — it does NOT filter `removed`
+  // (soft-removed items keep their progress and still appear in CW).
   return items
-    .filter((it) => !it.removed && typeof it.state?.timeOffset === 'number')
+    .filter((it) => typeof it.state?.timeOffset === 'number')
     .filter((it) => {
       const o = it.state!.timeOffset as number;
       const d = it.state?.duration;

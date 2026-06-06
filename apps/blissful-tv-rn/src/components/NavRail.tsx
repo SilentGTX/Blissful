@@ -76,7 +76,7 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
         style={{ width: m.s(54), height: m.s(54), borderRadius: m.s(14) }}
         resizeMode="contain"
       />
-      <View style={{ gap: m.s(8), alignItems: 'center', marginTop: m.s(22) }}>
+      <View style={{ gap: m.s(18), alignItems: 'center', marginTop: m.s(26) }}>
         {ITEMS.map((it) => (
           <NavIcon
             key={it.key}
