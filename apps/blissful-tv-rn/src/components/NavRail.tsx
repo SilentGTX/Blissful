@@ -1,7 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Animated, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Animated, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, useTVEventHandler, View } from 'react-native';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { ICONS, StrokeIcon } from '../icons/StrokeIcon';
@@ -116,16 +116,36 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
   // entering the next focuses (cancels it). Focus genuinely leaving the rail
   // (the only exit is Right, since the rail hugs the left edge) -> collapse.
   const focusedRef = useRef(false);
+  const expandedRef = useRef(false);
+  const tabFocusedRef = useRef(false);
   const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const setExp = (v: boolean) => {
+    expandedRef.current = v;
+    setExpanded(v);
+  };
   const onRailFocus = (focused: boolean) => {
     focusedRef.current = focused;
     if (collapseTimer.current) {
       clearTimeout(collapseTimer.current);
       collapseTimer.current = null;
     }
-    if (focused) setExpanded(true);
-    else collapseTimer.current = setTimeout(() => !focusedRef.current && setExpanded(false), 120);
+    if (focused) setExp(true);
+    else collapseTimer.current = setTimeout(() => !focusedRef.current && setExp(false), 120);
   };
+
+  // Deterministic close: D-pad Right while the rail is open collapses it,
+  // regardless of whether the row blur fired (tvos blur events are unreliable
+  // after the search field). Tabs are excluded so Friends->Requests still works.
+  useTVEventHandler((evt) => {
+    if ((evt.eventType === 'right' || evt.eventType === 'swipeRight') && expandedRef.current && !tabFocusedRef.current) {
+      focusedRef.current = false;
+      if (collapseTimer.current) {
+        clearTimeout(collapseTimer.current);
+        collapseTimer.current = null;
+      }
+      setExp(false);
+    }
+  });
 
   useEffect(() => {
     Animated.timing(widthAnim, { toValue: expanded ? expandedW : collapsedW, duration: 200, useNativeDriver: false }).start();
@@ -149,7 +169,7 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
 
   return (
     <Animated.View style={[styles.rail, { left: railLeft, top: m.safeY, bottom: m.safeY, width: widthAnim, borderRadius: m.s(28), zIndex: expanded ? 70 : 10 }]}>
-      <LinearGradient colors={['rgba(255,255,255,0.10)', 'rgba(255,255,255,0.02)']} start={{ x: 0.2, y: 0 }} end={{ x: 0.8, y: 1 }} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={['rgba(255,255,255,0.10)', 'rgba(255,255,255,0.02)']} start={{ x: 0.85, y: 0 }} end={{ x: 0.15, y: 1 }} style={StyleSheet.absoluteFill} />
       <View style={{ flex: 1, paddingVertical: m.s(10) }}>
         <Row iconW={iconW} itemH={m.s(48)} mx={rowMargin} expanded={expanded} focusable={false} label="Blissful" labelColor={colors.text} labelFont={font.serif} labelSize={m.s(22)} icon={<Image source={require('../../assets/blissful-small-logo.png')} style={{ width: m.s(36), height: m.s(36), borderRadius: m.s(10) }} resizeMode="contain" />} />
         <Divider mx={m.s(10)} my={m.s(6)} />
@@ -164,7 +184,7 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
           <>
             <Row iconW={iconW} itemH={m.navItemH} mx={rowMargin} expanded label="Friends" labelColor={colors.text} labelSize={m.s(17)} icon={friendsIcon(colors.text)} onRailFocus={onRailFocus} />
             {token ? (
-              <FriendsBody m={m} mx={rowMargin} friends={friends} incoming={incoming} presence={presence} tab={tab} setTab={setTab} query={query} setQuery={setQuery} onRailFocus={onRailFocus} />
+              <FriendsBody m={m} mx={rowMargin} friends={friends} incoming={incoming} presence={presence} tab={tab} setTab={setTab} query={query} setQuery={setQuery} onRailFocus={onRailFocus} onTabFocus={(f: boolean) => (tabFocusedRef.current = f)} />
             ) : (
               <Pressable onFocus={() => onRailFocus(true)} onBlur={() => onRailFocus(false)} onPress={() => navigation.navigate('Login')} style={{ paddingHorizontal: rowMargin + m.s(6), paddingVertical: m.s(10) }}>
                 <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(16), color: colors.textDim }}>Login to see friends</Text>
@@ -179,7 +199,7 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
   );
 }
 
-function FriendsBody({ m, mx, friends, incoming, presence, tab, setTab, query, setQuery, onRailFocus }: any) {
+function FriendsBody({ m, mx, friends, incoming, presence, tab, setTab, query, setQuery, onRailFocus, onTabFocus }: any) {
   const [sf, setSf] = useState(false);
   const list = tab === 'requests' ? incoming : friends;
   return (
@@ -190,7 +210,7 @@ function FriendsBody({ m, mx, friends, incoming, presence, tab, setTab, query, s
       </View>
       <View style={{ flexDirection: 'row', gap: m.s(8), marginTop: m.s(10) }}>
         {(['friends', 'requests'] as const).map((t) => (
-          <Tab key={t} m={m} active={tab === t} label={`${t === 'friends' ? 'Friends' : 'Requests'} ${t === 'friends' ? friends.length : incoming.length}`} onRailFocus={onRailFocus} onPress={() => setTab(t)} />
+          <Tab key={t} m={m} active={tab === t} label={`${t === 'friends' ? 'Friends' : 'Requests'} ${t === 'friends' ? friends.length : incoming.length}`} onRailFocus={onRailFocus} onTabFocus={onTabFocus} onPress={() => setTab(t)} />
         ))}
       </View>
       <ScrollView style={{ flex: 1, marginTop: m.s(10) }} contentContainerStyle={{ gap: m.s(6), paddingBottom: m.s(10) }} showsVerticalScrollIndicator>
@@ -220,12 +240,12 @@ function FriendsBody({ m, mx, friends, incoming, presence, tab, setTab, query, s
   );
 }
 
-function Tab({ m, active, label, onRailFocus, onPress }: any) {
+function Tab({ m, active, label, onRailFocus, onTabFocus, onPress }: any) {
   const [focused, setFocused] = useState(false);
   return (
     <Pressable
-      onFocus={() => { setFocused(true); onRailFocus(true); }}
-      onBlur={() => { setFocused(false); onRailFocus(false); }}
+      onFocus={() => { setFocused(true); onRailFocus(true); onTabFocus?.(true); }}
+      onBlur={() => { setFocused(false); onRailFocus(false); onTabFocus?.(false); }}
       onPress={onPress}
       style={{ flex: 1, alignItems: 'center', paddingVertical: m.s(7), borderRadius: radius.pill, backgroundColor: active ? 'rgba(255,255,255,0.16)' : colors.surface08, borderWidth: 2, borderColor: focused ? colors.accent : 'transparent' }}
     >
