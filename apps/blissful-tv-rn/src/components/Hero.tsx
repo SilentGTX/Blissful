@@ -5,6 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { fetchMeta, normalizeStremioImage, type StremioMetaDetail, type StremioMetaPreview } from '@blissful/core';
+import { markContentFocus } from '../lib/focusBus';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import type { RootStackParamList } from '../navigation/types';
@@ -33,7 +34,7 @@ function HeroBtn({
     <Pressable
       hasTVPreferredFocus={autoFocus}
       nextFocusUp={upTag}
-      onFocus={() => setFocused(true)}
+      onFocus={() => { setFocused(true); markContentFocus(); }}
       onBlur={() => setFocused(false)}
       onPress={onPress}
       style={{
@@ -60,7 +61,7 @@ function GenreChip({ label, m, onPress }: { label: string; m: ReturnType<typeof 
   const [f, setF] = useState(false);
   return (
     <Pressable
-      onFocus={() => setF(true)}
+      onFocus={() => { setF(true); markContentFocus(); }}
       onBlur={() => setF(false)}
       onPress={onPress}
       style={{ backgroundColor: colors.surface12, borderRadius: radius.pill, paddingHorizontal: m.s(24), paddingVertical: m.s(10), borderWidth: 1, borderColor: f ? colors.accent : 'transparent' }}

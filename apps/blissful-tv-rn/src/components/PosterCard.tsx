@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { normalizeStremioImage } from '@blissful/core';
+import { markContentFocus } from '../lib/focusBus';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 
@@ -43,7 +44,7 @@ export function PosterCard({
   return (
     <Pressable
       hasTVPreferredFocus={autoFocus}
-      onFocus={() => setFocused(true)}
+      onFocus={() => { setFocused(true); markContentFocus(); }}
       onBlur={() => setFocused(false)}
       onPress={() => onSelect(item)}
       style={{ width }}

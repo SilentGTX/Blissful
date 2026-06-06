@@ -7,6 +7,7 @@ import { useMetrics } from '../theme/metrics';
 import { ICONS, StrokeIcon } from '../icons/StrokeIcon';
 import { useAuth } from '../context/AuthContext';
 import { useFriends, statusLine } from '../lib/friends';
+import { contentFocusMovedSince } from '../lib/focusBus';
 import { FriendAvatar } from './FriendAvatar';
 
 type NavKey = 'Home' | 'Discover' | 'Library' | 'Addons' | 'JoinParty' | 'Settings';
@@ -37,6 +38,7 @@ const Row = forwardRef<View, {
   onPress?: () => void;
   nextFocusUp?: number;
   nextFocusDown?: number;
+  autoFocus?: boolean;
 }>(function Row({
   iconW,
   itemH,
@@ -53,6 +55,7 @@ const Row = forwardRef<View, {
   onPress,
   nextFocusUp,
   nextFocusDown,
+  autoFocus,
 }, ref) {
   const [focused, setFocused] = useState(false);
   // No color change on focus ("just leave the purple") — label color is constant;
@@ -86,6 +89,7 @@ const Row = forwardRef<View, {
   return (
     <Pressable
       ref={ref}
+      hasTVPreferredFocus={autoFocus}
       nextFocusUp={nextFocusUp}
       nextFocusDown={nextFocusDown}
       onFocus={() => {
@@ -134,27 +138,22 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
     expandedRef.current = v;
     setExpanded(v);
   };
-  // Open the rail ONLY when D-pad Left moved focus into it — NOT on Down (which
-  // also reaches a rail icon from the bottom content row) and NOT while
-  // navigating content. While open, navigating WITHIN the rail keeps it open;
-  // the moment focus genuinely leaves the rail (to content), it collapses — so
-  // content can never be scrolled behind an open rail. Right also closes it.
+  // The collapsed rail is NOT focusable (its rows render focusable={expanded}),
+  // so the D-pad can never land on a collapsed icon. It opens ONLY when D-pad
+  // Left is pressed at the content's LEFT EDGE — i.e. the Left did not move
+  // focus to another content card (focusBus). On open, the first row is remounted
+  // (bumped key) with hasTVPreferredFocus so focus jumps into the rail. While
+  // open, leaving the rail (focus to content) collapses it; Right also closes it.
   const justCollapsedRef = useRef(0);
-  const lastDpadRef = useRef<{ t: string; time: number }>({ t: '', time: 0 });
   const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [openKey, setOpenKey] = useState(0);
   const onRailFocus = (focused: boolean) => {
     focusedRef.current = focused;
     if (collapseTimer.current) {
       clearTimeout(collapseTimer.current);
       collapseTimer.current = null;
     }
-    const d = lastDpadRef.current;
-    if (focused) {
-      if (!expandedRef.current && d.t === 'left' && Date.now() - d.time < 250 && Date.now() - justCollapsedRef.current > 400) setExp(true);
-    } else if (expandedRef.current) {
-      // Focus left a rail element. If it stays out (moved to content, not the
-      // next rail row), collapse. The boolean focusedRef + blur-before-focus
-      // order means within-rail navigation cancels this before it fires.
+    if (!focused && expandedRef.current) {
       collapseTimer.current = setTimeout(() => {
         if (!focusedRef.current) setExp(false);
       }, 90);
@@ -163,8 +162,16 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
 
   useTVEventHandler((evt) => {
     const t = evt.eventType;
-    if (t === 'left' || t === 'right' || t === 'up' || t === 'down') lastDpadRef.current = { t, time: Date.now() };
-    if ((t === 'right' || t === 'swipeRight') && expandedRef.current && !tabFocusedRef.current) {
+    if (t === 'left' || t === 'swipeLeft') {
+      const at = Date.now();
+      setTimeout(() => {
+        // Left at the content's left edge: focus didn't move to another card.
+        if (!expandedRef.current && !contentFocusMovedSince(at) && !focusedRef.current && Date.now() - justCollapsedRef.current > 400) {
+          setOpenKey((k) => k + 1);
+          setExp(true);
+        }
+      }, 70);
+    } else if ((t === 'right' || t === 'swipeRight') && expandedRef.current && !tabFocusedRef.current) {
       focusedRef.current = false;
       justCollapsedRef.current = Date.now();
       if (collapseTimer.current) {
@@ -213,7 +220,7 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
         <Row iconW={iconW} itemH={m.s(48)} mx={rowMargin} expanded={expanded} focusable={false} label="Blissful" labelColor={colors.text} labelFont={font.serif} labelSize={m.s(22)} icon={<Image source={require('../../assets/blissful-small-logo.png')} style={{ width: m.s(36), height: m.s(36), borderRadius: m.s(10) }} resizeMode="contain" />} />
         <Divider mx={m.s(10)} my={m.s(6)} />
         {ITEMS.map((it, i) => (
-          <Row key={it.key} ref={(el) => { navRefs.current[i] = el; }} nextFocusUp={upTag(i)} nextFocusDown={downTag(i)} iconW={iconW} itemH={m.navItemH} mx={rowMargin} expanded={expanded} active={active === it.key} label={it.label} labelSize={m.s(16)} icon={ico(it.icon, active === it.key ? colors.accent : colors.textDim, active === it.key)} onRailFocus={onRailFocus} onPress={() => { if (it.key === 'Home') navigation.navigate('Home'); else if (it.key === 'Discover') navigation.navigate('Discover', { type: 'movie' }); }} />
+          <Row key={i === 0 ? `${it.key}-${openKey}` : it.key} ref={(el) => { navRefs.current[i] = el; }} focusable={expanded} autoFocus={i === 0 && expanded} nextFocusUp={upTag(i)} nextFocusDown={downTag(i)} iconW={iconW} itemH={m.navItemH} mx={rowMargin} expanded={expanded} active={active === it.key} label={it.label} labelSize={m.s(16)} icon={ico(it.icon, active === it.key ? colors.accent : colors.textDim, active === it.key)} onRailFocus={onRailFocus} onPress={() => { if (it.key === 'Home') navigation.navigate('Home'); else if (it.key === 'Discover') navigation.navigate('Discover', { type: 'movie' }); }} />
         ))}
 
         {!expanded ? <View style={{ flex: 1 }} /> : null}
@@ -231,7 +238,7 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
             )}
           </>
         ) : (
-          <Row ref={(el) => { navRefs.current[6] = el; }} nextFocusUp={upTag(6)} nextFocusDown={navTags[6] ?? undefined} iconW={iconW} itemH={m.navItemH} mx={rowMargin} expanded={false} label="Friends" labelSize={m.s(16)} icon={friendsIcon(colors.accent)} onRailFocus={onRailFocus} />
+          <Row focusable={false} iconW={iconW} itemH={m.navItemH} mx={rowMargin} expanded={false} label="Friends" labelSize={m.s(16)} icon={friendsIcon(colors.accent)} />
         )}
       </View>
     </Animated.View>

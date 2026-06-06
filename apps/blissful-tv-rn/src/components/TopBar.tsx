@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
+import { markContentFocus } from '../lib/focusBus';
 import { useAuth } from '../context/AuthContext';
 import { resolveAvatar } from '../lib/avatars';
 import { ProfileMenu } from './ProfileMenu';
@@ -67,7 +68,7 @@ export function TopBar({
             autoFocus={searchAutoFocus}
             value={searchValue}
             onChangeText={onSearchChange}
-            onFocus={() => setSearchFocused(true)}
+            onFocus={() => { setSearchFocused(true); markContentFocus(); }}
             onBlur={() => setSearchFocused(false)}
             placeholder="Search movies, series, actors..."
             placeholderTextColor="rgba(255,255,255,0.45)"
@@ -78,7 +79,7 @@ export function TopBar({
       ) : (
         <Pressable
           ref={searchRef}
-          onFocus={() => setSearchFocused(true)}
+          onFocus={() => { setSearchFocused(true); markContentFocus(); }}
           onBlur={() => setSearchFocused(false)}
           onPress={() => navigation.navigate('Search')}
           style={{ width: m.searchW, height: '100%' }}
@@ -96,7 +97,7 @@ export function TopBar({
       )}
 
       <Pressable
-        onFocus={() => setAvatarFocused(true)}
+        onFocus={() => { setAvatarFocused(true); markContentFocus(); }}
         onBlur={() => setAvatarFocused(false)}
         onPress={() => (user ? setMenuOpen(true) : navigation.navigate('Login'))}
         style={[styles.avatarPress, { width: m.topbarH, height: m.topbarH }]}

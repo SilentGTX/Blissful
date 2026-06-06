@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
+import { markContentFocus } from '../lib/focusBus';
 
 export type SelectOption = { key: string; label: string };
 type M = ReturnType<typeof useMetrics>;
@@ -42,7 +43,7 @@ export function TvSelect({
   return (
     <Pressable
       ref={triggerRef}
-      onFocus={() => setFocused(true)}
+      onFocus={() => { setFocused(true); markContentFocus(); }}
       onBlur={() => setFocused(false)}
       onPress={open}
       style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(10), minWidth, height: m.s(52), paddingHorizontal: m.s(18), borderRadius: radius.pill, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: focused ? colors.accent : 'rgba(255,255,255,0.12)' }}
