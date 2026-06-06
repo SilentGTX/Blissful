@@ -1,20 +1,20 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
-import { Image, Pressable, StyleSheet, View } from 'react-native';
-import { colors, radius } from '../theme/colors';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
+import { ICONS, StrokeIcon } from '../icons/StrokeIcon';
 
 type NavKey = 'Home' | 'Discover' | 'Library' | 'Addons' | 'JoinParty' | 'Settings';
 
-const ITEMS: { key: NavKey; icon: keyof typeof Ionicons.glyphMap }[] = [
+const ITEMS: { key: NavKey; icon: keyof typeof ICONS }[] = [
   { key: 'Home', icon: 'home' },
-  { key: 'Discover', icon: 'compass' },
-  { key: 'Library', icon: 'bookmark' },
-  { key: 'Addons', icon: 'extension-puzzle' },
-  { key: 'JoinParty', icon: 'people' },
-  { key: 'Settings', icon: 'settings-sharp' },
+  { key: 'Discover', icon: 'discover' },
+  { key: 'Library', icon: 'library' },
+  { key: 'Addons', icon: 'addons' },
+  { key: 'JoinParty', icon: 'watchParty' },
+  { key: 'Settings', icon: 'settings' },
 ];
 
 function NavIcon({
@@ -24,7 +24,7 @@ function NavIcon({
   active,
   onPress,
 }: {
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: keyof typeof ICONS;
   size: number;
   itemH: number;
   active: boolean;
@@ -45,10 +45,9 @@ function NavIcon({
         justifyContent: 'center',
         borderWidth: 2,
         borderColor: focused ? colors.accent : 'transparent',
-        backgroundColor: focused ? colors.surface10 : 'transparent',
       }}
     >
-      <Ionicons name={icon} size={size} color={color} />
+      <StrokeIcon path={ICONS[icon]} size={size} color={color} />
     </Pressable>
   );
 }
@@ -65,20 +64,19 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
         { left: pad, top: m.safeY, bottom: m.safeY, width: m.railCollapsed - pad * 2, borderRadius: m.s(28) },
       ]}
     >
-      {/* faked glass: white sheen over the near-opaque glass base */}
       <LinearGradient
         colors={['rgba(255,255,255,0.10)', 'rgba(255,255,255,0.02)']}
         start={{ x: 0.2, y: 0 }}
         end={{ x: 0.8, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
-      <View style={{ height: m.safeY }} />
+      <View style={{ height: m.s(18) }} />
       <Image
         source={require('../../assets/blissful-small-logo.png')}
-        style={{ width: m.s(58), height: m.s(58), borderRadius: m.s(14) }}
+        style={{ width: m.s(54), height: m.s(54), borderRadius: m.s(14) }}
         resizeMode="contain"
       />
-      <View style={{ gap: m.s(6), alignItems: 'center', marginTop: m.s(18) }}>
+      <View style={{ gap: m.s(8), alignItems: 'center', marginTop: m.s(22) }}>
         {ITEMS.map((it) => (
           <NavIcon
             key={it.key}
@@ -92,6 +90,16 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
           />
         ))}
       </View>
+
+      <View style={{ flex: 1 }} />
+
+      {/* Friends section (TvFriendsRail) — collapsed: a people icon + badge. */}
+      <Pressable style={{ height: m.navItemH, width: m.navItemH, borderRadius: radius.card, alignItems: 'center', justifyContent: 'center', marginBottom: m.s(6) }}>
+        <StrokeIcon path={ICONS.watchParty} size={m.navIcon} color={colors.accent} />
+        <View style={{ position: 'absolute', top: m.s(6), right: m.s(8), minWidth: m.s(16), height: m.s(16), borderRadius: radius.pill, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center', paddingHorizontal: m.s(3) }}>
+          <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(11), color: colors.accentInk }}>1</Text>
+        </View>
+      </Pressable>
     </View>
   );
 }
@@ -105,5 +113,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     overflow: 'hidden',
   },
-  logo: { backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center' },
 });

@@ -24,6 +24,7 @@
     "react-native-gesture-handler": "~2.31.1",
     "react-native-mmkv": "^4.3.1",
     "react-native-safe-area-context": "~5.7.0",
+    "react-native-svg": "15.15.4",
     "react-native-url-polyfill": "^3.0.0"
   },
   "devDependencies": {

@@ -41,3 +41,6 @@ yarn-error.*
 /android
 .focus-check.png
 .rail-check.png
+.old-ref.png
+.new-home.png
+*.cmp.png
