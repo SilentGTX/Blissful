@@ -45,3 +45,4 @@ yarn-error.*
 .new-home.png
 *.cmp.png
 .t*.png
+.r*.png
