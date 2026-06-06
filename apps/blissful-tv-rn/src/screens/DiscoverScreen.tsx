@@ -1,32 +1,19 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
 import { fetchCatalog, type MediaType, type StremioMetaPreview } from '@blissful/core';
-import { colors, font, radius } from '../theme/colors';
+import { colors, font } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { NavRail } from '../components/NavRail';
 import { PosterCard, type CardItem } from '../components/PosterCard';
+import { TvSelect, TvSelectOverlay, type DropdownAnchor, type SelectOption } from '../components/TvSelect';
 import type { RootStackParamList } from '../navigation/types';
 
 type DiscoverRoute = RouteProp<RootStackParamList, 'Discover'>;
-type M = ReturnType<typeof useMetrics>;
 
-// Cinemeta's standard genre set (the 'top' catalog's `genre` extra options).
 const GENRES = ['Action', 'Adventure', 'Animation', 'Comedy', 'Crime', 'Documentary', 'Drama', 'Family', 'Fantasy', 'History', 'Horror', 'Music', 'Mystery', 'Romance', 'Sci-Fi', 'Sport', 'Thriller', 'War', 'Western'];
-
-function FilterPill({ label, active, m, onPress }: { label: string; active: boolean; m: M; onPress: () => void }) {
-  const [f, setF] = useState(false);
-  return (
-    <Pressable
-      onFocus={() => setF(true)}
-      onBlur={() => setF(false)}
-      onPress={onPress}
-      style={{ paddingHorizontal: m.s(20), paddingVertical: m.s(10), borderRadius: radius.pill, backgroundColor: active ? colors.surface18 : 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: f ? colors.accent : 'transparent' }}
-    >
-      <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(20), color: active ? colors.text : colors.textDim }}>{label}</Text>
-    </Pressable>
-  );
-}
+const TYPE_OPTS: SelectOption[] = [{ key: 'movie', label: 'Movie' }, { key: 'series', label: 'Series' }];
+const CATALOG_OPTS: SelectOption[] = [{ key: 'top', label: 'Popular' }];
 
 export function DiscoverScreen() {
   const { params } = useRoute<DiscoverRoute>();
@@ -36,6 +23,7 @@ export function DiscoverScreen() {
   const [genre, setGenre] = useState<string | null>(params?.genre ?? null);
   const [results, setResults] = useState<StremioMetaPreview[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dropdown, setDropdown] = useState<DropdownAnchor | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -49,8 +37,12 @@ export function DiscoverScreen() {
     };
   }, [type, genre]);
 
-  // Keep the clicked genre visible even if it isn't in the standard set.
-  const genreOptions = useMemo(() => (genre && !GENRES.includes(genre) ? [genre, ...GENRES] : GENRES), [genre]);
+  const genreOptions = useMemo<SelectOption[]>(() => {
+    const opts: SelectOption[] = [{ key: 'all', label: 'All Genres' }];
+    if (genre && !GENRES.includes(genre)) opts.push({ key: genre, label: genre });
+    GENRES.forEach((g) => opts.push({ key: g, label: g }));
+    return opts;
+  }, [genre]);
 
   const onSelect = (item: CardItem) => navigation.navigate('Detail', { id: item.id, type: item.type, name: item.name, poster: item.poster ?? undefined });
 
@@ -60,23 +52,14 @@ export function DiscoverScreen() {
   return (
     <View style={styles.root}>
       <NavRail active="Discover" />
-      <View style={{ position: 'absolute', left: m.contentLeft, top: m.safeY, right: m.safeX, bottom: 0 }}>
+      <View style={{ position: 'absolute', left: m.contentLeft, top: m.safeY, right: m.safeX, bottom: 0, paddingLeft: m.s(8) }}>
         <Text style={{ fontFamily: font.serif, fontSize: m.s(40), color: colors.text, marginBottom: m.s(14) }}>Discover</Text>
 
-        {/* Type pills */}
-        <View style={{ flexDirection: 'row', gap: m.s(10), marginBottom: m.s(12) }}>
-          {(['movie', 'series'] as MediaType[]).map((t) => (
-            <FilterPill key={t} label={t === 'movie' ? 'Movies' : 'Series'} active={type === t} m={m} onPress={() => setType(t)} />
-          ))}
+        <View style={{ flexDirection: 'row', gap: m.s(12), marginBottom: m.s(18) }}>
+          <TvSelect iconName="film-outline" options={TYPE_OPTS} value={type} onChange={(k) => setType(k as MediaType)} m={m} minWidth={m.s(184)} onOpen={setDropdown} />
+          <TvSelect iconName="trending-up-outline" options={CATALOG_OPTS} value="top" onChange={() => {}} m={m} minWidth={m.s(200)} onOpen={setDropdown} />
+          <TvSelect iconName="pricetags-outline" options={genreOptions} value={genre ?? 'all'} onChange={(k) => setGenre(k === 'all' ? null : k)} m={m} minWidth={m.s(200)} onOpen={setDropdown} />
         </View>
-
-        {/* Genre chips (pre-selected genre highlighted) */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: m.s(10), alignItems: 'center', paddingRight: m.safeX }} style={{ height: m.s(56), flexGrow: 0, flexShrink: 0, marginBottom: m.s(16) }}>
-          <FilterPill label="All" active={genre == null} m={m} onPress={() => setGenre(null)} />
-          {genreOptions.map((g) => (
-            <FilterPill key={g} label={g} active={genre === g} m={m} onPress={() => setGenre(g)} />
-          ))}
-        </ScrollView>
 
         {loading ? (
           <ActivityIndicator color={colors.brand} size="large" style={{ marginTop: m.s(60), alignSelf: 'flex-start' }} />
@@ -85,9 +68,10 @@ export function DiscoverScreen() {
             data={results}
             key={cols}
             numColumns={cols}
-            style={{ flex: 1 }}
+            style={{ height: m.height - m.safeY - m.s(140) }}
+            removeClippedSubviews={false}
             keyExtractor={(it) => it.id}
-            contentContainerStyle={{ gap: m.s(20), paddingTop: m.s(8), paddingBottom: m.s(40) }}
+            contentContainerStyle={{ gap: m.s(20), paddingTop: m.s(4), paddingBottom: m.s(40) }}
             columnWrapperStyle={{ gap: m.s(24) }}
             showsVerticalScrollIndicator={false}
             renderItem={({ item }) => <PosterCard item={item} width={posterW} onSelect={onSelect} />}
@@ -96,6 +80,8 @@ export function DiscoverScreen() {
           <Text style={{ fontFamily: font.body, fontSize: m.s(24), color: colors.textFaint, marginTop: m.s(40) }}>Nothing here.</Text>
         )}
       </View>
+
+      {dropdown ? <TvSelectOverlay anchor={dropdown} onClose={() => setDropdown(null)} m={m} /> : null}
     </View>
   );
 }
