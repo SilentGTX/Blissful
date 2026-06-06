@@ -2,8 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors, font, radius } from '../theme/colors';
+import { Image, Pressable, StyleSheet, View } from 'react-native';
+import { colors, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 
 type NavKey = 'Home' | 'Discover' | 'Library' | 'Addons' | 'JoinParty' | 'Settings';
@@ -73,9 +73,11 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
         style={StyleSheet.absoluteFill}
       />
       <View style={{ height: m.safeY }} />
-      <View style={[styles.logo, { width: m.s(56), height: m.s(56), borderRadius: m.s(18) }]}>
-        <Text style={{ fontFamily: font.serifBold, fontSize: m.s(30), color: '#06201c' }}>B</Text>
-      </View>
+      <Image
+        source={require('../../assets/blissful-small-logo.png')}
+        style={{ width: m.s(58), height: m.s(58), borderRadius: m.s(14) }}
+        resizeMode="contain"
+      />
       <View style={{ gap: m.s(6), alignItems: 'center', marginTop: m.s(18) }}>
         {ITEMS.map((it) => (
           <NavIcon

@@ -2,10 +2,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { useAuth } from '../context/AuthContext';
+import { resolveAvatar } from '../lib/avatars';
 
 // .tv-topbar-search / -profile: two stacked gradients (cool-glass base + white sheen).
 function Glass({ focused, style, children }: { focused: boolean; style?: any; children: React.ReactNode }) {
@@ -74,11 +75,15 @@ export function TopBar() {
           focused={avatarFocused}
           style={[styles.avatar, { borderRadius: radius.pill }, ring(avatarFocused)]}
         >
-          {user ? (
-            <Text style={{ fontFamily: font.serif, fontSize: m.profileFont, color: colors.text }}>{initial}</Text>
-          ) : (
-            <Ionicons name="person" size={m.s(34)} color={colors.text} />
-          )}
+          {(() => {
+            if (!user) return <Ionicons name="person" size={m.s(34)} color={colors.text} />;
+            const av = resolveAvatar(user.avatar, initial);
+            return av.kind === 'image' ? (
+              <Image source={av.source} style={StyleSheet.absoluteFill} resizeMode="cover" />
+            ) : (
+              <Text style={{ fontFamily: font.serif, fontSize: m.profileFont, color: colors.text }}>{av.value}</Text>
+            );
+          })()}
         </Glass>
       </Pressable>
     </View>

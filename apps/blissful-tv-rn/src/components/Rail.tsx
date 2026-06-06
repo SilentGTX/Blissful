@@ -3,7 +3,7 @@ import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-nativ
 import { fetchCatalog, type MediaType, type StremioMetaPreview } from '@blissful/core';
 import { colors, font } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
-import { PosterCard } from './PosterCard';
+import { PosterCard, type CardItem } from './PosterCard';
 
 export function Rail({
   title,
@@ -16,7 +16,7 @@ export function Rail({
   type: MediaType;
   catalogId: string;
   autoFocusFirst?: boolean;
-  onSelect: (item: StremioMetaPreview) => void;
+  onSelect: (item: CardItem) => void;
 }) {
   const m = useMetrics();
   const [metas, setMetas] = useState<StremioMetaPreview[] | null>(null);

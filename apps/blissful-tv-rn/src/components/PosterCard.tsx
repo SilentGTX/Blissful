@@ -1,8 +1,16 @@
 import { useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import { normalizeStremioImage, type StremioMetaPreview } from '@blissful/core';
+import { normalizeStremioImage } from '@blissful/core';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
+
+export type CardItem = {
+  id: string;
+  type: string;
+  name: string;
+  poster?: string | null;
+  imdbRating?: string | number;
+};
 
 function ratingText(r?: string | number): string | null {
   if (r == null) return null;
@@ -17,12 +25,14 @@ export function PosterCard({
   item,
   width,
   autoFocus,
+  progress,
   onSelect,
 }: {
-  item: StremioMetaPreview;
+  item: CardItem;
   width: number;
   autoFocus?: boolean;
-  onSelect: (item: StremioMetaPreview) => void;
+  progress?: number;
+  onSelect: (item: CardItem) => void;
 }) {
   const m = useMetrics();
   const [focused, setFocused] = useState(false);
@@ -58,6 +68,11 @@ export function PosterCard({
           <View style={[styles.imdb, { left: m.s(12), top: m.s(12), borderRadius: radius.pill, paddingLeft: m.s(10), paddingRight: m.s(8), paddingVertical: m.s(3), gap: m.s(4) }]}>
             <Text style={{ fontFamily: font.bodySemi, color: colors.text, fontSize: m.s(22) }}>{rating}</Text>
             <Text style={{ fontFamily: font.bodySemi, color: colors.imdbGold, fontSize: m.s(15), letterSpacing: 0.5 }}>IMDb</Text>
+          </View>
+        ) : null}
+        {progress != null && progress > 0 ? (
+          <View style={{ position: 'absolute', bottom: m.s(12), left: m.s(12), right: m.s(12), height: m.s(6), borderRadius: radius.pill, overflow: 'hidden', backgroundColor: 'rgba(0,0,0,0.35)' }}>
+            <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: `${Math.min(100, progress)}%`, backgroundColor: colors.accent }} />
           </View>
         ) : null}
       </View>
