@@ -40,3 +40,4 @@ yarn-error.*
 /ios
 /android
 .focus-check.png
+.rail-check.png

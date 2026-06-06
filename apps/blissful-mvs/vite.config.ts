@@ -1,7 +1,12 @@
 import { defineConfig } from 'vite'
+import { fileURLToPath, URL } from 'node:url'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
+
+// Shared pure-TS package consumed as source (no build) by both this web app
+// and the RN TV app. `@blissful/core/<sub>` resolves to packages/blissful-core/src/<sub>.
+const blissfulCoreSrc = fileURLToPath(new URL('../../packages/blissful-core/src', import.meta.url))
 
 // The Tauri (Android TV) build sets TAURI_ENV_PLATFORM during its
 // beforeBuildCommand. Disable the PWA service worker for that build: under
@@ -15,6 +20,11 @@ const disablePwa = !!process.env.TAURI_ENV_PLATFORM
 
 // https://vite.dev/config/
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@blissful/core': blissfulCoreSrc,
+    },
+  },
   plugins: [
     react(),
     tailwindcss(),

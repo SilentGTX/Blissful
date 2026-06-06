@@ -12,6 +12,11 @@
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
+    "baseUrl": ".",
+    "paths": {
+      "@blissful/core": ["../../packages/blissful-core/src/index.ts"],
+      "@blissful/core/*": ["../../packages/blissful-core/src/*"]
+    },
     "moduleDetection": "force",
     "noEmit": true,
     "jsx": "react-jsx",

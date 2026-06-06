@@ -12,7 +12,8 @@
     "expo": "~56.0.9",
     "expo-status-bar": "~56.0.4",
     "react": "19.2.3",
-    "react-native": "npm:react-native-tvos@0.85.3-0"
+    "react-native": "npm:react-native-tvos@0.85.3-0",
+    "react-native-url-polyfill": "^3.0.0"
   },
   "devDependencies": {
     "@react-native-tvos/config-tv": "^0.1.6",
