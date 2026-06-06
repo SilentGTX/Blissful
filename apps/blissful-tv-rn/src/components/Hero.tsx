@@ -56,6 +56,20 @@ function HeroBtn({
   );
 }
 
+function GenreChip({ label, m, onPress }: { label: string; m: ReturnType<typeof useMetrics>; onPress: () => void }) {
+  const [f, setF] = useState(false);
+  return (
+    <Pressable
+      onFocus={() => setF(true)}
+      onBlur={() => setF(false)}
+      onPress={onPress}
+      style={{ backgroundColor: colors.surface12, borderRadius: radius.pill, paddingHorizontal: m.s(24), paddingVertical: m.s(10), borderWidth: 1, borderColor: f ? colors.accent : 'transparent' }}
+    >
+      <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(22), color: 'rgba(255,255,255,0.9)' }}>{label}</Text>
+    </Pressable>
+  );
+}
+
 export function Hero({ item, upTag }: { item: StremioMetaPreview | null; upTag?: number }) {
   const navigation = useNavigation<Nav>();
   const m = useMetrics();
@@ -108,12 +122,7 @@ export function Hero({ item, upTag }: { item: StremioMetaPreview | null; upTag?:
         {genres.length ? (
           <View style={{ flexDirection: 'row', gap: m.s(14), marginBottom: m.s(18) }}>
             {genres.map((g) => (
-              <View
-                key={g}
-                style={{ backgroundColor: colors.surface12, borderRadius: radius.pill, paddingHorizontal: m.s(24), paddingVertical: m.s(10) }}
-              >
-                <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(22), color: 'rgba(255,255,255,0.9)' }}>{g}</Text>
-              </View>
+              <GenreChip key={g} label={g} m={m} onPress={() => navigation.navigate('Search', { query: g })} />
             ))}
           </View>
         ) : null}

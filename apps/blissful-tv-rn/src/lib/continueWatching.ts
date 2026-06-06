@@ -6,7 +6,29 @@ export type CwItem = {
   name: string;
   poster?: string;
   progress: number; // 0..100
+  resumeSeconds: number; // saved playback position
+  episodeLabel?: string; // "S2E4" for series
+  videoId?: string; // current episode id (imdb:S:E) for series playback
 };
+
+function resumeSecondsOf(item: LibraryItem): number {
+  let offset = item.state?.timeOffset ?? 0;
+  const duration = item.state?.duration ?? 0;
+  if (offset >= 10000 || duration >= 10000) offset /= 1000; // ms -> s
+  return Math.max(0, offset);
+}
+
+function episodeLabelOf(item: LibraryItem): { label?: string; videoId?: string } {
+  const vid = item.state?.videoId ?? (item.state as unknown as { video_id?: string })?.video_id;
+  if (typeof vid !== 'string') return {};
+  const parts = vid.split(':');
+  if (parts.length >= 3) {
+    const s = Number(parts[parts.length - 2]);
+    const e = Number(parts[parts.length - 1]);
+    if (Number.isFinite(s) && Number.isFinite(e)) return { label: `S${s}E${e}`, videoId: vid };
+  }
+  return { videoId: vid };
+}
 
 function mtimeMs(item: LibraryItem): number {
   const t = item._mtime;
@@ -46,11 +68,17 @@ export async function fetchContinueWatching(token: string): Promise<CwItem[]> {
     })
     .sort((a, b) => mtimeMs(b) - mtimeMs(a))
     .slice(0, 14)
-    .map((it) => ({
-      id: it._id,
-      type: it.type,
-      name: it.name,
-      poster: it.poster ?? undefined,
-      progress: progressPercent(it) ?? 0,
-    }));
+    .map((it) => {
+      const { label, videoId } = episodeLabelOf(it);
+      return {
+        id: it._id,
+        type: it.type,
+        name: it.name,
+        poster: it.poster ?? undefined,
+        progress: progressPercent(it) ?? 0,
+        resumeSeconds: resumeSecondsOf(it),
+        episodeLabel: label,
+        videoId,
+      };
+    });
 }

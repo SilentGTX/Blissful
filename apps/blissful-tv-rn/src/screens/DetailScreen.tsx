@@ -66,13 +66,24 @@ function Label({ children, m }: { children: string; m: M }) {
   return <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(16), fontWeight: '700', letterSpacing: m.s(2), textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)', marginBottom: m.s(10) }}>{children}</Text>;
 }
 
-function Chips({ items, m }: { items: string[]; m: M }) {
+function Chip({ label, m, onPress }: { label: string; m: M; onPress: () => void }) {
+  const [f, setF] = useState(false);
+  return (
+    <Pressable
+      onFocus={() => setF(true)}
+      onBlur={() => setF(false)}
+      onPress={onPress}
+      style={{ backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: radius.pill, paddingHorizontal: m.s(19), paddingVertical: m.s(10), borderWidth: 1, borderColor: f ? colors.accent : 'transparent' }}
+    >
+      <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(18), color: 'rgba(255,255,255,0.92)' }}>{label}</Text>
+    </Pressable>
+  );
+}
+function Chips({ items, m, onPress }: { items: string[]; m: M; onPress: (item: string) => void }) {
   return (
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: m.s(10) }}>
       {items.map((g) => (
-        <View key={g} style={{ backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: radius.pill, paddingHorizontal: m.s(19), paddingVertical: m.s(10) }}>
-          <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(18), color: 'rgba(255,255,255,0.92)' }}>{g}</Text>
-        </View>
+        <Chip key={g} label={g} m={m} onPress={() => onPress(g)} />
       ))}
     </View>
   );
@@ -209,13 +220,13 @@ export function DetailScreen() {
             {genres.length ? (
               <View>
                 <Label m={m}>Genres</Label>
-                <Chips items={genres} m={m} />
+                <Chips items={genres} m={m} onPress={(g) => navigation.navigate('Search', { query: g })} />
               </View>
             ) : null}
             {cast.length ? (
               <View>
                 <Label m={m}>Cast</Label>
-                <Chips items={cast} m={m} />
+                <Chips items={cast} m={m} onPress={(c) => navigation.navigate('Search', { query: c })} />
               </View>
             ) : null}
           </View>

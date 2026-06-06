@@ -11,11 +11,13 @@ import { Hero } from '../components/Hero';
 import { ItemsRail } from '../components/ItemsRail';
 import { NavRail } from '../components/NavRail';
 import { Rail } from '../components/Rail';
+import { ResumeModal } from '../components/ResumeModal';
 import { TopBar } from '../components/TopBar';
 import type { CardItem } from '../components/PosterCard';
 import type { RootStackParamList } from '../navigation/types';
 
 type Nav = StackNavigationProp<RootStackParamList, 'Home'>;
+const SAMPLE_STREAM = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
 
 export function HomeScreen() {
   const navigation = useNavigation<Nav>();
@@ -23,6 +25,7 @@ export function HomeScreen() {
   const { token } = useAuth();
   const [featured, setFeatured] = useState<StremioMetaPreview | null>(null);
   const [cw, setCw] = useState<CwItem[]>([]);
+  const [resumeItem, setResumeItem] = useState<CwItem | null>(null);
   // Route Up from the hero to the top-bar search (otherwise the native engine
   // sends it into the nav rail). Resolve the search node handle after mount.
   const searchRef = useRef<View>(null);
@@ -63,6 +66,12 @@ export function HomeScreen() {
   const onSelect = (item: CardItem) => {
     navigation.navigate('Detail', { id: item.id, type: item.type, name: item.name, poster: item.poster ?? undefined });
   };
+  // Continue Watching: clicking opens the Resume / Start-over / Go-to-show modal.
+  const onCwSelect = (item: CardItem) => {
+    const cwi = cw.find((c) => c.id === item.id);
+    if (cwi) setResumeItem(cwi);
+  };
+  const playCw = (i: CwItem) => navigation.navigate('Player', { url: SAMPLE_STREAM, title: i.name });
 
   return (
     <View style={styles.root}>
@@ -74,10 +83,18 @@ export function HomeScreen() {
         showsVerticalScrollIndicator={false}
       >
         <Hero item={featured} upTag={searchTag} />
-        <ItemsRail title="Continue Watching" items={cw} onSelect={onSelect} />
+        <ItemsRail title="Continue Watching" items={cw} onSelect={onCwSelect} />
         <Rail title="Popular Movies" type="movie" catalogId="top" onSelect={onSelect} />
         <Rail title="Popular Series" type="series" catalogId="top" onSelect={onSelect} />
       </ScrollView>
+
+      <ResumeModal
+        item={resumeItem}
+        onResume={playCw}
+        onStartOver={playCw}
+        onGoToDetail={(i) => navigation.navigate('Detail', { id: i.id, type: i.type, name: i.name, poster: i.poster })}
+        onClose={() => setResumeItem(null)}
+      />
     </View>
   );
 }

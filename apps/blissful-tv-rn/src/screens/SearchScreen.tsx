@@ -1,4 +1,4 @@
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { fetchCatalog, type StremioMetaPreview } from '@blissful/core';
@@ -41,8 +41,9 @@ function ResultRail({
 
 export function SearchScreen() {
   const navigation = useNavigation<any>();
+  const route = useRoute<RouteProp<{ Search: { query?: string } | undefined }, 'Search'>>();
   const m = useMetrics();
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(route.params?.query ?? '');
   const [movies, setMovies] = useState<StremioMetaPreview[]>([]);
   const [series, setSeries] = useState<StremioMetaPreview[]>([]);
   const [loading, setLoading] = useState(false);
