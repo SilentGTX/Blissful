@@ -10,6 +10,11 @@ import type { RootStackParamList } from '../navigation/types';
 type DetailRoute = RouteProp<RootStackParamList, 'Detail'>;
 type Nav = StackNavigationProp<RootStackParamList, 'Detail'>;
 
+// Placeholder stream until the addon stream picker (needs auth + the user's
+// addons) is wired. Proves the player path end-to-end on the emulator.
+// (HLS — ExoPlayer plays it natively; also exercises the adaptive path.)
+const SAMPLE_STREAM = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
+
 function FocusButton({
   label,
   autoFocus,
@@ -77,7 +82,13 @@ export function DetailScreen() {
         {genres.length ? <Text style={styles.genres}>{genres.slice(0, 4).join(' · ')}</Text> : null}
 
         <View style={styles.actions}>
-          <FocusButton label="Play" autoFocus onPress={() => { /* stream picker — next */ }} />
+          <FocusButton
+            label="Play"
+            autoFocus
+            onPress={() =>
+              navigation.navigate('Player', { url: SAMPLE_STREAM, title: meta?.name ?? params.name })
+            }
+          />
           <FocusButton label="Back" onPress={() => navigation.goBack()} />
         </View>
 

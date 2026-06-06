@@ -5,6 +5,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { DetailScreen } from './src/screens/DetailScreen';
+import { PlayerScreen } from './src/screens/PlayerScreen';
 import type { RootStackParamList } from './src/navigation/types';
 import { colors } from './src/theme/colors';
 
@@ -32,6 +33,7 @@ export default function App() {
           >
             <Stack.Screen name="Home" component={HomeScreen} />
             <Stack.Screen name="Detail" component={DetailScreen} />
+            <Stack.Screen name="Player" component={PlayerScreen} />
           </Stack.Navigator>
         </NavigationContainer>
         <StatusBar style="light" />

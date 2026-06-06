@@ -20,7 +20,8 @@
           "androidTVRequired": true,
           "showVerboseWarnings": true
         }
-      ]
+      ],
+      "expo-video"
     ]
   }
 }
