@@ -651,6 +651,11 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   // Custom carousel scroll: input is intercepted and converted to
   // signed step counts that bump the focus index.
   const episodesCountRef = useRef(0);
+  // Index of the currently-playing episode within the displayed (season +
+  // search filtered) list — set by EpisodesDrawer each render. The wheel/touch
+  // handler falls back to THIS when focusIndex is still null (drawer just
+  // opened), so the first scroll steps from the open episode, not from ep 1.
+  const episodesCurrentIndexRef = useRef(0);
   const wheelAccumRef = useRef(0);
   const advanceFocusByRef = useRef<((steps: number) => void) | null>(null);
   advanceFocusByRef.current = (steps: number) => {
@@ -658,7 +663,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     setEpisodesFocusIndex((prev) => {
       const total = episodesCountRef.current;
       if (total <= 0) return prev;
-      const current = prev ?? 0;
+      const current = prev ?? episodesCurrentIndexRef.current;
       const next = Math.max(0, Math.min(total - 1, current + steps));
       if (next === current) return current;
       return next;
@@ -3102,6 +3107,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         episodesFocusIndex={episodesFocusIndex}
         setEpisodesFocusIndex={setEpisodesFocusIndex}
         episodesCountRef={episodesCountRef}
+        episodesCurrentIndexRef={episodesCurrentIndexRef}
         progressLookupId={props.id}
         progressLookupType={props.type}
         onSelectEpisode={onSelectEpisode}

@@ -23,7 +23,6 @@ import { formatDate, getEpisodeTitle, parseNumber } from '../features/detail/uti
 import { buildStreamsView } from '../features/detail/streams';
 import { useImdbRating } from '../lib/useImdbRating';
 import { fetchTmdbId, type TmdbLookup } from '../lib/tmdb';
-import { UnreleasedEpisodeModal } from '../components/UnreleasedEpisodeModal';
 
 
 
@@ -378,42 +377,13 @@ export default function DetailPage() {
   // Mobile hero poster (poster is preferred over background for clarity)
   const heroPoster = normalizeStremioImage(meta?.meta?.background) ?? normalizeStremioImage(meta?.meta?.poster);
 
-  // Modal shown when the user tries to play an episode that hasn't
-  // aired yet. Cinemeta lists every scheduled episode with a future
-  // `released` timestamp; trying to resolve a stream for it just
-  // burns the whole pipeline only to fail. Block it at the source
-  // and tell the user when it'll be available.
-  const [unreleasedEpisode, setUnreleasedEpisode] = useState<
-    {
-      season: number | null;
-      episode: number | null;
-      title: string | null;
-      released: string | null;
-      thumbnail: string | null;
-    } | null
-  >(null);
-
   const handleNavigateToPlayer = useCallback(
     (playerLink: string, options?: { replace?: boolean }) => {
       const url = new URL(playerLink, window.location.origin);
-      // Block playback of unreleased TV episodes. Only kicks in for
-      // /player URLs that target a series videoId we can look up in
-      // meta.videos.
-      const targetVideoId = url.searchParams.get('videoId');
-      if (targetVideoId && url.pathname === '/player') {
-        const vmeta = (meta?.meta?.videos ?? []).find((v) => v.id === targetVideoId);
-        const releasedAt = vmeta?.released ? Date.parse(vmeta.released) : NaN;
-        if (Number.isFinite(releasedAt) && releasedAt > Date.now()) {
-          setUnreleasedEpisode({
-            season: vmeta?.season ?? null,
-            episode: vmeta?.episode ?? null,
-            title: vmeta?.title ?? vmeta?.name ?? null,
-            released: vmeta?.released ?? null,
-            thumbnail: vmeta?.thumbnail ?? null,
-          });
-          return;
-        }
-      }
+      // Unreleased TV episodes are NOT blocked: early/leaked torrents often
+      // exist before the official air date, and when none do the stream
+      // picker is simply empty (nothing to click → nothing plays). So we let
+      // the normal flow proceed instead of popping a "not yet released" modal.
       if (poster && !url.searchParams.get('poster')) {
         url.searchParams.set('poster', poster);
       }
@@ -841,24 +811,6 @@ export default function DetailPage() {
           onShareOpenChange={(open) => setIsShareOpen(open)}
         />
 
-        {/* Unreleased-episode info modal — shared component with
-            the player's Episodes drawer so both surfaces show the
-            same dialog when a user clicks a future-dated episode. */}
-        <UnreleasedEpisodeModal
-          isOpen={unreleasedEpisode != null}
-          title={meta?.meta?.name ?? ''}
-          episodeLabel={
-            unreleasedEpisode
-              && unreleasedEpisode.season != null
-              && unreleasedEpisode.episode != null
-              ? `S${String(unreleasedEpisode.season).padStart(2, '0')}E${String(unreleasedEpisode.episode).padStart(2, '0')}`
-              + (unreleasedEpisode.title ? ` · ${unreleasedEpisode.title}` : '')
-              : null
-          }
-          poster={unreleasedEpisode?.thumbnail ?? poster ?? null}
-          releaseDate={unreleasedEpisode?.released ?? null}
-          onClose={() => setUnreleasedEpisode(null)}
-        />
       </div>
     </div>
   );

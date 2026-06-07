@@ -73,6 +73,9 @@ export type EpisodesDrawerProps = {
   episodesFocusIndex: number | null;
   setEpisodesFocusIndex: (n: number | null) => void;
   episodesCountRef: { current: number };
+  /** Index of the currently-playing episode in the displayed list — written
+   *  here, read by the parent's wheel/touch handler as the focus fallback. */
+  episodesCurrentIndexRef: { current: number };
 
   // Stream identity for progress lookup. type + id + videoId are the
   // progressStore key — we read existing watch progress per episode
@@ -112,6 +115,7 @@ export function EpisodesDrawer(props: EpisodesDrawerProps) {
     episodesFocusIndex,
     setEpisodesFocusIndex,
     episodesCountRef,
+    episodesCurrentIndexRef,
     progressLookupId,
     progressLookupType,
     onSelectEpisode,
@@ -359,6 +363,7 @@ export function EpisodesDrawer(props: EpisodesDrawerProps) {
                 const currentIndex = filtered.findIndex((v) => v.id === videoId);
                 const focusIndex = episodesFocusIndex ?? (currentIndex >= 0 ? currentIndex : 0);
                 episodesCountRef.current = filtered.length;
+                episodesCurrentIndexRef.current = currentIndex >= 0 ? currentIndex : 0;
 
                 // Translate the stack so the focused card center
                 // aligns with a "focus target" Y. Normally that's the
