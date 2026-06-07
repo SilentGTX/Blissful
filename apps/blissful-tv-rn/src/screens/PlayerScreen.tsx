@@ -1,21 +1,19 @@
+import { Ionicons } from '@expo/vector-icons';
 import type { RouteProp } from '@react-navigation/native';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  useTVEventHandler,
-  View,
-} from 'react-native';
-import { colors } from '../theme/colors';
+import { Pressable, StyleSheet, Text, useTVEventHandler, View } from 'react-native';
+import { font } from '../theme/colors';
+import { useMetrics } from '../theme/metrics';
+import { BufferingVeil } from '../components/player/BufferingVeil';
 import type { RootStackParamList } from '../navigation/types';
 
 type PlayerRoute = RouteProp<RootStackParamList, 'Player'>;
 const SEEK_STEP = 10; // seconds
 const CONTROLS_TIMEOUT = 3500;
+const ACCENT = '#95a2ff'; // --bliss-accent (lavender) — scrub fill
 
 function fmt(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) return '0:00';
@@ -149,63 +147,62 @@ export function PlayerScreen() {
   });
 
   const pct = duration > 0 ? Math.min(1, time / duration) : 0;
+  const m = useMetrics();
+  const iconColor = 'rgba(255,255,255,0.85)';
 
   return (
     <Pressable style={styles.root} hasTVPreferredFocus focusable onPress={togglePlay}>
-      <VideoView
-        player={player}
-        style={StyleSheet.absoluteFill}
-        contentFit="contain"
-        nativeControls={false}
-      />
+      <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="contain" nativeControls={false} />
 
-      {!ready ? (
-        <View style={styles.center} pointerEvents="none">
-          <ActivityIndicator color={colors.brand} size="large" />
-        </View>
+      {/* Buffering veil — the title's landscape logo pulsing (or a Buffering circle). */}
+      <BufferingVeil visible={!ready} logo={params.logo} />
+
+      {/* TOP OVERLAY — back pill with the title inside (top-left). */}
+      {controlsVisible ? (
+        <LinearGradient colors={['rgba(0,0,0,0.8)', 'rgba(0,0,0,0.5)', 'transparent']} style={{ position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: m.s(24), paddingTop: m.s(24), paddingBottom: m.s(16) }} pointerEvents="none">
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(8), alignSelf: 'flex-start', borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', backgroundColor: 'rgba(0,0,0,0.4)', paddingHorizontal: m.s(14), paddingVertical: m.s(9), maxWidth: '60%' }}>
+            <Ionicons name="chevron-back" size={m.s(22)} color="#fff" />
+            <Text numberOfLines={1} style={{ fontFamily: font.bodySemi, fontSize: m.s(20), color: '#fff' }}>{current.title}</Text>
+          </View>
+        </LinearGradient>
       ) : null}
 
-      {controlsVisible ? <View style={styles.scrim} pointerEvents="none" /> : null}
-
+      {/* BOTTOM CONTROLS — two stacked strips. */}
       {controlsVisible ? (
-        <View style={styles.controls} pointerEvents="none">
-          <Text style={styles.title} numberOfLines={1}>
-            {current.title}
-          </Text>
-          <View style={styles.barRow}>
-            <Text style={styles.time}>{fmt(time)}</Text>
-            <View style={styles.track}>
-              <View style={[styles.fill, { width: `${pct * 100}%` }]} />
+        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0 }} pointerEvents="none">
+          {/* STRIP 1 — scrub + time labels over a transparent gradient. */}
+          <LinearGradient colors={['transparent', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.85)']} style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(16), paddingHorizontal: m.s(22), paddingTop: m.s(40), paddingBottom: m.s(6) }}>
+            <Text style={timeStyle(m)}>{fmt(time)}</Text>
+            <View style={{ flex: 1, height: m.s(4), borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.25)', justifyContent: 'center' }}>
+              <View style={{ position: 'absolute', left: 0, height: m.s(4), borderRadius: 999, width: `${pct * 100}%`, backgroundColor: ACCENT }} />
+              <View style={{ position: 'absolute', left: `${pct * 100}%`, width: m.s(12), height: m.s(12), borderRadius: 999, marginLeft: -m.s(6), backgroundColor: '#fff' }} />
             </View>
-            <Text style={styles.time}>{fmt(duration)}</Text>
+            <Text style={[timeStyle(m), { textAlign: 'right' }]}>{fmt(duration)}</Text>
+          </LinearGradient>
+
+          {/* STRIP 2 — transport row (solid). */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(0,0,0,0.85)', paddingHorizontal: m.s(18), paddingVertical: m.s(10) }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(8) }}>
+              <View style={iconBtn(m)}><Ionicons name={playing ? 'pause' : 'play'} size={m.s(28)} color={iconColor} /></View>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(4) }}>
+              <View style={iconBtn(m)}><Ionicons name="text-outline" size={m.s(22)} color={iconColor} /></View>
+              <View style={iconBtn(m)}><Ionicons name="volume-medium-outline" size={m.s(22)} color={iconColor} /></View>
+            </View>
           </View>
-          <Text style={styles.hint}>
-            {playing ? 'Playing' : 'Paused'} · OK play/pause · ←/→ {SEEK_STEP}s · Back to exit
-          </Text>
         </View>
       ) : null}
     </Pressable>
   );
 }
 
+function timeStyle(m: ReturnType<typeof useMetrics>) {
+  return { minWidth: m.s(56), fontFamily: font.body, fontSize: m.s(16), color: '#fff' } as const;
+}
+function iconBtn(m: ReturnType<typeof useMetrics>) {
+  return { width: m.s(40), height: m.s(40), borderRadius: 999, alignItems: 'center', justifyContent: 'center' } as const;
+}
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000' },
-  center: { ...absFill(), alignItems: 'center', justifyContent: 'center' },
-  scrim: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 260, backgroundColor: 'rgba(0,0,0,0.6)' },
-  controls: {
-    position: 'absolute',
-    left: 48,
-    right: 48,
-    bottom: 44,
-  },
-  title: { color: colors.text, fontSize: 24, fontWeight: '700', marginBottom: 14 },
-  barRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  time: { color: colors.textDim, fontSize: 14, width: 64, textAlign: 'center' },
-  track: { flex: 1, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.22)' },
-  fill: { height: 6, borderRadius: 3, backgroundColor: colors.brand },
-  hint: { color: colors.textFaint, fontSize: 13, marginTop: 12 },
 });
-
-function absFill() {
-  return { position: 'absolute' as const, top: 0, left: 0, right: 0, bottom: 0 };
-}

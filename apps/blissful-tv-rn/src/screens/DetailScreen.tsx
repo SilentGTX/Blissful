@@ -306,6 +306,8 @@ export function DetailScreen() {
             title: streams[index].title,
             playlist: streams,
             startIndex: index,
+            logo: normalizeStremioImage(meta?.logo),
+            background,
           });
         }}
       />

@@ -10,6 +10,9 @@ export type RootStackParamList = {
     // auto-advance past a stream that loads as the ~30s debrid DMCA placeholder.
     playlist?: { url: string; title: string }[];
     startIndex?: number;
+    // The title's landscape logo (buffering veil) + backdrop, from the detail meta.
+    logo?: string | null;
+    background?: string | null;
   };
   Login: undefined;
   Search: { query?: string } | undefined;
