@@ -1,8 +1,9 @@
 import { memo, useRef, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { normalizeStremioImage } from '@blissful/core';
 import { markContentFocus } from '../lib/focusBus';
 import { useSelfTag } from '../lib/useSelfTag';
+import { Img } from './Img';
 import { Rating } from './Rating';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
@@ -49,7 +50,7 @@ const PosterVisual = memo(function PosterVisual({
         ]}
       >
         {poster ? (
-          <Image source={{ uri: poster }} style={styles.poster} resizeMode="cover" />
+          <Img uri={poster} style={styles.poster} contentFit="cover" />
         ) : (
           <View style={[styles.poster, styles.posterEmpty]}>
             <Text style={{ fontFamily: font.body, color: colors.textDim, fontSize: m.s(22), textAlign: 'center' }} numberOfLines={3}>

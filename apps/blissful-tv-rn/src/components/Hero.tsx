@@ -3,10 +3,11 @@ import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { LinearGradient } from 'expo-linear-gradient';
 import { memo, useEffect, useRef, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { fetchMeta, normalizeStremioImage, type StremioMetaDetail, type StremioMetaPreview } from '@blissful/core';
 import { markContentFocus } from '../lib/focusBus';
 import { useSelfTag } from '../lib/useSelfTag';
+import { Img } from './Img';
 import { Rating } from './Rating';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
@@ -112,7 +113,7 @@ export const Hero = memo(function Hero({ item, upTag }: { item: StremioMetaPrevi
 
   return (
     <View style={[styles.hero, { height: m.heroMinH, borderRadius: m.s(36), marginBottom: m.s(24) }]}>
-      {bg ? <Image source={{ uri: bg }} style={styles.bg} resizeMode="cover" /> : null}
+      {bg ? <Img uri={bg} style={styles.bg} contentFit="cover" /> : null}
       {/* .now-popular-scrim — bottom-up dark + left-to-right dark */}
       <LinearGradient
         colors={['rgba(0,0,0,0.92)', 'rgba(0,0,0,0.5)', 'transparent']}

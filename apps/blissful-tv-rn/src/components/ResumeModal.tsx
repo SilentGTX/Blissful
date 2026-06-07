@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { forwardRef, useEffect, useRef, useState } from 'react';
-import { BackHandler, findNodeHandle, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { BackHandler, findNodeHandle, Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
+import { Img } from './Img';
 import type { CwItem } from '../lib/continueWatching';
 
 function fmtTime(total: number): string {
@@ -65,7 +66,7 @@ export function ResumeModal({
       <View style={{ width: cardW, borderRadius: m.s(20), overflow: 'hidden', backgroundColor: '#101116', borderWidth: 1, borderColor: colors.hairline }}>
         {item.poster ? (
           <>
-            <Image source={{ uri: item.poster }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+            <Img uri={item.poster} style={StyleSheet.absoluteFill} contentFit="cover" />
             <LinearGradient colors={['rgba(0,0,0,0.35)', 'rgba(0,0,0,0.75)', '#101116']} locations={[0, 0.55, 1]} style={StyleSheet.absoluteFill} />
           </>
         ) : null}

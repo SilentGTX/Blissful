@@ -19,6 +19,7 @@
     "@react-navigation/stack": "^7.9.3",
     "expo": "~56.0.9",
     "expo-font": "~56.0.5",
+    "expo-image": "~56.0.10",
     "expo-linear-gradient": "~56.0.4",
     "expo-status-bar": "~56.0.4",
     "expo-video": "~56.1.2",

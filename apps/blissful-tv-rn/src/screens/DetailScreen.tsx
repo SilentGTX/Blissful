@@ -4,17 +4,18 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { fetchCatalog, fetchMeta, normalizeStremioImage, type StremioMetaDetail, type StremioMetaPreview } from '@blissful/core';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
+import { Img } from '../components/Img';
 import { PosterCard, type CardItem } from '../components/PosterCard';
 import { Rating } from '../components/Rating';
 import { StreamPicker, type StreamPickerTarget } from '../components/StreamPicker';
 import { metahubPosterToBackdrop } from '../lib/images';
+import type { RootStackParamList } from '../navigation/types';
 
 const IMDB_RE = /^tt\d{5,}$/;
-import type { RootStackParamList } from '../navigation/types';
 
 type DetailRoute = RouteProp<RootStackParamList, 'Detail'>;
 type Nav = StackNavigationProp<RootStackParamList, 'Detail'>;
@@ -100,7 +101,7 @@ function EpisodeCard({ video, m, onPress }: { video: Video; m: M; onPress: () =>
   return (
     <Pressable onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onPress={onPress} style={{ width: w }}>
       <View style={{ width: w, aspectRatio: 16 / 9, borderRadius: m.s(12), overflow: 'hidden', backgroundColor: colors.surface, borderWidth: 1, borderColor: focused ? colors.accent : 'transparent' }}>
-        {thumb ? <Image source={{ uri: thumb }} style={styles.fill} resizeMode="cover" /> : null}
+        {thumb ? <Img uri={thumb} style={styles.fill} contentFit="cover" /> : null}
         {focused ? (
           <View style={{ position: 'absolute', left: m.s(10), bottom: m.s(10), width: m.s(42), height: m.s(42), borderRadius: radius.pill, backgroundColor: 'rgba(0,0,0,0.55)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)', alignItems: 'center', justifyContent: 'center' }}>
             <Ionicons name="play" size={m.s(22)} color="#fff" />
@@ -203,7 +204,7 @@ export function DetailScreen() {
 
   return (
     <View style={styles.root}>
-      {background ? <Image source={{ uri: background }} style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '72%' }} resizeMode="cover" /> : null}
+      {background ? <Img uri={background} style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '72%' }} contentFit="cover" /> : null}
       {/* .tv-detail-scrim — left->right + bottom->top */}
       <LinearGradient colors={['#07090d', 'rgba(7,9,13,0.55)', 'transparent']} locations={[0.32, 0.52, 0.76]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
       <LinearGradient colors={['#07090d', 'rgba(7,9,13,0.4)', 'transparent']} locations={[0.06, 0.32, 0.6]} start={{ x: 0, y: 1 }} end={{ x: 0, y: 0 }} style={StyleSheet.absoluteFill} />
@@ -213,7 +214,7 @@ export function DetailScreen() {
 
         <View style={{ maxWidth: '48%', marginTop: m.s(13), gap: m.s(10) }}>
           {meta?.logo ? (
-            <Image source={{ uri: normalizeStremioImage(meta.logo) }} style={{ height: m.s(80), width: '60%', alignSelf: 'flex-start' }} resizeMode="contain" />
+            <Img uri={normalizeStremioImage(meta.logo)} style={{ height: m.s(80), width: '60%', alignSelf: 'flex-start' }} contentFit="contain" />
           ) : (
             <Text style={{ fontFamily: font.serif, fontSize: m.s(64), lineHeight: m.s(66), color: colors.text }} numberOfLines={2}>
               {meta?.name ?? params.name}
