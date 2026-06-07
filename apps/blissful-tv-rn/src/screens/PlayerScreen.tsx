@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import type { RouteProp } from '@react-navigation/native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -8,12 +7,26 @@ import { Pressable, StyleSheet, Text, useTVEventHandler, View } from 'react-nati
 import { font } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { BufferingVeil } from '../components/player/BufferingVeil';
+import {
+  AudioIcon,
+  BackPill,
+  FullscreenIcon,
+  MuteIcon,
+  PlayIcon,
+  PlayerIconBtn,
+  SourceBadges,
+  SubsIcon,
+  VolumeSlider,
+  WatchPartyButton,
+} from '../components/player/PlayerControls';
+import { detectSource, is4kTitle, isHdrTitle } from '../lib/colorUtils';
 import type { RootStackParamList } from '../navigation/types';
 
 type PlayerRoute = RouteProp<RootStackParamList, 'Player'>;
 const SEEK_STEP = 10; // seconds
 const CONTROLS_TIMEOUT = 3500;
 const ACCENT = '#95a2ff'; // --bliss-accent (lavender) — scrub fill
+const DMCA_MAX_SECONDS = 45; // the debrid "removed" placeholder is ~30s
 
 function fmt(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) return '0:00';
@@ -24,17 +37,11 @@ function fmt(sec: number): string {
   return `${h > 0 ? `${h}:` : ''}${mm}:${s < 10 ? `0${s}` : s}`;
 }
 
-// Any debrid "File was removed… copyright infringement" placeholder is ~30s.
-// No real movie/episode is this short, so a loaded duration at/under this means
-// the chosen stream is dead — auto-advance to the next playable one.
-const DMCA_MAX_SECONDS = 45;
-
 export function PlayerScreen() {
   const { params } = useRoute<PlayerRoute>();
   const navigation = useNavigation();
+  const m = useMetrics();
 
-  // Ranked playable list (from the picker) so we can skip a dead stream; falls
-  // back to the single url (e.g. Continue-Watching resume).
   const playlist = params.playlist?.length ? params.playlist : [{ url: params.url, title: params.title }];
   const [index, setIndex] = useState(Math.min(params.startIndex ?? 0, playlist.length - 1));
   const current = playlist[index] ?? playlist[0];
@@ -48,13 +55,21 @@ export function PlayerScreen() {
   const [playing, setPlaying] = useState(true);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  // The video stays HIDDEN behind the buffering veil until a real duration
-  // (>45s) confirms this stream isn't the ~30s debrid placeholder — so its
-  // "File was removed…" frame never paints. Latches once revealed.
   const [revealed, setRevealed] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
+  // Whether a control button (not the root playback surface) holds focus. Seek
+  // (Left/Right) only fires in plain playback; while a control is focused the
+  // native engine walks the buttons instead.
+  const [controlFocused, setControlFocused] = useState(false);
+  const controlFocusedRef = useRef(false);
+  const [muted, setMuted] = useState(false);
+  const volume = 1; // 0..2 (unity); slider is a styled indicator for now
 
-  // When idx changes (auto-skip), swap the source and reset state.
+  const setCtrlFocus = (f: boolean) => {
+    controlFocusedRef.current = f;
+    setControlFocused(f);
+  };
+
   useEffect(() => {
     player.replace(current.url);
     player.play();
@@ -65,13 +80,16 @@ export function PlayerScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index]);
 
+  useEffect(() => {
+    player.muted = muted;
+  }, [muted, player]);
+
   // Reveal the video only once a real duration loads (> the placeholder length).
   useEffect(() => {
     if (duration > DMCA_MAX_SECONDS) setRevealed(true);
   }, [duration]);
 
-  // Auto-skip the DMCA placeholder: once a real duration loads and it's ≤45s,
-  // advance to the next playable stream (if any).
+  // Auto-skip the DMCA placeholder.
   useEffect(() => {
     if (skippedRef.current) return;
     if (duration > 0 && duration <= DMCA_MAX_SECONDS && index < playlist.length - 1) {
@@ -81,17 +99,17 @@ export function PlayerScreen() {
   }, [duration, index, playlist.length]);
 
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // dedupe keydown/keyup + auto-repeat double-fire of the same TV event
   const lastEvt = useRef<{ type: string; at: number }>({ type: '', at: 0 });
 
   const bumpControls = () => {
     setControlsVisible(true);
     if (hideTimer.current) clearTimeout(hideTimer.current);
-    hideTimer.current = setTimeout(() => setControlsVisible(false), CONTROLS_TIMEOUT);
+    // Don't auto-hide while a control is focused (else the focused button vanishes).
+    hideTimer.current = setTimeout(() => {
+      if (!controlFocusedRef.current) setControlsVisible(false);
+    }, CONTROLS_TIMEOUT);
   };
 
-  // Poll player state at ~2.5Hz (engine-agnostic; survives the eventual swap
-  // to the bespoke BlissPlayer module).
   useEffect(() => {
     bumpControls();
     const id = setInterval(() => {
@@ -113,7 +131,6 @@ export function PlayerScreen() {
     setPlaying(!player.playing);
     bumpControls();
   };
-
   const seek = (delta: number) => {
     player.seekBy(delta);
     bumpControls();
@@ -128,8 +145,6 @@ export function PlayerScreen() {
 
     switch (type) {
       case 'playPause':
-        // OK/'select' is handled by the focusable root Pressable's onPress to
-        // avoid a double-toggle; this covers the dedicated media play/pause key.
         togglePlay();
         break;
       case 'play':
@@ -142,11 +157,13 @@ export function PlayerScreen() {
         break;
       case 'right':
       case 'fastForward':
-        seek(SEEK_STEP);
+        if (!controlFocusedRef.current) seek(SEEK_STEP); // seek only in plain playback
+        else bumpControls();
         break;
       case 'left':
       case 'rewind':
-        seek(-SEEK_STEP);
+        if (!controlFocusedRef.current) seek(-SEEK_STEP);
+        else bumpControls();
         break;
       default:
         bumpControls();
@@ -154,32 +171,37 @@ export function PlayerScreen() {
   });
 
   const pct = duration > 0 ? Math.min(1, time / duration) : 0;
-  const m = useMetrics();
-  const iconColor = 'rgba(255,255,255,0.85)';
+  const badges = [detectSource(current.url)?.code, is4kTitle(current.title) ? '4K' : null, isHdrTitle(current.title) ? 'HDR' : null].filter(Boolean) as string[];
 
   return (
-    <Pressable style={styles.root} hasTVPreferredFocus focusable onPress={togglePlay}>
+    <Pressable
+      style={styles.root}
+      hasTVPreferredFocus
+      focusable
+      onFocus={() => setCtrlFocus(false)}
+      onPress={togglePlay}
+    >
       <VideoView player={player} style={[StyleSheet.absoluteFill, { opacity: revealed ? 1 : 0 }]} contentFit="contain" nativeControls={false} />
 
-      {/* Buffering veil — title logo pulsing over black; stays up (hiding the
-          video) until a real duration confirms this isn't the DMCA placeholder. */}
       <BufferingVeil visible={!revealed} logo={params.logo} />
 
-      {/* TOP OVERLAY — back pill with the title inside (top-left). */}
+      {/* TOP OVERLAY — back pill (left), source badges + Watch Party (right). */}
       {controlsVisible ? (
-        <LinearGradient colors={['rgba(0,0,0,0.8)', 'rgba(0,0,0,0.5)', 'transparent']} style={{ position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: m.s(24), paddingTop: m.s(24), paddingBottom: m.s(16) }} pointerEvents="none">
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(8), alignSelf: 'flex-start', borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', backgroundColor: 'rgba(0,0,0,0.4)', paddingHorizontal: m.s(14), paddingVertical: m.s(9), maxWidth: '60%' }}>
-            <Ionicons name="chevron-back" size={m.s(22)} color="#fff" />
-            <Text numberOfLines={1} style={{ fontFamily: font.bodySemi, fontSize: m.s(20), color: '#fff' }}>{current.title}</Text>
+        <LinearGradient colors={['rgba(0,0,0,0.8)', 'rgba(0,0,0,0.5)', 'transparent']} style={{ position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: m.s(24), paddingTop: m.s(24), paddingBottom: m.s(16) }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: m.s(12) }}>
+            <BackPill m={m} title={current.title} onPress={() => navigation.goBack()} onFocusChange={setCtrlFocus} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(12) }}>
+              <SourceBadges m={m} badges={badges} />
+              <WatchPartyButton m={m} onPress={() => { /* watch party — backlog */ }} onFocusChange={setCtrlFocus} />
+            </View>
           </View>
         </LinearGradient>
       ) : null}
 
-      {/* BOTTOM CONTROLS — two stacked strips. */}
+      {/* BOTTOM CONTROLS — scrub strip + transport row. */}
       {controlsVisible ? (
-        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0 }} pointerEvents="none">
-          {/* STRIP 1 — scrub + time labels over a transparent gradient. */}
-          <LinearGradient colors={['transparent', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.85)']} style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(16), paddingHorizontal: m.s(22), paddingTop: m.s(40), paddingBottom: m.s(6) }}>
+        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0 }}>
+          <LinearGradient colors={['transparent', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.85)']} style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(16), paddingHorizontal: m.s(22), paddingTop: m.s(40), paddingBottom: m.s(6) }} pointerEvents="none">
             <Text style={timeStyle(m)}>{fmt(time)}</Text>
             <View style={{ flex: 1, height: m.s(4), borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.25)', justifyContent: 'center' }}>
               <View style={{ position: 'absolute', left: 0, height: m.s(4), borderRadius: 999, width: `${pct * 100}%`, backgroundColor: ACCENT }} />
@@ -188,14 +210,18 @@ export function PlayerScreen() {
             <Text style={[timeStyle(m), { textAlign: 'right' }]}>{fmt(duration)}</Text>
           </LinearGradient>
 
-          {/* STRIP 2 — transport row (solid). */}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(0,0,0,0.85)', paddingHorizontal: m.s(18), paddingVertical: m.s(10) }}>
+            {/* LEFT: play, mute, volume slider */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(8) }}>
-              <View style={iconBtn(m)}><Ionicons name={playing ? 'pause' : 'play'} size={m.s(28)} color={iconColor} /></View>
+              <PlayerIconBtn m={m} onPress={togglePlay} onFocusChange={setCtrlFocus}>{(c) => <PlayIcon m={m} paused={!playing} color={c} />}</PlayerIconBtn>
+              <PlayerIconBtn m={m} onPress={() => { setMuted((v) => !v); bumpControls(); }} onFocusChange={setCtrlFocus}>{(c) => <MuteIcon m={m} level={volume} muted={muted} color={c} />}</PlayerIconBtn>
+              <VolumeSlider m={m} level={muted ? 0 : volume} focused={false} />
             </View>
+            {/* RIGHT: subtitles, audio, fullscreen */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(4) }}>
-              <View style={iconBtn(m)}><Ionicons name="text-outline" size={m.s(22)} color={iconColor} /></View>
-              <View style={iconBtn(m)}><Ionicons name="volume-medium-outline" size={m.s(22)} color={iconColor} /></View>
+              <PlayerIconBtn m={m} onPress={() => { /* subtitles menu — next chunk */ bumpControls(); }} onFocusChange={setCtrlFocus}>{(c) => <SubsIcon m={m} color={c} />}</PlayerIconBtn>
+              <PlayerIconBtn m={m} onPress={() => { /* audio menu — next chunk */ bumpControls(); }} onFocusChange={setCtrlFocus}>{(c) => <AudioIcon m={m} color={c} />}</PlayerIconBtn>
+              <PlayerIconBtn m={m} onPress={() => { /* always fullscreen on TV */ bumpControls(); }} onFocusChange={setCtrlFocus}>{(c) => <FullscreenIcon m={m} color={c} />}</PlayerIconBtn>
             </View>
           </View>
         </View>
@@ -206,9 +232,6 @@ export function PlayerScreen() {
 
 function timeStyle(m: ReturnType<typeof useMetrics>) {
   return { minWidth: m.s(56), fontFamily: font.body, fontSize: m.s(16), color: '#fff' } as const;
-}
-function iconBtn(m: ReturnType<typeof useMetrics>) {
-  return { width: m.s(40), height: m.s(40), borderRadius: 999, alignItems: 'center', justifyContent: 'center' } as const;
 }
 
 const styles = StyleSheet.create({
