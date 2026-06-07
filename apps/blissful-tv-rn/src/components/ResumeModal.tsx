@@ -4,6 +4,7 @@ import { forwardRef, useEffect, useRef, useState } from 'react';
 import { BackHandler, findNodeHandle, Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
+import { FocusTrap } from './FocusTrap';
 import { Img } from './Img';
 import type { CwItem } from '../lib/continueWatching';
 
@@ -63,7 +64,7 @@ export function ResumeModal({
 
   return (
     <View style={styles.overlay}>
-      <View style={{ width: cardW, borderRadius: m.s(20), overflow: 'hidden', backgroundColor: '#101116', borderWidth: 1, borderColor: colors.hairline }}>
+      <FocusTrap style={{ width: cardW, borderRadius: m.s(20), overflow: 'hidden', backgroundColor: '#101116', borderWidth: 1, borderColor: colors.hairline }}>
         {item.poster ? (
           <>
             <Img uri={item.poster} style={StyleSheet.absoluteFill} contentFit="cover" />
@@ -102,7 +103,7 @@ export function ResumeModal({
             ))}
           </View>
         </View>
-      </View>
+      </FocusTrap>
     </View>
   );
 }

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
+import { FocusTrap } from './FocusTrap';
 import { markContentFocus } from '../lib/focusBus';
 import { useSelfTag } from '../lib/useSelfTag';
 
@@ -89,14 +90,14 @@ export function TvSelectOverlay({ anchor, onClose, m }: { anchor: DropdownAnchor
   const idx = Math.max(0, anchor.options.findIndex((o) => o.key === anchor.value));
   return (
     <View style={styles.overlay}>
-      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-      <View style={{ position: 'absolute', left: anchor.pos.x, top: anchor.pos.y + anchor.pos.h + m.s(6), minWidth: Math.max(anchor.pos.w, m.s(220)), maxHeight: m.s(420), borderRadius: m.s(16), padding: m.s(6), backgroundColor: 'rgba(20,24,33,0.98)', borderWidth: 1, borderColor: colors.hairline, overflow: 'hidden' }}>
+      <Pressable style={StyleSheet.absoluteFill} focusable={false} onPress={onClose} />
+      <FocusTrap style={{ position: 'absolute', left: anchor.pos.x, top: anchor.pos.y + anchor.pos.h + m.s(6), minWidth: Math.max(anchor.pos.w, m.s(220)), maxHeight: m.s(420), borderRadius: m.s(16), padding: m.s(6), backgroundColor: 'rgba(20,24,33,0.98)', borderWidth: 1, borderColor: colors.hairline, overflow: 'hidden' }}>
         <ScrollView showsVerticalScrollIndicator={false}>
           {anchor.options.map((o, i) => (
             <Row key={o.key} label={o.label} selected={o.key === anchor.value} autoFocus={i === idx} m={m} onPress={() => { anchor.onChange(o.key); onClose(); }} />
           ))}
         </ScrollView>
-      </View>
+      </FocusTrap>
     </View>
   );
 }

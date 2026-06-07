@@ -13,6 +13,7 @@ import {
 import type { MediaType } from '@blissful/core';
 import { colors, font } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
+import { FocusTrap } from './FocusTrap';
 import { useAuth } from '../context/AuthContext';
 import { BUCKET_ORDER, loadStreams, type PickerStream, type ResolutionBucket } from '../lib/streamPicker';
 
@@ -177,8 +178,8 @@ export function StreamPicker({
 
   return (
     <View style={styles.backdrop}>
-      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-      <View style={{ width: panelW, maxHeight: m.height * 0.86, borderRadius: m.s(28), overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' }}>
+      <Pressable style={StyleSheet.absoluteFill} focusable={false} onPress={onClose} />
+      <FocusTrap style={{ width: panelW, maxHeight: m.height * 0.86, borderRadius: m.s(28), overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' }}>
         <LinearGradient colors={['rgba(22,27,38,0.99)', 'rgba(10,13,20,0.995)']} start={{ x: 0.85, y: 0 }} end={{ x: 0.15, y: 1 }} style={StyleSheet.absoluteFill} />
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(14), paddingHorizontal: m.s(22), paddingTop: m.s(20), paddingBottom: m.s(12) }}>
@@ -216,7 +217,7 @@ export function StreamPicker({
             />
           )}
         </View>
-      </View>
+      </FocusTrap>
     </View>
   );
 }

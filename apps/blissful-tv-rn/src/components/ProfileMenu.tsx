@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { BackHandler, Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
+import { FocusTrap } from './FocusTrap';
 import { useAuth } from '../context/AuthContext';
 import { resolveAvatar, PRESET_AVATARS } from '../lib/avatars';
 
@@ -122,9 +123,9 @@ export function ProfileMenu({ visible, onClose }: { visible: boolean; onClose: (
 
   return (
     <Modal transparent visible={visible} onRequestClose={onClose} animationType="fade">
-      <Pressable style={styles.backdrop} onPress={onClose} />
+      <Pressable style={styles.backdrop} focusable={false} onPress={onClose} />
       {mode === 'menu' ? (
-        <View style={[styles.panel, { top: m.safeY + m.topbarH + m.s(10), right: m.safeX, width: panelW, borderRadius: m.s(24), padding: m.s(16) }]}>
+        <FocusTrap style={[styles.panel, { top: m.safeY + m.topbarH + m.s(10), right: m.safeX, width: panelW, borderRadius: m.s(24), padding: m.s(16) }]}>
             <Pressable
               hasTVPreferredFocus
               onFocus={() => setHeadFocused(true)}
@@ -148,10 +149,10 @@ export function ProfileMenu({ visible, onClose }: { visible: boolean; onClose: (
             <Row label="Settings" icon="settings-outline" m={m} onPress={onClose} />
             <Row label="Customize Home" icon="grid-outline" m={m} onPress={onClose} />
             <Row label="Log out" icon="log-out-outline" danger m={m} onPress={() => { logout(); onClose(); }} />
-        </View>
+        </FocusTrap>
       ) : (
         <View style={styles.center}>
-          <View style={{ width: cardW, borderRadius: radius.panel, padding: cardPad, backgroundColor: 'rgba(20,24,33,0.98)', borderWidth: 1, borderColor: colors.hairline }}>
+          <FocusTrap style={{ width: cardW, borderRadius: radius.panel, padding: cardPad, backgroundColor: 'rgba(20,24,33,0.98)', borderWidth: 1, borderColor: colors.hairline }}>
             <Text style={{ fontFamily: font.serif, fontSize: m.s(34), color: colors.text, marginBottom: m.s(18) }}>Choose your avatar</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: cellGap }}>
               {PRESET_AVATARS.map((src, i) => (
@@ -166,7 +167,7 @@ export function ProfileMenu({ visible, onClose }: { visible: boolean; onClose: (
             >
               <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(24), color: '#000' }}>{saving ? 'Saving…' : 'Save'}</Text>
             </Pressable>
-          </View>
+          </FocusTrap>
         </View>
       )}
     </Modal>
