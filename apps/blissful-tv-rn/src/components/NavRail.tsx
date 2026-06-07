@@ -174,7 +174,7 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
   });
 
   useEffect(() => {
-    Animated.timing(widthAnim, { toValue: expanded ? expandedW : collapsedW, duration: 200, useNativeDriver: false }).start();
+    Animated.timing(widthAnim, { toValue: expanded ? expandedW : collapsedW, duration: 150, useNativeDriver: false }).start();
   }, [expanded, expandedW, collapsedW, widthAnim]);
 
   // Chain the rail rows vertically so D-pad Up/Down deterministically cycle the

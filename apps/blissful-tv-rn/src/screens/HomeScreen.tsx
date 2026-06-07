@@ -1,6 +1,6 @@
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { findNodeHandle, ScrollView, StyleSheet, View } from 'react-native';
 import { fetchCatalog, type StremioMetaPreview } from '@blissful/core';
 import { colors } from '../theme/colors';
@@ -63,15 +63,20 @@ export function HomeScreen() {
     };
   }, [token]);
 
-  const onSelect = (item: CardItem) => {
+  // Stable callbacks so a cw/resumeItem state change doesn't re-render every
+  // rail (the memoised Rail/ItemsRail skip when their props are referentially
+  // equal). onSelect has only `navigation` as a dep; CW reads from a ref so its
+  // callback stays stable even as the list loads.
+  const cwRef = useRef<CwItem[]>([]);
+  cwRef.current = cw;
+  const onSelect = useCallback((item: CardItem) => {
     navigation.navigate('Detail', { id: item.id, type: item.type, name: item.name, poster: item.poster ?? undefined });
-  };
-  // Continue Watching: clicking opens the Resume / Start-over / Go-to-show modal.
-  const onCwSelect = (item: CardItem) => {
-    const cwi = cw.find((c) => c.id === item.id);
+  }, [navigation]);
+  const onCwSelect = useCallback((item: CardItem) => {
+    const cwi = cwRef.current.find((c) => c.id === item.id);
     if (cwi) setResumeItem(cwi);
-  };
-  const playCw = (i: CwItem) => navigation.navigate('Player', { url: SAMPLE_STREAM, title: i.name });
+  }, []);
+  const playCw = useCallback((i: CwItem) => navigation.navigate('Player', { url: SAMPLE_STREAM, title: i.name }), [navigation]);
 
   return (
     <View style={styles.root}>

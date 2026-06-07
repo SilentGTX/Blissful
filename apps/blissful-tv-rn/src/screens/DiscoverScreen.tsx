@@ -76,6 +76,9 @@ export function DiscoverScreen() {
             numColumns={cols}
             style={{ height: m.height - m.safeY - m.s(140) }}
             removeClippedSubviews={false}
+            initialNumToRender={cols * 3}
+            maxToRenderPerBatch={cols * 2}
+            windowSize={5}
             keyExtractor={(it) => it.id}
             contentContainerStyle={{ gap: m.s(20), paddingTop: m.s(8), paddingBottom: m.s(40), paddingLeft: padL }}
             columnWrapperStyle={{ gap: m.s(24) }}

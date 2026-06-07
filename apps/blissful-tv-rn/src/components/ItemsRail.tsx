@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { colors, font } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
@@ -5,7 +6,7 @@ import { PosterCard, type CardItem } from './PosterCard';
 
 // A rail driven by a ready array of items (e.g. Continue Watching), each
 // optionally carrying a `progress` (0..100) shown as the bottom bar.
-export function ItemsRail({
+export const ItemsRail = memo(function ItemsRail({
   title,
   items,
   autoFocusFirst,
@@ -18,6 +19,7 @@ export function ItemsRail({
 }) {
   const m = useMetrics();
   const posterW = m.s(200);
+  const stride = posterW + m.s(24);
   if (items.length === 0) return null;
   return (
     <View style={{ marginBottom: m.s(34) }}>
@@ -29,6 +31,10 @@ export function ItemsRail({
         data={items}
         keyExtractor={(it) => it.id}
         showsHorizontalScrollIndicator={false}
+        getItemLayout={(_, index) => ({ length: stride, offset: stride * index, index })}
+        initialNumToRender={8}
+        maxToRenderPerBatch={6}
+        windowSize={5}
         // paddingLeft gives the focused first card's 1.06 scale room so it isn't
         // clipped on the left; the title's marginLeft matches so they stay aligned.
         contentContainerStyle={{ gap: m.s(24), paddingTop: m.s(20), paddingBottom: m.s(12), paddingLeft: m.s(12), paddingRight: m.safeX }}
@@ -45,6 +51,6 @@ export function ItemsRail({
       />
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({});

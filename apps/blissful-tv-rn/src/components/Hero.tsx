@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { fetchMeta, normalizeStremioImage, type StremioMetaDetail, type StremioMetaPreview } from '@blissful/core';
 import { markContentFocus } from '../lib/focusBus';
@@ -78,7 +78,7 @@ function GenreChip({ label, m, atRowStart, onPress }: { label: string; m: Return
   );
 }
 
-export function Hero({ item, upTag }: { item: StremioMetaPreview | null; upTag?: number }) {
+export const Hero = memo(function Hero({ item, upTag }: { item: StremioMetaPreview | null; upTag?: number }) {
   const navigation = useNavigation<Nav>();
   const m = useMetrics();
   const [meta, setMeta] = useState<StremioMetaDetail['meta'] | null>(null);
@@ -171,7 +171,7 @@ export function Hero({ item, upTag }: { item: StremioMetaPreview | null; upTag?:
       </View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   hero: { overflow: 'hidden', backgroundColor: '#0f1115' },

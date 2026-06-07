@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
 import { fetchCatalog, type MediaType, type StremioMetaPreview } from '@blissful/core';
 import { colors, font } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { PosterCard, type CardItem } from './PosterCard';
 
-export function Rail({
+export const Rail = memo(function Rail({
   title,
   type,
   catalogId,
@@ -22,6 +22,7 @@ export function Rail({
   const [metas, setMetas] = useState<StremioMetaPreview[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const posterW = m.s(200);
+  const stride = posterW + m.s(24); // fixed card width + gap
 
   useEffect(() => {
     let cancelled = false;
@@ -46,6 +47,10 @@ export function Rail({
           data={metas}
           keyExtractor={(it) => it.id}
           showsHorizontalScrollIndicator={false}
+          getItemLayout={(_, index) => ({ length: stride, offset: stride * index, index })}
+          initialNumToRender={8}
+          maxToRenderPerBatch={6}
+          windowSize={5}
           contentContainerStyle={{ gap: m.s(24), paddingTop: m.s(20), paddingBottom: m.s(12), paddingLeft: m.s(12), paddingRight: m.safeX }}
           renderItem={({ item, index }) => (
             <PosterCard item={item} width={posterW} autoFocus={autoFocusFirst && index === 0} atRowStart={index === 0} onSelect={onSelect} />
@@ -56,7 +61,7 @@ export function Rail({
       )}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   loading: { alignSelf: 'flex-start', marginVertical: 40 },
