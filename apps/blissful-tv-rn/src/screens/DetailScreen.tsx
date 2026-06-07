@@ -9,7 +9,11 @@ import { fetchCatalog, fetchMeta, normalizeStremioImage, type StremioMetaDetail,
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { PosterCard, type CardItem } from '../components/PosterCard';
+import { Rating } from '../components/Rating';
 import { StreamPicker, type StreamPickerTarget } from '../components/StreamPicker';
+import { metahubPosterToBackdrop } from '../lib/images';
+
+const IMDB_RE = /^tt\d{5,}$/;
 import type { RootStackParamList } from '../navigation/types';
 
 type DetailRoute = RouteProp<RootStackParamList, 'Detail'>;
@@ -170,7 +174,15 @@ export function DetailScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSeries, genres[0], params.id, params.type]);
 
-  const background = normalizeStremioImage(meta?.background) ?? normalizeStremioImage(params.poster);
+  // Backdrop with no flash: before meta loads, derive the landscape backdrop
+  // from the poster we already have (metahub poster -> background/medium), which
+  // is byte-identical to meta.background once it arrives, so the <Image> source
+  // never swaps. Falls back to the raw poster (hidden under the scrim) otherwise.
+  const background =
+    normalizeStremioImage(meta?.background) ??
+    normalizeStremioImage(meta?.poster) ??
+    metahubPosterToBackdrop(normalizeStremioImage(params.poster)) ??
+    normalizeStremioImage(params.poster);
   const cast = (meta?.cast ?? []).slice(0, 5);
   const released = fmtDate(meta?.released) ?? meta?.releaseInfo ?? (meta?.year != null ? String(meta.year) : null);
   const metaBits = [meta?.runtime, released].filter(Boolean) as string[];
@@ -215,15 +227,14 @@ export function DetailScreen() {
                 <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(20), color: 'rgba(255,255,255,0.85)' }}>{b}</Text>
               </View>
             ))}
-            {rating ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Text style={{ fontSize: m.s(20), color: 'rgba(255,255,255,0.4)', marginRight: m.s(14) }}>·</Text>
-                <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(20), color: '#fff', marginRight: m.s(8) }}>{rating}</Text>
-                <View style={{ backgroundColor: colors.imdbGold, borderRadius: m.s(4), paddingHorizontal: m.s(5), paddingVertical: m.s(1) }}>
-                  <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(13), color: '#000', fontWeight: '700' }}>IMDb</Text>
-                </View>
-              </View>
-            ) : null}
+            <Rating
+              imdbId={meta?.imdb_id ?? (IMDB_RE.test(params.id) ? params.id : null)}
+              initialRating={rating}
+              numberSize={m.s(20)}
+              iconSize={m.s(22)}
+              gap={m.s(6)}
+              leading={metaBits.length ? <Text style={{ fontSize: m.s(20), color: 'rgba(255,255,255,0.4)', marginRight: m.s(8) }}>·</Text> : null}
+            />
           </View>
 
           <View style={{ gap: m.s(16) }}>

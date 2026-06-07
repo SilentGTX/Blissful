@@ -7,6 +7,7 @@ import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { fetchMeta, normalizeStremioImage, type StremioMetaDetail, type StremioMetaPreview } from '@blissful/core';
 import { markContentFocus } from '../lib/focusBus';
 import { useSelfTag } from '../lib/useSelfTag';
+import { Rating } from './Rating';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import type { RootStackParamList } from '../navigation/types';
@@ -105,7 +106,8 @@ export const Hero = memo(function Hero({ item, upTag }: { item: StremioMetaPrevi
   const rating = meta?.imdbRating ?? item?.imdbRating;
   const runtime = meta?.runtime;
   const desc = meta?.description ?? item?.description ?? '';
-  const metaLine = [year, rating ? `${rating} IMDb` : null, runtime].filter(Boolean).join('   ·   ');
+  const metaLine = [year, runtime].filter(Boolean).join('   ·   ');
+  const imdbId = item?.id && /^tt\d{5,}$/.test(item.id) ? item.id : (meta as { imdb_id?: string } | null)?.imdb_id ?? null;
   const btnH = m.s(56); // TV action button h-14
 
   return (
@@ -144,11 +146,12 @@ export const Hero = memo(function Hero({ item, upTag }: { item: StremioMetaPrevi
         >
           {item?.name ?? ' '}
         </Text>
-        {metaLine ? (
-          <Text style={{ fontFamily: font.bodyMed, fontSize: m.s(26), color: 'rgba(255,255,255,0.8)', marginTop: m.s(16) }}>
-            {metaLine}
-          </Text>
-        ) : null}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(16), marginTop: m.s(16) }}>
+          {metaLine ? (
+            <Text style={{ fontFamily: font.bodyMed, fontSize: m.s(26), color: 'rgba(255,255,255,0.8)' }}>{metaLine}</Text>
+          ) : null}
+          <Rating imdbId={imdbId} initialRating={rating} numberSize={m.s(26)} iconSize={m.s(28)} gap={m.s(7)} />
+        </View>
         {desc ? (
           <Text
             style={{ fontFamily: font.body, fontSize: m.s(26), color: colors.textDim, marginTop: m.s(14), maxWidth: '58%', lineHeight: m.s(38) }}
