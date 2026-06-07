@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { normalizeStremioImage } from '@blissful/core';
 import { markContentFocus } from '../lib/focusBus';
@@ -23,37 +23,29 @@ function ratingText(r?: string | number): string | null {
 
 export const POSTER_RATIO = 1.464; // --poster-shape-ratio: 1/1.464
 
-export function PosterCard({
+type M = ReturnType<typeof useMetrics>;
+
+// Heavy visual (image + badges + title). Memoised so a rail open/close — which
+// re-renders the Pressable shell below to flip isTVSelectable — does NOT reflow
+// the image. Only a real focus change (border/scale/title colour) re-renders it.
+const PosterVisual = memo(function PosterVisual({
   item,
   width,
-  autoFocus,
-  atRowStart,
+  focused,
   progress,
-  onSelect,
+  m,
 }: {
   item: CardItem;
   width: number;
-  autoFocus?: boolean;
-  atRowStart?: boolean;
+  focused: boolean;
   progress?: number;
-  onSelect: (item: CardItem) => void;
+  m: M;
 }) {
-  const m = useMetrics();
-  const railOpen = useRailOpen();
-  const [focused, setFocused] = useState(false);
   const poster = normalizeStremioImage(item.poster);
   const rating = ratingText(item.imdbRating);
   const h = width * POSTER_RATIO;
-
   return (
-    <Pressable
-      hasTVPreferredFocus={autoFocus}
-      isTVSelectable={!railOpen}
-      onFocus={() => { setFocused(true); markContentFocus(Boolean(atRowStart)); }}
-      onBlur={() => setFocused(false)}
-      onPress={() => onSelect(item)}
-      style={{ width }}
-    >
+    <>
       <View
         style={[
           styles.posterWrap,
@@ -88,6 +80,39 @@ export function PosterCard({
       >
         {item.name}
       </Text>
+    </>
+  );
+});
+
+export function PosterCard({
+  item,
+  width,
+  autoFocus,
+  atRowStart,
+  progress,
+  onSelect,
+}: {
+  item: CardItem;
+  width: number;
+  autoFocus?: boolean;
+  atRowStart?: boolean;
+  progress?: number;
+  onSelect: (item: CardItem) => void;
+}) {
+  const m = useMetrics();
+  const railOpen = useRailOpen();
+  const [focused, setFocused] = useState(false);
+
+  return (
+    <Pressable
+      hasTVPreferredFocus={autoFocus}
+      isTVSelectable={!railOpen}
+      onFocus={() => { setFocused(true); markContentFocus(Boolean(atRowStart)); }}
+      onBlur={() => setFocused(false)}
+      onPress={() => onSelect(item)}
+      style={{ width }}
+    >
+      <PosterVisual item={item} width={width} focused={focused} progress={progress} m={m} />
     </Pressable>
   );
 }

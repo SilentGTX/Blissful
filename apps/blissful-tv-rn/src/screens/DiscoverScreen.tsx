@@ -50,7 +50,10 @@ export function DiscoverScreen() {
   // Leave room on the left so the focused card's 1.06 scale + border isn't
   // clipped by the FlatList's edge; align the header to the same inset.
   const padL = m.s(12);
-  const cols = Math.max(2, Math.floor((m.width - m.contentLeft - m.safeX - padL) / (posterW + m.s(24))));
+  const gap = m.s(24);
+  // +gap because N columns have only N-1 gaps — without it the last column is
+  // wrongly dropped (showed 7 with room for an 8th).
+  const cols = Math.max(2, Math.floor((m.width - m.contentLeft - m.safeX - padL + gap) / (posterW + gap)));
 
   return (
     <View style={styles.root}>

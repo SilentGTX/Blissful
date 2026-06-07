@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useWindowDimensions } from 'react-native';
 
 // The web TV UI (apps/blissful-mvs, html[data-tv]) is authored at a fixed
@@ -8,6 +9,13 @@ import { useWindowDimensions } from 'react-native';
 // the live screen). Source values are quoted from index.css next to each.
 export function useMetrics() {
   const { width, height } = useWindowDimensions();
+  // Memoise on [width, height]: every card calls useMetrics(); without this each
+  // render rebuilt the object + the `s` closure, defeating downstream memo and
+  // adding work to every focus move / list render.
+  return useMemo(() => buildMetrics(width, height), [width, height]);
+}
+
+function buildMetrics(width: number, height: number) {
   const scale = width / 1920;
   const s = (px: number) => px * scale;
   const clampVw = (minPx: number, pct: number, maxPx: number) =>
