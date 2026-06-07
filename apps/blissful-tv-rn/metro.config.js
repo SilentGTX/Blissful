@@ -12,6 +12,11 @@ const config = getDefaultConfig(projectRoot);
 config.watchFolders = [coreRoot];
 
 // Resolve `@blissful/core(/sub)` to the core src; keep node_modules from the app.
+// NOTE: `extraNodeModules` is honoured by the Metro DEV server but NOT by the
+// release bundle (`expo export:embed`), and Expo overwrites a `resolveRequest`
+// hook internally — so a RELEASE build (`gradlew assembleRelease`) needs the
+// junction `node_modules/@blissful/core -> ../../packages/blissful-core`, which
+// `npm run link:core` recreates (also created by `postinstall`). See package.json.
 config.resolver.extraNodeModules = {
   ...(config.resolver.extraNodeModules || {}),
   '@blissful/core': path.resolve(coreRoot, 'src'),

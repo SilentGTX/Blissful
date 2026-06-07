@@ -6,7 +6,10 @@
     "start": "expo start",
     "android": "expo run:android",
     "prebuild:tv": "cross-env EXPO_TV=1 expo prebuild --platform android --clean",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "link:core": "node scripts/link-core.js",
+    "build:release": "npm run link:core && cd android && gradlew assembleRelease",
+    "postinstall": "node scripts/link-core.js"
   },
   "dependencies": {
     "@expo-google-fonts/fraunces": "^0.4.1",
