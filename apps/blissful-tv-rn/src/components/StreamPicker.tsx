@@ -91,6 +91,8 @@ function Eyebrow({ label, m }: { label: string; m: M }) {
   );
 }
 
+export type PlayableStream = { url: string; title: string };
+
 export function StreamPicker({
   target,
   onClose,
@@ -98,7 +100,9 @@ export function StreamPicker({
 }: {
   target: StreamPickerTarget | null;
   onClose: () => void;
-  onPlay: (url: string, title: string) => void;
+  // The full ranked playable list + the chosen index, so the player can
+  // auto-skip a stream that resolves to the ~30s debrid DMCA placeholder.
+  onPlay: (streams: PlayableStream[], index: number) => void;
 }) {
   const m = useMetrics();
   const { token } = useAuth();
@@ -154,6 +158,15 @@ export function StreamPicker({
 
   if (!target) return null;
 
+  // Ranked playable streams (debrid/HTTP) — the player auto-advances through
+  // these if a chosen one resolves to the DMCA placeholder.
+  const playable: PlayableStream[] = rows.filter((r) => r.url).map((r) => ({ url: r.url as string, title: r.title }));
+  const playRow = (row: PickerStream) => {
+    if (!row.url) return;
+    const idx = Math.max(0, playable.findIndex((p) => p.url === row.url));
+    onPlay(playable, idx);
+  };
+
   const panelW = Math.min(m.s(900), m.width * 0.72);
   const toggle = (b: ResolutionBucket) =>
     setExpanded((prev) => {
@@ -198,7 +211,7 @@ export function StreamPicker({
               renderItem={({ item }) => {
                 if (item.kind === 'eyebrow') return <Eyebrow label={item.label} m={m} />;
                 if (item.kind === 'bucket') return <BucketHeader bucket={item.bucket} count={item.count} expanded={expanded.has(item.bucket)} m={m} onPress={() => toggle(item.bucket)} />;
-                return <StreamRow row={item.row} m={m} autoFocus={item.autoFocus} onPlay={(r) => r.url && onPlay(r.url, r.title)} />;
+                return <StreamRow row={item.row} m={m} autoFocus={item.autoFocus} onPlay={playRow} />;
               }}
             />
           )}

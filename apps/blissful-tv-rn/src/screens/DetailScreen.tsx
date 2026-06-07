@@ -287,9 +287,14 @@ export function DetailScreen() {
       <StreamPicker
         target={picker}
         onClose={() => setPicker(null)}
-        onPlay={(url, title) => {
+        onPlay={(streams, index) => {
           setPicker(null);
-          navigation.navigate('Player', { url, title });
+          navigation.navigate('Player', {
+            url: streams[index].url,
+            title: streams[index].title,
+            playlist: streams,
+            startIndex: index,
+          });
         }}
       />
     </View>

@@ -26,11 +26,23 @@ function fmt(sec: number): string {
   return `${h > 0 ? `${h}:` : ''}${mm}:${s < 10 ? `0${s}` : s}`;
 }
 
+// Any debrid "File was removed… copyright infringement" placeholder is ~30s.
+// No real movie/episode is this short, so a loaded duration at/under this means
+// the chosen stream is dead — auto-advance to the next playable one.
+const DMCA_MAX_SECONDS = 45;
+
 export function PlayerScreen() {
   const { params } = useRoute<PlayerRoute>();
   const navigation = useNavigation();
 
-  const player = useVideoPlayer(params.url, (p) => {
+  // Ranked playable list (from the picker) so we can skip a dead stream; falls
+  // back to the single url (e.g. Continue-Watching resume).
+  const playlist = params.playlist?.length ? params.playlist : [{ url: params.url, title: params.title }];
+  const [index, setIndex] = useState(Math.min(params.startIndex ?? 0, playlist.length - 1));
+  const current = playlist[index] ?? playlist[0];
+  const skippedRef = useRef(false);
+
+  const player = useVideoPlayer(current.url, (p) => {
     p.timeUpdateEventInterval = 0.5;
     p.play();
   });
@@ -40,6 +52,27 @@ export function PlayerScreen() {
   const [duration, setDuration] = useState(0);
   const [ready, setReady] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
+
+  // When idx changes (auto-skip), swap the source and reset state.
+  useEffect(() => {
+    player.replace(current.url);
+    player.play();
+    setReady(false);
+    setTime(0);
+    setDuration(0);
+    skippedRef.current = false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index]);
+
+  // Auto-skip the DMCA placeholder: once a real duration loads and it's ≤45s,
+  // advance to the next playable stream (if any).
+  useEffect(() => {
+    if (skippedRef.current) return;
+    if (duration > 0 && duration <= DMCA_MAX_SECONDS && index < playlist.length - 1) {
+      skippedRef.current = true;
+      setIndex((i) => i + 1);
+    }
+  }, [duration, index, playlist.length]);
 
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // dedupe keydown/keyup + auto-repeat double-fire of the same TV event
@@ -137,7 +170,7 @@ export function PlayerScreen() {
       {controlsVisible ? (
         <View style={styles.controls} pointerEvents="none">
           <Text style={styles.title} numberOfLines={1}>
-            {params.title}
+            {current.title}
           </Text>
           <View style={styles.barRow}>
             <Text style={styles.time}>{fmt(time)}</Text>
