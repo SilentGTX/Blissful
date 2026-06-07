@@ -6,20 +6,11 @@ import { useEffect, useRef, useState } from 'react';
 import { BackHandler, StyleSheet, Text, useTVEventHandler, View } from 'react-native';
 import { font } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
+import { useToast } from '../components/Toast';
 import { BufferingVeil } from '../components/player/BufferingVeil';
 import { PauseOverlay } from '../components/player/PauseOverlay';
-import {
-  AudioIcon,
-  BackPill,
-  FullscreenIcon,
-  MuteIcon,
-  PlayIcon,
-  PlayerIconBtn,
-  SourceBadges,
-  SubsIcon,
-  VolumeSlider,
-  WatchPartyButton,
-} from '../components/player/PlayerControls';
+import { SettingsDrawer, type DrawerItem } from '../components/player/SettingsDrawer';
+import { AudioIcon, BackPill, PlayIcon, PlayerIconBtn, SourceBadges, SubsIcon, WatchPartyButton } from '../components/player/PlayerControls';
 import { detectSource, is4kTitle, isHdrTitle } from '../lib/colorUtils';
 import type { RootStackParamList } from '../navigation/types';
 
@@ -29,14 +20,14 @@ const CONTROLS_TIMEOUT = 3500;
 const ACCENT = '#95a2ff';
 const DMCA_MAX_SECONDS = 45;
 
-// Virtual D-pad model (ported from the old Android player): one focus owner (the
-// player surface) + a key handler that walks two control rows by index — never
-// native per-button focus (which fights itself in a WebView/overlay). Down/Up
-// enter the BOTTOM / TOP row; Left/Right walk that row (or seek in plain
-// playback); OK fires the lit control; Up/Back exit the row.
+// Two playback control rows (TV has no volume/mute/fullscreen — the remote owns
+// volume and the app is always fullscreen). Walked by virtual index.
 type Row = 'none' | 'bottom' | 'top';
-const BOTTOM = ['play', 'mute', 'subtitles', 'audio', 'fullscreen'] as const;
+type Drawer = 'none' | 'audio' | 'subtitles';
+const BOTTOM = ['play', 'subtitles', 'audio'] as const;
 const TOP = ['back', 'watchparty'] as const;
+
+type Track = { id: string; label?: string | null; language?: string | null };
 
 function fmt(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) return '0:00';
@@ -51,6 +42,7 @@ export function PlayerScreen() {
   const { params } = useRoute<PlayerRoute>();
   const navigation = useNavigation();
   const m = useMetrics();
+  const toast = useToast();
 
   const playlist = params.playlist?.length ? params.playlist : [{ url: params.url, title: params.title }];
   const [index, setIndex] = useState(Math.min(params.startIndex ?? 0, playlist.length - 1));
@@ -68,14 +60,24 @@ export function PlayerScreen() {
   const [errored, setErrored] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
-  const [muted, setMuted] = useState(false);
-  const volume = 1; // 0..2; slider is a styled level indicator (remote owns volume)
 
-  // Virtual focus position.
+  // Embedded audio / subtitle tracks (expo-video — external subs aren't supported
+  // by the engine; that waits for the native player).
+  const [audioTracks, setAudioTracks] = useState<Track[]>([]);
+  const [subTracks, setSubTracks] = useState<Track[]>([]);
+  const [curAudio, setCurAudio] = useState<string | null>(null);
+  const [curSub, setCurSub] = useState<string | null>(null);
+
+  // Virtual focus position (playback rows) + the settings drawer.
   const [row, setRow] = useState<Row>('none');
   const [idx, setIdx] = useState(0);
+  const [drawer, setDrawer] = useState<Drawer>('none');
+  const [drawerIdx, setDrawerIdx] = useState(0);
   const rowRef = useRef<Row>('none');
   const idxRef = useRef(0);
+  const drawerRef = useRef<Drawer>('none');
+  const drawerIdxRef = useRef(0);
+  const drawerItemsRef = useRef<DrawerItem[]>([]);
   const playingRef = useRef(true);
   playingRef.current = playing;
 
@@ -86,6 +88,8 @@ export function PlayerScreen() {
     setTime(0);
     setDuration(0);
     setErrored(false);
+    setAudioTracks([]);
+    setSubTracks([]);
     skippedRef.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index]);
@@ -96,10 +100,6 @@ export function PlayerScreen() {
       setIndex((i) => i + 1);
     }
   }, [errored, index, playlist.length]);
-
-  useEffect(() => {
-    player.muted = muted;
-  }, [muted, player]);
 
   const seekedRef = useRef(false);
   useEffect(() => {
@@ -128,9 +128,8 @@ export function PlayerScreen() {
   const bumpControls = () => {
     setControlsVisible(true);
     if (hideTimer.current) clearTimeout(hideTimer.current);
-    // Keep the bar up while a control row is focused or while paused.
     hideTimer.current = setTimeout(() => {
-      if (rowRef.current === 'none' && playingRef.current) setControlsVisible(false);
+      if (rowRef.current === 'none' && drawerRef.current === 'none' && playingRef.current) setControlsVisible(false);
     }, CONTROLS_TIMEOUT);
   };
 
@@ -142,6 +141,19 @@ export function PlayerScreen() {
     bumpControls();
   };
 
+  const openDrawer = (d: Drawer) => {
+    drawerRef.current = d;
+    drawerIdxRef.current = 0;
+    setDrawer(d);
+    setDrawerIdx(0);
+    setControlsVisible(true);
+  };
+  const closeDrawer = () => {
+    drawerRef.current = 'none';
+    setDrawer('none');
+    goRow('bottom', BOTTOM.indexOf(drawer === 'audio' ? 'audio' : 'subtitles'));
+  };
+
   useEffect(() => {
     bumpControls();
     const id = setInterval(() => {
@@ -150,6 +162,16 @@ export function PlayerScreen() {
       if (d > 0) setDuration(d);
       setPlaying(player.playing);
       if ((player as { status?: string }).status === 'error') setErrored(true);
+      const p = player as unknown as {
+        availableAudioTracks?: Track[];
+        availableSubtitleTracks?: Track[];
+        audioTrack?: Track | null;
+        subtitleTrack?: Track | null;
+      };
+      if (p.availableAudioTracks) setAudioTracks(p.availableAudioTracks);
+      if (p.availableSubtitleTracks) setSubTracks(p.availableSubtitleTracks);
+      setCurAudio(p.audioTrack?.id ?? null);
+      setCurSub(p.subtitleTrack?.id ?? null);
     }, 400);
     return () => {
       clearInterval(id);
@@ -169,15 +191,43 @@ export function PlayerScreen() {
     bumpControls();
   };
 
+  // Build the drawer item list for the active tab.
+  const trackLabel = (t: Track, fallback: string) => t.label || t.language || fallback;
+  const drawerItems: DrawerItem[] =
+    drawer === 'audio'
+      ? audioTracks.map((t) => ({ id: t.id, label: trackLabel(t, 'Audio'), meta: t.language, active: t.id === curAudio }))
+      : drawer === 'subtitles'
+        ? [{ id: 'off', label: 'Off', meta: 'No Subtitles', active: curSub == null }, ...subTracks.map((t) => ({ id: t.id, label: trackLabel(t, 'Subtitle'), meta: t.language, active: t.id === curSub }))]
+        : [];
+  drawerItemsRef.current = drawerItems;
+
+  const applyDrawer = () => {
+    const items = drawerItemsRef.current;
+    const it = items[drawerIdxRef.current];
+    if (!it) return;
+    const p = player as unknown as { audioTrack?: Track | null; subtitleTrack?: Track | null };
+    if (drawerRef.current === 'audio') {
+      const t = audioTracks.find((x) => x.id === it.id);
+      if (t) { p.audioTrack = t; setCurAudio(t.id); toast.show(`Audio: ${it.label}`); }
+    } else {
+      if (it.id === 'off') { p.subtitleTrack = null; setCurSub(null); toast.show('Subtitles: Off'); }
+      else {
+        const t = subTracks.find((x) => x.id === it.id);
+        if (t) { p.subtitleTrack = t; setCurSub(t.id); toast.show(`Subtitles: ${it.label}`); }
+      }
+    }
+    closeDrawer();
+  };
+
   const runBottom = (id: (typeof BOTTOM)[number]) => {
-    if (id === 'play') togglePlay();
-    else if (id === 'mute') setMuted((v) => !v);
-    // subtitles / audio / fullscreen menus are the next chunk
-    bumpControls();
+    if (id === 'play') { togglePlay(); return false; }
+    if (id === 'subtitles') { openDrawer('subtitles'); return true; }
+    if (id === 'audio') { openDrawer('audio'); return true; }
+    return false;
   };
   const runTop = (id: (typeof TOP)[number]) => {
     if (id === 'back') navigation.goBack();
-    // watchparty is the next chunk
+    // watchparty: backlog
   };
 
   useTVEventHandler((evt) => {
@@ -186,19 +236,49 @@ export function PlayerScreen() {
     const now = Date.now();
     if (lastEvt.current.type === type && now - lastEvt.current.at < 180) return;
     lastEvt.current = { type, at: now };
+
+    // ---- Drawer owns the D-pad while open (Left/Back closes it) ----
+    if (drawerRef.current !== 'none') {
+      const len = drawerItemsRef.current.length;
+      switch (type) {
+        case 'down':
+          drawerIdxRef.current = Math.min(len - 1, drawerIdxRef.current + 1);
+          setDrawerIdx(drawerIdxRef.current);
+          break;
+        case 'up':
+          drawerIdxRef.current = Math.max(0, drawerIdxRef.current - 1);
+          setDrawerIdx(drawerIdxRef.current);
+          break;
+        case 'left':
+        case 'rewind':
+          closeDrawer();
+          break;
+        case 'select':
+          if (now - lastOk.current < 300) break;
+          lastOk.current = now;
+          applyDrawer();
+          break;
+        case 'playPause':
+          togglePlay();
+          break;
+        default:
+          break;
+      }
+      return;
+    }
+
     const r = rowRef.current;
     const i = idxRef.current;
-
     switch (type) {
       case 'select': {
         if (now - lastOk.current < 300) break;
         lastOk.current = now;
-        if (r === 'bottom') { runBottom(BOTTOM[i]); goRow('none'); }
+        if (r === 'bottom') { const stay = runBottom(BOTTOM[i]); if (!stay) goRow('none'); }
         else if (r === 'top') { runTop(TOP[i]); goRow('none'); }
         else {
           const wasPlaying = playingRef.current;
           togglePlay();
-          if (wasPlaying) goRow('bottom', 0); // pause drops onto the play button
+          if (wasPlaying) goRow('bottom', 0);
         }
         break;
       }
@@ -216,12 +296,12 @@ export function PlayerScreen() {
       case 'down':
         if (r === 'none') goRow('bottom', 0);
         else if (r === 'top') goRow('none');
-        else bumpControls(); // bottom: swallow
+        else bumpControls();
         break;
       case 'up':
         if (r === 'none') goRow('top', 0);
         else if (r === 'bottom') goRow('none');
-        else bumpControls(); // top: swallow
+        else bumpControls();
         break;
       case 'right':
       case 'fastForward':
@@ -240,23 +320,21 @@ export function PlayerScreen() {
     }
   });
 
-  // Hardware Back: exit a focused row first; otherwise leave the player.
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (rowRef.current !== 'none') {
-        goRow('none');
-        return true;
-      }
+      if (drawerRef.current !== 'none') { closeDrawer(); return true; }
+      if (rowRef.current !== 'none') { goRow('none'); return true; }
       return false;
     });
     return () => sub.remove();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [drawer]);
 
   const pct = duration > 0 ? Math.min(1, time / duration) : 0;
   const badges = [detectSource(current.url)?.code, is4kTitle(current.title) ? '4K' : null, isHdrTitle(current.title) ? 'HDR' : null].filter(Boolean) as string[];
   const bf = (id: (typeof BOTTOM)[number]) => row === 'bottom' && BOTTOM[idx] === id;
   const tf = (id: (typeof TOP)[number]) => row === 'top' && TOP[idx] === id;
+  const drawerOpen = drawer !== 'none';
 
   return (
     <View style={styles.root} focusable hasTVPreferredFocus>
@@ -264,9 +342,8 @@ export function PlayerScreen() {
 
       <BufferingVeil visible={!revealed} logo={params.logo} />
 
-      {/* Pause overlay — title logo + metadata bottom-left while paused. */}
       <PauseOverlay
-        visible={!playing && revealed}
+        visible={!playing && revealed && !drawerOpen}
         logo={params.logo}
         title={params.title}
         description={params.description}
@@ -276,8 +353,8 @@ export function PlayerScreen() {
         duration={duration}
       />
 
-      {/* TOP OVERLAY — back pill (left), source badges + Watch Party (right). */}
-      {controlsVisible ? (
+      {/* TOP OVERLAY */}
+      {controlsVisible && !drawerOpen ? (
         <LinearGradient colors={['rgba(0,0,0,0.8)', 'rgba(0,0,0,0.5)', 'transparent']} style={{ position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: m.s(24), paddingTop: m.s(24), paddingBottom: m.s(16) }} pointerEvents="none">
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: m.s(12) }}>
             <BackPill m={m} title={params.title} focused={tf('back')} />
@@ -289,8 +366,8 @@ export function PlayerScreen() {
         </LinearGradient>
       ) : null}
 
-      {/* BOTTOM CONTROLS — scrub strip + transport row. */}
-      {controlsVisible ? (
+      {/* BOTTOM CONTROLS — scrub strip + transport row (play / subtitles / audio). */}
+      {controlsVisible && !drawerOpen ? (
         <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0 }} pointerEvents="none">
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.85)']} style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(16), paddingHorizontal: m.s(22), paddingTop: m.s(40), paddingBottom: m.s(6) }}>
             <Text style={timeStyle(m)}>{fmt(time)}</Text>
@@ -304,17 +381,17 @@ export function PlayerScreen() {
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(0,0,0,0.85)', paddingHorizontal: m.s(18), paddingVertical: m.s(10) }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(8) }}>
               <PlayerIconBtn m={m} focused={bf('play')}>{(c) => <PlayIcon m={m} paused={!playing} color={c} />}</PlayerIconBtn>
-              <PlayerIconBtn m={m} focused={bf('mute')}>{(c) => <MuteIcon m={m} level={volume} muted={muted} color={c} />}</PlayerIconBtn>
-              <VolumeSlider m={m} level={muted ? 0 : volume} />
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(4) }}>
               <PlayerIconBtn m={m} focused={bf('subtitles')}>{(c) => <SubsIcon m={m} color={c} />}</PlayerIconBtn>
               <PlayerIconBtn m={m} focused={bf('audio')}>{(c) => <AudioIcon m={m} color={c} />}</PlayerIconBtn>
-              <PlayerIconBtn m={m} focused={bf('fullscreen')}>{(c) => <FullscreenIcon m={m} color={c} />}</PlayerIconBtn>
             </View>
           </View>
         </View>
       ) : null}
+
+      {/* Settings drawer (Audio / Subtitles) — slides in from the right. */}
+      <SettingsDrawer open={drawerOpen} tab={drawer === 'audio' ? 'audio' : 'subtitles'} items={drawerItems} selIdx={drawerIdx} />
     </View>
   );
 }

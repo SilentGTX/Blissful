@@ -15,6 +15,7 @@ import {
   useFonts,
 } from '@expo-google-fonts/ibm-plex-sans';
 import { AuthProvider } from './src/context/AuthContext';
+import { ToastProvider } from './src/components/Toast';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { DetailScreen } from './src/screens/DetailScreen';
 import { PlayerScreen } from './src/screens/PlayerScreen';
@@ -51,22 +52,24 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <AuthProvider>
-          <NavigationContainer theme={navTheme}>
-            <Stack.Navigator
-              screenOptions={{
-                headerShown: false,
-                animation: 'none',
-                cardStyle: { backgroundColor: colors.bg },
-              }}
-            >
-              <Stack.Screen name="Home" component={HomeScreen} />
-              <Stack.Screen name="Detail" component={DetailScreen} />
-              <Stack.Screen name="Player" component={PlayerScreen} />
-              <Stack.Screen name="Login" component={LoginScreen} />
-              <Stack.Screen name="Search" component={SearchScreen} />
-              <Stack.Screen name="Discover" component={DiscoverScreen} />
-            </Stack.Navigator>
-          </NavigationContainer>
+          <ToastProvider>
+            <NavigationContainer theme={navTheme}>
+              <Stack.Navigator
+                screenOptions={{
+                  headerShown: false,
+                  animation: 'none',
+                  cardStyle: { backgroundColor: colors.bg },
+                }}
+              >
+                <Stack.Screen name="Home" component={HomeScreen} />
+                <Stack.Screen name="Detail" component={DetailScreen} />
+                <Stack.Screen name="Player" component={PlayerScreen} />
+                <Stack.Screen name="Login" component={LoginScreen} />
+                <Stack.Screen name="Search" component={SearchScreen} />
+                <Stack.Screen name="Discover" component={DiscoverScreen} />
+              </Stack.Navigator>
+            </NavigationContainer>
+          </ToastProvider>
         </AuthProvider>
         <StatusBar style="light" />
       </SafeAreaProvider>
