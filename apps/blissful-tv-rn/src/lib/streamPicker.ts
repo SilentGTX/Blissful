@@ -179,14 +179,39 @@ function bucketOf(row: { leftLabel: string; title: string }): ResolutionBucket {
   return 'Other';
 }
 
-// Playable-first, then RD, then seeders/(sizeGB+1), then title.
 const score = (r: PickerStream) => (r.seeders ?? 0) / ((r.sizeBytes ?? 0) / 1_073_741_824 + 1);
+
+// Decode-friendliness for the expo-video/ExoPlayer engine: 1080p H.264 is the
+// universally-hardware-decodable sweet spot. 4K is deprioritised for the AUTO
+// pick because most TVs (and the emulator) can't render 4K — playback advances
+// but the picture is black (the bespoke libmpv/Media3 engine will lift this).
+// 4K stays accessible via the picker's Top Picks / 4K bucket if the user wants it.
+function compatScore(r: PickerStream): number {
+  const hay = `${r.leftLabel} ${r.title}`.toLowerCase();
+  let base: number;
+  if (r.bucket === '1080p') base = 4;
+  else if (r.bucket === '720p') base = 3;
+  else if (r.bucket === 'Other') base = 2;
+  else if (r.bucket === '4K') base = 1;
+  else base = 0; // SD
+  if (/\b(x264|h264|avc)\b/.test(hay)) base += 0.6; // 8-bit H.264 decodes everywhere
+  else if (/\b(x265|h265|hevc)\b/.test(hay)) base -= 0.3;
+  // 10-bit / HDR / Dolby Vision render BLACK on devices without a 10-bit decoder
+  // (the emulator + many low-end TVs) — heavily deprioritise for the auto pick.
+  if (/\b(10\s?bit|10bit|hi10|hdr|dolby\s*vision|dovi|\bdv\b)\b/.test(hay)) base -= 2;
+  return base;
+}
+
+// Playable-first, then RD, then decode-friendly resolution/codec, then
+// seeders/(sizeGB+1), then title.
 export function rankStreams(rows: PickerStream[]): PickerStream[] {
   return rows.slice().sort((a, b) => {
     const ap = a.url ? 1 : 0;
     const bp = b.url ? 1 : 0;
     if (ap !== bp) return bp - ap;
     if (a.isRd !== b.isRd) return a.isRd ? -1 : 1;
+    const cd = compatScore(b) - compatScore(a);
+    if (cd !== 0) return cd;
     const sd = score(b) - score(a);
     if (sd !== 0) return sd;
     return a.title.localeCompare(b.title);

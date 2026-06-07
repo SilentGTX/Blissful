@@ -55,6 +55,7 @@ export function PlayerScreen() {
   const [playing, setPlaying] = useState(true);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [errored, setErrored] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   // Whether a control button (not the root playback surface) holds focus. Seek
@@ -76,9 +77,18 @@ export function PlayerScreen() {
     setRevealed(false);
     setTime(0);
     setDuration(0);
+    setErrored(false);
     skippedRef.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index]);
+
+  // Advance past a stream that errors (e.g. an un-decodable codec on this device).
+  useEffect(() => {
+    if (errored && !skippedRef.current && index < playlist.length - 1) {
+      skippedRef.current = true;
+      setIndex((i) => i + 1);
+    }
+  }, [errored, index, playlist.length]);
 
   useEffect(() => {
     player.muted = muted;
@@ -126,6 +136,7 @@ export function PlayerScreen() {
       const d = player.duration ?? 0;
       if (d > 0) setDuration(d);
       setPlaying(player.playing);
+      if ((player as { status?: string }).status === 'error') setErrored(true);
     }, 400);
     return () => {
       clearInterval(id);
