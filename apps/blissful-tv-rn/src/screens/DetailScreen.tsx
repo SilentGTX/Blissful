@@ -9,6 +9,7 @@ import { fetchCatalog, fetchMeta, normalizeStremioImage, type StremioMetaDetail,
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { PosterCard, type CardItem } from '../components/PosterCard';
+import { StreamPicker, type StreamPickerTarget } from '../components/StreamPicker';
 import type { RootStackParamList } from '../navigation/types';
 
 type DetailRoute = RouteProp<RootStackParamList, 'Detail'>;
@@ -17,8 +18,6 @@ type Meta = StremioMetaDetail['meta'];
 type Video = NonNullable<Meta['videos']>[number];
 type M = ReturnType<typeof useMetrics>;
 
-// Placeholder until the addon stream picker (user's addons) is wired.
-const SAMPLE_STREAM = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 function fmtDate(iso?: string | null): string | null {
   if (!iso) return null;
@@ -130,6 +129,7 @@ export function DetailScreen() {
   const [loading, setLoading] = useState(true);
   const [season, setSeason] = useState<number | null>(null);
   const [similar, setSimilar] = useState<StremioMetaPreview[]>([]);
+  const [picker, setPicker] = useState<StreamPickerTarget | null>(null);
 
   const isSeries = params.type === 'series';
 
@@ -176,7 +176,17 @@ export function DetailScreen() {
   const metaBits = [meta?.runtime, released].filter(Boolean) as string[];
   const rating = meta?.imdbRating;
 
-  const playSample = () => navigation.navigate('Player', { url: SAMPLE_STREAM, title: meta?.name ?? params.name });
+  const name = meta?.name ?? params.name;
+  // Movie: pick a stream for the title. Series: pick for the episode's videoId
+  // (imdb:S:E — what addons key torrent streams on, not the show id).
+  const openMoviePicker = () => setPicker({ type: 'movie', id: params.id, title: name });
+  const openEpisodePicker = (video: Video) =>
+    setPicker({
+      type: 'series',
+      id: video.id,
+      title: name,
+      episodeLabel: `S${video.season ?? '?'}E${video.episode ?? '?'}${video.title || video.name ? ` · ${video.title || video.name}` : ''}`,
+    });
   const onSimilar = (item: CardItem) => navigation.push('Detail', { id: item.id, type: item.type, name: item.name, poster: item.poster ?? undefined });
 
   return (
@@ -241,7 +251,7 @@ export function DetailScreen() {
           ) : null}
 
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: m.s(11), marginTop: m.s(8) }}>
-            {!isSeries ? <ActionBtn label="Watch" icon="play" primary autoFocus m={m} onPress={playSample} /> : null}
+            {!isSeries ? <ActionBtn label="Watch" icon="play" primary autoFocus m={m} onPress={openMoviePicker} /> : null}
             <ActionBtn label="Add to library" icon="bookmark-outline" autoFocus={isSeries} m={m} onPress={() => { /* needs auth */ }} />
             {meta?.trailerStreams?.length ? <ActionBtn label="Trailer" icon="film-outline" m={m} onPress={() => { /* trailer modal next */ }} /> : null}
           </View>
@@ -264,7 +274,7 @@ export function DetailScreen() {
                 </View>
               ) : null}
             </View>
-            <FlatList horizontal data={episodes} keyExtractor={(v) => v.id} showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: m.s(20), paddingVertical: m.s(10), paddingLeft: m.s(2), paddingRight: m.safeX }} renderItem={({ item }) => <EpisodeCard video={item} m={m} onPress={playSample} />} />
+            <FlatList horizontal data={episodes} keyExtractor={(v) => v.id} showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: m.s(20), paddingVertical: m.s(10), paddingLeft: m.s(2), paddingRight: m.safeX }} renderItem={({ item }) => <EpisodeCard video={item} m={m} onPress={() => openEpisodePicker(item)} />} />
           </View>
         ) : !isSeries && similar.length ? (
           <View>
@@ -273,6 +283,15 @@ export function DetailScreen() {
           </View>
         ) : null}
       </View>
+
+      <StreamPicker
+        target={picker}
+        onClose={() => setPicker(null)}
+        onPlay={(url, title) => {
+          setPicker(null);
+          navigation.navigate('Player', { url, title });
+        }}
+      />
     </View>
   );
 }
