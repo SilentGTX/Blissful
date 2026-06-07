@@ -4,6 +4,7 @@ import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-nativ
 import { fetchCatalog, type MediaType, type StremioMetaPreview } from '@blissful/core';
 import { colors, font } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
+import { useRailOpen } from '../lib/railStore';
 import { NavRail } from '../components/NavRail';
 import { PosterCard, type CardItem } from '../components/PosterCard';
 import { TvSelect, TvSelectOverlay, type DropdownAnchor, type SelectOption } from '../components/TvSelect';
@@ -24,6 +25,7 @@ export function DiscoverScreen() {
   const [results, setResults] = useState<StremioMetaPreview[]>([]);
   const [loading, setLoading] = useState(true);
   const [dropdown, setDropdown] = useState<DropdownAnchor | null>(null);
+  const railOpen = useRailOpen();
 
   useEffect(() => {
     let cancelled = false;
@@ -58,7 +60,9 @@ export function DiscoverScreen() {
   return (
     <View style={styles.root}>
       <NavRail active="Discover" />
-      <View style={{ position: 'absolute', left: m.contentLeft, top: m.safeY, right: m.safeX, bottom: 0 }}>
+      {/* isTVSelectable on this one container cascades to the dropdowns + grid,
+          trapping focus in the rail while it's open (one flip, not per-card). */}
+      <View isTVSelectable={!railOpen} style={{ position: 'absolute', left: m.contentLeft, top: m.safeY, right: m.safeX, bottom: 0 }}>
         <Text style={{ fontFamily: font.serif, fontSize: m.s(40), color: colors.text, marginLeft: padL, marginBottom: m.s(14) }}>Discover</Text>
 
         <View style={{ flexDirection: 'row', gap: m.s(12), marginLeft: padL, marginBottom: m.s(18) }}>

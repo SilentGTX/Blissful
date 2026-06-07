@@ -6,7 +6,6 @@ import { memo, useEffect, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { fetchMeta, normalizeStremioImage, type StremioMetaDetail, type StremioMetaPreview } from '@blissful/core';
 import { markContentFocus } from '../lib/focusBus';
-import { useRailOpen } from '../lib/railStore';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import type { RootStackParamList } from '../navigation/types';
@@ -32,12 +31,10 @@ function HeroBtn({
   upTag?: number;
   onPress: () => void;
 }) {
-  const railOpen = useRailOpen();
   const [focused, setFocused] = useState(false);
   return (
     <Pressable
       hasTVPreferredFocus={autoFocus}
-      isTVSelectable={!railOpen}
       nextFocusUp={upTag}
       onFocus={() => { setFocused(true); markContentFocus(Boolean(atRowStart)); }}
       onBlur={() => setFocused(false)}
@@ -63,11 +60,9 @@ function HeroBtn({
 }
 
 function GenreChip({ label, m, atRowStart, onPress }: { label: string; m: ReturnType<typeof useMetrics>; atRowStart?: boolean; onPress: () => void }) {
-  const railOpen = useRailOpen();
   const [f, setF] = useState(false);
   return (
     <Pressable
-      isTVSelectable={!railOpen}
       onFocus={() => { setF(true); markContentFocus(Boolean(atRowStart)); }}
       onBlur={() => setF(false)}
       onPress={onPress}

@@ -46,7 +46,8 @@ export function TopBar({
   const navigation = useNavigation<any>();
   const { user } = useAuth();
   const m = useMetrics();
-  const railOpen = useRailOpen();
+  const railOpen = useRailOpen(); // gate the 2-3 top-bar focusables (cheap) so an
+  // open rail traps focus here too; the rail's own ScrollView cascade covers the cards.
   const [searchFocused, setSearchFocused] = useState(false);
   const [avatarFocused, setAvatarFocused] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);

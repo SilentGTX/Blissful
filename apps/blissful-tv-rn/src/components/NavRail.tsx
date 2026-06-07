@@ -151,8 +151,11 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
     focusedRef.current = focused;
   };
 
-  // While open, the content is non-focusable (railStore), so focus is trapped in
-  // the rail and CANNOT leave by going up/down/left — only D-pad Right closes it.
+  // While open, each rail-bearing screen's content CONTAINER goes non-focusable
+  // (railStore -> isTVSelectable on ONE ScrollView, which cascades to its cards),
+  // so focus is trapped in the rail and can only leave via D-pad Right. Flipping
+  // one container — not every card — is what keeps open instant (per-card flips
+  // stalled the native tvos focus engine ~1.3s).
   useEffect(() => {
     setRailOpen(expanded);
   }, [expanded]);

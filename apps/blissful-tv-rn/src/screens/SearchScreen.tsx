@@ -2,6 +2,7 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Keyboard, ScrollView, StyleSheet, Text, useTVEventHandler, View } from 'react-native';
 import { fetchCatalog, type StremioMetaPreview } from '@blissful/core';
+import { useRailOpen } from '../lib/railStore';
 import { colors, font } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { NavRail } from '../components/NavRail';
@@ -84,6 +85,7 @@ export function SearchScreen() {
   });
 
   const hasResults = movies.length > 0 || series.length > 0;
+  const railOpen = useRailOpen();
 
   return (
     <View style={styles.root}>
@@ -92,6 +94,7 @@ export function SearchScreen() {
           genre chip) — show results instead. Only auto-focus an empty search. */}
       <TopBar searchValue={query} onSearchChange={setQuery} searchAutoFocus={!route.params?.query} />
       <ScrollView
+        isTVSelectable={!railOpen}
         style={{ position: 'absolute', left: m.contentLeft, top: m.contentTop, right: 0, bottom: 0 }}
         contentContainerStyle={{ paddingTop: m.s(8), paddingBottom: m.s(40) }}
         showsVerticalScrollIndicator={false}

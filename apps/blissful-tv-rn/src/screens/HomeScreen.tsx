@@ -5,6 +5,7 @@ import { findNodeHandle, ScrollView, StyleSheet, View } from 'react-native';
 import { fetchCatalog, type StremioMetaPreview } from '@blissful/core';
 import { colors } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
+import { useRailOpen } from '../lib/railStore';
 import { useAuth } from '../context/AuthContext';
 import { fetchContinueWatching, type CwItem } from '../lib/continueWatching';
 import { Hero } from '../components/Hero';
@@ -22,6 +23,7 @@ const SAMPLE_STREAM = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
 export function HomeScreen() {
   const navigation = useNavigation<Nav>();
   const m = useMetrics();
+  const railOpen = useRailOpen();
   const { token } = useAuth();
   const [featured, setFeatured] = useState<StremioMetaPreview | null>(null);
   const [cw, setCw] = useState<CwItem[]>([]);
@@ -83,6 +85,10 @@ export function HomeScreen() {
       <NavRail active="Home" />
       <TopBar searchRef={searchRef} />
       <ScrollView
+        // While the rail is open, the whole content area is non-focusable so the
+        // D-pad can't reach a card behind the rail. ONE view flips, not 40 — the
+        // per-card flip stalled the native tvos focus engine (~1.3s).
+        isTVSelectable={!railOpen}
         style={{ position: 'absolute', left: m.contentLeft, top: m.contentTop, right: 0, bottom: 0 }}
         contentContainerStyle={{ paddingRight: m.safeX, paddingBottom: m.s(60) }}
         showsVerticalScrollIndicator={false}

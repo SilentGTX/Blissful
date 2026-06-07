@@ -4,7 +4,6 @@ import { BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from 'reac
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { markContentFocus } from '../lib/focusBus';
-import { useRailOpen } from '../lib/railStore';
 
 export type SelectOption = { key: string; label: string };
 type M = ReturnType<typeof useMetrics>;
@@ -39,7 +38,6 @@ export function TvSelect({
   atRowStart?: boolean;
   onOpen: (anchor: DropdownAnchor) => void;
 }) {
-  const railOpen = useRailOpen();
   const [focused, setFocused] = useState(false);
   const triggerRef = useRef<View>(null);
   const current = options.find((o) => o.key === value);
@@ -47,7 +45,6 @@ export function TvSelect({
   return (
     <Pressable
       ref={triggerRef}
-      isTVSelectable={!railOpen}
       onFocus={() => { setFocused(true); markContentFocus(Boolean(atRowStart)); }}
       onBlur={() => setFocused(false)}
       onPress={open}
