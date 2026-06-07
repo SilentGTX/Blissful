@@ -84,9 +84,18 @@ export function PlayerScreen() {
     player.muted = muted;
   }, [muted, player]);
 
-  // Reveal the video only once a real duration loads (> the placeholder length).
+  // Reveal the video only once a real duration loads (> the placeholder length),
+  // and on the first reveal seek to the Continue-Watching resume position.
+  const seekedRef = useRef(false);
   useEffect(() => {
-    if (duration > DMCA_MAX_SECONDS) setRevealed(true);
+    if (duration > DMCA_MAX_SECONDS) {
+      if (!seekedRef.current) {
+        seekedRef.current = true;
+        const start = params.startSeconds ?? 0;
+        if (start > 0 && start < duration - 5) player.currentTime = start;
+      }
+      setRevealed(true);
+    }
   }, [duration]);
 
   // Auto-skip the DMCA placeholder.

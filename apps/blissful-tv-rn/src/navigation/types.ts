@@ -13,6 +13,7 @@ export type RootStackParamList = {
     // The title's landscape logo (buffering veil) + backdrop, from the detail meta.
     logo?: string | null;
     background?: string | null;
+    startSeconds?: number; // resume position (Continue Watching)
   };
   Login: undefined;
   Search: { query?: string } | undefined;
