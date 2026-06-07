@@ -9,9 +9,10 @@ import { useMetrics } from '../theme/metrics';
 import { useToast } from '../components/Toast';
 import { BufferingVeil } from '../components/player/BufferingVeil';
 import { PauseOverlay } from '../components/player/PauseOverlay';
-import { SettingsDrawer, type DrawerItem } from '../components/player/SettingsDrawer';
+import { SettingsDrawer, type DrawerAudioTrack, type DrawerSubtitleTrack } from '../components/player/SettingsDrawer';
 import { AudioIcon, BackPill, PlayIcon, PlayerIconBtn, SourceBadges, SubsIcon, WatchPartyButton } from '../components/player/PlayerControls';
 import { detectSource, is4kTitle, isHdrTitle } from '../lib/colorUtils';
+import { readTvSettings } from '../lib/tvSettings';
 import type { RootStackParamList } from '../navigation/types';
 
 type PlayerRoute = RouteProp<RootStackParamList, 'Player'>;
@@ -68,16 +69,21 @@ export function PlayerScreen() {
   const [curAudio, setCurAudio] = useState<string | null>(null);
   const [curSub, setCurSub] = useState<string | null>(null);
 
-  // Virtual focus position (playback rows) + the settings drawer.
+  // Subtitle appearance (UI-only until the native player — expo-video has no
+  // subtitle styling/delay API). Seeded from the stored TV settings.
+  const tvs = readTvSettings();
+  const [subSizePx, setSubSizePx] = useState(tvs.subtitlesSizePx ?? 28);
+  const [subColor, setSubColor] = useState('rgba(255,255,255,1)');
+  const [subDelay, setSubDelay] = useState(0);
+
+  // Virtual focus position (playback rows) + the settings drawer. The drawer is
+  // self-contained — it owns its own D-pad, so we only track which one is open.
   const [row, setRow] = useState<Row>('none');
   const [idx, setIdx] = useState(0);
   const [drawer, setDrawer] = useState<Drawer>('none');
-  const [drawerIdx, setDrawerIdx] = useState(0);
   const rowRef = useRef<Row>('none');
   const idxRef = useRef(0);
   const drawerRef = useRef<Drawer>('none');
-  const drawerIdxRef = useRef(0);
-  const drawerItemsRef = useRef<DrawerItem[]>([]);
   const playingRef = useRef(true);
   playingRef.current = playing;
 
@@ -143,15 +149,14 @@ export function PlayerScreen() {
 
   const openDrawer = (d: Drawer) => {
     drawerRef.current = d;
-    drawerIdxRef.current = 0;
     setDrawer(d);
-    setDrawerIdx(0);
     setControlsVisible(true);
   };
   const closeDrawer = () => {
+    const wasAudio = drawerRef.current === 'audio';
     drawerRef.current = 'none';
     setDrawer('none');
-    goRow('bottom', BOTTOM.indexOf(drawer === 'audio' ? 'audio' : 'subtitles'));
+    goRow('bottom', BOTTOM.indexOf(wasAudio ? 'audio' : 'subtitles'));
   };
 
   useEffect(() => {
@@ -191,32 +196,21 @@ export function PlayerScreen() {
     bumpControls();
   };
 
-  // Build the drawer item list for the active tab.
+  // Map the engine tracks to the drawer's shapes (embedded subs only today).
   const trackLabel = (t: Track, fallback: string) => t.label || t.language || fallback;
-  const drawerItems: DrawerItem[] =
-    drawer === 'audio'
-      ? audioTracks.map((t) => ({ id: t.id, label: trackLabel(t, 'Audio'), meta: t.language, active: t.id === curAudio }))
-      : drawer === 'subtitles'
-        ? [{ id: 'off', label: 'Off', meta: 'No Subtitles', active: curSub == null }, ...subTracks.map((t) => ({ id: t.id, label: trackLabel(t, 'Subtitle'), meta: t.language, active: t.id === curSub }))]
-        : [];
-  drawerItemsRef.current = drawerItems;
+  const drawerAudio: DrawerAudioTrack[] = audioTracks.map((t) => ({ id: t.id, label: trackLabel(t, 'Audio'), lang: t.language, codec: null }));
+  const drawerSubs: DrawerSubtitleTrack[] = subTracks.map((t) => ({ id: t.id, label: trackLabel(t, 'Subtitle'), lang: t.language, embedded: true, origin: null }));
 
-  const applyDrawer = () => {
-    const items = drawerItemsRef.current;
-    const it = items[drawerIdxRef.current];
-    if (!it) return;
-    const p = player as unknown as { audioTrack?: Track | null; subtitleTrack?: Track | null };
-    if (drawerRef.current === 'audio') {
-      const t = audioTracks.find((x) => x.id === it.id);
-      if (t) { p.audioTrack = t; setCurAudio(t.id); toast.show(`Audio: ${it.label}`); }
-    } else {
-      if (it.id === 'off') { p.subtitleTrack = null; setCurSub(null); toast.show('Subtitles: Off'); }
-      else {
-        const t = subTracks.find((x) => x.id === it.id);
-        if (t) { p.subtitleTrack = t; setCurSub(t.id); toast.show(`Subtitles: ${it.label}`); }
-      }
-    }
-    closeDrawer();
+  const applyAudio = (id: string) => {
+    const t = audioTracks.find((x) => x.id === id);
+    const p = player as unknown as { audioTrack?: Track | null };
+    if (t) { p.audioTrack = t; setCurAudio(t.id); toast.show(`Audio: ${trackLabel(t, 'Audio')}`); }
+  };
+  const applySubtitle = (id: string | null) => {
+    const p = player as unknown as { subtitleTrack?: Track | null };
+    if (id == null) { p.subtitleTrack = null; setCurSub(null); toast.show('Subtitles: Off'); return; }
+    const t = subTracks.find((x) => x.id === id);
+    if (t) { p.subtitleTrack = t; setCurSub(t.id); toast.show(`Subtitles: ${trackLabel(t, 'Subtitle')}`); }
   };
 
   const runBottom = (id: (typeof BOTTOM)[number]) => {
@@ -237,35 +231,9 @@ export function PlayerScreen() {
     if (lastEvt.current.type === type && now - lastEvt.current.at < 180) return;
     lastEvt.current = { type, at: now };
 
-    // ---- Drawer owns the D-pad while open (Left/Back closes it) ----
-    if (drawerRef.current !== 'none') {
-      const len = drawerItemsRef.current.length;
-      switch (type) {
-        case 'down':
-          drawerIdxRef.current = Math.min(len - 1, drawerIdxRef.current + 1);
-          setDrawerIdx(drawerIdxRef.current);
-          break;
-        case 'up':
-          drawerIdxRef.current = Math.max(0, drawerIdxRef.current - 1);
-          setDrawerIdx(drawerIdxRef.current);
-          break;
-        case 'left':
-        case 'rewind':
-          closeDrawer();
-          break;
-        case 'select':
-          if (now - lastOk.current < 300) break;
-          lastOk.current = now;
-          applyDrawer();
-          break;
-        case 'playPause':
-          togglePlay();
-          break;
-        default:
-          break;
-      }
-      return;
-    }
+    // The self-contained drawer owns the D-pad while open — stand our handler
+    // down so the two useTVEventHandlers never both act on the same key.
+    if (drawerRef.current !== 'none') return;
 
     const r = rowRef.current;
     const i = idxRef.current;
@@ -343,7 +311,7 @@ export function PlayerScreen() {
       <BufferingVeil visible={!revealed} logo={params.logo} />
 
       <PauseOverlay
-        visible={!playing && revealed && !drawerOpen}
+        visible={!playing && revealed}
         logo={params.logo}
         title={params.title}
         description={params.description}
@@ -390,8 +358,28 @@ export function PlayerScreen() {
         </View>
       ) : null}
 
-      {/* Settings drawer (Audio / Subtitles) — slides in from the right. */}
-      <SettingsDrawer open={drawerOpen} tab={drawer === 'audio' ? 'audio' : 'subtitles'} items={drawerItems} selIdx={drawerIdx} />
+      {/* Settings drawer (Audio / Subtitles) — slides in from the right, owns
+          its own D-pad (Left/Back closes). */}
+      <SettingsDrawer
+        open={drawerOpen}
+        initialTab={drawer === 'audio' ? 'audio' : 'subtitles'}
+        onClose={closeDrawer}
+        audioTracks={drawerAudio}
+        currentAudioId={curAudio}
+        onApplyAudio={applyAudio}
+        subtitleTracks={drawerSubs}
+        currentSubtitleId={curSub}
+        onApplySubtitle={applySubtitle}
+        subtitleSizePx={subSizePx}
+        onSubtitleSizePxChange={setSubSizePx}
+        subtitleColor={subColor}
+        onSubtitleColorChange={setSubColor}
+        subtitleDelay={subDelay}
+        onSubtitleDelayChange={setSubDelay}
+        onSaveAppearance={() => { toast.show('Subtitle appearance saved'); closeDrawer(); }}
+        defaultSubtitleSizePx={tvs.subtitlesSizePx ?? 28}
+        defaultSubtitleColor={'rgba(255,255,255,1)'}
+      />
     </View>
   );
 }
