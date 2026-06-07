@@ -3,10 +3,11 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, useTVEventHandler, View } from 'react-native';
+import { BackHandler, StyleSheet, Text, useTVEventHandler, View } from 'react-native';
 import { font } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { BufferingVeil } from '../components/player/BufferingVeil';
+import { PauseOverlay } from '../components/player/PauseOverlay';
 import {
   AudioIcon,
   BackPill,
@@ -23,10 +24,19 @@ import { detectSource, is4kTitle, isHdrTitle } from '../lib/colorUtils';
 import type { RootStackParamList } from '../navigation/types';
 
 type PlayerRoute = RouteProp<RootStackParamList, 'Player'>;
-const SEEK_STEP = 10; // seconds
+const SEEK_STEP = 10;
 const CONTROLS_TIMEOUT = 3500;
-const ACCENT = '#95a2ff'; // --bliss-accent (lavender) — scrub fill
-const DMCA_MAX_SECONDS = 45; // the debrid "removed" placeholder is ~30s
+const ACCENT = '#95a2ff';
+const DMCA_MAX_SECONDS = 45;
+
+// Virtual D-pad model (ported from the old Android player): one focus owner (the
+// player surface) + a key handler that walks two control rows by index — never
+// native per-button focus (which fights itself in a WebView/overlay). Down/Up
+// enter the BOTTOM / TOP row; Left/Right walk that row (or seek in plain
+// playback); OK fires the lit control; Up/Back exit the row.
+type Row = 'none' | 'bottom' | 'top';
+const BOTTOM = ['play', 'mute', 'subtitles', 'audio', 'fullscreen'] as const;
+const TOP = ['back', 'watchparty'] as const;
 
 function fmt(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) return '0:00';
@@ -58,18 +68,16 @@ export function PlayerScreen() {
   const [errored, setErrored] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
-  // Whether a control button (not the root playback surface) holds focus. Seek
-  // (Left/Right) only fires in plain playback; while a control is focused the
-  // native engine walks the buttons instead.
-  const [controlFocused, setControlFocused] = useState(false);
-  const controlFocusedRef = useRef(false);
   const [muted, setMuted] = useState(false);
-  const volume = 1; // 0..2 (unity); slider is a styled indicator for now
+  const volume = 1; // 0..2; slider is a styled level indicator (remote owns volume)
 
-  const setCtrlFocus = (f: boolean) => {
-    controlFocusedRef.current = f;
-    setControlFocused(f);
-  };
+  // Virtual focus position.
+  const [row, setRow] = useState<Row>('none');
+  const [idx, setIdx] = useState(0);
+  const rowRef = useRef<Row>('none');
+  const idxRef = useRef(0);
+  const playingRef = useRef(true);
+  playingRef.current = playing;
 
   useEffect(() => {
     player.replace(current.url);
@@ -82,7 +90,6 @@ export function PlayerScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index]);
 
-  // Advance past a stream that errors (e.g. an un-decodable codec on this device).
   useEffect(() => {
     if (errored && !skippedRef.current && index < playlist.length - 1) {
       skippedRef.current = true;
@@ -94,8 +101,6 @@ export function PlayerScreen() {
     player.muted = muted;
   }, [muted, player]);
 
-  // Reveal the video only once a real duration loads (> the placeholder length),
-  // and on the first reveal seek to the Continue-Watching resume position.
   const seekedRef = useRef(false);
   useEffect(() => {
     if (duration > DMCA_MAX_SECONDS) {
@@ -108,7 +113,6 @@ export function PlayerScreen() {
     }
   }, [duration]);
 
-  // Auto-skip the DMCA placeholder.
   useEffect(() => {
     if (skippedRef.current) return;
     if (duration > 0 && duration <= DMCA_MAX_SECONDS && index < playlist.length - 1) {
@@ -119,14 +123,23 @@ export function PlayerScreen() {
 
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastEvt = useRef<{ type: string; at: number }>({ type: '', at: 0 });
+  const lastOk = useRef(0);
 
   const bumpControls = () => {
     setControlsVisible(true);
     if (hideTimer.current) clearTimeout(hideTimer.current);
-    // Don't auto-hide while a control is focused (else the focused button vanishes).
+    // Keep the bar up while a control row is focused or while paused.
     hideTimer.current = setTimeout(() => {
-      if (!controlFocusedRef.current) setControlsVisible(false);
+      if (rowRef.current === 'none' && playingRef.current) setControlsVisible(false);
     }, CONTROLS_TIMEOUT);
+  };
+
+  const goRow = (r: Row, i = 0) => {
+    rowRef.current = r;
+    idxRef.current = i;
+    setRow(r);
+    setIdx(i);
+    bumpControls();
   };
 
   useEffect(() => {
@@ -156,14 +169,39 @@ export function PlayerScreen() {
     bumpControls();
   };
 
+  const runBottom = (id: (typeof BOTTOM)[number]) => {
+    if (id === 'play') togglePlay();
+    else if (id === 'mute') setMuted((v) => !v);
+    // subtitles / audio / fullscreen menus are the next chunk
+    bumpControls();
+  };
+  const runTop = (id: (typeof TOP)[number]) => {
+    if (id === 'back') navigation.goBack();
+    // watchparty is the next chunk
+  };
+
   useTVEventHandler((evt) => {
     const type = evt?.eventType;
     if (!type) return;
     const now = Date.now();
-    if (lastEvt.current.type === type && now - lastEvt.current.at < 220) return;
+    if (lastEvt.current.type === type && now - lastEvt.current.at < 180) return;
     lastEvt.current = { type, at: now };
+    const r = rowRef.current;
+    const i = idxRef.current;
 
     switch (type) {
+      case 'select': {
+        if (now - lastOk.current < 300) break;
+        lastOk.current = now;
+        if (r === 'bottom') { runBottom(BOTTOM[i]); goRow('none'); }
+        else if (r === 'top') { runTop(TOP[i]); goRow('none'); }
+        else {
+          const wasPlaying = playingRef.current;
+          togglePlay();
+          if (wasPlaying) goRow('bottom', 0); // pause drops onto the play button
+        }
+        break;
+      }
       case 'playPause':
         togglePlay();
         break;
@@ -175,44 +213,77 @@ export function PlayerScreen() {
         player.pause();
         bumpControls();
         break;
+      case 'down':
+        if (r === 'none') goRow('bottom', 0);
+        else if (r === 'top') goRow('none');
+        else bumpControls(); // bottom: swallow
+        break;
+      case 'up':
+        if (r === 'none') goRow('top', 0);
+        else if (r === 'bottom') goRow('none');
+        else bumpControls(); // top: swallow
+        break;
       case 'right':
       case 'fastForward':
-        if (!controlFocusedRef.current) seek(SEEK_STEP); // seek only in plain playback
-        else bumpControls();
+        if (r === 'bottom') goRow('bottom', Math.min(BOTTOM.length - 1, i + 1));
+        else if (r === 'top') goRow('top', Math.min(TOP.length - 1, i + 1));
+        else seek(SEEK_STEP);
         break;
       case 'left':
       case 'rewind':
-        if (!controlFocusedRef.current) seek(-SEEK_STEP);
-        else bumpControls();
+        if (r === 'bottom') goRow('bottom', Math.max(0, i - 1));
+        else if (r === 'top') goRow('top', Math.max(0, i - 1));
+        else seek(-SEEK_STEP);
         break;
       default:
         bumpControls();
     }
   });
 
+  // Hardware Back: exit a focused row first; otherwise leave the player.
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (rowRef.current !== 'none') {
+        goRow('none');
+        return true;
+      }
+      return false;
+    });
+    return () => sub.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const pct = duration > 0 ? Math.min(1, time / duration) : 0;
   const badges = [detectSource(current.url)?.code, is4kTitle(current.title) ? '4K' : null, isHdrTitle(current.title) ? 'HDR' : null].filter(Boolean) as string[];
+  const bf = (id: (typeof BOTTOM)[number]) => row === 'bottom' && BOTTOM[idx] === id;
+  const tf = (id: (typeof TOP)[number]) => row === 'top' && TOP[idx] === id;
 
   return (
-    <Pressable
-      style={styles.root}
-      hasTVPreferredFocus
-      focusable
-      onFocus={() => setCtrlFocus(false)}
-      onPress={togglePlay}
-    >
+    <View style={styles.root} focusable hasTVPreferredFocus>
       <VideoView player={player} style={[StyleSheet.absoluteFill, { opacity: revealed ? 1 : 0 }]} contentFit="contain" nativeControls={false} />
 
       <BufferingVeil visible={!revealed} logo={params.logo} />
 
+      {/* Pause overlay — title logo + metadata bottom-left while paused. */}
+      <PauseOverlay
+        visible={!playing && revealed}
+        logo={params.logo}
+        title={params.title}
+        description={params.description}
+        releaseInfo={params.releaseInfo}
+        imdbId={params.imdbId}
+        rating={params.rating}
+        duration={duration}
+      />
+
       {/* TOP OVERLAY — back pill (left), source badges + Watch Party (right). */}
       {controlsVisible ? (
-        <LinearGradient colors={['rgba(0,0,0,0.8)', 'rgba(0,0,0,0.5)', 'transparent']} style={{ position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: m.s(24), paddingTop: m.s(24), paddingBottom: m.s(16) }}>
+        <LinearGradient colors={['rgba(0,0,0,0.8)', 'rgba(0,0,0,0.5)', 'transparent']} style={{ position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: m.s(24), paddingTop: m.s(24), paddingBottom: m.s(16) }} pointerEvents="none">
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: m.s(12) }}>
-            <BackPill m={m} title={current.title} onPress={() => navigation.goBack()} onFocusChange={setCtrlFocus} />
+            <BackPill m={m} title={params.title} focused={tf('back')} />
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(12) }}>
               <SourceBadges m={m} badges={badges} />
-              <WatchPartyButton m={m} onPress={() => { /* watch party — backlog */ }} onFocusChange={setCtrlFocus} />
+              <WatchPartyButton m={m} focused={tf('watchparty')} />
             </View>
           </View>
         </LinearGradient>
@@ -220,8 +291,8 @@ export function PlayerScreen() {
 
       {/* BOTTOM CONTROLS — scrub strip + transport row. */}
       {controlsVisible ? (
-        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0 }}>
-          <LinearGradient colors={['transparent', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.85)']} style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(16), paddingHorizontal: m.s(22), paddingTop: m.s(40), paddingBottom: m.s(6) }} pointerEvents="none">
+        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0 }} pointerEvents="none">
+          <LinearGradient colors={['transparent', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.85)']} style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(16), paddingHorizontal: m.s(22), paddingTop: m.s(40), paddingBottom: m.s(6) }}>
             <Text style={timeStyle(m)}>{fmt(time)}</Text>
             <View style={{ flex: 1, height: m.s(4), borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.25)', justifyContent: 'center' }}>
               <View style={{ position: 'absolute', left: 0, height: m.s(4), borderRadius: 999, width: `${pct * 100}%`, backgroundColor: ACCENT }} />
@@ -231,22 +302,20 @@ export function PlayerScreen() {
           </LinearGradient>
 
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(0,0,0,0.85)', paddingHorizontal: m.s(18), paddingVertical: m.s(10) }}>
-            {/* LEFT: play, mute, volume slider */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(8) }}>
-              <PlayerIconBtn m={m} onPress={togglePlay} onFocusChange={setCtrlFocus}>{(c) => <PlayIcon m={m} paused={!playing} color={c} />}</PlayerIconBtn>
-              <PlayerIconBtn m={m} onPress={() => { setMuted((v) => !v); bumpControls(); }} onFocusChange={setCtrlFocus}>{(c) => <MuteIcon m={m} level={volume} muted={muted} color={c} />}</PlayerIconBtn>
-              <VolumeSlider m={m} level={muted ? 0 : volume} focused={false} />
+              <PlayerIconBtn m={m} focused={bf('play')}>{(c) => <PlayIcon m={m} paused={!playing} color={c} />}</PlayerIconBtn>
+              <PlayerIconBtn m={m} focused={bf('mute')}>{(c) => <MuteIcon m={m} level={volume} muted={muted} color={c} />}</PlayerIconBtn>
+              <VolumeSlider m={m} level={muted ? 0 : volume} />
             </View>
-            {/* RIGHT: subtitles, audio, fullscreen */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(4) }}>
-              <PlayerIconBtn m={m} onPress={() => { /* subtitles menu — next chunk */ bumpControls(); }} onFocusChange={setCtrlFocus}>{(c) => <SubsIcon m={m} color={c} />}</PlayerIconBtn>
-              <PlayerIconBtn m={m} onPress={() => { /* audio menu — next chunk */ bumpControls(); }} onFocusChange={setCtrlFocus}>{(c) => <AudioIcon m={m} color={c} />}</PlayerIconBtn>
-              <PlayerIconBtn m={m} onPress={() => { /* always fullscreen on TV */ bumpControls(); }} onFocusChange={setCtrlFocus}>{(c) => <FullscreenIcon m={m} color={c} />}</PlayerIconBtn>
+              <PlayerIconBtn m={m} focused={bf('subtitles')}>{(c) => <SubsIcon m={m} color={c} />}</PlayerIconBtn>
+              <PlayerIconBtn m={m} focused={bf('audio')}>{(c) => <AudioIcon m={m} color={c} />}</PlayerIconBtn>
+              <PlayerIconBtn m={m} focused={bf('fullscreen')}>{(c) => <FullscreenIcon m={m} color={c} />}</PlayerIconBtn>
             </View>
           </View>
         </View>
       ) : null}
-    </Pressable>
+    </View>
   );
 }
 

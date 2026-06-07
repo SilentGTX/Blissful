@@ -14,6 +14,11 @@ export type RootStackParamList = {
     logo?: string | null;
     background?: string | null;
     startSeconds?: number; // resume position (Continue Watching)
+    // Pause-overlay metadata (from the detail/CW meta).
+    description?: string | null;
+    releaseInfo?: string | null;
+    imdbId?: string | null;
+    rating?: string | null;
   };
   Login: undefined;
   Search: { query?: string } | undefined;

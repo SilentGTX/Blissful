@@ -303,11 +303,17 @@ export function DetailScreen() {
           setPicker(null);
           navigation.navigate('Player', {
             url: streams[index].url,
-            title: streams[index].title,
+            // Clean media name for the back pill / pause overlay (NOT the torrent
+            // filename — that's the stream title, kept only inside `playlist`).
+            title: meta?.name ?? params.name,
             playlist: streams,
             startIndex: index,
             logo: normalizeStremioImage(meta?.logo),
             background,
+            description: meta?.description ?? null,
+            releaseInfo: released,
+            imdbId: meta?.imdb_id ?? (IMDB_RE.test(params.id) ? params.id : null),
+            rating: meta?.imdbRating != null ? String(meta.imdbRating) : null,
           });
         }}
       />

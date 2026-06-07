@@ -118,6 +118,10 @@ export function HomeScreen() {
         logo,
         background: normalizeStremioImage(meta?.background),
         startSeconds,
+        description: meta?.description ?? null,
+        releaseInfo: meta?.releaseInfo ?? (meta?.year != null ? String(meta.year) : null),
+        imdbId: meta?.imdb_id ?? null,
+        rating: meta?.imdbRating != null ? String(meta.imdbRating) : null,
       });
       setTimeout(() => setResolving(null), 600); // player now covers the veil
     } catch {
