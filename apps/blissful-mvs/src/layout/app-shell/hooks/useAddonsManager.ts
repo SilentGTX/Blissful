@@ -11,11 +11,18 @@ type UseAddonsManagerParams = {
 };
 
 const CINEMETA_URL = 'https://v3-cinemeta.strem.io/manifest.json';
+// Bulgarian Subtitles addon — always merged into the subtitle results for
+// EVERY user (guest + signed-in), like Cinemeta, so BG subs are available
+// regardless of the user's saved addon list. Declares resources:["subtitles"],
+// types:["movie","series"], idPrefixes:["tt"].
+const BULGARIAN_SUBS_URL = 'https://bulgarian-subs-addon.onrender.com/manifest.json';
+
 const DEFAULT_ADDON_URLS = [
   CINEMETA_URL,
   'https://torrentio.strem.fun/lite/manifest.json',
   'https://thepiratebay-plus.strem.fun/manifest.json',
   'https://opensubtitles-v3.strem.io/manifest.json',
+  BULGARIAN_SUBS_URL,
 ];
 
 /** Hydrate the in-memory addon list from blissful-storage (signed-in)
@@ -67,7 +74,14 @@ export function useAddonsManager({ authKey, storedAddonUrls, persistStorageState
 
     // Always include Cinemeta first — DiscoverPage's redirect picks it
     // up as the default movie catalog source.
-    const finalUrls = [CINEMETA_URL, ...sourceUrls.filter((u) => u !== CINEMETA_URL)];
+    let finalUrls = [CINEMETA_URL, ...sourceUrls.filter((u) => u !== CINEMETA_URL)];
+    // Always merge in the Bulgarian Subtitles addon for EVERY user (guest +
+    // signed-in, whose addons come from storedAddonUrls and wouldn't include
+    // it otherwise), so BG subs are an always-on subtitle source. Append only
+    // if not already present (user may have added it manually).
+    if (!finalUrls.includes(BULGARIAN_SUBS_URL)) {
+      finalUrls = [...finalUrls, BULGARIAN_SUBS_URL];
+    }
     setAddons(finalUrls.map((transportUrl) => ({ transportUrl })));
     setAddonsLoading(false);
   }, [authKey, storedAddonUrls, realDebridApiKey]);

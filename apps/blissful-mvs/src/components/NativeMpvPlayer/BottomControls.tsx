@@ -69,6 +69,9 @@ export type BottomControlsProps = {
   openSettings: (tab: SettingsTab) => void;
   isSeriesLike?: boolean;
   toggleEpisodes?: () => void;
+  /** In RD fallback mode, whether there are alternative torrents to switch
+   *  between -- surfaces a "Releases" cloud icon that opens the Releases tab. */
+  hasReleases?: boolean;
 };
 
 export function BottomControls(props: BottomControlsProps) {
@@ -94,6 +97,7 @@ export function BottomControls(props: BottomControlsProps) {
     openSettings,
     isSeriesLike,
     toggleEpisodes,
+    hasReleases,
   } = props;
 
   const livePos = usePlaybackClock();
@@ -321,6 +325,21 @@ export function BottomControls(props: BottomControlsProps) {
               <StremioIcon name="audio-tracks" className="h-5 w-5" />
             </button>
           </BlissTooltip>
+          {/* Releases (Real-Debrid fallback) -- opens the unified menu on the
+              Releases tab to switch the played torrent. Only shown when the RD
+              fallback resolved alternative releases. */}
+          {hasReleases ? (
+            <BlissTooltip content="Releases" placement="top">
+              <button
+                type="button"
+                className="bliss-player-icon-btn flex h-10 w-10 items-center justify-center rounded-full"
+                onClick={() => openSettings('releases')}
+                aria-label="Releases"
+              >
+                <StremioIcon name="cloud" className="h-5 w-5" />
+              </button>
+            </BlissTooltip>
+          ) : null}
           <BlissTooltip
             content={isFullscreen ? 'Exit full screen mode' : 'Enter full screen mode'}
             placement="top"

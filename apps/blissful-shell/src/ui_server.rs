@@ -87,6 +87,12 @@ const STREMIO_UPSTREAM: &str = "https://www.strem.io";
 // blissful backend which holds the TMDB API key. Fixed host + path, only
 // the query string is passed through.
 const TMDB_UPSTREAM: &str = "https://blissful.budinoff.com/tmdb-season-info";
+// Real-Debrid fallback "change torrent" releases. The renderer fetches
+// `/rd-fallback?type=..&id=..` same-origin; we forward it to the blissful
+// backend which resolves Torrentio-RD with a server-side key and returns
+// key-free direct URLs (DMCA-removed entries already filtered out upstream).
+// Fixed host + path, only the query string is passed through.
+const RD_FALLBACK_UPSTREAM: &str = "https://blissful.budinoff.com/rd-fallback";
 
 static HTTP_CLIENT: OnceCell<Client> = OnceCell::new();
 static STATIC_ROOT: OnceCell<Option<PathBuf>> = OnceCell::new();
@@ -235,6 +241,11 @@ async fn handle_request(
         // ---- /tmdb-season-info?tmdbId=..&season=.. ----
         (&Method::GET, "/tmdb-season-info") => {
             forward_request(req, TMDB_UPSTREAM, "").await
+        }
+
+        // ---- /rd-fallback?type=..&id=.. ----
+        (&Method::GET, "/rd-fallback") => {
+            forward_request(req, RD_FALLBACK_UPSTREAM, "").await
         }
 
         // ---- everything else: React app (static or Vite proxy) ----

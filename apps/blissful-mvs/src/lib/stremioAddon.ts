@@ -350,19 +350,44 @@ export async function fetchSubtitles(params: {
   const targetUrl = extra
     ? `${baseUrl}/subtitles/${params.type}/${idSegment}/${extra}.json`
     : `${baseUrl}/subtitles/${params.type}/${idSegment}.json`;
-  const res = await fetch(resolveAddonFetchUrl(targetUrl), {
-    headers: {
-      Accept: 'application/json',
-    },
-    signal: params.signal,
-  });
-  if (!res.ok) {
-    if (res.status === 403 || res.status === 404 || res.status === 410 || res.status === 500 || res.status === 502) {
-      return { subtitles: [] };
-    }
-    throw new Error(`Failed to load subtitles ${params.type}/${params.id} (${res.status})`);
+  // Subtitle JSON should be fast; cap each addon at 8s so one wedged/slow
+  // provider (e.g. OpenSubtitles 504-ing on a title it has no data for, or
+  // just being flaky) can't pin the picker. The picker then shows whatever
+  // the healthy addons + embedded tracks return, promptly. Manual controller
+  // (vs AbortSignal.any) for broad browser/WebView2 support.
+  const controller = new AbortController();
+  const onCallerAbort = () => controller.abort();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  if (params.signal) {
+    if (params.signal.aborted) controller.abort();
+    else params.signal.addEventListener('abort', onCallerAbort, { once: true });
   }
-  const subtitles = (await res.json()) as StremioSubtitlesResponse;
+  let res: Response;
+  try {
+    res = await fetch(resolveAddonFetchUrl(targetUrl), {
+      headers: {
+        Accept: 'application/json',
+      },
+      signal: controller.signal,
+    });
+  } catch {
+    // Timeout, caller cancel, or network error → no subs from this source.
+    return { subtitles: [] };
+  } finally {
+    clearTimeout(timer);
+    if (params.signal) params.signal.removeEventListener('abort', onCallerAbort);
+  }
+  if (!res.ok) {
+    // Any error status (incl. 504 from a flaky OpenSubtitles) → no subs from
+    // this addon, never throw — one dead provider must not break the picker.
+    return { subtitles: [] };
+  }
+  let subtitles: StremioSubtitlesResponse;
+  try {
+    subtitles = (await res.json()) as StremioSubtitlesResponse;
+  } catch {
+    return { subtitles: [] };
+  }
   setCached(subtitlesCache, cacheKey, subtitles);
   return subtitles;
 }

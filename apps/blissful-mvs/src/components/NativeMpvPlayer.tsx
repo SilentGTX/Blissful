@@ -46,7 +46,7 @@ import { BufferingOverlay } from './NativeMpvPlayer/BufferingOverlay';
 import { usePlayerReady } from '../context/PlayerReadyProvider';
 import { triggerStremioItemSync } from '../lib/stremioLinkApi';
 import { UpNextOverlay } from './NativeMpvPlayer/UpNextOverlay';
-import { SettingsPanel, type SettingsTab } from './NativeMpvPlayer/SettingsPanel';
+import { SettingsPanel, type SettingsTab, type ReleaseOption } from './NativeMpvPlayer/SettingsPanel';
 import { SkipChapterButton } from './NativeMpvPlayer/SkipChapterButton';
 import { useChapterSkip } from './NativeMpvPlayer/useChapterSkip';
 import { useSkipSegments } from './NativeMpvPlayer/useSkipSegments';
@@ -277,6 +277,11 @@ interface NativeMpvPlayerProps {
    *  present, the player connects to the room over WS and stays in
    *  lock-step with the host's timeline. */
   roomCode?: string | null;
+  /** Real-Debrid fallback "change torrent" picker -- the list of candidate
+   *  releases (DMCA-removed ones already filtered server-side by /rd-fallback).
+   *  Surfaced as a "Releases" tab in the settings drawer + a cloud button on
+   *  the bottom controls. */
+  releases?: ReleaseOption[];
 }
 
 const STREAMING_SERVER_URL = 'http://127.0.0.1:11470';
@@ -1564,6 +1569,33 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     [props.type, props.id, props.videoId, props.authKey, props.poster, props.metaTitle, props.logo, props.background, navigate, watchParty.isHost, watchParty.connected],
   );
 
+  // Releases picker: switch the played torrent to a different Real-Debrid
+  // release. Re-navigate to /player with the new `url=` (carrying every other
+  // identity param + the current playhead via `t=` so playback resumes at the
+  // same offset). The `props.url`-keyed load effect re-runs cleanly on the new
+  // url, tearing down the old mpv file and loading the new one -- same path as
+  // onSelectEpisode. The currently-playing url IS the "selected release".
+  const onSelectRelease = useCallback(
+    (newUrl: string) => {
+      if (!newUrl || newUrl === props.url) return;
+      const params = new URLSearchParams();
+      params.set('url', newUrl);
+      if (props.title) params.set('title', props.title);
+      if (props.type) params.set('type', props.type);
+      if (props.id) params.set('id', props.id);
+      if (props.videoId) params.set('videoId', props.videoId);
+      if (props.poster) params.set('poster', props.poster);
+      if (props.background) params.set('background', props.background);
+      if (props.metaTitle) params.set('metaTitle', props.metaTitle);
+      if (props.logo) params.set('logo', props.logo);
+      // Resume at the current playhead on the new release.
+      const resumeAt = Math.floor(timePosRef.current);
+      if (resumeAt > 1) params.set('t', String(resumeAt));
+      navigate(`/player?${params.toString()}`, { replace: true });
+    },
+    [props.url, props.title, props.type, props.id, props.videoId, props.poster, props.background, props.metaTitle, props.logo, navigate],
+  );
+
   // Time-based trigger: show up-next overlay when remaining ≤ configured
   // notification duration.
   useEffect(() => {
@@ -1637,6 +1669,18 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     setShowUpNext(false);
   }, []);
 
+  // Tracks the last subtitle-STYLE signature pushed to mpv (size + colors).
+  // The destructive force-style re-apply (sub-reload + sid off→on) must only
+  // run when a style value actually changed — NOT on the initial run, and NOT
+  // when only `selectedSubKey` changed (the sid event syncing the auto-selected
+  // embedded track). Running sub-reload on a freshly auto-selected EMBEDDED ASS
+  // track deactivates it (sub-reload is for external subs), which left embedded
+  // subtitles blank on load. `null` = effect hasn't run yet (first pass).
+  const lastSubStyleSigRef = useRef<string | null>(null);
+  // Last alang/slang pushed to mpv. Pushing `slang` re-runs mpv's automatic
+  // subtitle selection (overriding a manual sid pick), so only push when the
+  // language preference truly changed — never on a track-selection re-render.
+  const lastLangPrefSigRef = useRef<string | null>(null);
   // Phase 4 iter 2: sync subtitle styling from playerSettings to mpv.
   // Stremio's subtitle pickers (size + text/background/outline color) map
   // directly to mpv's sub-* property set.
@@ -1756,22 +1800,32 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       `FontSize=${embeddedSubPx}`,
     ].join(',');
     desktop.mpv.command('set', 'sub-ass-force-style', assStyle).catch(() => {});
-    // Re-parse the active sub track with the new force-style. For
-    // embedded ASS subs, `sub-reload` alone doesn't always re-process
-    // the styling — mpv has the parsed lib-ass object cached. The
-    // reliable fix is to flip `sid` off then back on, which fully
-    // re-loads the track through the demuxer with the new force-style
-    // applied at parse time. We extract the current sid from the React
-    // state (`selectedSubKey` like `embedded:2`) so we can restore it.
-    desktop.mpv.command('sub-reload').catch(() => {});
-    const embeddedMatch = /^embedded:(\d+)$/.exec(selectedSubKey);
-    if (embeddedMatch) {
-      const sid = embeddedMatch[1];
-      desktop.mpv.command('set', 'sid', 'no').catch(() => {});
-      // Small delay so mpv finishes deactivating before we re-arm sid.
-      window.setTimeout(() => {
-        desktop.mpv.command('set', 'sid', sid).catch(() => {});
-      }, 60);
+    // Re-parse the active sub track with the new force-style. For embedded ASS
+    // subs, `sub-reload` alone doesn't always re-process the styling — mpv has
+    // the parsed lib-ass object cached — so the reliable re-apply flips `sid`
+    // off then back on.
+    //
+    // BUT: this is DESTRUCTIVE on a freshly auto-selected embedded track (the
+    // sid off→on race + sub-reload, which is meant for external subs, can leave
+    // the embedded sub deactivated → blank subtitles on load). So only run it
+    // when a STYLE value actually changed (the user moved the size slider /
+    // picked a color), NOT on the first effect run and NOT when only
+    // `selectedSubKey` changed (the sid event syncing the auto-selected track).
+    const styleSig = `${embeddedSubPx}|${settings.subtitlesTextColor}|${settings.subtitlesBackgroundColor}|${settings.subtitlesOutlineColor}`;
+    const styleChanged =
+      lastSubStyleSigRef.current !== null && lastSubStyleSigRef.current !== styleSig;
+    lastSubStyleSigRef.current = styleSig;
+    if (styleChanged) {
+      desktop.mpv.command('sub-reload').catch(() => {});
+      const embeddedMatch = /^embedded:(\d+)$/.exec(selectedSubKey);
+      if (embeddedMatch) {
+        const sid = embeddedMatch[1];
+        desktop.mpv.command('set', 'sid', 'no').catch(() => {});
+        // Small delay so mpv finishes deactivating before we re-arm sid.
+        window.setTimeout(() => {
+          desktop.mpv.command('set', 'sid', sid).catch(() => {});
+        }, 60);
+      }
     }
 
     // Track-language preferences. mpv accepts comma-separated ISO-639-2
@@ -1787,7 +1841,6 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     const alang = settings.audioLanguage && settings.audioLanguage.trim() !== ''
       ? settings.audioLanguage
       : 'eng,en';
-    desktop.mpv.command('set', 'alang', alang).catch(() => {});
     // mpv's `slang` expects ISO 639 codes (eng, en), not display
     // names (English). Map common names and pass through anything
     // that already looks like a code.
@@ -1807,7 +1860,19 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       persian: 'per,fas,fa', ukrainian: 'ukr,uk', albanian: 'alb,sqi,sq',
     };
     const slangValue = langMap[subLangPref.toLowerCase()] ?? subLangPref;
-    desktop.mpv.command('set', 'slang', slangValue).catch(() => {});
+    // CRITICAL: only push alang/slang when the language PREFERENCE actually
+    // changed — NOT on every effect run. Setting `slang` makes mpv re-run its
+    // automatic subtitle selection, which OVERRIDES a manual `sid` pick and
+    // silently deselects the track the user just chose (the "built-in sub
+    // shows selected but doesn't render" bug: picking it re-fired this effect,
+    // `set slang` re-auto-selected, dropping the manual sid to `-`). The pref
+    // only changes from Settings, never from picking a track in the player.
+    const langSig = `${alang}|${slangValue}`;
+    if (lastLangPrefSigRef.current !== langSig) {
+      lastLangPrefSigRef.current = langSig;
+      desktop.mpv.command('set', 'alang', alang).catch(() => {});
+      desktop.mpv.command('set', 'slang', slangValue).catch(() => {});
+    }
   }, [
     // `subtitleSizePx` is the local state the in-player slider drives
     // directly. The settings-page editor goes through
@@ -3079,6 +3144,9 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         onSubtitleColorChange={(c) => updateColor('text', c, 1)}
         subtitleDelay={subtitleDelay}
         onSubtitleDelayChange={setSubtitleDelay}
+        releases={props.releases}
+        selectedReleaseUrl={props.url}
+        onSelectRelease={onSelectRelease}
         playerSettings={props.playerSettings}
       />
 
@@ -3275,6 +3343,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         openSettings={openSettings}
         isSeriesLike={props.type === 'series'}
         toggleEpisodes={toggleEpisodes}
+        hasReleases={(props.releases?.length ?? 0) > 0}
       />
     </div>
   );

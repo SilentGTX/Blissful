@@ -8,6 +8,9 @@ import NativeMpvPlayer from '../components/NativeMpvPlayer';
 import { isNativeShell } from '../lib/desktop';
 import type { PlayerSettings } from '../lib/playerSettings';
 import { useMetaDetails } from '../models/useMetaDetails';
+import { parseStreamDescription } from '../features/detail/utils';
+import { fetchStreams } from '../lib/stremioAddon';
+import type { ReleaseOption } from '../components/NativeMpvPlayer/SettingsPanel';
 
 export type NextEpisodeInfo = {
   nextVideoId: string;
@@ -174,6 +177,83 @@ export default function PlayerPage() {
     }
   }, [type, id, isSeriesLike, videoId, meta]);
 
+  // Real-Debrid fallback "change torrent" releases. The house RD fallback
+  // proxy (/rd-fallback, forwarded by the shell's ui_server) resolves
+  // Torrentio-RD with a server-side key and returns key-free direct URLs,
+  // already filtered server-side for DMCA-removed (failed_infringement)
+  // entries so dead torrents can't be picked. We surface them in the player's
+  // "Releases" picker so the user can swap to another release without leaving
+  // the player. Only fetched in the native shell (the picker is desktop-only).
+  const [releases, setReleases] = useState<ReleaseOption[]>([]);
+  useEffect(() => {
+    setReleases([]);
+    if (!isNativeShell()) return;
+    if (!type || !id || (type !== 'movie' && type !== 'series')) return;
+    const streamId = type === 'series' && videoId ? videoId : id;
+    let cancelled = false;
+
+    // Map a raw stream {name,title|description,url} → ReleaseOption.
+    const toRelease = (s: { name?: string; title?: string; description?: string; url?: string }): ReleaseOption | null => {
+      const url = s.url;
+      if (!url || !/^https?:\/\//i.test(url)) return null;
+      const description = s.description ?? s.title ?? '';
+      const parsed = parseStreamDescription(description);
+      const hay = `${s.name ?? ''} ${description}`;
+      const qualMatch = hay.match(/\b(2160p|4k|1080p|720p|480p|360p)\b/i);
+      return {
+        name: s.name ?? 'Real-Debrid',
+        torrentName: parsed.torrentName ?? (s.title ?? null),
+        quality: qualMatch ? qualMatch[1].toLowerCase() : null,
+        size: parsed.size,
+        seeders: parsed.seeders,
+        url,
+      };
+    };
+
+    const seen = new Set<string>();
+    const merge = (list: Array<{ name?: string; title?: string; description?: string; url?: string }>) => {
+      if (cancelled || list.length === 0) return;
+      let added = false;
+      setReleases((prev) => {
+        const next = prev.slice();
+        for (const s of list) {
+          const rel = toRelease(s);
+          if (!rel || seen.has(rel.url)) continue;
+          seen.add(rel.url);
+          next.push(rel);
+          added = true;
+        }
+        return added ? next : prev;
+      });
+    };
+
+    // 1) Addon streams — the SAME source the detail page used, so these are
+    //    already in fetchStreams' 5-min cache and resolve INSTANTLY when you
+    //    arrived from the detail page. Strip /manifest.json (fetchStreams
+    //    appends /stream/<type>/<id>.json to the base). Each addon merges in
+    //    as it lands — the picker fills immediately, no waiting on the slow bit.
+    for (const a of addons) {
+      fetchStreams({
+        type,
+        id: streamId,
+        baseUrl: a.transportUrl.replace(/\/manifest\.json$/, '').replace(/\/$/, ''),
+      })
+        .then((r) => merge(r.streams ?? []))
+        .catch(() => {});
+    }
+    // 2) House RD fallback (DMCA-filtered) — uncached + slow (server-side HEAD
+    //    probing), so fire it SEPARATELY and merge whenever it arrives. It must
+    //    never block the instant addon list above.
+    fetch(`/rd-fallback?type=${type}&id=${encodeURIComponent(streamId)}`)
+      .then((r) => (r.ok ? r.json() : { streams: [] }))
+      .then((d: { streams?: Array<{ name?: string; title?: string; url?: string }> }) => merge(d.streams ?? []))
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [type, id, videoId, addons]);
+
   // Clean up sessionStorage on unmount
   useEffect(() => {
     return () => {
@@ -217,6 +297,7 @@ export default function PlayerPage() {
         releaseInfo={(meta?.meta as Record<string, unknown>)?.releaseInfo as string ?? (meta?.meta as Record<string, unknown>)?.year as string ?? undefined}
         videos={meta?.meta?.videos}
         roomCode={roomCode}
+        releases={releases}
       />
     );
   }
