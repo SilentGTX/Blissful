@@ -48,19 +48,27 @@ export function PlayerScreen() {
   const [playing, setPlaying] = useState(true);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [ready, setReady] = useState(false);
+  // The video stays HIDDEN behind the buffering veil until a real duration
+  // (>45s) confirms this stream isn't the ~30s debrid placeholder — so its
+  // "File was removed…" frame never paints. Latches once revealed.
+  const [revealed, setRevealed] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
 
   // When idx changes (auto-skip), swap the source and reset state.
   useEffect(() => {
     player.replace(current.url);
     player.play();
-    setReady(false);
+    setRevealed(false);
     setTime(0);
     setDuration(0);
     skippedRef.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index]);
+
+  // Reveal the video only once a real duration loads (> the placeholder length).
+  useEffect(() => {
+    if (duration > DMCA_MAX_SECONDS) setRevealed(true);
+  }, [duration]);
 
   // Auto-skip the DMCA placeholder: once a real duration loads and it's ≤45s,
   // advance to the next playable stream (if any).
@@ -91,7 +99,6 @@ export function PlayerScreen() {
       const d = player.duration ?? 0;
       if (d > 0) setDuration(d);
       setPlaying(player.playing);
-      if (d > 0 && !ready) setReady(true);
     }, 400);
     return () => {
       clearInterval(id);
@@ -152,10 +159,11 @@ export function PlayerScreen() {
 
   return (
     <Pressable style={styles.root} hasTVPreferredFocus focusable onPress={togglePlay}>
-      <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="contain" nativeControls={false} />
+      <VideoView player={player} style={[StyleSheet.absoluteFill, { opacity: revealed ? 1 : 0 }]} contentFit="contain" nativeControls={false} />
 
-      {/* Buffering veil — the title's landscape logo pulsing (or a Buffering circle). */}
-      <BufferingVeil visible={!ready} logo={params.logo} />
+      {/* Buffering veil — title logo pulsing over black; stays up (hiding the
+          video) until a real duration confirms this isn't the DMCA placeholder. */}
+      <BufferingVeil visible={!revealed} logo={params.logo} />
 
       {/* TOP OVERLAY — back pill with the title inside (top-left). */}
       {controlsVisible ? (

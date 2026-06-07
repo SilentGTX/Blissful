@@ -29,15 +29,18 @@ export function BufferingVeil({ visible, logo }: { visible: boolean; logo?: stri
   }, [visible, pulse]);
 
   if (!visible) return null;
-  const showLogo = Boolean(src) && landscape;
+  const hasLogo = Boolean(src);
+  const showLogo = hasLogo && landscape;
   const max = m.s(240);
 
   return (
     <View style={styles.veil} pointerEvents="none">
-      {src ? (
+      {hasLogo ? (
+        // While the logo loads we show NOTHING (no circle) — only fade the logo
+        // in once onLoad confirms it's landscape, like the old BufferingOverlay.
         <Animated.View style={{ opacity: showLogo ? pulse : 0 }}>
           <Image
-            source={{ uri: src }}
+            source={{ uri: src as string }}
             style={{ width: max, height: max }}
             contentFit="contain"
             cachePolicy="memory-disk"
@@ -45,14 +48,15 @@ export function BufferingVeil({ visible, logo }: { visible: boolean; logo?: stri
               const { width, height } = e.source ?? { width: 0, height: 0 };
               setLandscape(width >= height && width > 0);
             }}
+            onError={() => setLandscape(false)}
           />
         </Animated.View>
-      ) : null}
-      {!showLogo ? (
+      ) : (
+        // Only when there is NO logo at all do we fall back to the Buffering circle.
         <Animated.View style={[styles.fallback, { width: m.s(120), height: m.s(120), borderRadius: 999, opacity: pulse }]}>
           <Text style={{ fontFamily: font.body, fontSize: m.s(20), color: 'rgba(255,255,255,0.7)' }}>Buffering</Text>
         </Animated.View>
-      ) : null}
+      )}
     </View>
   );
 }
