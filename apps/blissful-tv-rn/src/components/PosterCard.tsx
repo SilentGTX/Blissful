@@ -1,7 +1,8 @@
-import { memo, useState } from 'react';
+import { memo, useRef, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { normalizeStremioImage } from '@blissful/core';
 import { markContentFocus } from '../lib/focusBus';
+import { useSelfTag } from '../lib/useSelfTag';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 
@@ -100,10 +101,14 @@ export function PosterCard({
 }) {
   const m = useMetrics();
   const [focused, setFocused] = useState(false);
+  const ref = useRef(null);
+  const selfTag = useSelfTag(ref, Boolean(atRowStart));
 
   return (
     <Pressable
+      ref={ref}
       hasTVPreferredFocus={autoFocus}
+      nextFocusLeft={selfTag}
       onFocus={() => { setFocused(true); markContentFocus(Boolean(atRowStart)); }}
       onBlur={() => setFocused(false)}
       onPress={() => onSelect(item)}

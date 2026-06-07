@@ -4,6 +4,7 @@ import { BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from 'reac
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { markContentFocus } from '../lib/focusBus';
+import { useSelfTag } from '../lib/useSelfTag';
 
 export type SelectOption = { key: string; label: string };
 type M = ReturnType<typeof useMetrics>;
@@ -40,11 +41,13 @@ export function TvSelect({
 }) {
   const [focused, setFocused] = useState(false);
   const triggerRef = useRef<View>(null);
+  const selfTag = useSelfTag(triggerRef, Boolean(atRowStart));
   const current = options.find((o) => o.key === value);
   const open = () => triggerRef.current?.measureInWindow((x, y, w, h) => onOpen({ pos: { x, y, w, h }, options, value, onChange }));
   return (
     <Pressable
       ref={triggerRef}
+      nextFocusLeft={selfTag}
       onFocus={() => { setFocused(true); markContentFocus(Boolean(atRowStart)); }}
       onBlur={() => setFocused(false)}
       onPress={open}

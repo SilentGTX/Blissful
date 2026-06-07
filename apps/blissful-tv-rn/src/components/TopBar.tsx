@@ -1,12 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { markContentFocus } from '../lib/focusBus';
 import { useRailOpen } from '../lib/railStore';
+import { useSelfTag } from '../lib/useSelfTag';
 import { useAuth } from '../context/AuthContext';
 import { resolveAvatar } from '../lib/avatars';
 import { ProfileMenu } from './ProfileMenu';
@@ -51,6 +52,19 @@ export function TopBar({
   const [searchFocused, setSearchFocused] = useState(false);
   const [avatarFocused, setAvatarFocused] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Trap Left on the search (the left-edge content element) so D-pad Left opens
+  // the rail instead of jumping diagonally to a card below.
+  const searchInputRef = useRef(null);
+  const searchSelfTag = useSelfTag(searchInputRef, !railOpen);
+  const searchPressRef = useRef(null);
+  const searchPressTag = useSelfTag(searchPressRef, !railOpen);
+  // The non-editable search Pressable also exposes searchRef (Home's Up target),
+  // so merge our measuring ref with the forwarded one.
+  const setSearchPress = (node: unknown) => {
+    (searchPressRef as { current: unknown }).current = node;
+    if (typeof searchRef === 'function') searchRef(node as never);
+    else if (searchRef) (searchRef as { current: unknown }).current = node;
+  };
 
   const initial = (user?.displayName || user?.username || '?').trim().charAt(0).toUpperCase();
   const ring = (focused: boolean) => ({
@@ -68,8 +82,10 @@ export function TopBar({
         >
           <Ionicons name="search" size={m.s(26)} color="rgba(255,255,255,0.6)" />
           <TextInput
+            ref={searchInputRef}
             autoFocus={searchAutoFocus}
             isTVSelectable={!railOpen}
+            nextFocusLeft={searchSelfTag}
             value={searchValue}
             onChangeText={onSearchChange}
             onFocus={() => { setSearchFocused(true); markContentFocus(true); }}
@@ -82,8 +98,9 @@ export function TopBar({
         </Glass>
       ) : (
         <Pressable
-          ref={searchRef}
+          ref={setSearchPress}
           isTVSelectable={!railOpen}
+          nextFocusLeft={searchPressTag}
           onFocus={() => { setSearchFocused(true); markContentFocus(true); }}
           onBlur={() => setSearchFocused(false)}
           onPress={() => navigation.navigate('Search')}

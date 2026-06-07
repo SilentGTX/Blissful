@@ -2,10 +2,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { LinearGradient } from 'expo-linear-gradient';
-import { memo, useEffect, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { fetchMeta, normalizeStremioImage, type StremioMetaDetail, type StremioMetaPreview } from '@blissful/core';
 import { markContentFocus } from '../lib/focusBus';
+import { useSelfTag } from '../lib/useSelfTag';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import type { RootStackParamList } from '../navigation/types';
@@ -32,10 +33,14 @@ function HeroBtn({
   onPress: () => void;
 }) {
   const [focused, setFocused] = useState(false);
+  const ref = useRef(null);
+  const selfTag = useSelfTag(ref, Boolean(atRowStart));
   return (
     <Pressable
+      ref={ref}
       hasTVPreferredFocus={autoFocus}
       nextFocusUp={upTag}
+      nextFocusLeft={selfTag}
       onFocus={() => { setFocused(true); markContentFocus(Boolean(atRowStart)); }}
       onBlur={() => setFocused(false)}
       onPress={onPress}
@@ -61,8 +66,12 @@ function HeroBtn({
 
 function GenreChip({ label, m, atRowStart, onPress }: { label: string; m: ReturnType<typeof useMetrics>; atRowStart?: boolean; onPress: () => void }) {
   const [f, setF] = useState(false);
+  const ref = useRef(null);
+  const selfTag = useSelfTag(ref, Boolean(atRowStart));
   return (
     <Pressable
+      ref={ref}
+      nextFocusLeft={selfTag}
       onFocus={() => { setF(true); markContentFocus(Boolean(atRowStart)); }}
       onBlur={() => setF(false)}
       onPress={onPress}
