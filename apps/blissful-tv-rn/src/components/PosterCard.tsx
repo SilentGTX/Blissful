@@ -1,8 +1,7 @@
-import { memo, useRef, useState } from 'react';
+import { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { normalizeStremioImage } from '@blissful/core';
-import { markContentFocus } from '../lib/focusBus';
-import { useSelfTag } from '../lib/useSelfTag';
+import { useTvFocusable } from '../lib/useTvFocusable';
 import { Img } from './Img';
 import { Rating } from './Rating';
 import { colors, font, radius } from '../theme/colors';
@@ -98,20 +97,10 @@ export function PosterCard({
   onSelect: (item: CardItem) => void;
 }) {
   const m = useMetrics();
-  const [focused, setFocused] = useState(false);
-  const ref = useRef(null);
-  const selfTag = useSelfTag(ref, Boolean(atRowStart));
+  const { focused, focusProps } = useTvFocusable({ atRowStart, autoFocus, onPress: () => onSelect(item) });
 
   return (
-    <Pressable
-      ref={ref}
-      hasTVPreferredFocus={autoFocus}
-      nextFocusLeft={selfTag}
-      onFocus={() => { setFocused(true); markContentFocus(Boolean(atRowStart)); }}
-      onBlur={() => setFocused(false)}
-      onPress={() => onSelect(item)}
-      style={{ width }}
-    >
+    <Pressable {...focusProps} style={{ width }}>
       <PosterVisual item={item} width={width} focused={focused} progress={progress} m={m} />
     </Pressable>
   );
