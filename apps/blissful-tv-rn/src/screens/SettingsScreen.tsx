@@ -111,10 +111,14 @@ function CategoryItem({
       hasTVPreferredFocus={autoFocus}
       nextFocusLeft={selfTag}
       nextFocusRight={nextFocusRight}
+      // Switch the panel on OK/press ONLY — never on focus. Switching on focus
+      // while hasTVPreferredFocus follows the category is a feedback loop (focus
+      // -> setCategory -> focus re-grab -> ...), which is what froze the nav
+      // oscillating between two rows. This mirrors the old app (FocusableButton
+      // onPress={() => setCategory(key)}).
       onFocus={() => {
         setFocused(true);
         markContentFocus(true);
-        onFocusSelect();
       }}
       onBlur={() => setFocused(false)}
       onPress={onFocusSelect}
@@ -357,17 +361,16 @@ export function SettingsScreen() {
           {/* Left: category list. */}
           <View style={{ width: listW }}>
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: m.s(8), paddingBottom: m.s(40) }}>
-              {CATEGORIES.map((c) => (
+              {CATEGORIES.map((c, index) => (
                 <CategoryItem
                   key={c.key}
                   label={c.label}
                   icon={c.icon}
                   active={category === c.key}
-                  // hasTVPreferredFocus follows the ACTIVE category (not always the
-                  // first one) — so when a dropdown overlay closes and focus is
-                  // reclaimed, it returns to the current category instead of jumping
-                  // back to Appearance.
-                  autoFocus={category === c.key}
+                  // STABLE mount-only focus on the first row. Must NOT follow the
+                  // live category — hasTVPreferredFocus that tracks focus-updated
+                  // state re-grabs focus every switch and loops (the crash).
+                  autoFocus={index === 0}
                   nextFocusRight={panelTag}
                   onTag={category === c.key ? setActiveCatTag : undefined}
                   m={m}
