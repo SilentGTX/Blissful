@@ -92,18 +92,19 @@ export async function hydrateTvSettingsFromCloud(token: string | null): Promise<
   const local = readTvSettings();
   if (!token) return local;
   try {
-    const remote = await fetchStoredSettings(token);
+    // The backend returns the FULL playerSettings (the desktop saves every field);
+    // the typed return is a subset, so read it broadly. Field names match TvSettings
+    // 1:1, so pull every TV field the cloud has (use !== undefined so 0/null/'' are
+    // honoured). Skip the subtitle COLOUR fields — the web stores them as rgba while
+    // the TV swatches are hex, so a round-trip would break the picker.
+    const remote = (await fetchStoredSettings(token)) as Record<string, unknown> | null;
     if (!remote) return local;
-    const merged: TvSettings = {
-      ...local,
-      realDebridApiKey: remote.realDebridApiKey ?? local.realDebridApiKey,
-      // streamingServerCacheSizeBytes can be 0 ('No caching') or null ('Unlimited'),
-      // so check `!== undefined`, not truthiness.
-      streamingServerCacheSizeBytes:
-        remote.streamingServerCacheSizeBytes !== undefined
-          ? remote.streamingServerCacheSizeBytes
-          : local.streamingServerCacheSizeBytes,
-    };
+    const SKIP = new Set<keyof TvSettings>(['subtitlesTextColor', 'subtitlesBackgroundColor', 'subtitlesOutlineColor']);
+    const merged: TvSettings = { ...local };
+    (Object.keys(DEFAULT_TV_SETTINGS) as (keyof TvSettings)[]).forEach((k) => {
+      if (SKIP.has(k)) return;
+      if (remote[k] !== undefined) (merged as Record<string, unknown>)[k] = remote[k];
+    });
     writeTvSettings(merged);
     return merged;
   } catch {

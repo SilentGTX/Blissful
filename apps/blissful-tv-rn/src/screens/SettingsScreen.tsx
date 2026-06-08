@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { findNodeHandle, Pressable, ScrollView, Text, TVFocusGuideView, View, type View as RNView } from 'react-native';
-import { updateCurrentBlissfulUser } from '@blissful/core';
+import { updateCurrentBlissfulUser, saveStoredSettings } from '@blissful/core';
 import { colors, font } from '../theme/colors';
 import { useTheme } from '../theme/ThemeProvider';
 import { SettingsLeftTargetContext } from '../lib/settingsLeftTarget';
@@ -226,10 +226,24 @@ export function SettingsScreen() {
     };
   }, [token]);
 
+  // Debounced cloud save — settings now persist to the account (not just locally).
+  // The TV field names match the desktop PlayerSettings 1:1, so the whole object
+  // is sent as playerSettings; saveStoredSettings merges it over the account's
+  // current settings. 700ms debounce so a stepper/dropdown burst is one write.
+  const cloudSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleCloudSave = (settings: TvSettings) => {
+    if (cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current);
+    cloudSaveTimer.current = setTimeout(() => {
+      void saveStoredSettings(token, settings as unknown as Record<string, unknown>);
+    }, 700);
+  };
+  useEffect(() => () => { if (cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current); }, []);
+
   const update = (next: Partial<TvSettings>) => {
     setSettings((prev) => {
       const merged = { ...prev, ...next };
       writeTvSettings(merged);
+      scheduleCloudSave(merged);
       return merged;
     });
     // Apply accent / surface live (retints the whole app + the bg gradient).

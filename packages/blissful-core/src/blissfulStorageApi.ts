@@ -62,3 +62,44 @@ export async function fetchStoredSettings(
     return null;
   }
 }
+
+/**
+ * Persist player/appearance settings to the user's account (the write path the
+ * TV client previously lacked, so changes only lived locally). Mirrors the
+ * desktop StorageProvider: POST /state with ONLY `{ playerSettings }` — the
+ * backend merges top-level state fields individually (buildMergedState), so the
+ * rest of the account (addons, profile, web theme) is untouched.
+ *
+ * We first GET the current full playerSettings and merge our fields over it, so
+ * desktop-only fields the TV doesn't model are preserved on round-trip. The TV
+ * setting field names match the desktop PlayerSettings 1:1, so they can be sent
+ * as-is. Fire-and-forget: returns false on any failure (caller keeps the local
+ * copy as the offline source of truth).
+ */
+export async function saveStoredSettings(
+  token: string | null,
+  settings: Record<string, unknown>,
+): Promise<boolean> {
+  if (!token) return false;
+  try {
+    let current: Record<string, unknown> = {};
+    try {
+      const res = await getJson<{ playerSettings: Record<string, unknown> | null }>('/settings', token);
+      current = res.playerSettings ?? {};
+    } catch {
+      // No existing settings (or read failed) — start from what we have.
+    }
+    const merged = { ...current, ...settings };
+    const res = await fetch(`${getStorageBaseUrl()}/state`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ state: { playerSettings: merged } }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
