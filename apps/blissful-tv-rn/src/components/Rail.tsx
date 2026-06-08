@@ -22,7 +22,6 @@ export const Rail = memo(function Rail({
   const [metas, setMetas] = useState<StremioMetaPreview[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const posterW = m.s(200);
-  const stride = posterW + m.s(24); // fixed card width + gap
 
   useEffect(() => {
     let cancelled = false;
@@ -36,7 +35,7 @@ export const Rail = memo(function Rail({
 
   return (
     <View style={{ marginBottom: m.s(34) }}>
-      <Text style={{ fontFamily: font.bodySemi, color: colors.text, fontSize: m.railTitle, marginBottom: m.s(14), marginLeft: m.s(12) }}>
+      <Text style={{ fontFamily: font.bodySemi, color: colors.text, fontSize: m.railTitle, marginBottom: m.s(14), marginLeft: m.s(20) }}>
         {title}
       </Text>
       {error ? (
@@ -47,11 +46,12 @@ export const Rail = memo(function Rail({
           data={metas}
           keyExtractor={(it) => it.id}
           showsHorizontalScrollIndicator={false}
-          getItemLayout={(_, index) => ({ length: stride, offset: stride * index, index })}
           initialNumToRender={8}
           maxToRenderPerBatch={6}
           windowSize={5}
-          contentContainerStyle={{ gap: m.s(24), paddingTop: m.s(20), paddingBottom: m.s(12), paddingLeft: m.s(12), paddingRight: m.safeX }}
+          // No getItemLayout — it makes Android ignore paddingLeft and clip the
+          // focused first card's scale (see ItemsRail). Flexbox honours paddingLeft.
+          contentContainerStyle={{ gap: m.s(24), paddingTop: m.s(20), paddingBottom: m.s(12), paddingLeft: m.s(20), paddingRight: m.safeX }}
           renderItem={({ item, index }) => (
             <PosterCard item={item} width={posterW} autoFocus={autoFocusFirst && index === 0} atRowStart={index === 0} onSelect={onSelect} />
           )}

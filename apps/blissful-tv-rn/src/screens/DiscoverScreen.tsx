@@ -51,7 +51,7 @@ export function DiscoverScreen() {
   const posterW = m.s(180);
   // Leave room on the left so the focused card's 1.06 scale + border isn't
   // clipped by the FlatList's edge; align the header to the same inset.
-  const padL = m.s(12);
+  const padL = m.s(20); // clears the focused first-column card's 1.06 scale (no left clip)
   const gap = m.s(24);
   // +gap because N columns have only N-1 gaps — without it the last column is
   // wrongly dropped (showed 7 with room for an 8th).

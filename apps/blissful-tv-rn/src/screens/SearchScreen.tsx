@@ -24,7 +24,7 @@ function ResultRail({
   if (!items.length) return null;
   return (
     <View style={{ marginBottom: m.s(34) }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: m.s(12), paddingRight: m.safeX }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: m.s(20), paddingRight: m.safeX }}>
         <Text style={{ fontFamily: font.bodySemi, fontSize: m.railTitle, color: colors.text }}>{title}</Text>
         <Text style={{ fontFamily: font.body, fontSize: m.s(22), color: colors.textFaint }}>See All</Text>
       </View>
@@ -33,7 +33,7 @@ function ResultRail({
         data={items}
         keyExtractor={(it) => it.id}
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: m.s(24), paddingTop: m.s(20), paddingBottom: m.s(12), paddingLeft: m.s(12), paddingRight: m.safeX }}
+        contentContainerStyle={{ gap: m.s(24), paddingTop: m.s(20), paddingBottom: m.s(12), paddingLeft: m.s(20), paddingRight: m.safeX }}
         renderItem={({ item, index }) => <PosterCard item={item} width={posterW} atRowStart={index === 0} onSelect={onSelect} />}
       />
     </View>

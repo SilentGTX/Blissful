@@ -19,11 +19,10 @@ export const ItemsRail = memo(function ItemsRail({
 }) {
   const m = useMetrics();
   const posterW = m.s(200);
-  const stride = posterW + m.s(24);
   if (items.length === 0) return null;
   return (
     <View style={{ marginBottom: m.s(34) }}>
-      <Text style={{ fontFamily: font.bodySemi, color: colors.text, fontSize: m.railTitle, marginBottom: m.s(14), marginLeft: m.s(12) }}>
+      <Text style={{ fontFamily: font.bodySemi, color: colors.text, fontSize: m.railTitle, marginBottom: m.s(14), marginLeft: m.s(20) }}>
         {title}
       </Text>
       <FlatList
@@ -31,13 +30,14 @@ export const ItemsRail = memo(function ItemsRail({
         data={items}
         keyExtractor={(it) => it.id}
         showsHorizontalScrollIndicator={false}
-        getItemLayout={(_, index) => ({ length: stride, offset: stride * index, index })}
         initialNumToRender={8}
         maxToRenderPerBatch={6}
         windowSize={5}
-        // paddingLeft gives the focused first card's 1.06 scale room so it isn't
-        // clipped on the left; the title's marginLeft matches so they stay aligned.
-        contentContainerStyle={{ gap: m.s(24), paddingTop: m.s(20), paddingBottom: m.s(12), paddingLeft: m.s(12), paddingRight: m.safeX }}
+        // NOTE: no getItemLayout — its offset:stride*index puts item 0 at offset 0
+        // and Android then IGNORES paddingLeft, clipping the focused first card's
+        // 1.06 scale. Letting flexbox lay out honours paddingLeft (cheap: rails are
+        // short). paddingLeft clears the scale; the title's marginLeft matches.
+        contentContainerStyle={{ gap: m.s(24), paddingTop: m.s(20), paddingBottom: m.s(12), paddingLeft: m.s(20), paddingRight: m.safeX }}
         renderItem={({ item, index }) => (
           <PosterCard
             item={item}
