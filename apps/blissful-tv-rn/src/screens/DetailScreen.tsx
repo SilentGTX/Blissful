@@ -314,6 +314,8 @@ export function DetailScreen() {
             releaseInfo: released,
             imdbId: meta?.imdb_id ?? (IMDB_RE.test(params.id) ? params.id : null),
             rating: meta?.imdbRating != null ? String(meta.imdbRating) : null,
+            // Lets the player's Sources/Releases button re-open the stream picker.
+            streamTarget: picker ?? undefined,
           });
         }}
       />

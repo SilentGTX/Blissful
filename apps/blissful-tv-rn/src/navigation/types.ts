@@ -19,6 +19,9 @@ export type RootStackParamList = {
     releaseInfo?: string | null;
     imdbId?: string | null;
     rating?: string | null;
+    // The media this is playing — lets the player re-open the stream picker to
+    // switch release mid-playback (the Sources/Releases button).
+    streamTarget?: { type: MediaType; id: string; title: string; episodeLabel?: string | null };
   };
   Login: undefined;
   Search: { query?: string } | undefined;

@@ -10,7 +10,8 @@ import { useToast } from '../components/Toast';
 import { BufferingVeil } from '../components/player/BufferingVeil';
 import { PauseOverlay } from '../components/player/PauseOverlay';
 import { SettingsDrawer, type DrawerAudioTrack, type DrawerSubtitleTrack } from '../components/player/SettingsDrawer';
-import { AudioIcon, BackPill, PlayIcon, PlayerIconBtn, SourceBadges, SubsIcon, WatchPartyButton } from '../components/player/PlayerControls';
+import { AudioIcon, BackPill, PlayIcon, PlayerIconBtn, SourceBadges, SourceIcon, SubsIcon, WatchPartyButton } from '../components/player/PlayerControls';
+import { StreamPicker } from '../components/StreamPicker';
 import { detectSource, is4kTitle, isHdrTitle } from '../lib/colorUtils';
 import { readTvSettings } from '../lib/tvSettings';
 import type { RootStackParamList } from '../navigation/types';
@@ -25,7 +26,7 @@ const DMCA_MAX_SECONDS = 45;
 // volume and the app is always fullscreen). Walked by virtual index.
 type Row = 'none' | 'bottom' | 'top';
 type Drawer = 'none' | 'audio' | 'subtitles';
-const BOTTOM = ['play', 'subtitles', 'audio'] as const;
+const BOTTOM = ['play', 'sources', 'subtitles', 'audio'] as const;
 const TOP = ['back', 'watchparty'] as const;
 
 type Track = { id: string; label?: string | null; language?: string | null };
@@ -45,8 +46,11 @@ export function PlayerScreen() {
   const m = useMetrics();
   const toast = useToast();
 
-  const playlist = params.playlist?.length ? params.playlist : [{ url: params.url, title: params.title }];
+  // Stateful so the Sources/Releases button can swap in a different release's
+  // ranked stream list mid-playback (feeds the existing player.replace path).
+  const [playlist, setPlaylist] = useState(params.playlist?.length ? params.playlist : [{ url: params.url, title: params.title }]);
   const [index, setIndex] = useState(Math.min(params.startIndex ?? 0, playlist.length - 1));
+  const [sourcesOpen, setSourcesOpen] = useState(false);
   const current = playlist[index] ?? playlist[0];
   const skippedRef = useRef(false);
   const autoSubRef = useRef(false); // whether we've auto-loaded the preferred subtitle for this file
@@ -87,6 +91,8 @@ export function PlayerScreen() {
   const drawerRef = useRef<Drawer>('none');
   const playingRef = useRef(true);
   playingRef.current = playing;
+  const sourcesOpenRef = useRef(false);
+  sourcesOpenRef.current = sourcesOpen;
 
   useEffect(() => {
     player.replace(current.url);
@@ -99,8 +105,10 @@ export function PlayerScreen() {
     setSubTracks([]);
     skippedRef.current = false;
     autoSubRef.current = false;
+    // Key on the URL (not just index) so switching to a different release via the
+    // Sources picker — which may land on the same index — still reloads the player.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index]);
+  }, [current.url]);
 
   useEffect(() => {
     if (errored && !skippedRef.current && index < playlist.length - 1) {
@@ -237,6 +245,11 @@ export function PlayerScreen() {
 
   const runBottom = (id: (typeof BOTTOM)[number]) => {
     if (id === 'play') { togglePlay(); return false; }
+    if (id === 'sources') {
+      if (params.streamTarget) setSourcesOpen(true);
+      else toast.show('No other sources available');
+      return true;
+    }
     if (id === 'subtitles') { openDrawer('subtitles'); return true; }
     if (id === 'audio') { openDrawer('audio'); return true; }
     return false;
@@ -253,9 +266,9 @@ export function PlayerScreen() {
     if (lastEvt.current.type === type && now - lastEvt.current.at < 180) return;
     lastEvt.current = { type, at: now };
 
-    // The self-contained drawer owns the D-pad while open — stand our handler
-    // down so the two useTVEventHandlers never both act on the same key.
-    if (drawerRef.current !== 'none') return;
+    // The self-contained drawer / the sources picker own the D-pad while open —
+    // stand our handler down so two handlers never both act on the same key.
+    if (drawerRef.current !== 'none' || sourcesOpenRef.current) return;
 
     const r = rowRef.current;
     const i = idxRef.current;
@@ -373,6 +386,7 @@ export function PlayerScreen() {
               <PlayerIconBtn m={m} focused={bf('play')}>{(c) => <PlayIcon m={m} paused={!playing} color={c} />}</PlayerIconBtn>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(4) }}>
+              <PlayerIconBtn m={m} focused={bf('sources')}>{(c) => <SourceIcon m={m} color={c} />}</PlayerIconBtn>
               <PlayerIconBtn m={m} focused={bf('subtitles')}>{(c) => <SubsIcon m={m} color={c} />}</PlayerIconBtn>
               <PlayerIconBtn m={m} focused={bf('audio')}>{(c) => <AudioIcon m={m} color={c} />}</PlayerIconBtn>
             </View>
@@ -402,6 +416,21 @@ export function PlayerScreen() {
         defaultSubtitleSizePx={tvs.subtitlesSizePx ?? 28}
         defaultSubtitleColor={'rgba(255,255,255,1)'}
       />
+
+      {/* Sources / Releases — re-open the stream picker to switch release without
+          leaving the player. Swaps the ranked playlist; the URL-keyed effect above
+          reloads the player. */}
+      {sourcesOpen && params.streamTarget ? (
+        <StreamPicker
+          target={params.streamTarget}
+          onClose={() => setSourcesOpen(false)}
+          onPlay={(streams, idx) => {
+            setSourcesOpen(false);
+            setPlaylist(streams.map((s) => ({ url: s.url, title: s.title })));
+            setIndex(idx);
+          }}
+        />
+      ) : null}
     </View>
   );
 }

@@ -52,6 +52,10 @@ export function SubsIcon({ m, color }: { m: M; color: string }) {
     </View>
   );
 }
+// Sources / Releases — stacked layers (re-open the stream picker mid-playback).
+export function SourceIcon({ m, color }: { m: M; color: string }) {
+  return <Ionicons name="layers-outline" size={m.s(24)} color={color} />;
+}
 // Equalizer bars (audio tracks) — pure Views.
 export function AudioIcon({ m, color }: { m: M; color: string }) {
   const s = m.s(22);
