@@ -23,4 +23,7 @@ export type RootStackParamList = {
   Login: undefined;
   Search: { query?: string } | undefined;
   Discover: { type: MediaType; genre?: string } | undefined;
+  Settings: undefined;
+  Library: undefined;
+  Addons: undefined;
 };

@@ -22,6 +22,9 @@ import { PlayerScreen } from './src/screens/PlayerScreen';
 import { LoginScreen } from './src/screens/LoginScreen';
 import { SearchScreen } from './src/screens/SearchScreen';
 import { DiscoverScreen } from './src/screens/DiscoverScreen';
+import { SettingsScreen } from './src/screens/SettingsScreen';
+import { LibraryScreen } from './src/screens/LibraryScreen';
+import { AddonsScreen } from './src/screens/AddonsScreen';
 import type { RootStackParamList } from './src/navigation/types';
 import { colors } from './src/theme/colors';
 
@@ -67,6 +70,9 @@ export default function App() {
                 <Stack.Screen name="Login" component={LoginScreen} />
                 <Stack.Screen name="Search" component={SearchScreen} />
                 <Stack.Screen name="Discover" component={DiscoverScreen} />
+                <Stack.Screen name="Settings" component={SettingsScreen} />
+                <Stack.Screen name="Library" component={LibraryScreen} />
+                <Stack.Screen name="Addons" component={AddonsScreen} />
               </Stack.Navigator>
             </NavigationContainer>
           </ToastProvider>

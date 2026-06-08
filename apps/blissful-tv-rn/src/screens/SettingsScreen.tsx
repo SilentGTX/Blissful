@@ -1,21 +1,29 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View, type View as RNView } from 'react-native';
-import { colors, font, radius } from '../theme/colors';
+import { updateCurrentBlissfulUser } from '@blissful/core';
+import { colors, font } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { useRailOpen } from '../lib/railStore';
 import { markContentFocus } from '../lib/focusBus';
 import { useSelfTag } from '../lib/useSelfTag';
 import { useAuth } from '../context/AuthContext';
 import { NavRail } from '../components/NavRail';
+import { useToast } from '../components/Toast';
 import { TvSelect, TvSelectOverlay, type DropdownAnchor, type SelectOption } from '../components/TvSelect';
 import { TvTextField } from '../components/settings/TvTextField';
 import { TvToggle } from '../components/settings/TvToggle';
 import { ColorSwatchRow } from '../components/settings/ColorSwatchRow';
+import { PillButton } from '../components/settings/PillButton';
+import { SettingsStremioPanel } from '../components/settings/SettingsStremioPanel';
+import { SettingsTraktPanel } from '../components/settings/SettingsTraktPanel';
 import { APP_NAME, APP_TAGLINE, APP_VERSION } from '../lib/appInfo';
 import {
-  DEFAULT_TV_SETTINGS,
+  EXTERNAL_PLAYER_OPTIONS,
   NEXT_VIDEO_POPUP_OPTIONS_MS,
+  SEEK_SHORT_TIME_DURATION_OPTIONS_MS,
+  SEEK_TIME_DURATION_OPTIONS_MS,
+  STREAMING_CACHE_SIZE_OPTIONS,
   SUBTITLE_SIZE_OPTIONS_PX,
   SURFACE_COLOR_PRESETS,
   TV_COLOR_PRESETS,
@@ -28,29 +36,47 @@ import {
 
 type M = ReturnType<typeof useMetrics>;
 
-type Category = 'advanced' | 'player' | 'playback' | 'appearance' | 'account' | 'about';
+// Category order mirrors apps/blissful-mvs/src/pages/SettingsPage.tsx CATEGORIES
+// 1:1. The desktop "Style" picker inside Appearance is omitted on TV (the web
+// app hides it under isTvMode() — only the Classic layout ships on TV).
+type Category =
+  | 'appearance'
+  | 'player'
+  | 'playback'
+  | 'streaming'
+  | 'account'
+  | 'linked'
+  | 'advanced'
+  | 'about';
 
 const CATEGORIES: { key: Category; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
-  { key: 'advanced', label: 'Advanced', icon: 'key-outline' },
+  { key: 'appearance', label: 'Appearance', icon: 'color-palette-outline' },
   { key: 'player', label: 'Player', icon: 'play-circle-outline' },
   { key: 'playback', label: 'Playback', icon: 'repeat-outline' },
-  { key: 'appearance', label: 'Appearance', icon: 'color-palette-outline' },
+  { key: 'streaming', label: 'Streaming', icon: 'server-outline' },
   { key: 'account', label: 'Account', icon: 'person-circle-outline' },
+  { key: 'linked', label: 'Linked Accounts', icon: 'link-outline' },
+  { key: 'advanced', label: 'Advanced', icon: 'key-outline' },
   { key: 'about', label: 'About', icon: 'information-circle-outline' },
 ];
 
 const CATEGORY_TITLE: Record<Category, string> = {
-  advanced: 'Advanced',
+  appearance: 'Appearance',
   player: 'Player',
   playback: 'Playback',
-  appearance: 'Appearance',
+  streaming: 'Streaming',
   account: 'Account',
+  linked: 'Linked Accounts',
+  advanced: 'Advanced',
   about: 'About',
 };
 
-// A focusable row in the left category list. Active = accent tint + ring baked
-// in; focused = lavender ring (mirrors the desktop nav). Each is at the row's
-// left edge, so D-pad Left opens the nav rail.
+const USERNAME_RE = /^[a-z0-9_-]{3,50}$/;
+
+// A focusable row in the left category list. Active = accent tint + ring;
+// focused = lavender ring. Selecting on focus swaps the detail panel (matches
+// the desktop feel). Each sits at the row's left edge so D-pad Left opens the
+// nav rail.
 function CategoryItem({
   label,
   icon,
@@ -77,8 +103,6 @@ function CategoryItem({
       onFocus={() => {
         setFocused(true);
         markContentFocus(true);
-        // Selecting on focus matches the desktop feel: arrowing the list swaps
-        // the detail panel immediately (OK is still wired for screen readers).
         onFocusSelect();
       }}
       onBlur={() => setFocused(false)}
@@ -98,7 +122,7 @@ function CategoryItem({
       <Ionicons name={icon} size={m.s(24)} color={active || focused ? colors.accent : colors.textDim} />
       <Text
         numberOfLines={1}
-        style={{ fontFamily: font.bodySemi, fontSize: m.s(20), color: active || focused ? colors.accent : colors.textDim }}
+        style={{ fontFamily: font.bodySemi, fontSize: m.s(19), color: active || focused ? colors.accent : colors.textDim }}
       >
         {label}
       </Text>
@@ -106,9 +130,8 @@ function CategoryItem({
   );
 }
 
-// A glass card wrapper for a settings group (matches the desktop
-// rounded-2xl border-white/10 bg-white/5 panels).
-function Card({ title, m, children }: { title?: string; m: M; children: React.ReactNode }) {
+// Glass card wrapper (rounded-2xl border-white/10 bg-white/5 panel).
+function Card({ title, m, children }: { title?: string; m: M; children: ReactNode }) {
   return (
     <View
       style={{
@@ -132,18 +155,26 @@ function FieldLabel({ label, m }: { label: string; m: M }) {
   return <Text style={{ fontFamily: font.body, fontSize: m.s(17), color: colors.textDim, marginBottom: m.s(8) }}>{label}</Text>;
 }
 
+function Hint({ children, m, danger }: { children: ReactNode; m: M; danger?: boolean }) {
+  return (
+    <Text style={{ fontFamily: font.body, fontSize: m.s(15), color: danger ? colors.danger : colors.textGhost, marginTop: m.s(8), lineHeight: m.s(21) }}>
+      {children}
+    </Text>
+  );
+}
+
 export function SettingsScreen() {
   const m = useMetrics();
   const railOpen = useRailOpen();
-  const { token, user } = useAuth();
+  const toast = useToast();
+  const { token, user, updateProfile } = useAuth();
 
-  const [category, setCategory] = useState<Category>('advanced');
+  const [category, setCategory] = useState<Category>('appearance');
   const [settings, setSettings] = useState<TvSettings>(() => readTvSettings());
   const [dropdown, setDropdown] = useState<DropdownAnchor | null>(null);
 
-  // Fold whatever the cloud already has (currently the Real-Debrid key) into the
-  // local settings on launch / sign-in. The read is best-effort; local stays
-  // authoritative for fields the read-only RN storage client doesn't return.
+  // Fold whatever the cloud already has (currently the Real-Debrid key) into
+  // local settings on launch / sign-in. Local stays authoritative.
   useEffect(() => {
     let cancelled = false;
     hydrateTvSettingsFromCloud(token)
@@ -156,8 +187,6 @@ export function SettingsScreen() {
     };
   }, [token]);
 
-  // Single mutate path: update local state + persist to MMKV. See tvSettings.ts
-  // for the cloud-save follow-up (no write endpoint in @blissful/core yet).
   const update = (next: Partial<TvSettings>) => {
     setSettings((prev) => {
       const merged = { ...prev, ...next };
@@ -165,6 +194,72 @@ export function SettingsScreen() {
       return merged;
     });
   };
+
+  // --- Account: username edit (mirrors the desktop validation). ----------
+  const currentUsername = user?.username ?? '';
+  const [usernameDraft, setUsernameDraft] = useState(currentUsername);
+  const [usernameError, setUsernameError] = useState<string | null>(null);
+  const [usernameSaving, setUsernameSaving] = useState(false);
+  useEffect(() => {
+    setUsernameDraft(currentUsername);
+    setUsernameError(null);
+  }, [currentUsername]);
+
+  const draftLower = usernameDraft.trim().toLowerCase();
+  const usernameDirty = draftLower !== currentUsername && draftLower.length > 0;
+  const usernameValid = USERNAME_RE.test(draftLower);
+  const usernameSaveDisabled = !usernameDirty || !usernameValid || usernameSaving;
+
+  const handleSaveUsername = async () => {
+    if (usernameSaveDisabled || !token) return;
+    setUsernameError(null);
+    setUsernameSaving(true);
+    try {
+      // DECISION: AuthContext.updateProfile only accepts displayName/avatar, so
+      // call core's updateCurrentBlissfulUser directly for the username (it does
+      // accept it). The context user refreshes on the next /auth/me hydration;
+      // the draft + toast give immediate feedback. FOLLOW-UP: widen
+      // AuthContext.updateProfile to accept `username` so the context updates
+      // synchronously (it would also keep the NavRail/profile in sync).
+      await updateCurrentBlissfulUser(token, { username: draftLower });
+      toast.show(`Username updated — you're now @${draftLower}`);
+    } catch (err: unknown) {
+      setUsernameError(err instanceof Error ? err.message : 'Failed to update username');
+    } finally {
+      setUsernameSaving(false);
+    }
+  };
+
+  // --- Account: display name edit (free-form, <= 60 chars). --------------
+  const currentDisplayName = user?.displayName ?? '';
+  const [displayNameDraft, setDisplayNameDraft] = useState(currentDisplayName);
+  const [displayNameError, setDisplayNameError] = useState<string | null>(null);
+  const [displayNameSaving, setDisplayNameSaving] = useState(false);
+  useEffect(() => {
+    setDisplayNameDraft(currentDisplayName);
+    setDisplayNameError(null);
+  }, [currentDisplayName]);
+
+  const displayNameTrimmed = displayNameDraft.trim();
+  const displayNameDirty = displayNameTrimmed !== currentDisplayName && displayNameTrimmed.length > 0;
+  const displayNameSaveDisabled = !displayNameDirty || displayNameSaving;
+
+  const handleSaveDisplayName = async () => {
+    if (displayNameSaveDisabled) return;
+    setDisplayNameError(null);
+    setDisplayNameSaving(true);
+    try {
+      await updateProfile({ displayName: displayNameTrimmed });
+      toast.show(`Display name updated — you're shown as ${displayNameTrimmed}`);
+    } catch (err: unknown) {
+      setDisplayNameError(err instanceof Error ? err.message : 'Failed to update display name');
+    } finally {
+      setDisplayNameSaving(false);
+    }
+  };
+
+  // --- Select option catalogues. -----------------------------------------
+  const seekLabel = (value: number) => `${Math.round(value / 1000)} sec`;
 
   const languageItems = useMemo<SelectOption[]>(
     () => TV_LANGUAGE_OPTIONS.map((o) => ({ key: o.value ?? 'none', label: o.label })),
@@ -174,11 +269,31 @@ export function SettingsScreen() {
     () => SUBTITLE_SIZE_OPTIONS_PX.map((px) => ({ key: String(px), label: `${px}px` })),
     [],
   );
+  const seekItems = useMemo<SelectOption[]>(
+    () => SEEK_TIME_DURATION_OPTIONS_MS.map((v) => ({ key: String(v), label: seekLabel(v) })),
+    [],
+  );
+  const seekShiftItems = useMemo<SelectOption[]>(
+    () => SEEK_SHORT_TIME_DURATION_OPTIONS_MS.map((v) => ({ key: String(v), label: seekLabel(v) })),
+    [],
+  );
   const popupItems = useMemo<SelectOption[]>(
     () =>
       NEXT_VIDEO_POPUP_OPTIONS_MS.map((ms) => ({
         key: String(ms),
-        label: ms === 0 ? 'Disabled' : `${Math.round(ms / 1000)} sec`,
+        label: ms === 0 ? 'Disabled' : seekLabel(ms),
+      })),
+    [],
+  );
+  const externalPlayerItems = useMemo<SelectOption[]>(
+    () => EXTERNAL_PLAYER_OPTIONS.map((o) => ({ key: o.value, label: o.label })),
+    [],
+  );
+  const cacheSizeItems = useMemo<SelectOption[]>(
+    () =>
+      STREAMING_CACHE_SIZE_OPTIONS.map((o) => ({
+        key: o.value === null ? 'unlimited' : String(o.value),
+        label: o.label,
       })),
     [],
   );
@@ -190,8 +305,6 @@ export function SettingsScreen() {
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <NavRail active="Settings" />
 
-      {/* One container flips non-focusable while the rail is open, trapping
-          focus in the rail (cascades to the category list + detail panel). */}
       <View
         isTVSelectable={!railOpen}
         style={{ position: 'absolute', left: m.contentLeft, top: m.safeY, right: m.safeX, bottom: 0 }}
@@ -201,7 +314,7 @@ export function SettingsScreen() {
         </Text>
 
         <View style={{ flex: 1, flexDirection: 'row', gap: m.s(24) }}>
-          {/* Left: category list (focusable; leftmost edge opens the rail). */}
+          {/* Left: category list. */}
           <View style={{ width: listW }}>
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: m.s(8), paddingBottom: m.s(40) }}>
               {CATEGORIES.map((c, i) => (
@@ -223,28 +336,40 @@ export function SettingsScreen() {
             <Text style={{ fontFamily: font.serif, fontSize: m.s(28), color: colors.text, marginBottom: m.s(16) }}>
               {CATEGORY_TITLE[category]}
             </Text>
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: m.s(18), paddingBottom: m.s(60) }}>
-              {category === 'advanced' ? (
-                <Card title="API keys" m={m}>
-                  <TvTextField
-                    label="Real-Debrid API key"
-                    hint="All torrent streams resolve through Real-Debrid for instant playback. Get your key at real-debrid.com/apitoken."
-                    value={settings.realDebridApiKey}
-                    placeholder="paste your Real-Debrid API key"
-                    onChange={(v) => update({ realDebridApiKey: v.trim() })}
-                    secureMask
-                    m={m}
-                  />
-                  <TvTextField
-                    label="TMDB API key"
-                    hint="Rating fallback for posters IMDb hasn't rated yet. Free key at themoviedb.org/settings/api. Leave blank to disable."
-                    value={settings.tmdbApiKey}
-                    placeholder="paste your TMDB v3 API key"
-                    onChange={(v) => update({ tmdbApiKey: v.trim() })}
-                    secureMask
-                    m={m}
-                  />
-                </Card>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: m.s(18), paddingBottom: m.s(80) }}>
+              {category === 'appearance' ? (
+                <>
+                  <Card title="Accent color" m={m}>
+                    {/* DECISION: keep the exact desktop sub-label + copy ("Syncs to your
+                        account.") for 1:1 parity; tvSettings is local-only today (noted). */}
+                    <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(17), color: colors.text }}>Site accent</Text>
+                    <Text style={{ fontFamily: font.body, fontSize: m.s(15), color: colors.textGhost, lineHeight: m.s(21) }}>
+                      Used by progress bars, focus rings, badges, the loading spinner — anywhere the default teal shows up. Syncs to your account.
+                    </Text>
+                    <ColorSwatchRow
+                      presets={TV_COLOR_PRESETS}
+                      value={settings.accentColor}
+                      m={m}
+                      atRowStart
+                      onChange={(hex) => update({ accentColor: hex })}
+                    />
+                    <PillButton label="Reset" m={m} onPress={() => update({ accentColor: '#95a2ff' })} />
+                  </Card>
+                  <Card title="Surface color" m={m}>
+                    <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(17), color: colors.text }}>Glass surface</Text>
+                    <Text style={{ fontFamily: font.body, fontSize: m.s(15), color: colors.textGhost, lineHeight: m.s(21) }}>
+                      Tints the glass behind menus, dropdowns, popovers and the nav rail. Dark presets only, so text stays legible. Syncs to your account.
+                    </Text>
+                    <ColorSwatchRow
+                      presets={SURFACE_COLOR_PRESETS}
+                      value={settings.surfaceColor}
+                      m={m}
+                      atRowStart
+                      onChange={(hex) => update({ surfaceColor: hex })}
+                    />
+                    <PillButton label="Reset" m={m} onPress={() => update({ surfaceColor: '#282f40' })} />
+                  </Card>
+                </>
               ) : null}
 
               {category === 'player' ? (
@@ -259,6 +384,7 @@ export function SettingsScreen() {
                         onChange={(k) => update({ subtitlesLanguage: k === 'none' ? null : k })}
                         m={m}
                         minWidth={m.s(260)}
+                        atRowStart
                         onOpen={setDropdown}
                       />
                     </View>
@@ -271,6 +397,7 @@ export function SettingsScreen() {
                         onChange={(k) => update({ subtitlesSizePx: Number.parseInt(k, 10) })}
                         m={m}
                         minWidth={m.s(200)}
+                        atRowStart
                         onOpen={setDropdown}
                       />
                     </View>
@@ -280,7 +407,31 @@ export function SettingsScreen() {
                         presets={TV_COLOR_PRESETS}
                         value={settings.subtitlesTextColor}
                         m={m}
+                        size={m.s(34)}
+                        atRowStart
                         onChange={(hex) => update({ subtitlesTextColor: hex })}
+                      />
+                    </View>
+                    <View>
+                      <FieldLabel label="Background color" m={m} />
+                      <ColorSwatchRow
+                        presets={TV_COLOR_PRESETS}
+                        value={settings.subtitlesBackgroundColor}
+                        m={m}
+                        size={m.s(34)}
+                        atRowStart
+                        onChange={(hex) => update({ subtitlesBackgroundColor: hex })}
+                      />
+                    </View>
+                    <View>
+                      <FieldLabel label="Outline color" m={m} />
+                      <ColorSwatchRow
+                        presets={TV_COLOR_PRESETS}
+                        value={settings.subtitlesOutlineColor}
+                        m={m}
+                        size={m.s(34)}
+                        atRowStart
+                        onChange={(hex) => update({ subtitlesOutlineColor: hex })}
                       />
                     </View>
                   </Card>
@@ -295,6 +446,36 @@ export function SettingsScreen() {
                         onChange={(k) => update({ audioLanguage: k === 'none' ? null : k })}
                         m={m}
                         minWidth={m.s(260)}
+                        atRowStart
+                        onOpen={setDropdown}
+                      />
+                    </View>
+                  </Card>
+
+                  <Card title="Controls" m={m}>
+                    <View>
+                      <FieldLabel label="Seek key" m={m} />
+                      <TvSelect
+                        iconName="play-forward-outline"
+                        options={seekItems}
+                        value={String(settings.seekTimeDurationMs)}
+                        onChange={(k) => update({ seekTimeDurationMs: Number.parseInt(k, 10) })}
+                        m={m}
+                        minWidth={m.s(200)}
+                        atRowStart
+                        onOpen={setDropdown}
+                      />
+                    </View>
+                    <View>
+                      <FieldLabel label="Seek key + Shift" m={m} />
+                      <TvSelect
+                        iconName="play-forward-outline"
+                        options={seekShiftItems}
+                        value={String(settings.seekShortTimeDurationMs)}
+                        onChange={(k) => update({ seekShortTimeDurationMs: Number.parseInt(k, 10) })}
+                        m={m}
+                        minWidth={m.s(200)}
+                        atRowStart
                         onOpen={setDropdown}
                       />
                     </View>
@@ -303,12 +484,13 @@ export function SettingsScreen() {
               ) : null}
 
               {category === 'playback' ? (
-                <Card title="Auto play" m={m}>
+                <Card title="Auto Play" m={m}>
                   <TvToggle
                     label="Auto play next video"
                     hint="Automatically play the next episode when the current one ends."
                     value={settings.bingeWatching}
                     m={m}
+                    atRowStart
                     onToggle={() => update({ bingeWatching: !settings.bingeWatching })}
                   />
                   <View style={{ opacity: settings.bingeWatching ? 1 : 0.5 }}>
@@ -320,83 +502,103 @@ export function SettingsScreen() {
                       onChange={(k) => update({ nextVideoNotificationDurationMs: Number.parseInt(k, 10) })}
                       m={m}
                       minWidth={m.s(220)}
+                      atRowStart
                       onOpen={setDropdown}
                     />
                   </View>
                 </Card>
               ) : null}
 
-              {category === 'appearance' ? (
-                <>
-                  <Card title="Accent color" m={m}>
-                    <Text style={{ fontFamily: font.body, fontSize: m.s(15), color: colors.textGhost, lineHeight: m.s(21) }}>
-                      Used by progress bars, focus rings and badges across the app.
-                    </Text>
-                    <ColorSwatchRow
-                      presets={TV_COLOR_PRESETS}
-                      value={settings.accentColor}
+              {category === 'streaming' ? (
+                <Card title="Streaming server" m={m}>
+                  <View>
+                    <FieldLabel label="Cache size" m={m} />
+                    <TvSelect
+                      iconName="save-outline"
+                      options={cacheSizeItems}
+                      value={settings.streamingServerCacheSizeBytes === null ? 'unlimited' : String(settings.streamingServerCacheSizeBytes)}
+                      onChange={(k) => update({ streamingServerCacheSizeBytes: k === 'unlimited' ? null : Number.parseInt(k, 10) })}
                       m={m}
-                      onChange={(hex) => update({ accentColor: hex })}
+                      minWidth={m.s(220)}
+                      atRowStart
+                      onOpen={setDropdown}
                     />
-                  </Card>
-                  <Card title="Surface color" m={m}>
-                    <Text style={{ fontFamily: font.body, fontSize: m.s(15), color: colors.textGhost, lineHeight: m.s(21) }}>
-                      Tints the glass behind menus, the nav rail and overlays. Dark presets only, so text stays legible.
-                    </Text>
-                    <ColorSwatchRow
-                      presets={SURFACE_COLOR_PRESETS}
-                      value={settings.surfaceColor}
-                      m={m}
-                      onChange={(hex) => update({ surfaceColor: hex })}
-                    />
-                  </Card>
-                </>
+                    <Hint m={m}>
+                      Maximum disk space the torrent cache may grow to. Only fills as you stream. Larger values reduce cache trims at playback start.
+                    </Hint>
+                  </View>
+                </Card>
               ) : null}
 
               {category === 'account' ? (
                 user ? (
                   <Card title="Profile" m={m}>
                     <View>
-                      <FieldLabel label="Username" m={m} />
-                      <View
-                        style={{
-                          minHeight: m.s(52),
-                          borderRadius: radius.field,
-                          borderWidth: 1,
-                          borderColor: colors.hairline,
-                          backgroundColor: colors.surface,
-                          paddingHorizontal: m.s(16),
-                          justifyContent: 'center',
+                      <TvTextField
+                        label="Username"
+                        value={usernameDraft}
+                        placeholder="3-50 chars: a-z 0-9 _ -"
+                        onChange={(v) => {
+                          setUsernameDraft(v.toLowerCase());
+                          setUsernameError(null);
                         }}
-                      >
-                        <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(20), color: colors.textDim }}>
-                          @{user.username ?? 'unset'}
-                        </Text>
+                        onSubmit={() => void handleSaveUsername()}
+                        invalid={Boolean(usernameError) || (usernameDirty && !usernameValid)}
+                        m={m}
+                        atRowStart
+                      />
+                      <View style={{ flexDirection: 'row', marginTop: m.s(10) }}>
+                        <PillButton
+                          label={usernameSaving ? 'Saving...' : 'Save'}
+                          m={m}
+                          primary
+                          disabled={usernameSaveDisabled}
+                          busy={usernameSaving}
+                          onPress={() => void handleSaveUsername()}
+                        />
                       </View>
-                      <Text style={{ fontFamily: font.body, fontSize: m.s(15), color: colors.textGhost, marginTop: m.s(8), lineHeight: m.s(21) }}>
-                        Your public handle — friends find you by it. Username changes are managed on the web app.
-                      </Text>
+                      {usernameError ? (
+                        <Hint m={m} danger>{usernameError}</Hint>
+                      ) : usernameDirty && !usernameValid ? (
+                        <Hint m={m} danger>3-50 chars: lowercase a-z, 0-9, _ -</Hint>
+                      ) : (
+                        <Hint m={m}>
+                          Used to log in to Blissful and as your public handle (@{currentUsername || 'unset'}) — friends find you by it. Display name is separate and can be anything.
+                        </Hint>
+                      )}
                     </View>
+
                     <View>
-                      <FieldLabel label="Display name" m={m} />
-                      <View
-                        style={{
-                          minHeight: m.s(52),
-                          borderRadius: radius.field,
-                          borderWidth: 1,
-                          borderColor: colors.hairline,
-                          backgroundColor: colors.surface,
-                          paddingHorizontal: m.s(16),
-                          justifyContent: 'center',
+                      <TvTextField
+                        label="Display name"
+                        value={displayNameDraft}
+                        placeholder="how friends see you"
+                        onChange={(v) => {
+                          setDisplayNameDraft(v);
+                          setDisplayNameError(null);
                         }}
-                      >
-                        <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(20), color: colors.text }}>
-                          {user.displayName ?? '—'}
-                        </Text>
+                        onSubmit={() => void handleSaveDisplayName()}
+                        invalid={Boolean(displayNameError)}
+                        m={m}
+                        atRowStart
+                      />
+                      <View style={{ flexDirection: 'row', marginTop: m.s(10) }}>
+                        <PillButton
+                          label={displayNameSaving ? 'Saving...' : 'Save'}
+                          m={m}
+                          primary
+                          disabled={displayNameSaveDisabled}
+                          busy={displayNameSaving}
+                          onPress={() => void handleSaveDisplayName()}
+                        />
                       </View>
-                      <Text style={{ fontFamily: font.body, fontSize: m.s(15), color: colors.textGhost, marginTop: m.s(8), lineHeight: m.s(21) }}>
-                        Shown in friends, chat and watch parties.
-                      </Text>
+                      {displayNameError ? (
+                        <Hint m={m} danger>{displayNameError}</Hint>
+                      ) : (
+                        <Hint m={m}>
+                          Shown in friends, chat, and watch parties. Can be anything — spaces, emoji, capitals all fine. Up to 60 characters.
+                        </Hint>
+                      )}
                     </View>
                   </Card>
                 ) : (
@@ -408,8 +610,53 @@ export function SettingsScreen() {
                 )
               ) : null}
 
+              {category === 'linked' ? (
+                <>
+                  <SettingsStremioPanel m={m} />
+                  <SettingsTraktPanel m={m} />
+                </>
+              ) : null}
+
+              {category === 'advanced' ? (
+                <Card title="Advanced" m={m}>
+                  <View>
+                    <FieldLabel label="Play in external player" m={m} />
+                    <TvSelect
+                      iconName="open-outline"
+                      options={externalPlayerItems}
+                      value={settings.playInExternalPlayer}
+                      onChange={(k) => update({ playInExternalPlayer: k })}
+                      m={m}
+                      minWidth={m.s(260)}
+                      atRowStart
+                      onOpen={setDropdown}
+                    />
+                  </View>
+                  <TvTextField
+                    label="Real-Debrid API key"
+                    hint="All torrent streams resolve through Real-Debrid for instant playback. Non-RD Torrentio results are hidden when a key is set. Get your key at real-debrid.com/apitoken."
+                    value={settings.realDebridApiKey}
+                    placeholder="paste your Real-Debrid API key"
+                    onChange={(v) => update({ realDebridApiKey: v.trim() })}
+                    secureMask
+                    m={m}
+                    atRowStart
+                  />
+                  <TvTextField
+                    label="TMDB API key"
+                    hint="Rating fallback for posters where IMDb doesn't have a rating yet (typically new releases). Free key at themoviedb.org/settings/api. Leave blank to disable."
+                    value={settings.tmdbApiKey}
+                    placeholder="paste your TMDB v3 API key"
+                    onChange={(v) => update({ tmdbApiKey: v.trim() })}
+                    secureMask
+                    m={m}
+                    atRowStart
+                  />
+                </Card>
+              ) : null}
+
               {category === 'about' ? (
-                <Card m={m}>
+                <Card title="About" m={m}>
                   <Text style={{ fontFamily: font.serif, fontSize: m.s(34), color: colors.text }}>{APP_NAME}</Text>
                   <Text style={{ fontFamily: font.body, fontSize: m.s(18), color: colors.textDim }}>{APP_TAGLINE}</Text>
                   <Text style={{ fontFamily: font.body, fontSize: m.s(16), color: colors.textGhost }}>v{APP_VERSION}</Text>

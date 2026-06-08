@@ -25,14 +25,21 @@ export type TvSettings = {
   // Advanced
   realDebridApiKey: string;
   tmdbApiKey: string;
+  playInExternalPlayer: string;
   // Player
   subtitlesSizePx: number;
   subtitlesTextColor: string; // hex
+  subtitlesBackgroundColor: string; // hex
+  subtitlesOutlineColor: string; // hex
   subtitlesLanguage: string | null;
   audioLanguage: string | null;
+  seekTimeDurationMs: number;
+  seekShortTimeDurationMs: number;
   // Playback
   bingeWatching: boolean;
   nextVideoNotificationDurationMs: number;
+  // Streaming
+  streamingServerCacheSizeBytes: number | null; // null = unlimited
   // Appearance
   accentColor: string; // hex
   surfaceColor: string; // hex
@@ -41,12 +48,18 @@ export type TvSettings = {
 export const DEFAULT_TV_SETTINGS: TvSettings = {
   realDebridApiKey: '',
   tmdbApiKey: '',
+  playInExternalPlayer: 'none',
   subtitlesSizePx: 28,
   subtitlesTextColor: '#ffffff',
+  subtitlesBackgroundColor: '#000000',
+  subtitlesOutlineColor: '#000000',
   subtitlesLanguage: 'English',
   audioLanguage: null,
+  seekTimeDurationMs: 10000,
+  seekShortTimeDurationMs: 4000,
   bingeWatching: true,
   nextVideoNotificationDurationMs: 30000,
+  streamingServerCacheSizeBytes: 107374182400,
   accentColor: '#95a2ff',
   surfaceColor: '#282f40',
 };
@@ -97,6 +110,33 @@ export async function hydrateTvSettingsFromCloud(token: string | null): Promise<
 export const SUBTITLE_SIZE_OPTIONS_PX = [16, 20, 24, 28, 32, 36, 40, 48, 56, 64];
 
 export const NEXT_VIDEO_POPUP_OPTIONS_MS = [0, 5000, 10000, 15000, 20000, 30000, 45000, 60000];
+
+// Mirrors SEEK_TIME_DURATION_OPTIONS_MS / SEEK_SHORT_TIME_DURATION_OPTIONS_MS
+// from apps/blissful-mvs/src/lib/playerSettings.ts.
+export const SEEK_TIME_DURATION_OPTIONS_MS = [5000, 10000, 15000, 20000, 30000, 45000, 60000];
+
+export const SEEK_SHORT_TIME_DURATION_OPTIONS_MS = [1000, 2000, 3000, 4000, 5000, 7000, 10000];
+
+// Streaming-server torrent cache ceiling. `null` = unlimited (mapped to the
+// 'unlimited' select key). Verbatim from STREAMING_CACHE_SIZE_OPTIONS.
+export const STREAMING_CACHE_SIZE_OPTIONS: { value: number | null; label: string }[] = [
+  { value: 0, label: 'No caching' },
+  { value: 2147483648, label: '2 GB' },
+  { value: 5368709120, label: '5 GB' },
+  { value: 10737418240, label: '10 GB' },
+  { value: 21474836480, label: '20 GB' },
+  { value: 53687091200, label: '50 GB' },
+  { value: 107374182400, label: '100 GB' },
+  { value: 214748364800, label: '200 GB' },
+  { value: null, label: 'Unlimited' },
+];
+
+// Verbatim from EXTERNAL_PLAYER_OPTIONS.
+export const EXTERNAL_PLAYER_OPTIONS = [
+  { value: 'none', label: 'None' },
+  { value: 'vlc', label: 'VLC' },
+  { value: 'download', label: 'Download playlist (.m3u)' },
+];
 
 // A compact, remote-friendly subset of the desktop language list (the desktop
 // list is the full ISO catalogue — far too long to scroll on a D-pad). Covers

@@ -22,6 +22,7 @@ export function TvTextField({
   m,
   atRowStart,
   secureMask,
+  invalid,
 }: {
   label: string;
   hint?: string;
@@ -32,6 +33,9 @@ export function TvTextField({
   m: M;
   atRowStart?: boolean;
   secureMask?: boolean;
+  /** Draw the field border in danger red (inline validation, e.g. a taken
+   *  username). Focus still wins over the error tint. */
+  invalid?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -54,7 +58,7 @@ export function TvTextField({
           minHeight: m.s(52),
           borderRadius: radius.field,
           borderWidth: 1,
-          borderColor: focused ? colors.accent : colors.hairline,
+          borderColor: focused ? colors.accent : invalid ? colors.danger : colors.hairline,
           backgroundColor: colors.surface10,
           paddingHorizontal: m.s(16),
           justifyContent: 'center',
