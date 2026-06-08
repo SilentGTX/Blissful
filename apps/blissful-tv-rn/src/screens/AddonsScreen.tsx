@@ -18,6 +18,7 @@ import { TopBar } from '../components/TopBar';
 import { markContentFocus } from '../lib/focusBus';
 import { useRailOpen } from '../lib/railStore';
 import { useSelfTag } from '../lib/useSelfTag';
+import { useTvFocusable } from '../lib/useTvFocusable';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import {
@@ -55,20 +56,13 @@ function FocusButton({
   busy?: boolean;
   m: M;
 }) {
-  const [focused, setFocused] = useState(false);
-  const ref = useRef(null);
-  const selfTag = useSelfTag(ref, Boolean(atRowStart));
+  const { focused, focusProps } = useTvFocusable({ atRowStart, autoFocus, onPress });
   const bg = variant === 'primary' ? colors.text : variant === 'danger' ? 'rgba(255,107,107,0.16)' : colors.surface10;
   const fg = variant === 'primary' ? colors.ink : variant === 'danger' ? colors.danger : colors.text;
   return (
     <Pressable
-      ref={ref}
-      hasTVPreferredFocus={autoFocus}
-      nextFocusLeft={selfTag}
+      {...focusProps}
       disabled={disabled}
-      onFocus={() => { setFocused(true); markContentFocus(Boolean(atRowStart)); }}
-      onBlur={() => setFocused(false)}
-      onPress={onPress}
       style={{
         flexDirection: 'row',
         alignItems: 'center',

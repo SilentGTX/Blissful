@@ -12,7 +12,7 @@ import { colors, font } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { useRailOpen } from '../lib/railStore';
 import { useAuth } from '../context/AuthContext';
-import { markContentFocus } from '../lib/focusBus';
+import { useTvFocusable } from '../lib/useTvFocusable';
 import { NavRail } from '../components/NavRail';
 import { TopBar } from '../components/TopBar';
 import { type CardItem } from '../components/PosterCard';
@@ -86,12 +86,10 @@ function Chip({
   m: ReturnType<typeof useMetrics>;
   onPress: () => void;
 }) {
-  const [focused, setFocused] = useState(false);
+  const { focused, focusProps } = useTvFocusable({ atRowStart, onPress });
   return (
     <Pressable
-      onFocus={() => { setFocused(true); markContentFocus(Boolean(atRowStart)); }}
-      onBlur={() => setFocused(false)}
-      onPress={onPress}
+      {...focusProps}
       style={{
         height: m.s(52),
         paddingHorizontal: m.s(22),
