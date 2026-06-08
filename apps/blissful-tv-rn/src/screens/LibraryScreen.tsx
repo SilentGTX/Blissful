@@ -1,6 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { PosterGridSkeleton } from '../components/Skeleton';
 import {
   fetchBlissfulLibrary,
   normalizeStremioImage,
@@ -338,8 +339,8 @@ export function LibraryScreen() {
         </View>
 
         {loading ? (
-          <View style={{ height: m.height - m.contentTop - m.s(160), alignItems: 'center', justifyContent: 'center' }}>
-            <ActivityIndicator color={colors.accent} size="large" />
+          <View style={{ paddingLeft: padL }}>
+            <PosterGridSkeleton width={posterW} cols={cols} gap={m.s(24)} rows={3} m={m} />
           </View>
         ) : error ? (
           <Text style={{ fontFamily: font.body, fontSize: m.s(22), color: colors.danger, marginLeft: padL, marginTop: m.s(20) }}>

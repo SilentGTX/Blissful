@@ -11,10 +11,12 @@ export function Img({
   uri,
   style,
   contentFit = 'cover',
+  onLoad,
 }: {
   uri: string | null | undefined;
   style: StyleProp<ImageStyle>;
   contentFit?: ImageContentFit;
+  onLoad?: () => void;
 }) {
   const src = proxiedImage(uri);
   if (!src) return null;
@@ -25,6 +27,7 @@ export function Img({
       contentFit={contentFit}
       cachePolicy="memory-disk"
       transition={0}
+      onLoad={onLoad ? () => onLoad() : undefined}
     />
   );
 }

@@ -1,6 +1,7 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
+import { FlatList, StyleSheet, Text, View } from 'react-native';
+import { PosterGridSkeleton } from '../components/Skeleton';
 import { fetchCatalog, type MediaType, type StremioMetaPreview } from '@blissful/core';
 import { colors, font } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
@@ -74,8 +75,8 @@ export function DiscoverScreen() {
         </View>
 
         {loading ? (
-          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-            <ActivityIndicator color={colors.accent} size="large" />
+          <View style={{ paddingLeft: padL }}>
+            <PosterGridSkeleton width={posterW} cols={cols} gap={gap} rows={3} m={m} />
           </View>
         ) : results.length ? (
           <FlatList

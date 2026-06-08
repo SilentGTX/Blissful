@@ -1,8 +1,9 @@
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { normalizeStremioImage } from '@blissful/core';
 import { useTvFocusable } from '../lib/useTvFocusable';
 import { Img } from './Img';
+import { Skeleton } from './Skeleton';
 import { Rating } from './Rating';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
@@ -39,6 +40,7 @@ const PosterVisual = memo(function PosterVisual({
 }) {
   const poster = normalizeStremioImage(item.poster);
   const h = width * POSTER_RATIO;
+  const [loaded, setLoaded] = useState(false);
   return (
     <>
       <View
@@ -49,7 +51,7 @@ const PosterVisual = memo(function PosterVisual({
         ]}
       >
         {poster ? (
-          <Img uri={poster} style={styles.poster} contentFit="cover" />
+          <Img uri={poster} style={styles.poster} contentFit="cover" onLoad={() => setLoaded(true)} />
         ) : (
           <View style={[styles.poster, styles.posterEmpty]}>
             <Text style={{ fontFamily: font.body, color: colors.textDim, fontSize: m.s(22), textAlign: 'center' }} numberOfLines={3}>
@@ -69,6 +71,11 @@ const PosterVisual = memo(function PosterVisual({
           <View style={{ position: 'absolute', bottom: m.s(12), left: m.s(12), right: m.s(12), height: m.s(6), borderRadius: radius.pill, overflow: 'hidden', backgroundColor: 'rgba(0,0,0,0.35)' }}>
             <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: `${Math.min(100, progress)}%`, backgroundColor: colors.accent }} />
           </View>
+        ) : null}
+        {/* Shimmer placeholder until the poster image loads (covers everything;
+            the posterWrap's overflow:hidden clips it to the rounded shape). */}
+        {poster && !loaded ? (
+          <Skeleton width={width} height={h} style={{ position: 'absolute', top: 0, left: 0 }} />
         ) : null}
       </View>
       <Text
