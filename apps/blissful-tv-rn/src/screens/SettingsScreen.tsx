@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Pressable, ScrollView, Text, View, type View as RNView } from 'react-native';
+import { findNodeHandle, Pressable, ScrollView, Text, TVFocusGuideView, View, type View as RNView } from 'react-native';
 import { updateCurrentBlissfulUser } from '@blissful/core';
 import { colors, font } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
@@ -83,6 +83,7 @@ function CategoryItem({
   icon,
   active,
   autoFocus,
+  nextFocusRight,
   m,
   onFocusSelect,
 }: {
@@ -90,6 +91,7 @@ function CategoryItem({
   icon: keyof typeof Ionicons.glyphMap;
   active: boolean;
   autoFocus: boolean;
+  nextFocusRight?: number;
   m: M;
   onFocusSelect: () => void;
 }) {
@@ -101,6 +103,7 @@ function CategoryItem({
       ref={ref}
       hasTVPreferredFocus={autoFocus}
       nextFocusLeft={selfTag}
+      nextFocusRight={nextFocusRight}
       onFocus={() => {
         setFocused(true);
         markContentFocus(true);
@@ -180,6 +183,19 @@ export function SettingsScreen() {
   const switchCategory = (key: Category) => {
     if (Date.now() - dropdownClosedAt.current > 700) setCategory(key);
   };
+  // Route D-pad Right from the category list straight into the detail panel (a
+  // focus guide that autoFocuses its first control) — otherwise the engine picks
+  // the up-right TopBar search instead of the panel.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const panelRef = useRef<any>(null); // TVFocusGuideView ref (View & FocusGuideMethods)
+  const [panelTag, setPanelTag] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    const id = setTimeout(() => {
+      const tag = panelRef.current ? findNodeHandle(panelRef.current) : null;
+      if (tag) setPanelTag(tag);
+    }, 300);
+    return () => clearTimeout(id);
+  }, []);
 
   // Fold whatever the cloud already has (currently the Real-Debrid key) into
   // local settings on launch / sign-in. Local stays authoritative.
@@ -337,6 +353,7 @@ export function SettingsScreen() {
                   // reclaimed, it returns to the current category instead of jumping
                   // back to Appearance.
                   autoFocus={category === c.key}
+                  nextFocusRight={panelTag}
                   m={m}
                   onFocusSelect={() => switchCategory(c.key)}
                 />
@@ -344,8 +361,9 @@ export function SettingsScreen() {
             </ScrollView>
           </View>
 
-          {/* Right: detail panel for the active category. */}
-          <View style={{ flex: 1, minWidth: 0 }}>
+          {/* Right: detail panel for the active category. A focus guide so D-pad
+              Right from the category list lands on the panel's first control. */}
+          <TVFocusGuideView ref={panelRef} autoFocus style={{ flex: 1, minWidth: 0 }}>
             <Text style={{ fontFamily: font.serif, fontSize: m.s(28), color: colors.text, marginBottom: m.s(16) }}>
               {CATEGORY_TITLE[category]}
             </Text>
@@ -676,7 +694,7 @@ export function SettingsScreen() {
                 </Card>
               ) : null}
             </ScrollView>
-          </View>
+          </TVFocusGuideView>
         </View>
       </View>
 
