@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { findNodeHandle, Pressable, ScrollView, Text, TVFocusGuideView, View, type View as RNView } from 'react-native';
 import { updateCurrentBlissfulUser } from '@blissful/core';
 import { colors, font } from '../theme/colors';
+import { useTheme } from '../theme/ThemeProvider';
 import { useMetrics } from '../theme/metrics';
 import { useRailOpen } from '../lib/railStore';
 import { markContentFocus } from '../lib/focusBus';
@@ -171,6 +172,7 @@ export function SettingsScreen() {
   const m = useMetrics();
   const railOpen = useRailOpen();
   const toast = useToast();
+  const { setTheme } = useTheme();
   const { token, user, updateProfile } = useAuth();
 
   const [category, setCategory] = useState<Category>('appearance');
@@ -217,6 +219,10 @@ export function SettingsScreen() {
       writeTvSettings(merged);
       return merged;
     });
+    // Apply accent / surface live (retints the whole app + the bg gradient).
+    if (next.accentColor !== undefined || next.surfaceColor !== undefined) {
+      setTheme({ accent: next.accentColor ?? undefined, surface: next.surfaceColor ?? undefined });
+    }
   };
 
   // --- Account: username edit (mirrors the desktop validation). ----------
@@ -326,7 +332,7 @@ export function SettingsScreen() {
   const listW = Math.min(m.s(300), Math.max(m.s(220), m.width * 0.18));
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+    <View style={{ flex: 1, backgroundColor: 'transparent' }}>
       <NavRail active="Settings" />
       <TopBar />
 

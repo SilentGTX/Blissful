@@ -1,9 +1,11 @@
 import { StatusBar } from 'expo-status-bar';
-import { View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { DarkTheme, NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { ThemeProvider, useTheme } from './src/theme/ThemeProvider';
 import {
   Fraunces_600SemiBold,
   Fraunces_700Bold,
@@ -30,13 +32,42 @@ import { colors } from './src/theme/colors';
 
 const Stack = createStackNavigator<RootStackParamList>();
 
-// JS navigator stack (NOT native-stack) + no react-native-screens — the
-// focus-safe path on react-native-tvos New Arch (plan D19): native-stack's
-// screen detach loses the TV focus reference (tvos #852).
+// Transparent so the app-root gradient (ThemedRoot) shows through every screen.
 const navTheme = {
   ...DarkTheme,
-  colors: { ...DarkTheme.colors, background: colors.bg, card: colors.bg },
+  colors: { ...DarkTheme.colors, background: 'transparent', card: 'transparent' },
 };
+
+// The app-root surface gradient + the (transparent) navigator on top. Lives
+// inside ThemeProvider so the gradient retints live when the user changes the
+// Settings surface colour.
+function ThemedRoot() {
+  const { bgGradient } = useTheme();
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      <LinearGradient colors={bgGradient as [string, string, string]} locations={[0, 0.55, 1]} style={StyleSheet.absoluteFill} />
+      <NavigationContainer theme={navTheme}>
+        <Stack.Navigator
+          screenOptions={{
+            headerShown: false,
+            animation: 'none',
+            cardStyle: { backgroundColor: 'transparent' },
+          }}
+        >
+          <Stack.Screen name="Home" component={HomeScreen} />
+          <Stack.Screen name="Detail" component={DetailScreen} />
+          <Stack.Screen name="Player" component={PlayerScreen} />
+          <Stack.Screen name="Login" component={LoginScreen} />
+          <Stack.Screen name="Search" component={SearchScreen} />
+          <Stack.Screen name="Discover" component={DiscoverScreen} />
+          <Stack.Screen name="Settings" component={SettingsScreen} />
+          <Stack.Screen name="Library" component={LibraryScreen} />
+          <Stack.Screen name="Addons" component={AddonsScreen} />
+        </Stack.Navigator>
+      </NavigationContainer>
+    </View>
+  );
+}
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -54,29 +85,13 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <AuthProvider>
-          <ToastProvider>
-            <NavigationContainer theme={navTheme}>
-              <Stack.Navigator
-                screenOptions={{
-                  headerShown: false,
-                  animation: 'none',
-                  cardStyle: { backgroundColor: colors.bg },
-                }}
-              >
-                <Stack.Screen name="Home" component={HomeScreen} />
-                <Stack.Screen name="Detail" component={DetailScreen} />
-                <Stack.Screen name="Player" component={PlayerScreen} />
-                <Stack.Screen name="Login" component={LoginScreen} />
-                <Stack.Screen name="Search" component={SearchScreen} />
-                <Stack.Screen name="Discover" component={DiscoverScreen} />
-                <Stack.Screen name="Settings" component={SettingsScreen} />
-                <Stack.Screen name="Library" component={LibraryScreen} />
-                <Stack.Screen name="Addons" component={AddonsScreen} />
-              </Stack.Navigator>
-            </NavigationContainer>
-          </ToastProvider>
-        </AuthProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            <ToastProvider>
+              <ThemedRoot />
+            </ToastProvider>
+          </AuthProvider>
+        </ThemeProvider>
         <StatusBar style="light" />
       </SafeAreaProvider>
     </GestureHandlerRootView>

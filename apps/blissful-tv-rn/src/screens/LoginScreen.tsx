@@ -206,7 +206,7 @@ export function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' },
+  root: { flex: 1, backgroundColor: 'transparent', alignItems: 'center', justifyContent: 'center' },
   card: {
     width: 520,
     borderRadius: radius.panel,
