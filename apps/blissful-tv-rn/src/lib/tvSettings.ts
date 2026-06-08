@@ -59,7 +59,7 @@ export const DEFAULT_TV_SETTINGS: TvSettings = {
   seekShortTimeDurationMs: 4000,
   bingeWatching: true,
   nextVideoNotificationDurationMs: 30000,
-  streamingServerCacheSizeBytes: 107374182400,
+  streamingServerCacheSizeBytes: 5368709120, // 5 GB default (overridden by the account value when signed in)
   accentColor: '#95a2ff',
   surfaceColor: '#282f40',
 };
@@ -97,6 +97,12 @@ export async function hydrateTvSettingsFromCloud(token: string | null): Promise<
     const merged: TvSettings = {
       ...local,
       realDebridApiKey: remote.realDebridApiKey ?? local.realDebridApiKey,
+      // streamingServerCacheSizeBytes can be 0 ('No caching') or null ('Unlimited'),
+      // so check `!== undefined`, not truthiness.
+      streamingServerCacheSizeBytes:
+        remote.streamingServerCacheSizeBytes !== undefined
+          ? remote.streamingServerCacheSizeBytes
+          : local.streamingServerCacheSizeBytes,
     };
     writeTvSettings(merged);
     return merged;

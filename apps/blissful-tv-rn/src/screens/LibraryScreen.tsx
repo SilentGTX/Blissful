@@ -308,8 +308,10 @@ export function LibraryScreen() {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          style={{ flexGrow: 0, marginBottom: m.s(18) }}
-          contentContainerStyle={{ alignItems: 'center', gap: m.s(12), paddingLeft: padL, paddingRight: m.safeX, paddingVertical: m.s(6) }}
+          // Explicit height so the m.s(52) chips + focus ring aren't clipped
+          // top/bottom (the auto-height collapsed below the chip height).
+          style={{ flexGrow: 0, height: m.s(72), marginBottom: m.s(18) }}
+          contentContainerStyle={{ alignItems: 'center', gap: m.s(12), paddingLeft: padL, paddingRight: m.safeX }}
         >
           <TvSelect
             iconName="albums-outline"

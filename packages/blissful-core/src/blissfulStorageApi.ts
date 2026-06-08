@@ -19,6 +19,9 @@ export type BlissfulStoredPlayerSettings = {
   /** Real-Debrid API key; when set, a Torrentio RD addon is injected so torrent
    *  streams resolve to ready HTTP urls. Empty string / undefined = disabled. */
   realDebridApiKey?: string;
+  /** Streaming-server torrent cache ceiling in bytes. 0 = no caching, null =
+   *  unlimited. The TV box loads this so it matches the account's saved value. */
+  streamingServerCacheSizeBytes?: number | null;
 };
 
 async function getJson<T>(path: string, token: string): Promise<T> {

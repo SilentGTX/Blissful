@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import { useEffect, useState } from 'react';
 import { BackHandler, Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, font, radius } from '../theme/colors';
@@ -70,6 +71,7 @@ function AvatarCell({ src, size, selected, autoFocus, onPress }: { src: number; 
 
 export function ProfileMenu({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const m = useMetrics();
+  const navigation = useNavigation<any>();
   const { user, logout, updateProfile } = useAuth();
   const [mode, setMode] = useState<'menu' | 'avatar'>('menu');
   const [selected, setSelected] = useState(0);
@@ -146,7 +148,7 @@ export function ProfileMenu({ visible, onClose }: { visible: boolean; onClose: (
               </View>
             </Pressable>
             <View style={{ height: 1, backgroundColor: colors.hairline, marginBottom: m.s(6) }} />
-            <Row label="Settings" icon="settings-outline" m={m} onPress={onClose} />
+            <Row label="Settings" icon="settings-outline" m={m} onPress={() => { onClose(); navigation.navigate('Settings'); }} />
             <Row label="Customize Home" icon="grid-outline" m={m} onPress={onClose} />
             <Row label="Log out" icon="log-out-outline" danger m={m} onPress={() => { logout(); onClose(); }} />
         </FocusTrap>

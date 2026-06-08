@@ -6,6 +6,7 @@ import { colors, font } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { useRailOpen } from '../lib/railStore';
 import { NavRail } from '../components/NavRail';
+import { TopBar } from '../components/TopBar';
 import { PosterCard, type CardItem } from '../components/PosterCard';
 import { TvSelect, TvSelectOverlay, type DropdownAnchor, type SelectOption } from '../components/TvSelect';
 import type { RootStackParamList } from '../navigation/types';
@@ -60,9 +61,10 @@ export function DiscoverScreen() {
   return (
     <View style={styles.root}>
       <NavRail active="Discover" />
+      <TopBar />
       {/* isTVSelectable on this one container cascades to the dropdowns + grid,
           trapping focus in the rail while it's open (one flip, not per-card). */}
-      <View isTVSelectable={!railOpen} style={{ position: 'absolute', left: m.contentLeft, top: m.safeY, right: m.safeX, bottom: 0 }}>
+      <View isTVSelectable={!railOpen} style={{ position: 'absolute', left: m.contentLeft, top: m.contentTop, right: m.safeX, bottom: 0 }}>
         <Text style={{ fontFamily: font.serif, fontSize: m.s(40), color: colors.text, marginLeft: padL, marginBottom: m.s(14) }}>Discover</Text>
 
         <View style={{ flexDirection: 'row', gap: m.s(12), marginLeft: padL, marginBottom: m.s(18) }}>

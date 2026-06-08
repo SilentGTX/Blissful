@@ -9,6 +9,7 @@ import { markContentFocus } from '../lib/focusBus';
 import { useSelfTag } from '../lib/useSelfTag';
 import { useAuth } from '../context/AuthContext';
 import { NavRail } from '../components/NavRail';
+import { TopBar } from '../components/TopBar';
 import { useToast } from '../components/Toast';
 import { TvSelect, TvSelectOverlay, type DropdownAnchor, type SelectOption } from '../components/TvSelect';
 import { TvTextField } from '../components/settings/TvTextField';
@@ -304,10 +305,11 @@ export function SettingsScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <NavRail active="Settings" />
+      <TopBar />
 
       <View
         isTVSelectable={!railOpen}
-        style={{ position: 'absolute', left: m.contentLeft, top: m.safeY, right: m.safeX, bottom: 0 }}
+        style={{ position: 'absolute', left: m.contentLeft, top: m.contentTop, right: m.safeX, bottom: 0 }}
       >
         <Text style={{ fontFamily: font.serif, fontSize: m.s(40), color: colors.text, marginBottom: m.s(18) }}>
           Settings
@@ -317,13 +319,17 @@ export function SettingsScreen() {
           {/* Left: category list. */}
           <View style={{ width: listW }}>
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: m.s(8), paddingBottom: m.s(40) }}>
-              {CATEGORIES.map((c, i) => (
+              {CATEGORIES.map((c) => (
                 <CategoryItem
                   key={c.key}
                   label={c.label}
                   icon={c.icon}
                   active={category === c.key}
-                  autoFocus={i === 0}
+                  // hasTVPreferredFocus follows the ACTIVE category (not always the
+                  // first one) — so when a dropdown overlay closes and focus is
+                  // reclaimed, it returns to the current category instead of jumping
+                  // back to Appearance.
+                  autoFocus={category === c.key}
                   m={m}
                   onFocusSelect={() => setCategory(c.key)}
                 />
