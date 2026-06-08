@@ -305,14 +305,10 @@ export function LibraryScreen() {
         {/* Filters row: Type dropdown + sort chips + watched chips. Horizontal
             scroll so the chip row never clips on a narrow panel; the type
             dropdown is the left-edge focusable (atRowStart -> opens the rail). */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          // Explicit height so the m.s(52) chips + focus ring aren't clipped
-          // top/bottom (the auto-height collapsed below the chip height).
-          style={{ flexGrow: 0, height: m.s(72), marginBottom: m.s(18) }}
-          contentContainerStyle={{ alignItems: 'center', gap: m.s(12), paddingLeft: padL, paddingRight: m.safeX }}
-        >
+        {/* A plain wrapping row (NOT a horizontal ScrollView) — the ScrollView's
+            overflow:hidden frame shaved the chips' rounded top/bottom. The chips
+            fit on one line on a TV; flexWrap covers any narrow case. */}
+        <View style={{ flexShrink: 0, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: m.s(12), marginLeft: padL, marginRight: m.safeX, marginBottom: m.s(18) }}>
           <TvSelect
             iconName="albums-outline"
             options={typeOptions}
@@ -341,7 +337,7 @@ export function LibraryScreen() {
               onPress={() => setWatchedFilter((prev) => (prev === chip.key ? 'all' : chip.key))}
             />
           ))}
-        </ScrollView>
+        </View>
 
         {loading ? (
           <View style={{ height: m.height - m.contentTop - m.s(160), alignItems: 'center', justifyContent: 'center' }}>
@@ -360,7 +356,10 @@ export function LibraryScreen() {
             data={cells}
             key={cols}
             numColumns={cols}
-            style={{ height: m.height - m.contentTop - m.s(120) }}
+            // flex:1 takes the space LEFT after the title + chips row, instead of a
+            // near-full-screen fixed height that overflowed the column and shrank
+            // the (non-flexShrink:0) chips row to a sliver.
+            style={{ flex: 1 }}
             removeClippedSubviews={false}
             initialNumToRender={cols * 3}
             maxToRenderPerBatch={cols * 2}

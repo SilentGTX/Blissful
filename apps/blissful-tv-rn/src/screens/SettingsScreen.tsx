@@ -173,6 +173,13 @@ export function SettingsScreen() {
   const [category, setCategory] = useState<Category>('appearance');
   const [settings, setSettings] = useState<TvSettings>(() => readTvSettings());
   const [dropdown, setDropdown] = useState<DropdownAnchor | null>(null);
+  // When a TvSelect overlay closes, the tvos focus engine reclaims focus onto the
+  // first category row (Appearance) — which would switch the panel back. Suppress
+  // the focus-driven category switch briefly after a close so the panel stays put.
+  const dropdownClosedAt = useRef(0);
+  const switchCategory = (key: Category) => {
+    if (Date.now() - dropdownClosedAt.current > 700) setCategory(key);
+  };
 
   // Fold whatever the cloud already has (currently the Real-Debrid key) into
   // local settings on launch / sign-in. Local stays authoritative.
@@ -331,7 +338,7 @@ export function SettingsScreen() {
                   // back to Appearance.
                   autoFocus={category === c.key}
                   m={m}
-                  onFocusSelect={() => setCategory(c.key)}
+                  onFocusSelect={() => switchCategory(c.key)}
                 />
               ))}
             </ScrollView>
@@ -673,7 +680,7 @@ export function SettingsScreen() {
         </View>
       </View>
 
-      {dropdown ? <TvSelectOverlay anchor={dropdown} onClose={() => setDropdown(null)} m={m} /> : null}
+      {dropdown ? <TvSelectOverlay anchor={dropdown} onClose={() => { dropdownClosedAt.current = Date.now(); setDropdown(null); }} m={m} /> : null}
     </View>
   );
 }
