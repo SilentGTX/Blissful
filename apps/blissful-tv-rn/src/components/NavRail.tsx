@@ -5,6 +5,7 @@ import { Animated, findNodeHandle, Image, Pressable, ScrollView, StyleSheet, Tex
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { ICONS, StrokeIcon } from '../icons/StrokeIcon';
+import { useToast } from './Toast';
 import { useAuth } from '../context/AuthContext';
 import { useFriends, statusLine } from '../lib/friends';
 import { isAtLeftEdge } from '../lib/focusBus';
@@ -110,6 +111,7 @@ const Row = forwardRef<View, {
 
 export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
   const navigation = useNavigation<any>();
+  const toast = useToast();
   const m = useMetrics();
   const { token } = useAuth();
   const { friends, incoming, presence } = useFriends(token);
@@ -214,7 +216,7 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
         <Row iconW={iconW} itemH={m.s(48)} mx={rowMargin} expanded={expanded} focusable={false} label="Blissful" labelColor={colors.text} labelFont={font.serif} labelSize={m.s(22)} icon={<Image source={require('../../assets/blissful-small-logo.png')} style={{ width: m.s(36), height: m.s(36), borderRadius: m.s(10) }} resizeMode="contain" />} />
         <Divider mx={m.s(10)} my={m.s(6)} />
         {ITEMS.map((it, i) => (
-          <Row key={i === 0 ? `${it.key}-${openKey}` : it.key} ref={(el) => { navRefs.current[i] = el; }} focusable={expanded} autoFocus={i === 0 && expanded} nextFocusUp={upTag(i)} nextFocusDown={downTag(i)} iconW={iconW} itemH={m.navItemH} mx={rowMargin} expanded={expanded} active={active === it.key} label={it.label} labelSize={m.s(16)} icon={ico(it.icon, active === it.key ? colors.accent : colors.textDim, active === it.key)} onRailFocus={onRailFocus} onPress={() => { if (it.key === 'Home') navigation.navigate('Home'); else if (it.key === 'Discover') navigation.navigate('Discover', { type: 'movie' }); else if (it.key === 'Library') navigation.navigate('Library'); else if (it.key === 'Addons') navigation.navigate('Addons'); else if (it.key === 'Settings') navigation.navigate('Settings'); }} />
+          <Row key={i === 0 ? `${it.key}-${openKey}` : it.key} ref={(el) => { navRefs.current[i] = el; }} focusable={expanded} autoFocus={i === 0 && expanded} nextFocusUp={upTag(i)} nextFocusDown={downTag(i)} iconW={iconW} itemH={m.navItemH} mx={rowMargin} expanded={expanded} active={active === it.key} label={it.label} labelSize={m.s(16)} icon={ico(it.icon, active === it.key ? colors.accent : colors.textDim, active === it.key)} onRailFocus={onRailFocus} onPress={() => { if (it.key === 'Home') navigation.navigate('Home'); else if (it.key === 'Discover') navigation.navigate('Discover', { type: 'movie' }); else if (it.key === 'Library') navigation.navigate('Library'); else if (it.key === 'Addons') navigation.navigate('Addons'); else if (it.key === 'Settings') navigation.navigate('Settings'); else if (it.key === 'JoinParty') toast.show('Watch Party is coming soon'); }} />
         ))}
 
         {!expanded ? <View style={{ flex: 1 }} /> : null}
