@@ -49,6 +49,7 @@ export function PlayerScreen() {
   const [index, setIndex] = useState(Math.min(params.startIndex ?? 0, playlist.length - 1));
   const current = playlist[index] ?? playlist[0];
   const skippedRef = useRef(false);
+  const autoSubRef = useRef(false); // whether we've auto-loaded the preferred subtitle for this file
 
   const player = useVideoPlayer(current.url, (p) => {
     p.timeUpdateEventInterval = 0.5;
@@ -97,6 +98,7 @@ export function PlayerScreen() {
     setAudioTracks([]);
     setSubTracks([]);
     skippedRef.current = false;
+    autoSubRef.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index]);
 
@@ -184,6 +186,26 @@ export function PlayerScreen() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [player]);
+
+  // Auto-load the embedded subtitle matching the user's preferred language once the
+  // tracks are decoded (mirrors the Windows app's auto-load + "Subtitles loaded"
+  // toast). eng/en/english all match "English". Fires once per file.
+  useEffect(() => {
+    if (autoSubRef.current || !subTracks.length) return;
+    const pref = (tvs.subtitlesLanguage ?? '').trim().toLowerCase();
+    if (!pref || pref === 'none') return;
+    const match = subTracks.find((t) => {
+      const lang = (t.language ?? '').toLowerCase();
+      return !!lang && (pref.startsWith(lang) || lang.startsWith(pref) || lang === pref);
+    });
+    if (!match) return;
+    autoSubRef.current = true;
+    const p = player as unknown as { subtitleTrack?: Track | null };
+    p.subtitleTrack = match;
+    setCurSub(match.id);
+    toast.show(`Subtitles loaded · ${trackLabel(match, 'Subtitle')}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subTracks]);
 
   const togglePlay = () => {
     if (player.playing) player.pause();
