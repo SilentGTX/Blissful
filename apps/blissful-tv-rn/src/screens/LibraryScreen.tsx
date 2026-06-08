@@ -356,10 +356,11 @@ export function LibraryScreen() {
             data={cells}
             key={cols}
             numColumns={cols}
-            // flex:1 takes the space LEFT after the title + chips row, instead of a
-            // near-full-screen fixed height that overflowed the column and shrank
-            // the (non-flexShrink:0) chips row to a sliver.
-            style={{ flex: 1 }}
+            // Concrete height (a FlatList with flex:1 inside this absolute column
+            // collapses to 0 and renders no rows). The subtracted m.s(150) leaves
+            // room for the title (~m.s(62)) + chips row (~m.s(70)) so the column
+            // doesn't overflow and shrink them; the chips are flexShrink:0 too.
+            style={{ height: m.height - m.contentTop - m.s(150) }}
             removeClippedSubviews={false}
             initialNumToRender={cols * 3}
             maxToRenderPerBatch={cols * 2}
