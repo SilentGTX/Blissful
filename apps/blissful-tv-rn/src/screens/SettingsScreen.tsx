@@ -4,6 +4,7 @@ import { findNodeHandle, Pressable, ScrollView, Text, TVFocusGuideView, View, ty
 import { updateCurrentBlissfulUser } from '@blissful/core';
 import { colors, font } from '../theme/colors';
 import { useTheme } from '../theme/ThemeProvider';
+import { SettingsLeftTargetContext } from '../lib/settingsLeftTarget';
 import { useMetrics } from '../theme/metrics';
 import { useRailOpen } from '../lib/railStore';
 import { markContentFocus } from '../lib/focusBus';
@@ -85,6 +86,7 @@ function CategoryItem({
   active,
   autoFocus,
   nextFocusRight,
+  onTag,
   m,
   onFocusSelect,
 }: {
@@ -93,12 +95,16 @@ function CategoryItem({
   active: boolean;
   autoFocus: boolean;
   nextFocusRight?: number;
+  onTag?: (tag?: number) => void;
   m: M;
   onFocusSelect: () => void;
 }) {
   const [focused, setFocused] = useState(false);
   const ref = useRef<RNView>(null);
   const selfTag = useSelfTag(ref, true);
+  // Report this row's node so the panel can route D-pad Left back to the active
+  // category (only the active row is handed an onTag).
+  useEffect(() => { onTag?.(selfTag); }, [onTag, selfTag]);
   return (
     <Pressable
       ref={ref}
@@ -191,6 +197,9 @@ export function SettingsScreen() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const panelRef = useRef<any>(null); // TVFocusGuideView ref (View & FocusGuideMethods)
   const [panelTag, setPanelTag] = useState<number | undefined>(undefined);
+  // The active category row's node — panel controls route D-pad Left here (via
+  // SettingsLeftTargetContext) instead of opening the global nav rail.
+  const [activeCatTag, setActiveCatTag] = useState<number | undefined>(undefined);
   useEffect(() => {
     const id = setTimeout(() => {
       const tag = panelRef.current ? findNodeHandle(panelRef.current) : null;
@@ -360,6 +369,7 @@ export function SettingsScreen() {
                   // back to Appearance.
                   autoFocus={category === c.key}
                   nextFocusRight={panelTag}
+                  onTag={category === c.key ? setActiveCatTag : undefined}
                   m={m}
                   onFocusSelect={() => switchCategory(c.key)}
                 />
@@ -368,7 +378,9 @@ export function SettingsScreen() {
           </View>
 
           {/* Right: detail panel for the active category. A focus guide so D-pad
-              Right from the category list lands on the panel's first control. */}
+              Right from the category list lands on the panel's first control; the
+              provider routes the controls' D-pad Left back to the active category. */}
+          <SettingsLeftTargetContext.Provider value={activeCatTag}>
           <TVFocusGuideView ref={panelRef} autoFocus style={{ flex: 1, minWidth: 0 }}>
             <Text style={{ fontFamily: font.serif, fontSize: m.s(28), color: colors.text, marginBottom: m.s(16) }}>
               {CATEGORY_TITLE[category]}
@@ -701,6 +713,7 @@ export function SettingsScreen() {
               ) : null}
             </ScrollView>
           </TVFocusGuideView>
+          </SettingsLeftTargetContext.Provider>
         </View>
       </View>
 

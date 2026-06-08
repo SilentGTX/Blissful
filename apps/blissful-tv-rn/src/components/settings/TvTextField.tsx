@@ -4,6 +4,7 @@ import { colors, font, radius } from '../../theme/colors';
 import { useMetrics } from '../../theme/metrics';
 import { markContentFocus } from '../../lib/focusBus';
 import { useSelfTag } from '../../lib/useSelfTag';
+import { useSettingsLeftTarget } from '../../lib/settingsLeftTarget';
 
 type M = ReturnType<typeof useMetrics>;
 
@@ -41,7 +42,9 @@ export function TvTextField({
   const [editing, setEditing] = useState(false);
   const rowRef = useRef<View>(null);
   const inputRef = useRef<RNTextInput | null>(null);
-  const selfTag = useSelfTag(rowRef, Boolean(atRowStart));
+  const leftTarget = useSettingsLeftTarget();
+  const railTrap = leftTarget == null && Boolean(atRowStart);
+  const selfTag = useSelfTag(rowRef, railTrap);
 
   const displayValue = secureMask && !editing && value ? '•'.repeat(Math.min(value.length, 24)) : value;
 
@@ -50,8 +53,8 @@ export function TvTextField({
       <Text style={{ fontFamily: font.body, fontSize: m.s(17), color: colors.textDim }}>{label}</Text>
       <Pressable
         ref={rowRef}
-        nextFocusLeft={selfTag}
-        onFocus={() => { setFocused(true); markContentFocus(Boolean(atRowStart)); }}
+        nextFocusLeft={leftTarget ?? selfTag}
+        onFocus={() => { setFocused(true); markContentFocus(railTrap); }}
         onBlur={() => setFocused(false)}
         onPress={() => inputRef.current?.focus()}
         style={{

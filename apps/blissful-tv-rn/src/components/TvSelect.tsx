@@ -6,6 +6,7 @@ import { useMetrics } from '../theme/metrics';
 import { FocusTrap } from './FocusTrap';
 import { markContentFocus } from '../lib/focusBus';
 import { useSelfTag } from '../lib/useSelfTag';
+import { useSettingsLeftTarget } from '../lib/settingsLeftTarget';
 
 export type SelectOption = { key: string; label: string };
 type M = ReturnType<typeof useMetrics>;
@@ -45,7 +46,9 @@ export function TvSelect({
 }) {
   const [focused, setFocused] = useState(false);
   const triggerRef = useRef<View>(null);
-  const selfTag = useSelfTag(triggerRef, Boolean(atRowStart));
+  const leftTarget = useSettingsLeftTarget();
+  const railTrap = leftTarget == null && Boolean(atRowStart);
+  const selfTag = useSelfTag(triggerRef, railTrap);
   const current = options.find((o) => o.key === value);
   const open = () =>
     triggerRef.current?.measureInWindow((x, y, w, h) =>
@@ -60,8 +63,8 @@ export function TvSelect({
   return (
     <Pressable
       ref={triggerRef}
-      nextFocusLeft={selfTag}
-      onFocus={() => { setFocused(true); markContentFocus(Boolean(atRowStart)); }}
+      nextFocusLeft={leftTarget ?? selfTag}
+      onFocus={() => { setFocused(true); markContentFocus(railTrap); }}
       onBlur={() => setFocused(false)}
       onPress={open}
       style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(10), minWidth, height: m.s(52), paddingHorizontal: m.s(18), borderRadius: radius.pill, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: focused ? colors.accent : 'rgba(255,255,255,0.12)' }}

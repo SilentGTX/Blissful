@@ -4,6 +4,7 @@ import { colors, font, radius } from '../../theme/colors';
 import { useMetrics } from '../../theme/metrics';
 import { markContentFocus } from '../../lib/focusBus';
 import { useSelfTag } from '../../lib/useSelfTag';
+import { useSettingsLeftTarget } from '../../lib/settingsLeftTarget';
 
 type M = ReturnType<typeof useMetrics>;
 
@@ -27,7 +28,9 @@ export function TvToggle({
 }) {
   const [focused, setFocused] = useState(false);
   const ref = useRef<View>(null);
-  const selfTag = useSelfTag(ref, Boolean(atRowStart));
+  const leftTarget = useSettingsLeftTarget();
+  const railTrap = leftTarget == null && Boolean(atRowStart);
+  const selfTag = useSelfTag(ref, railTrap);
 
   const trackW = m.s(56);
   const trackH = m.s(32);
@@ -37,8 +40,8 @@ export function TvToggle({
   return (
     <Pressable
       ref={ref}
-      nextFocusLeft={selfTag}
-      onFocus={() => { setFocused(true); markContentFocus(Boolean(atRowStart)); }}
+      nextFocusLeft={leftTarget ?? selfTag}
+      onFocus={() => { setFocused(true); markContentFocus(railTrap); }}
       onBlur={() => setFocused(false)}
       onPress={onToggle}
       style={{
