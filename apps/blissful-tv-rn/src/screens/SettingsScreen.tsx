@@ -18,6 +18,7 @@ import { TvTextField } from '../components/settings/TvTextField';
 import { TvToggle } from '../components/settings/TvToggle';
 import { ColorSwatchRow } from '../components/settings/ColorSwatchRow';
 import { AccentPreview, GlassPreview } from '../components/settings/AppearancePreview';
+import { SubtitleColorPicker } from '../components/settings/SubtitleColorPicker';
 import { PillButton } from '../components/settings/PillButton';
 import { SettingsStremioPanel } from '../components/settings/SettingsStremioPanel';
 import { SettingsTraktPanel } from '../components/settings/SettingsTraktPanel';
@@ -472,39 +473,21 @@ export function SettingsScreen() {
                         onOpen={setDropdown}
                       />
                     </View>
-                    <View>
-                      <FieldLabel label="Text color" m={m} />
-                      <ColorSwatchRow
-                        presets={TV_COLOR_PRESETS}
-                        value={settings.subtitlesTextColor}
-                        m={m}
-                        size={m.s(34)}
-                        atRowStart
-                        onChange={(hex) => update({ subtitlesTextColor: hex })}
-                      />
-                    </View>
-                    <View>
-                      <FieldLabel label="Background color" m={m} />
-                      <ColorSwatchRow
-                        presets={TV_COLOR_PRESETS}
-                        value={settings.subtitlesBackgroundColor}
-                        m={m}
-                        size={m.s(34)}
-                        atRowStart
-                        onChange={(hex) => update({ subtitlesBackgroundColor: hex })}
-                      />
-                    </View>
-                    <View>
-                      <FieldLabel label="Outline color" m={m} />
-                      <ColorSwatchRow
-                        presets={TV_COLOR_PRESETS}
-                        value={settings.subtitlesOutlineColor}
-                        m={m}
-                        size={m.s(34)}
-                        atRowStart
-                        onChange={(hex) => update({ subtitlesOutlineColor: hex })}
-                      />
-                    </View>
+                    <SubtitleColorPicker
+                      text={settings.subtitlesTextColor}
+                      bg={settings.subtitlesBackgroundColor}
+                      outline={settings.subtitlesOutlineColor}
+                      m={m}
+                      onChange={(channel, hex) =>
+                        update(
+                          channel === 'text'
+                            ? { subtitlesTextColor: hex }
+                            : channel === 'bg'
+                              ? { subtitlesBackgroundColor: hex }
+                              : { subtitlesOutlineColor: hex },
+                        )
+                      }
+                    />
                   </Card>
 
                   <Card title="Audio" m={m}>
