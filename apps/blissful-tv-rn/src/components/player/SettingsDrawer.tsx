@@ -330,6 +330,11 @@ export function SettingsDrawer(props: SettingsDrawerProps) {
   const focusItemsRef = useRef(focusItems);
   focusItemsRef.current = focusItems;
   const firstBodyIdx = Math.max(0, focusItems.findIndex((it) => it.body));
+  // Synced refs so the D-pad handler reads the live index/tab without re-registering.
+  const focusIdxRef = useRef(focusIdx);
+  focusIdxRef.current = focusIdx;
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
 
   // Re-seed focus to the first body row whenever the view changes (tab switch,
   // drill in/out, appearance toggle, fresh open) so the cursor never strands on
@@ -358,30 +363,39 @@ export function SettingsDrawer(props: SettingsDrawerProps) {
   // ── Self-contained D-pad ───────────────────────────────────────────────────
   // Acts ONLY while open. Up/Down walk (clamped), OK activates, Left/Back close.
   const lastOk = useRef(0);
+  // 2D D-pad: the header (audio/subs tabs + close X) is a HORIZONTAL row navigated
+  // with Left/Right; the body is VERTICAL (Up/Down). Up from the body's top row
+  // lands on the active tab; Down from the header drops into the body. Left in the
+  // body (or at the header's left edge) closes — as does Back. OK on the X closes.
   useTVEventHandler((evt) => {
     if (!open) return;
     const type = evt?.eventType;
     if (!type) return;
     const list = focusItemsRef.current;
+    const fbi = Math.max(0, list.findIndex((it) => it.body)); // first body index; header = [0, fbi)
+    const i = focusIdxRef.current;
+    const inHeader = fbi > 0 && i < fbi;
+    const activeTabIdx = Math.max(0, list.findIndex((it) => it.key === (tabRef.current === 'audio' ? 'tab-audio' : 'tab-subs')));
     switch (type) {
       case 'down':
-        setFocusIdx((i) => Math.min(list.length - 1, i + 1));
+        setFocusIdx(inHeader ? Math.min(list.length - 1, fbi) : Math.min(list.length - 1, i + 1));
         break;
       case 'up':
-        setFocusIdx((i) => Math.max(0, i - 1));
+        if (!inHeader) setFocusIdx(i === fbi ? activeTabIdx : i - 1);
+        break;
+      case 'right':
+        if (inHeader) setFocusIdx(Math.min(fbi - 1, i + 1)); // walk toward the close X
         break;
       case 'left':
       case 'rewind':
-        onClose();
+        if (inHeader && i > 0) setFocusIdx(i - 1); // walk between tabs / the X
+        else onClose(); // body, or header's left edge -> close
         break;
       case 'select': {
         const now = Date.now();
         if (now - lastOk.current < 300) break;
         lastOk.current = now;
-        setFocusIdx((i) => {
-          list[i]?.run();
-          return i;
-        });
+        list[i]?.run();
         break;
       }
       default:
