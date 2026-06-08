@@ -17,6 +17,7 @@ import { TvSelect, TvSelectOverlay, type DropdownAnchor, type SelectOption } fro
 import { TvTextField } from '../components/settings/TvTextField';
 import { TvToggle } from '../components/settings/TvToggle';
 import { ColorSwatchRow } from '../components/settings/ColorSwatchRow';
+import { AccentPreview, GlassPreview } from '../components/settings/AppearancePreview';
 import { PillButton } from '../components/settings/PillButton';
 import { SettingsStremioPanel } from '../components/settings/SettingsStremioPanel';
 import { SettingsTraktPanel } from '../components/settings/SettingsTraktPanel';
@@ -412,6 +413,8 @@ export function SettingsScreen() {
                     <Text style={{ fontFamily: font.body, fontSize: m.s(15), color: colors.textGhost, lineHeight: m.s(21) }}>
                       Used by progress bars, focus rings, badges, the loading spinner — anywhere the default teal shows up. Syncs to your account.
                     </Text>
+                    <View style={{ height: m.s(16) }} />
+                    <AccentPreview accent={settings.accentColor} m={m} />
                     <ColorSwatchRow
                       presets={TV_COLOR_PRESETS}
                       value={settings.accentColor}
@@ -426,6 +429,8 @@ export function SettingsScreen() {
                     <Text style={{ fontFamily: font.body, fontSize: m.s(15), color: colors.textGhost, lineHeight: m.s(21) }}>
                       Tints the glass behind menus, dropdowns, popovers and the nav rail. Dark presets only, so text stays legible. Syncs to your account.
                     </Text>
+                    <View style={{ height: m.s(16) }} />
+                    <GlassPreview surface={settings.surfaceColor} accent={settings.accentColor} m={m} />
                     <ColorSwatchRow
                       presets={SURFACE_COLOR_PRESETS}
                       value={settings.surfaceColor}
