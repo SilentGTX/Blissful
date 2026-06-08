@@ -34,7 +34,7 @@ function Swatch({
   return (
     <Pressable
       ref={ref}
-      nextFocusLeft={leftTarget ?? selfTag}
+      nextFocusLeft={Boolean(atRowStart) && leftTarget != null ? leftTarget : selfTag}
       onFocus={() => { setFocused(true); markContentFocus(railTrap); }}
       onBlur={() => setFocused(false)}
       onPress={onPress}

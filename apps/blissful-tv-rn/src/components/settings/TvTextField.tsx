@@ -53,7 +53,7 @@ export function TvTextField({
       <Text style={{ fontFamily: font.body, fontSize: m.s(17), color: colors.textDim }}>{label}</Text>
       <Pressable
         ref={rowRef}
-        nextFocusLeft={leftTarget ?? selfTag}
+        nextFocusLeft={Boolean(atRowStart) && leftTarget != null ? leftTarget : selfTag}
         onFocus={() => { setFocused(true); markContentFocus(railTrap); }}
         onBlur={() => setFocused(false)}
         onPress={() => inputRef.current?.focus()}

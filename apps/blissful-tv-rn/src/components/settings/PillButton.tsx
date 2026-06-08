@@ -44,7 +44,7 @@ export function PillButton({
     <Pressable
       ref={ref}
       focusable={!isDisabled}
-      nextFocusLeft={leftTarget ?? selfTag}
+      nextFocusLeft={Boolean(atRowStart) && leftTarget != null ? leftTarget : selfTag}
       onFocus={() => { setFocused(true); markContentFocus(railTrap); }}
       onBlur={() => setFocused(false)}
       onPress={() => { if (!isDisabled) onPress(); }}
