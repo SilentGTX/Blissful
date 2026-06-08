@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BootSplash } from './src/components/BootSplash';
 import { DarkTheme, NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -78,20 +80,34 @@ export default function App() {
     IBMPlexSans_600SemiBold,
   });
 
-  if (!fontsLoaded) {
-    return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
-  }
+  // Boot splash: shows the Blissful wordmark + loading line on launch, then fades
+  // out a beat after fonts load + the app mounts (covers the initial render flash,
+  // mirrors the old android / windows / web boot screen).
+  const [splashDone, setSplashDone] = useState(false);
+  const [splashGone, setSplashGone] = useState(false);
+  useEffect(() => {
+    if (!fontsLoaded) return;
+    const t = setTimeout(() => setSplashDone(true), 1600);
+    return () => clearTimeout(t);
+  }, [fontsLoaded]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <ThemeProvider>
-          <AuthProvider>
-            <ToastProvider>
-              <ThemedRoot />
-            </ToastProvider>
-          </AuthProvider>
-        </ThemeProvider>
+        {fontsLoaded ? (
+          <ThemeProvider>
+            <AuthProvider>
+              <ToastProvider>
+                <ThemedRoot />
+              </ToastProvider>
+            </AuthProvider>
+          </ThemeProvider>
+        ) : (
+          <View style={{ flex: 1, backgroundColor: colors.bg }} />
+        )}
+        {!splashGone ? (
+          <BootSplash done={fontsLoaded && splashDone} onHidden={() => setSplashGone(true)} />
+        ) : null}
         <StatusBar style="light" />
       </SafeAreaProvider>
     </GestureHandlerRootView>

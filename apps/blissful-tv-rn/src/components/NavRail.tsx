@@ -211,7 +211,11 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
 
   return (
     <Animated.View style={[styles.rail, { left: railLeft, top: m.safeY, bottom: m.safeY, width: widthAnim, borderRadius: m.s(28), zIndex: expanded ? 70 : 10 }]}>
-      <LinearGradient colors={['rgba(255,255,255,0.10)', 'rgba(255,255,255,0.02)']} start={{ x: 0.85, y: 0 }} end={{ x: 0.15, y: 1 }} style={StyleSheet.absoluteFill} />
+      {/* Glass sheen — brighter top-right rim fading to near-nothing, for the
+          pronounced shiny edge (matches the old app's nav glass). */}
+      <LinearGradient colors={['rgba(255,255,255,0.18)', 'rgba(255,255,255,0.05)', 'rgba(255,255,255,0.015)']} locations={[0, 0.32, 1]} start={{ x: 0.9, y: 0 }} end={{ x: 0.1, y: 1 }} style={StyleSheet.absoluteFill} />
+      {/* Bright hairline catching light along the top + inner-left glass rim. */}
+      <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: m.s(14), right: m.s(14), height: 1.5, borderRadius: 1, backgroundColor: 'rgba(255,255,255,0.32)' }} />
       <View style={{ flex: 1, paddingVertical: m.s(10) }}>
         <Row iconW={iconW} itemH={m.s(48)} mx={rowMargin} expanded={expanded} focusable={false} label="Blissful" labelColor={colors.text} labelFont={font.serif} labelSize={m.s(22)} icon={<Image source={require('../../assets/blissful-small-logo.png')} style={{ width: m.s(36), height: m.s(36), borderRadius: m.s(10) }} resizeMode="contain" />} />
         <Divider mx={m.s(10)} my={m.s(6)} />
@@ -297,5 +301,5 @@ function Tab({ m, active, label, onRailFocus, onTabFocus, onPress }: any) {
 }
 
 const styles = StyleSheet.create({
-  rail: { position: 'absolute', backgroundColor: 'rgba(28,33,46,0.97)', borderWidth: 1, borderColor: colors.hairline, overflow: 'hidden' },
+  rail: { position: 'absolute', backgroundColor: 'rgba(28,33,46,0.97)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.22)', overflow: 'hidden' },
 });
