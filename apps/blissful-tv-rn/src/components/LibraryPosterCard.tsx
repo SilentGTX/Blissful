@@ -1,8 +1,7 @@
-import { memo, useRef, useState } from 'react';
+import { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { normalizeStremioImage } from '@blissful/core';
-import { markContentFocus } from '../lib/focusBus';
-import { useSelfTag } from '../lib/useSelfTag';
+import { useTvFocusable } from '../lib/useTvFocusable';
 import { Img } from './Img';
 import { Rating } from './Rating';
 import { POSTER_RATIO, type CardItem } from './PosterCard';
@@ -97,21 +96,15 @@ export function LibraryPosterCard({
   onLongSelect?: (item: CardItem) => void;
 }) {
   const m = useMetrics();
-  const [focused, setFocused] = useState(false);
-  const ref = useRef(null);
-  const selfTag = useSelfTag(ref, Boolean(atRowStart));
+  const { focused, focusProps } = useTvFocusable({
+    atRowStart,
+    autoFocus,
+    onPress: () => onSelect(item),
+    onLongPress: onLongSelect ? () => onLongSelect(item) : undefined,
+  });
 
   return (
-    <Pressable
-      ref={ref}
-      hasTVPreferredFocus={autoFocus}
-      nextFocusLeft={selfTag}
-      onFocus={() => { setFocused(true); markContentFocus(Boolean(atRowStart)); }}
-      onBlur={() => setFocused(false)}
-      onPress={() => onSelect(item)}
-      onLongPress={onLongSelect ? () => onLongSelect(item) : undefined}
-      style={{ width }}
-    >
+    <Pressable {...focusProps} style={{ width }}>
       <PosterVisual item={item} width={width} focused={focused} progress={progress} m={m} />
     </Pressable>
   );

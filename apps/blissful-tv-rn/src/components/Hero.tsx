@@ -2,11 +2,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { LinearGradient } from 'expo-linear-gradient';
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { fetchMeta, normalizeStremioImage, type StremioMetaDetail, type StremioMetaPreview } from '@blissful/core';
-import { markContentFocus } from '../lib/focusBus';
-import { useSelfTag } from '../lib/useSelfTag';
+import { useTvFocusable } from '../lib/useTvFocusable';
 import { Img } from './Img';
 import { Rating } from './Rating';
 import { colors, font, radius } from '../theme/colors';
@@ -34,18 +33,11 @@ function HeroBtn({
   upTag?: number;
   onPress: () => void;
 }) {
-  const [focused, setFocused] = useState(false);
-  const ref = useRef(null);
-  const selfTag = useSelfTag(ref, Boolean(atRowStart));
+  const { focused, focusProps } = useTvFocusable({ atRowStart, autoFocus, onPress });
   return (
     <Pressable
-      ref={ref}
-      hasTVPreferredFocus={autoFocus}
+      {...focusProps}
       nextFocusUp={upTag}
-      nextFocusLeft={selfTag}
-      onFocus={() => { setFocused(true); markContentFocus(Boolean(atRowStart)); }}
-      onBlur={() => setFocused(false)}
-      onPress={onPress}
       style={{
         flexDirection: 'row',
         alignItems: 'center',
@@ -67,16 +59,10 @@ function HeroBtn({
 }
 
 function GenreChip({ label, m, atRowStart, onPress }: { label: string; m: ReturnType<typeof useMetrics>; atRowStart?: boolean; onPress: () => void }) {
-  const [f, setF] = useState(false);
-  const ref = useRef(null);
-  const selfTag = useSelfTag(ref, Boolean(atRowStart));
+  const { focused: f, focusProps } = useTvFocusable({ atRowStart, onPress });
   return (
     <Pressable
-      ref={ref}
-      nextFocusLeft={selfTag}
-      onFocus={() => { setF(true); markContentFocus(Boolean(atRowStart)); }}
-      onBlur={() => setF(false)}
-      onPress={onPress}
+      {...focusProps}
       style={{ backgroundColor: colors.surface12, borderRadius: radius.pill, paddingHorizontal: m.s(24), paddingVertical: m.s(10), borderWidth: 1, borderColor: f ? colors.accent : 'transparent' }}
     >
       <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(22), color: 'rgba(255,255,255,0.9)' }}>{label}</Text>
