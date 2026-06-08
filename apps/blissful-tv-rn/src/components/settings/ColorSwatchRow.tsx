@@ -42,7 +42,9 @@ function Swatch({
         backgroundColor: hex,
         borderWidth: focused ? 2 : selected ? 2 : 1,
         borderColor: focused ? colors.accent : selected ? colors.text : 'rgba(255,255,255,0.2)',
-        transform: focused ? [{ scale: 1.12 }] : undefined,
+        // Always an array — toggling transform to undefined crashes the New Arch
+        // ("Cannot read property 'forEach' of null" in processTransform).
+        transform: [{ scale: focused ? 1.12 : 1 }],
       }}
     />
   );

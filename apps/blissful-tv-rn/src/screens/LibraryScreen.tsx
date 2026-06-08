@@ -384,7 +384,7 @@ export function LibraryScreen() {
         )}
       </View>
 
-      {dropdown ? <TvSelectOverlay anchor={dropdown} onClose={() => setDropdown(null)} m={m} /> : null}
+      {dropdown ? <TvSelectOverlay anchor={dropdown} onClose={() => { const r = dropdown.requestFocus; setDropdown(null); setTimeout(() => r(), 50); }} m={m} /> : null}
     </View>
   );
 }

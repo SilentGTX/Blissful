@@ -73,7 +73,7 @@ function LangRow({
         borderWidth: 1,
         borderColor: focused ? colors.accent : 'transparent',
         backgroundColor: focused ? 'rgba(255,255,255,0.10)' : 'transparent',
-        transform: focused ? [{ scale: 1.01 }] : undefined,
+        transform: [{ scale: focused ? 1.01 : 1 }], // never undefined (New-Arch forEach crash)
       }}
     >
       <Text

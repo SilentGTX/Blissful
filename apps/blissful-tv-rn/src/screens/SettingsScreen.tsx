@@ -680,7 +680,20 @@ export function SettingsScreen() {
         </View>
       </View>
 
-      {dropdown ? <TvSelectOverlay anchor={dropdown} onClose={() => { dropdownClosedAt.current = Date.now(); setDropdown(null); }} m={m} /> : null}
+      {dropdown ? (
+        <TvSelectOverlay
+          anchor={dropdown}
+          onClose={() => {
+            const refocus = dropdown.requestFocus;
+            dropdownClosedAt.current = Date.now();
+            setDropdown(null);
+            // Return focus to the trigger AFTER the overlay unmounts + the engine's
+            // reclaim, so it lands on the cache select, not the first category.
+            setTimeout(() => refocus(), 50);
+          }}
+          m={m}
+        />
+      ) : null}
     </View>
   );
 }

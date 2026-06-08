@@ -16,6 +16,9 @@ export type DropdownAnchor = {
   options: SelectOption[];
   value: string;
   onChange: (key: string) => void;
+  /** Return D-pad focus to the trigger that opened this dropdown (call after the
+   *  overlay closes) so focus doesn't snap to the first focusable on screen. */
+  requestFocus: () => void;
 };
 
 // The trigger button (icon + value + chevron). On press it measures itself and
@@ -44,7 +47,16 @@ export function TvSelect({
   const triggerRef = useRef<View>(null);
   const selfTag = useSelfTag(triggerRef, Boolean(atRowStart));
   const current = options.find((o) => o.key === value);
-  const open = () => triggerRef.current?.measureInWindow((x, y, w, h) => onOpen({ pos: { x, y, w, h }, options, value, onChange }));
+  const open = () =>
+    triggerRef.current?.measureInWindow((x, y, w, h) =>
+      onOpen({
+        pos: { x, y, w, h },
+        options,
+        value,
+        onChange,
+        requestFocus: () => (triggerRef.current as unknown as { requestTVFocus?: () => void } | null)?.requestTVFocus?.(),
+      }),
+    );
   return (
     <Pressable
       ref={triggerRef}
