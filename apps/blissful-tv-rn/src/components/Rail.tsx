@@ -57,7 +57,7 @@ export const Rail = memo(function Rail({
           )}
         />
       ) : (
-        <ActivityIndicator color={colors.brand} style={styles.loading} />
+        <ActivityIndicator color={colors.accent} style={styles.loading} />
       )}
     </View>
   );

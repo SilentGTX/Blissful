@@ -72,7 +72,9 @@ export function DiscoverScreen() {
         </View>
 
         {loading ? (
-          <ActivityIndicator color={colors.brand} size="large" style={{ marginTop: m.s(60), alignSelf: 'flex-start' }} />
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+            <ActivityIndicator color={colors.accent} size="large" />
+          </View>
         ) : results.length ? (
           <FlatList
             data={results}

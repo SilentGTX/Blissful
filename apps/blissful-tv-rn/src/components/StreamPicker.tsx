@@ -196,7 +196,7 @@ export function StreamPicker({
         <View style={{ flexGrow: 1, flexShrink: 1, paddingHorizontal: m.s(18), paddingBottom: m.s(20) }}>
           {loading && rows.length === 0 ? (
             <View style={{ paddingVertical: m.s(50), alignItems: 'center' }}>
-              <ActivityIndicator color={colors.brand} size="large" />
+              <ActivityIndicator color={colors.accent} size="large" />
             </View>
           ) : rows.length === 0 ? (
             <View style={{ borderRadius: m.s(16), borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.05)', padding: m.s(16) }}>
@@ -208,7 +208,7 @@ export function StreamPicker({
               keyExtractor={(it) => it.key}
               removeClippedSubviews={false}
               showsVerticalScrollIndicator={false}
-              ListFooterComponent={loading ? <ActivityIndicator color={colors.brand} style={{ marginVertical: m.s(14) }} /> : null}
+              ListFooterComponent={loading ? <ActivityIndicator color={colors.accent} style={{ marginVertical: m.s(14) }} /> : null}
               renderItem={({ item }) => {
                 if (item.kind === 'eyebrow') return <Eyebrow label={item.label} m={m} />;
                 if (item.kind === 'bucket') return <BucketHeader bucket={item.bucket} count={item.count} expanded={expanded.has(item.bucket)} m={m} onPress={() => toggle(item.bucket)} />;

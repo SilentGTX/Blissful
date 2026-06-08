@@ -381,7 +381,9 @@ export function AddonsScreen() {
           {/* List */}
           <View style={{ marginTop: m.s(24), gap: m.s(14) }}>
             {loading ? (
-              <ActivityIndicator color={colors.brand} size="large" style={{ alignSelf: 'flex-start', marginVertical: m.s(20) }} />
+              <View style={{ height: m.height - m.contentTop - m.s(220), alignItems: 'center', justifyContent: 'center' }}>
+                <ActivityIndicator color={colors.accent} size="large" />
+              </View>
             ) : filtered.length === 0 ? (
               <Text style={{ fontFamily: font.body, fontSize: m.s(19), color: colors.textFaint }}>No addons found.</Text>
             ) : (

@@ -342,7 +342,9 @@ export function LibraryScreen() {
         </ScrollView>
 
         {loading ? (
-          <ActivityIndicator color={colors.accent} size="large" style={{ marginTop: m.s(60), alignSelf: 'flex-start', marginLeft: padL }} />
+          <View style={{ height: m.height - m.contentTop - m.s(160), alignItems: 'center', justifyContent: 'center' }}>
+            <ActivityIndicator color={colors.accent} size="large" />
+          </View>
         ) : error ? (
           <Text style={{ fontFamily: font.body, fontSize: m.s(22), color: colors.danger, marginLeft: padL, marginTop: m.s(20) }}>
             {error}

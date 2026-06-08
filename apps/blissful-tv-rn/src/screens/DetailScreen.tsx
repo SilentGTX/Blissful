@@ -268,7 +268,7 @@ export function DetailScreen() {
             {meta?.trailerStreams?.length ? <ActionBtn label="Trailer" icon="film-outline" m={m} onPress={() => { /* trailer modal next */ }} /> : null}
           </View>
 
-          {loading ? <ActivityIndicator color={colors.brand} style={{ marginTop: m.s(12), alignSelf: 'flex-start' }} /> : null}
+          {loading ? <ActivityIndicator color={colors.accent} style={{ marginTop: m.s(12), alignSelf: 'flex-start' }} /> : null}
         </View>
 
         <View style={{ flex: 1 }} />

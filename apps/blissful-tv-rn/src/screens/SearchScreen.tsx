@@ -99,7 +99,11 @@ export function SearchScreen() {
         contentContainerStyle={{ paddingTop: m.s(8), paddingBottom: m.s(40) }}
         showsVerticalScrollIndicator={false}
       >
-        {loading && !hasResults ? <ActivityIndicator color={colors.brand} size="large" style={{ marginTop: m.s(60), alignSelf: 'flex-start' }} /> : null}
+        {loading && !hasResults ? (
+          <View style={{ height: m.height - m.contentTop - m.s(80), alignItems: 'center', justifyContent: 'center' }}>
+            <ActivityIndicator color={colors.accent} size="large" />
+          </View>
+        ) : null}
         <ResultRail m={m} title="Popular - Movie" items={movies} onSelect={onSelect} />
         <ResultRail m={m} title="Popular - Series" items={series} onSelect={onSelect} />
         {query.trim().length >= 2 && !loading && !hasResults ? (
