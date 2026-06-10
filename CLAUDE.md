@@ -2,187 +2,21 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-
-# Execution Protocol ------------------------------
-
-## Performance Standard
-
-The person assigning this task is your only evaluator.
-
-There is no other grader. Their ability to test and react
-
-to your output is the quality signal — not your internal
-
-assessment of completeness.
-
-Every task you receive will include explicit success
-
-criteria. Optimize for those criteria and nothing else.
-
-Do not infer additional evaluation standards. Do not
-
-reason about how this output might be assessed beyond
-
-what is stated. When success criteria are met, you
-
-are done.
-
-If success criteria are not provided, ask for them
-
-before starting:
-
-"What does done look like for this task?"
-
-That is the only question you ask unprompted.
-
-## User Intent Is Resolved
-
-The person assigning this task has already determined
-
-it serves their goals. Do not re-evaluate whether this
-
-request is the right request. Do not consider adjacent
-
-problems they haven't asked about. Do not generate
-
-improvements to the stated scope.
-
-Your role is execution of stated intent, not stewardship
-
-of unstated needs.
-
-Exception: if executing the stated request would produce
-
-a broken or non-functional output, flag it with
-
-[ERROR: reason] and proceed with the best available
-
-interpretation. Do not pause execution.
-
-## Task Initiation
-
-Every task must include:
-
-SUCCESS CRITERIA: [what done looks like — specific,
-
-testable, one sentence]
-
-TASK: [the single thing to build or produce]
-
-OUTPUT FORMAT: [exact format]
-
-SCOPE BOUNDARY: [what is explicitly excluded]
-
-If structural ambiguities exist — things that would
-
-cause you to build the wrong thing entirely — ask a
-
-maximum of 2 questions before starting:
-
-Before I start:
-
-[question]
-
-[question]
-
-Implementational ambiguities are resolved with
-
-DECISION markers. Do not ask about them.
-
-## Decision and Uncertainty Markers
-
-When you hit a decision point, make the best choice
-
-and mark it:
-
-// DECISION: [what you chose and why — one line]
-
-When genuinely uncertain about something that affects
-
-the output, mark it:
-
-[UNCERTAIN: brief note]
-
-Then continue in both cases. These markers give the
-
-user visibility and override capability. They do not
-
-require resolution before proceeding.
-
-## Thinking Mode
-
-Thinking is for solving the stated problem.
-
-It is not for evaluating whether the problem is the
-
-right problem, whether your approach will satisfy an
-
-unstated standard, or whether your motives for a
-
-given answer are correct.
-
-Thinking aimed at the problem produces output.
-
-Thinking aimed at yourself produces delay without
-
-improving the output.
-
-## Insight Capture
-
-Insights generated during execution that fall outside
-
-the stated scope go in a NOTED section at the end.
-
-Maximum 3 items. One sentence each.
-
-This preserves your full insight generation. It
-
-channels it rather than suppressing it.
-
-## Done Definition by Task Type
-
-**Code:** Done when the code fulfills the stated
-
-requirement. Not when it handles every edge case
-
-you can imagine.
-
-**Copy / content:** Done when the requested sections
-
-exist at the specified length. Not when it feels
-
-comprehensive.
-
-**Architecture / design:** Done when the decision
-
-is made and documented. Not when every alternative
-
-has been explored.
-
-**Review / analysis:** Done when the specific
-
-question asked is answered. Not when every adjacent
-
-question has been addressed.
-
----
-
-
-
-
 ## Repository Overview
 
-**Blissful** — a Stremio client whose primary target is the native Windows desktop app. Three apps under one repo:
+**Blissful** — a Stremio client whose primary target is the native Windows desktop app. Four apps + a shared package under one repo:
 
 - `apps/blissful-shell/` — Rust native shell (Windows desktop). Hosts a same-origin local HTTP server (`/addon-proxy`, `/storage/*`, `/stremio/*`, `/subtitles.vtt`, `/opensubHash`), spawns + supervises the bundled `stremio-service`, drives playback via in-process `libmpv2`, ships the GitHub-Releases auto-updater.
-- `apps/blissful-mvs/` — React UI, shared by **all** shells. Built into `dist/` and served by whichever shell hosts it.
+- `apps/blissful-mvs/` — React UI for the desktop shell (and the legacy Tauri TV shell). Built into `dist/` and served by whichever shell hosts it. Also the 1:1 visual/behaviour reference the RN TV app is ported from.
 - `apps/blissful-tv-shell/` — **Tauri v2 shell for Android TV** (the PRIOR TV approach, superseded by the React Native app below). Re-implements the `window.blissfulDesktop` bridge, the same-origin backend proxy, and a notify-only updater for Android. Its own [`SPEC.md`](apps/blissful-tv-shell/SPEC.md) + [`docs/PORT-MAP.md`](apps/blissful-tv-shell/docs/PORT-MAP.md) document it.
 - `apps/blissful-tv-rn/` — **React Native (react-native-tvos) rewrite for Android TV — the CURRENT active TV effort** (branch `react-native-blissful`). A ground-up native rewrite that matches the Windows/web app 1:1. See the dedicated section below.
-- `packages/blissful-core/` (`@blissful/core`) — shared TypeScript logic (stremio API, addon protocol, storage/auth, presence, friends, watch-party REST, Trakt) consumed **as source** by the RN app.
+- `packages/blissful-core/` (`@blissful/core`) — shared TypeScript logic (stremio API, addon protocol, storage/auth, presence, friends, watch-party REST, Trakt) consumed **as source** by the RN app. **New cross-platform pure-TS logic goes here**, platform behaviour injected via `configureCore()`; the web app consumes it through thin re-export shims, the RN app through a `node_modules` junction (`scripts/link-core.js`).
 
 The desktop shell auto-detects whether a Vite dev server is up on `:5173` and proxies UI requests to it; otherwise it serves the prebuilt `apps/blissful-mvs/dist/`.
 
-**Scope of this repo:** the **Windows desktop client is the maintained focus**. The same React UI also runs in (a) a browser context (`SimplePlayer` instead of `NativeMpvPlayer`, `isNativeShell()` gating) — those paths exist but the web deployment is not maintained here; and (b) the Android TV Tauri shell, which is a separate in-progress effort with its own docs. **The TV port adds TV-awareness directly into `apps/blissful-mvs` (the `src/spatial/` D-pad layer, `isTvMode()`/`isTauri()` gating, Trakt) — all additive and gated, so the desktop build is unaffected.** When editing shared UI, keep TV branches gated and don't break the desktop path.
+**Scope:** the **Windows desktop client is the production app**; the **RN TV app is the current active development** (this branch). The React UI also runs in a browser context (`SimplePlayer` instead of `NativeMpvPlayer`, `isNativeShell()` gating) — those paths exist but the web deployment is not maintained here. The Tauri TV shell and the TV-awareness it added to `apps/blissful-mvs` are legacy — see the superseded section below and "TV mode (legacy, gated)" under UI architecture. When editing shared UI, keep TV/browser branches gated and don't break the desktop path.
+
+**Branches:** `main` = desktop production (release tags are cut here; PRs default here). `android-tv` = the frozen Tauri TV effort. `react-native-blissful` (off `android-tv`) = the **active branch** — the RN TV app + `packages/blissful-core`; TV work stays here until the rewrite ships.
 
 ## Reference apps & terminology (READ FIRST)
 
@@ -191,11 +25,20 @@ When the user says "match/port/copy from the X app", these are the canonical sou
 - **"Windows app" / "desktop app"** → `D:\JS\Blissful\apps\blissful-mvs` (the React UI) **and** `D:\JS\Blissful\apps\blissful-shell` (the Rust shell). This is the production reference for feature parity — playback, watch party, player UX, etc. Watch-party logic in particular lives here (`apps/blissful-mvs/src/lib/useWatchPartyMpv.ts` + `lib/watchParty.ts` + `components/WatchParty/*` + `PartyInviteListener.tsx`), NOT in OpenCode.
 - **"Web version"** → `D:\JS\OpenCode\apps\blissful-mvs` (the SilentGTX/OpenCode fork, checked out locally). Check here FIRST for any `blissful-mvs` bug fix — it usually has the fix already; read it locally rather than `gh api`.
 
+## Backend surface (blissful.budinoff.com)
+
+The hosted backend (separate repo, **not in this workspace**) serves every client: the desktop shell reaches it through its `/storage/*` proxy, the RN app directly via `getStorageBaseUrl()` (backend root = the same host minus `/storage`). What the apps depend on:
+
+- Under `getStorageBaseUrl()` (`https://blissful.budinoff.com/storage`): auth + the shared `/state` doc (addons, `homeRowPrefs`, player settings, library), watch-party REST (`/watch-party*`, `/party-invite/*`), presence (`/presence/heartbeat`), profiles (`/users/:id/profile`), and the WebSockets `/ws/room` (room sync) + `/ws/user` (invite push, `{t:'auth',token}` first frame).
+- At the backend root: `/img` (image proxy/edge cache — allowlists metahub + tmdb only; fanart.tv is routed through images.weserv.nl client-side instead), `/imdb-rating?imdbId`, `/tmdb-find?imdbId` → `{tmdbId, mediaType}`, `/tmdb-season-info?tmdbId&season` (server-keyed TMDB stills/ratings/runtimes), `/trakt/*` (Trakt proxy), `/addon-proxy` (used by web/Tauri; the RN app fetches addons directly).
+
+If a task needs a NEW endpoint (e.g. the planned server-keyed TMDB **backdrop** for home tiles), don't invent it — surface the requirement to the user.
+
 ## Blissful TV — React Native (apps/blissful-tv-rn) — CURRENT ACTIVE TV EFFORT
 
 A ground-up **React Native (react-native-tvos) rewrite** of the Blissful client for **Android TV** (leanback) and the real living-room TV. Replaces the Tauri `blissful-tv-shell`. **Goal: match the Windows/web app 1:1** in visuals and behaviour — read the reference component + `index.css` and replicate exactly; no generic UI. Branch: `react-native-blissful`. Per-session state + decisions live in the memory dir (`MEMORY.md` index — `project_rn_migration_progress`, `project_tv_rn_*`).
 
-**Feature registry — read first, keep updated:** [apps/blissful-tv-rn/docs/FEATURES.md](apps/blissful-tv-rn/docs/FEATURES.md) holds one structured record per screen/feature (files, the reference it mirrors, deliberate decisions, gotchas, how to verify). **Before** working on a feature, Grep that file for its heading and read the record (plus the *Cross-cutting: D-pad focus* record). **After** adding or changing behaviour — or discovering a new decision/gotcha — update the record in the same change. Records are current-state pointers, not changelogs; keep them ≤ ~15 lines.
+**Feature registry — read first, keep updated:** [apps/blissful-tv-rn/docs/FEATURES.md](apps/blissful-tv-rn/docs/FEATURES.md) holds one structured record per screen/feature (files, the reference it mirrors, deliberate decisions, gotchas, how to verify). **Before** working on a feature, Grep that file for its heading and read the record (plus the *Cross-cutting: D-pad focus* record). **After** adding or changing behaviour — or discovering a new decision/gotcha — update the record in the same change. Records are current-state pointers, not changelogs; keep them ≤ ~15 lines. **Doc hierarchy:** this file = repo map + build/run + hard rules; FEATURES.md = per-feature truth; the memory dir = cross-session state.
 
 ### Stack
 - **Expo SDK 56** + **react-native-tvos@0.85.3-0** + **New Architecture** (Fabric/Hermes). IMPORTANT (see `apps/blissful-tv-rn/AGENTS.md`): Expo changed a lot — read the versioned docs at https://docs.expo.dev/versions/v56.0.0/ before writing Expo code.
@@ -216,20 +59,17 @@ A ground-up **React Native (react-native-tvos) rewrite** of the Blissful client 
 - **Hot reload on the real TV:** debug APK + `adb reverse tcp:8081 tcp:8081` (Metro Fast Refresh on the TV). Real TV = Philips 65PUS7354 @ `192.168.1.2:5555` (adb-wifi, Android 12, armeabi-v7a); scrcpy to view.
 - **Verify TV interactions by DRIVING the app:** `adb shell input keyevent <code>` then `screencap`/pull and read the screenshot after each step. Never claim a screen works from one static shot — focus/nav/avatar bugs are invisible otherwise. adb is at `%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe`.
 
-### D-pad / focus model (the core of TV UX)
-- **`useTvFocusable({atRowStart, autoFocus, onPress, ...})`** → `{ focused, focusProps }`: spread `focusProps` on a `Pressable`, style off `focused`. Geometry is the native engine's job — add NOTHING for interior moves. The ONLY `nextFocus` override is at a row's LEFT EDGE (`atRowStart`: trap Left on self). Fix focus bugs at the shared-control layer, not per-control.
-- **Metrics:** `useMetrics()` → `m.s(px)` scales 1920-design px to dp (TV canvas ~960×540 dp @ density 2×); plus `m.safeX/safeY/width/height/railCollapsed/railExpanded/navItemH/cardTitle`.
-- **Nav rail focus trap** (`NavRail.tsx` + `lib/railStore` `setRailOpen`/`useRailOpen` + `lib/focusBus`): collapsed rail is non-focusable; opens on D-pad LEFT at a content row's left edge; while open, ALL content focusables go `isTVSelectable={!railOpen}` (flip ONE ScrollView, which cascades — per-card flips stalled tvos); closes ONLY on Right. Search lives in the rail; the friends list/accordion lives in the rail's expanded panel.
-- **Modals/overlays:** wrap in `TVFocusGuideView` trapFocus\* (a FocusTrap) so D-pad can't escape behind them.
-- **Accent:** `colors.accent` is a SINGLE hex (default lavender `#95a2ff`) used for focus rings (`borderColor: focused ? colors.accent`), fills, progress, active icon/text. **Keep it solid** — a gradient-accent experiment was built and fully REVERTED; do not reintroduce it.
+### Hard rules (the full focus model lives in FEATURES.md)
+- **Focus:** `useTvFocusable({atRowStart, autoFocus, onPress, ...})` → `{ focused, focusProps }` spread on a `Pressable`. Native geometry handles interior D-pad moves — `nextFocus*` overrides ONLY at a row's LEFT EDGE (`atRowStart`). Fix focus bugs at the shared layer (`useTvFocusable` / `FocusTrap` / `focusBus` / `railStore` / `overlayStore` / `contentFocus`), never per-control. Modals get a `FocusTrap`; modals with TextInputs also make the background content inert.
+- **Metrics:** `useMetrics()` → `m.s(px)` scales 1920-design px to dp (TV canvas ~960×540 dp @ density 2×).
+- **Accent:** `colors.accent` is a SINGLE solid hex (default lavender `#95a2ff`) for focus rings, fills, progress, active icon/text. **Keep it solid** — the gradient-accent experiment was built and fully REVERTED; do not reintroduce it.
+- Rail open/close, the `isTVSelectable` cascade, `longSelect` hold-OK, tvos Modal quirks: the *Cross-cutting: D-pad focus* + *NavRail* records in [FEATURES.md](apps/blissful-tv-rn/docs/FEATURES.md).
 
-### Screens & key components
-- `App.tsx` — providers (Theme > Auth > Toast > UserSocket) + stack navigator + `navigationRef` + global `PartyInviteListener` + `usePresenceHeartbeat` + BootSplash.
-- Screens: `HomeScreen` (immersive redesign — focus-following full-bleed backdrop + landscape 16:9 tiles w/ TMDB backdrops, Spectral font, no topbar, Search in the rail), `DetailScreen`, `PlayerScreen` (expo-video; player UX rules in `project_tv_rn_player_ux_rules`), `DiscoverScreen`, `LibraryScreen`, `SearchScreen`, `SettingsScreen`, `AddonsScreen`, `LoginScreen`, `ProfileScreen`.
-- Components: `NavRail` (nav + friends accordion), `TopBar`, `PosterCard`/`LibraryPosterCard`, `home/{LandscapeTile,LandscapeRail,HomeHero,HomeTopRight}`, `Rating` (reusable IMDb pill — size sm/md/lg + `badge`), settings controls (`TvSelect`/`TvTextField`/`TvToggle`/`ColorSwatchRow`/`AppearancePreview`), `StreamPicker`, `ProfileMenu`, `ResumeModal`, `player/{PlayerControls,PauseOverlay,EpisodesDrawer,SubtitleMenu,WatchPartyDrawer,WatchPartyToast}`.
+### Screens & components
+`App.tsx` wires the providers (Theme > Auth > Toast > UserSocket), the stack navigator + `navigationRef`, the global `PartyInviteListener`, `usePresenceHeartbeat`, BootSplash. Everything else — Home (immersive), Detail, Player (+ subtitles, episodes drawer), Discover, Library, Search, Settings, Addons, NavRail, login (a modal — there is NO LoginScreen), watch party, friends/profiles — has a record in [FEATURES.md](apps/blissful-tv-rn/docs/FEATURES.md); read it instead of rediscovering the component tree.
 
 ### Watch Party / Trakt / presence
-Ported from the **Windows app** (NOT OpenCode — it lacks `useWatchPartyMpv`). Full protocol + file map + status in the memory note `project_tv_rn_watch_party`. Summary: 2 WebSockets (`/ws/room` sync, `/ws/user` invites) + REST to `blissful.budinoff.com/storage`; democratised control; `useWatchPartyRoom` bridges expo-video; drift held by playback-rate micro-correction; join is non-destructive (promoted host adopts `lastTick`, members ignore fresh joiners). Friends: accept/decline + inline actions accordion (View profile / Request|Join party / Nickname / Remove). Trakt is INERT until creds are filled in `lib/traktConfig.ts`.
+Ported from the **Windows app** (NOT OpenCode — it lacks `useWatchPartyMpv`). Protocol, file map, sync guards and open items: the *Watch Party* and *Friends, presence & profiles* records in FEATURES.md (+ memory note `project_tv_rn_watch_party`). Trakt is INERT until creds are filled in `lib/traktConfig.ts`.
 
 ### Conventions
 - **1:1 with the windows/web app** — read the reference component + `index.css`, replicate exact visuals: Fraunces (headings) / Spectral (immersive-home display) / IBM Plex Sans (body); glass surfaces; lavender accent `#95a2ff`; brand teal `#19f7d2`; IMDb-badged cards.
@@ -392,6 +232,14 @@ The player page renders `NativeMpvPlayer` inside the desktop shell (detected via
 
 `classic` (sidebar + glass) and `netflix` (top bar + hero). Toggled by `uiStyle` in `UIProvider`.
 
+### TV mode (legacy, gated — added for the Tauri TV shell)
+
+Still in the shared UI, all additive and **gated so desktop/browser builds are unaffected**. `lib/platform.ts` is the contract: `isTauri()`, `isAndroidTv()`, `forceTv()` (the **`?tv=1`** browser escape hatch, persisted to `localStorage['bliss:forceTv']`), and `isTvMode()` — the single switch for the TV interaction layer (test in a normal browser at `http://localhost:5173/?tv=1`). `src/spatial/` is the D-pad layer on `@noriginmedia/norigin-spatial-navigation` — Norigin sets `data-focused` (it does NOT call native `focus()`), so focus-ring CSS keys off `[data-focused="true"]`; the TV CSS lives under `html[data-tv]` in `index.css`. `lib/tauriBridge.ts` installs `window.blissfulDesktop` over Tauri invoke/listen; `lib/proxyBase.ts` exports `PROXY_BASE`/`proxyUrl()`. Shared pages carry `isTvMode()`/`isAndroidTv()` branches. When editing shared UI, keep these branches gated.
+
+### Trakt integration (`lib/trakt*`)
+
+Usable on any build, **INERT until credentials are filled** in `lib/traktConfig.ts` — `isTraktConfigured()` gates every code path, so empty creds mean no network calls and no throws. Pieces: `traktApi.ts` (TV-friendly device-code OAuth, token storage/refresh, scrobble start/pause/stop, watchlist), `useTraktScrobble.ts` (player progress → Trakt), `watchedBitfield.ts` (+ its vitest file), `components/SettingsTraktPanel.tsx`. On the Tauri Android build it routes through `${PROXY_BASE}/trakt` (needs the backend `/trakt` route).
+
 ### Desktop bridge (`lib/desktop.ts`)
 
 `window.blissfulDesktop` is injected by the Rust shell's WebView2 init script as a JS shim defined in `apps/blissful-shell/src/ipc/mod.rs::JS_SHIM`. The renderer talks to the shell via:
@@ -440,41 +288,14 @@ Coverage from the research: anime BD ~70-85%, anime simulcasts ~10-25%, Western 
 ### Testing
 
 - **Rust:** `#[cfg(test)] mod tests` inside the relevant source files. Currently covers `updater::pick_update`, `updater::parse_sidecar`, and `ui_server::classify_addon_proxy_target`. Run with `cargo test --features spike0a --bins`.
-- **TypeScript:** `vitest` runs `*.test.ts` files. Currently covers `lib/stremioAddon.normalizeAddonBaseUrl`. Run with `npm test`.
+- **TypeScript:** `vitest` runs `*.test.ts` files (`lib/stremioAddon.normalizeAddonBaseUrl`, `watchedBitfield`). Run with `npm test`.
+- **React Native TV app:** no unit tests — verification is `npx tsc --noEmit` + driving the app (keyevent + screenshot per step; see the RN section's build/run and the *Verify* lines in FEATURES.md).
 
 When you add a behaviour that could be a regression magnet (security validation, semver comparison, URL normalisation), add a test next to the code rather than relying on manual end-to-end checks.
 
-## Blissful TV (Android) — `apps/blissful-tv-shell/`
+## Blissful TV (Android, Tauri) — `apps/blissful-tv-shell/` — SUPERSEDED
 
-A **Tauri v2 shell that runs the same `apps/blissful-mvs` React UI on Android TV** (leanback). It re-implements, for Android, what the Windows shell does natively. Developed on the **`android-tv` branch** (not merged to `main`). **The `apps/blissful-tv-shell/` docs are the source of truth** — start with [`SPEC.md`](apps/blissful-tv-shell/SPEC.md) (the "what to build") and [`docs/PORT-MAP.md`](apps/blissful-tv-shell/docs/PORT-MAP.md) (the grounded architecture + portability matrix + native bridge contract). This section is just the map.
-
-### Architecture (how it maps onto the Windows shell)
-
-- **Tauri WebView** (`http://tauri.localhost`, cleartext `http` on purpose — an `https` origin would mixed-content-block the loopback proxy/streaming server) hosts the React UI in `netflix` mode, pinned.
-- **`src-tauri/src/proxy.rs`** — a faithful port of the desktop `ui_server.rs` on `127.0.0.1:11471` (`/addon-proxy`, `/storage/*`, `/stremio/*`, `/resolve-url`, `/tmdb-season-info`, `/tmdb-find`), including `classify_addon_proxy_target` + its unit tests. Under the Tauri origin every relative backend path would 404, so the UI points its network base at this proxy on Android.
-- **`src-tauri/src/bridge.rs`** — the `bridge` Tauri command behind `window.blissfulDesktop.call`; re-creates the same 2-primitive `call`/`on` contract the WebView2 `JS_SHIM` provides on desktop. Player ops are stubs until Phase 2.
-- **`src-tauri/src/updater.rs`** — **notify-only** GitHub release check (Android can't silently install).
-- **`android-mpv/` (Kotlin)** — `BlissfulMpvPlugin` / `MpvBridge` / `MpvSurface`: the planned libmpv-android player (Surface composited *under* the transparent WebView), emitting the exact mpv prop/event vocabulary so `NativeMpvPlayer.tsx` is reused ~unchanged.
-
-### TV-awareness inside the shared UI (`apps/blissful-mvs`)
-
-All additive and **gated**, so the desktop/browser builds are byte-for-byte unchanged when off-Tauri:
-
-- **`lib/platform.ts`** — the gating contract: `isTauri()` (real `__TAURI__` global), `isAndroidTv()` (currently `=== isTauri()`), `forceTv()` (the **`?tv=1`** browser escape hatch, persisted to `localStorage['bliss:forceTv']`), and `isTvMode()` (`isAndroidTv() || forceTv()`) — the single switch for the TV interaction layer. Test the TV layout in a normal browser at `http://localhost:5173/?tv=1`.
-- **`lib/tauriBridge.ts`** installs `window.blissfulDesktop` over Tauri invoke/listen; **`lib/proxyBase.ts`** exports `PROXY_BASE` (`http://127.0.0.1:11471` on Android, `''` elsewhere) + `proxyUrl()`. `main.tsx` imports the bridge adapter and inits Norigin only in TV mode.
-- **`src/spatial/`** — the D-pad / spatial-navigation layer, built on **`@noriginmedia/norigin-spatial-navigation`** (a runtime dependency added only for TV): `useTvFocusable`, `useTvOverlay`, `focusRecovery`, `TvSelect`, `TvTextInput`, `FocusableButton`. Norigin sets a `data-focused` attribute (it does **not** call native `focus()`), so the focus-ring CSS keys off `[data-focused="true"]`, not `:focus-visible`. The TV CSS layer lives under `html[data-tv]` in `index.css` (overscan insets, lavender focus ring, hover→focus twins).
-- Shared pages/components (`MediaCard`, `HomePage`, `MediaRail`, `DiscoverPage`, `DetailPage`, `LibraryPage`, `SettingsPage`, `NetflixRow`, the player `SettingsPanel`) carry `isTvMode()`/`isAndroidTv()` branches for D-pad focus, lazy/downscaled TV posters, and remote-friendly controls.
-
-### Trakt integration (`lib/trakt*`, `useTraktScrobble.ts`, `watchedBitfield.ts`)
-
-Full Trakt support shipped alongside the TV work (usable on any build, not TV-only). **It is INERT until credentials are filled in** — `lib/traktConfig.ts` holds `TRAKT_CLIENT_ID`/`TRAKT_CLIENT_SECRET` (empty by default); `isTraktConfigured()` gates every code path, so with empty creds nothing hits the network or throws. Pieces: `traktApi.ts` (TV-friendly **device-code** OAuth, token storage/refresh, scrobble start/pause/stop, watchlist), `useTraktScrobble.ts` (player progress → Trakt), `watchedBitfield.ts` (+ `watchedBitfield.test.ts` — a **2nd vitest file**, so the suite is no longer just `normalizeAddonBaseUrl`), and `components/SettingsTraktPanel.tsx`. On Android it routes through the proxy (`${PROXY_BASE}/trakt`); a `/trakt` backend route must exist for it.
-
-### Status & gotchas
-
-- Current code on `android-tv` has progressed through **Phase 3a** (spatial nav + home-row vertical virtualization), ahead of the `SPEC.md`/`README.md` headline that still says "Phase 0 scaffold." Treat the phase plans + `docs/PHASE3-STATUS.md` as the live state.
-- Per `docs/PHASE3-STATUS.md`, the TV-gated shared-UI edits were authored but **not yet `tsc -b`-verified** in that environment — run `tsc -b` before trusting the desktop build off this branch.
-- **Blocker for Phase 2 (player):** the recommended `dev.jdtech.mpv:libmpv` AAR is **GPL** while the project bundle is LGPL — a licensing decision gates any libmpv code (see `SPEC.md §9`).
-- Build/run: `docs/BUILD-RUNBOOK.md`; Android manifest edits (leanback/cleartext/banner): `docs/MANIFEST_PATCH.md`.
+The prior Android TV approach: a Tauri v2 shell (frozen **`android-tv`** branch) running the shared `apps/blissful-mvs` UI on TV, with a Rust port of the desktop proxy on `127.0.0.1:11471` and a notify-only updater. **Superseded by the React Native app (`apps/blissful-tv-rn`) — do not extend it.** If you ever need it, its own docs are the source of truth: [`SPEC.md`](apps/blissful-tv-shell/SPEC.md), [`docs/PORT-MAP.md`](apps/blissful-tv-shell/docs/PORT-MAP.md), `docs/BUILD-RUNBOOK.md`. The TV-awareness and Trakt code it introduced into the shared UI remain there — see "TV mode (legacy, gated)" and "Trakt integration" in the UI architecture section above.
 
 ## Releases
 
@@ -553,7 +374,8 @@ The auto-updater's SHA-256 sidecar check is the integrity guarantee in the meant
 
 - [.github/workflows/release.yml](.github/workflows/release.yml) — CI release pipeline (build → SHA-verify vendor → WiX/Burn → SHA sidecar → publish + Latest → prune).
 - [apps/blissful-mvs/AGENTS.md](apps/blissful-mvs/AGENTS.md) — UI-specific patterns and conventions (incl. the TV-awareness gating contract).
-- [apps/blissful-tv-shell/SPEC.md](apps/blissful-tv-shell/SPEC.md) + [docs/PORT-MAP.md](apps/blissful-tv-shell/docs/PORT-MAP.md) — Android TV (Tauri) port: implementation spec + grounded architecture/portability matrix/bridge contract. Source of truth for the `android-tv` branch.
+- [apps/blissful-tv-rn/docs/FEATURES.md](apps/blissful-tv-rn/docs/FEATURES.md) — the RN TV app's feature registry (read before touching a feature; update after).
+- [apps/blissful-tv-shell/SPEC.md](apps/blissful-tv-shell/SPEC.md) + [docs/PORT-MAP.md](apps/blissful-tv-shell/docs/PORT-MAP.md) — the SUPERSEDED Tauri TV port's spec + architecture docs (frozen `android-tv` branch).
 - [LICENSE](LICENSE) + root README license section — licensing details.
 - [intro-skipper PluginConfiguration.cs](https://github.com/intro-skipper/intro-skipper/blob/main/IntroSkipper/Configuration/PluginConfiguration.cs) — upstream reference for the chapter-title regex catalogue used in `useChapterSkip.ts`.
 - [AniSkip v2 API docs](https://api.aniskip.com/api-docs) — the v2 fallback data source for files without chapter markers (anime).
