@@ -52,9 +52,10 @@ export function SubsIcon({ m, color }: { m: M; color: string }) {
     </View>
   );
 }
-// Sources / Releases — stacked layers (re-open the stream picker mid-playback).
-export function SourceIcon({ m, color }: { m: M; color: string }) {
-  return <Ionicons name="layers-outline" size={m.s(24)} color={color} />;
+// Releases — cloud icon (switch the torrent/release mid-playback), matching
+// OpenCode's BlissfulPlayer bottom-controls "Releases" button.
+export function ReleasesIcon({ m, color }: { m: M; color: string }) {
+  return <Ionicons name="cloud-outline" size={m.s(24)} color={color} />;
 }
 // Equalizer bars (audio tracks) — pure Views.
 export function AudioIcon({ m, color }: { m: M; color: string }) {

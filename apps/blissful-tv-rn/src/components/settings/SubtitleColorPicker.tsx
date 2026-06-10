@@ -2,14 +2,17 @@ import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { ColorSwatchRow } from './ColorSwatchRow';
 import { useTvFocusable } from '../../lib/useTvFocusable';
-import { TV_COLOR_PRESETS } from '../../lib/tvSettings';
 import { colors, font } from '../../theme/colors';
 import { useMetrics } from '../../theme/metrics';
 
 // Subtitle colour picker — 1:1 with design/settings/subtitles/SubtitleColorPicker.jsx:
 // a live caption PREVIEW + a segmented Text / Background / Outline control that
-// switches a SINGLE palette (replaces the three separate swatch rows). D-pad-driven
-// (geometry handles tab<->tab + tab->palette), SVG-free.
+// switches a per-channel palette. D-pad-driven (geometry handles tab<->tab +
+// tab->palette), SVG-free.
+//
+// The palettes are the desktop's rgba subtitle colours (so a saved account colour
+// like mint text / transparent bg / black outline matches a swatch). Any custom
+// colour outside the palette still renders in the live preview.
 
 type M = ReturnType<typeof useMetrics>;
 export type SubChannel = 'text' | 'bg' | 'outline';
@@ -18,6 +21,27 @@ const CHANNELS: { key: SubChannel; label: string }[] = [
   { key: 'bg', label: 'Background' },
   { key: 'outline', label: 'Outline' },
 ];
+
+// Text: the 12 desktop rgba swatches (verbatim from the player SettingsPanel).
+const TEXT_SWATCHES = [
+  'rgba(255,255,255,1)',
+  'rgba(255,84,112,1)',
+  'rgba(189,189,189,1)',
+  'rgba(200,255,225,1)',
+  'rgba(140,40,230,1)',
+  'rgba(230,40,40,1)',
+  'rgba(40,210,140,1)',
+  'rgba(255,180,40,1)',
+  'rgba(255,200,210,1)',
+  'rgba(80,160,235,1)',
+  'rgba(30,60,140,1)',
+  'rgba(245,224,170,1)',
+];
+// Background + outline are usually transparent / dark, so each leads with a
+// transparent swatch then opacity steps + white.
+const BG_SWATCHES = ['rgba(0,0,0,0)', 'rgba(0,0,0,0.35)', 'rgba(0,0,0,0.6)', 'rgba(0,0,0,0.85)', 'rgba(0,0,0,1)', 'rgba(255,255,255,1)'];
+const OUTLINE_SWATCHES = ['rgba(0,0,0,0)', 'rgba(0,0,0,0.5)', 'rgba(0,0,0,0.75)', 'rgba(0,0,0,1)', 'rgba(255,255,255,1)'];
+const SWATCHES: Record<SubChannel, string[]> = { text: TEXT_SWATCHES, bg: BG_SWATCHES, outline: OUTLINE_SWATCHES };
 
 function SegTab({ label, dot, active, onPress, m }: { label: string; dot: string; active: boolean; onPress: () => void; m: M }) {
   const { focused, focusProps } = useTvFocusable({ onPress });
@@ -102,7 +126,7 @@ export function SubtitleColorPicker({
           />
         ))}
       </View>
-      <ColorSwatchRow presets={TV_COLOR_PRESETS} value={value} m={m} size={m.s(34)} atRowStart onChange={(hex) => onChange(channel, hex)} />
+      <ColorSwatchRow presets={SWATCHES[channel]} value={value} m={m} fill atRowStart onChange={(hex) => onChange(channel, hex)} />
     </View>
   );
 }

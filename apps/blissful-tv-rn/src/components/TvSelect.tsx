@@ -70,7 +70,9 @@ export function TvSelect({
       style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(10), minWidth, height: m.s(52), paddingHorizontal: m.s(18), borderRadius: radius.pill, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: focused ? colors.accent : 'rgba(255,255,255,0.12)' }}
     >
       <Ionicons name={iconName} size={m.s(22)} color={colors.textDim} />
-      <Text numberOfLines={1} style={{ flex: 1, fontFamily: font.bodySemi, fontSize: m.s(20), color: colors.text }}>{current?.label ?? ''}</Text>
+      {/* Fall back to the raw value (never blank) when it isn't one of the
+          options — e.g. a saved language outside the TV's short preset list. */}
+      <Text numberOfLines={1} style={{ flex: 1, fontFamily: font.bodySemi, fontSize: m.s(20), color: colors.text }}>{current?.label ?? value}</Text>
       <Ionicons name="chevron-down" size={m.s(20)} color={colors.textDim} />
     </Pressable>
   );

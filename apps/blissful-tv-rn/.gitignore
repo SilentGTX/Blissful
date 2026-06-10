@@ -47,3 +47,8 @@ yarn-error.*
 .t*.png
 .r*.png
 .s*.png
+
+# local debug artifacts (emulator screenshots + run logs)
+emu-*.png
+*.log
+*.log.err

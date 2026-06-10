@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useEffect, useState } from 'react';
-import { BackHandler, Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { BackHandler, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { FocusTrap } from './FocusTrap';
@@ -124,7 +124,12 @@ export function ProfileMenu({ visible, onClose }: { visible: boolean; onClose: (
   const cellSize = (cardW - cardPad * 2 - cellGap * 3) / 4 - m.s(4);
 
   return (
-    <Modal transparent visible={visible} onRequestClose={onClose} animationType="fade">
+    // A full-screen in-tree overlay, NOT a <Modal>: react-native-tvos Modals don't
+    // capture the hardware Back on Android TV (Back fell through and EXITED the app
+    // instead of closing the menu). As a normal view in the tree, the BackHandler
+    // below fires reliably and FocusTrap keeps the D-pad inside. Must be rendered at
+    // a full-screen root (HomeScreen) so absoluteFill === the screen.
+    <View style={styles.overlayRoot}>
       <Pressable style={styles.backdrop} focusable={false} onPress={onClose} />
       {mode === 'menu' ? (
         <FocusTrap style={[styles.panel, { top: m.safeY + m.topbarH + m.s(10), right: m.safeX, width: panelW, borderRadius: m.s(24), padding: m.s(16) }]}>
@@ -172,11 +177,12 @@ export function ProfileMenu({ visible, onClose }: { visible: boolean; onClose: (
           </FocusTrap>
         </View>
       )}
-    </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  overlayRoot: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 200 },
   backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)' },
   center: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
   panel: { position: 'absolute', backgroundColor: 'rgba(20,24,33,0.98)', borderWidth: 1, borderColor: colors.hairline },

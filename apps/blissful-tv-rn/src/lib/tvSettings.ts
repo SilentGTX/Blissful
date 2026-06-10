@@ -14,6 +14,7 @@
 // the desktop storageApi.ts), then call it from saveTvSettings() below. The
 // local store stays as the offline fallback.
 import { fetchStoredSettings } from '@blissful/core';
+import { toRgba } from './colorUtils';
 import { kv } from './storage';
 
 const SETTINGS_KEY = 'bliss:tvSettings';
@@ -28,9 +29,9 @@ export type TvSettings = {
   playInExternalPlayer: string;
   // Player
   subtitlesSizePx: number;
-  subtitlesTextColor: string; // hex
-  subtitlesBackgroundColor: string; // hex
-  subtitlesOutlineColor: string; // hex
+  subtitlesTextColor: string; // rgba (matches the account/desktop format)
+  subtitlesBackgroundColor: string; // rgba (alpha 0 = transparent)
+  subtitlesOutlineColor: string; // rgba
   subtitlesLanguage: string | null;
   audioLanguage: string | null;
   seekTimeDurationMs: number;
@@ -50,9 +51,9 @@ export const DEFAULT_TV_SETTINGS: TvSettings = {
   tmdbApiKey: '',
   playInExternalPlayer: 'none',
   subtitlesSizePx: 28,
-  subtitlesTextColor: '#ffffff',
-  subtitlesBackgroundColor: '#000000',
-  subtitlesOutlineColor: '#000000',
+  subtitlesTextColor: 'rgba(255,255,255,1)',
+  subtitlesBackgroundColor: 'rgba(0,0,0,0)', // transparent
+  subtitlesOutlineColor: 'rgba(0,0,0,0.75)',
   subtitlesLanguage: 'English',
   audioLanguage: null,
   seekTimeDurationMs: 10000,
@@ -69,7 +70,13 @@ export function readTvSettings(): TvSettings {
     const raw = kv.get(SETTINGS_KEY);
     if (!raw) return DEFAULT_TV_SETTINGS;
     const parsed = JSON.parse(raw) as Partial<TvSettings>;
-    return { ...DEFAULT_TV_SETTINGS, ...parsed };
+    const merged = { ...DEFAULT_TV_SETTINGS, ...parsed };
+    // Normalise subtitle colours to rgba so a value cached as hex (pre-rgba
+    // builds) still matches its swatch and renders in the preview.
+    merged.subtitlesTextColor = toRgba(merged.subtitlesTextColor);
+    merged.subtitlesBackgroundColor = toRgba(merged.subtitlesBackgroundColor);
+    merged.subtitlesOutlineColor = toRgba(merged.subtitlesOutlineColor);
+    return merged;
   } catch {
     return DEFAULT_TV_SETTINGS;
   }
@@ -95,16 +102,23 @@ export async function hydrateTvSettingsFromCloud(token: string | null): Promise<
     // The backend returns the FULL playerSettings (the desktop saves every field);
     // the typed return is a subset, so read it broadly. Field names match TvSettings
     // 1:1, so pull every TV field the cloud has (use !== undefined so 0/null/'' are
-    // honoured). Skip the subtitle COLOUR fields — the web stores them as rgba while
-    // the TV swatches are hex, so a round-trip would break the picker.
+    // honoured).
     const remote = (await fetchStoredSettings(token)) as Record<string, unknown> | null;
     if (!remote) return local;
-    const SKIP = new Set<keyof TvSettings>(['subtitlesTextColor', 'subtitlesBackgroundColor', 'subtitlesOutlineColor']);
     const merged: TvSettings = { ...local };
     (Object.keys(DEFAULT_TV_SETTINGS) as (keyof TvSettings)[]).forEach((k) => {
-      if (SKIP.has(k)) return;
       if (remote[k] !== undefined) (merged as Record<string, unknown>)[k] = remote[k];
     });
+    // The account stores languages as ISO codes; map them to the TV's English
+    // names so the Player dropdowns show the saved value rather than a blank.
+    merged.subtitlesLanguage = tvLanguageFromStored(merged.subtitlesLanguage);
+    merged.audioLanguage = tvLanguageFromStored(merged.audioLanguage);
+    // Subtitle colours come from the account as rgba (the desktop format).
+    // Normalise to rgba so the picker can show them (and any custom colour still
+    // renders in the live preview even if it isn't one of the swatches).
+    merged.subtitlesTextColor = toRgba(merged.subtitlesTextColor);
+    merged.subtitlesBackgroundColor = toRgba(merged.subtitlesBackgroundColor);
+    merged.subtitlesOutlineColor = toRgba(merged.subtitlesOutlineColor);
     writeTvSettings(merged);
     return merged;
   } catch {
@@ -166,6 +180,40 @@ export const TV_LANGUAGE_OPTIONS: { value: string | null; label: string }[] = [
   { value: 'Korean', label: 'Korean' },
   { value: 'Chinese', label: 'Chinese' },
 ];
+
+// The account/desktop stores subtitle + audio language as an ISO 639-2 code
+// (the keys of apps/blissful-mvs/src/lib/languageNames.json — `eng`, `spa`, …),
+// while the TV's TV_LANGUAGE_OPTIONS uses English names. Map both ways so a saved
+// value DISPLAYS as a TV option (instead of a blank dropdown) and a TV change
+// round-trips back to the account in the desktop's code format.
+const TV_LANG_CODE_TO_NAME: Record<string, string> = {
+  eng: 'English', spa: 'Spanish', fra: 'French', fre: 'French', deu: 'German', ger: 'German',
+  ita: 'Italian', por: 'Portuguese', nld: 'Dutch', dut: 'Dutch', rus: 'Russian', pol: 'Polish',
+  tur: 'Turkish', ara: 'Arabic', hin: 'Hindi', jpn: 'Japanese', kor: 'Korean', zho: 'Chinese', chi: 'Chinese',
+};
+const TV_NAME_TO_LANG_CODE: Record<string, string> = {
+  english: 'eng', spanish: 'spa', french: 'fra', german: 'deu', italian: 'ita', portuguese: 'por',
+  dutch: 'nld', russian: 'rus', polish: 'pol', turkish: 'tur', arabic: 'ara', hindi: 'hin',
+  japanese: 'jpn', korean: 'kor', chinese: 'zho',
+};
+
+/** Stored value (code / English name / null) → a TV_LANGUAGE_OPTIONS value so the
+ *  dropdown can show it. Unknown names pass through (still displayed). */
+export function tvLanguageFromStored(v: unknown): string | null {
+  if (v == null || v === '') return null;
+  const s = String(v);
+  const byCode = TV_LANG_CODE_TO_NAME[s.toLowerCase()];
+  if (byCode) return byCode;
+  const opt = TV_LANGUAGE_OPTIONS.find((o) => o.value && o.value.toLowerCase() === s.toLowerCase());
+  return opt?.value ?? s;
+}
+
+/** TV English name → the account's ISO code (so a TV change round-trips to the
+ *  desktop format). Unknown names / null pass through. */
+export function tvLanguageToStored(v: string | null): string | null {
+  if (!v) return null;
+  return TV_NAME_TO_LANG_CODE[v.toLowerCase()] ?? v;
+}
 
 // Accent / subtitle text color presets — the same set the desktop TV branch
 // offers (TV_COLOR_PRESETS in SettingsPage.tsx). Remote-friendly opaque swatches.

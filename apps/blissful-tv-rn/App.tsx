@@ -13,6 +13,11 @@ import {
   Fraunces_700Bold,
 } from '@expo-google-fonts/fraunces';
 import {
+  Spectral_400Regular,
+  Spectral_600SemiBold,
+  Spectral_700Bold,
+} from '@expo-google-fonts/spectral';
+import {
   IBMPlexSans_400Regular,
   IBMPlexSans_500Medium,
   IBMPlexSans_600SemiBold,
@@ -75,6 +80,9 @@ export default function App() {
   const [fontsLoaded] = useFonts({
     Fraunces_600SemiBold,
     Fraunces_700Bold,
+    Spectral_400Regular,
+    Spectral_600SemiBold,
+    Spectral_700Bold,
     IBMPlexSans_400Regular,
     IBMPlexSans_500Medium,
     IBMPlexSans_600SemiBold,

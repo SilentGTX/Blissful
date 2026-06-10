@@ -35,6 +35,7 @@ import {
   TV_LANGUAGE_OPTIONS,
   hydrateTvSettingsFromCloud,
   readTvSettings,
+  tvLanguageToStored,
   writeTvSettings,
   type TvSettings,
 } from '../lib/tvSettings';
@@ -236,7 +237,14 @@ export function SettingsScreen() {
   const scheduleCloudSave = (settings: TvSettings) => {
     if (cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current);
     cloudSaveTimer.current = setTimeout(() => {
-      void saveStoredSettings(token, settings as unknown as Record<string, unknown>);
+      // Round-trip languages back to the account's ISO-code format so the desktop
+      // keeps showing them correctly.
+      const payload = {
+        ...settings,
+        subtitlesLanguage: tvLanguageToStored(settings.subtitlesLanguage),
+        audioLanguage: tvLanguageToStored(settings.audioLanguage),
+      };
+      void saveStoredSettings(token, payload as unknown as Record<string, unknown>);
     }, 700);
   };
   useEffect(() => () => { if (cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current); }, []);
@@ -320,10 +328,17 @@ export function SettingsScreen() {
   // --- Select option catalogues. -----------------------------------------
   const seekLabel = (value: number) => `${Math.round(value / 1000)} sec`;
 
-  const languageItems = useMemo<SelectOption[]>(
-    () => TV_LANGUAGE_OPTIONS.map((o) => ({ key: o.value ?? 'none', label: o.label })),
-    [],
-  );
+  const languageItems = useMemo<SelectOption[]>(() => {
+    const base = TV_LANGUAGE_OPTIONS.map((o) => ({ key: o.value ?? 'none', label: o.label }));
+    // Inject any saved language that isn't one of the presets (a language the
+    // account picked on desktop outside the TV's short list) so it still shows
+    // as the selected value instead of a blank dropdown.
+    const have = new Set(base.map((b) => b.key));
+    for (const v of [settings.subtitlesLanguage, settings.audioLanguage]) {
+      if (v && !have.has(v)) { base.push({ key: v, label: v }); have.add(v); }
+    }
+    return base;
+  }, [settings.subtitlesLanguage, settings.audioLanguage]);
   const sizeItems = useMemo<SelectOption[]>(
     () => SUBTITLE_SIZE_OPTIONS_PX.map((px) => ({ key: String(px), label: `${px}px` })),
     [],
@@ -420,6 +435,7 @@ export function SettingsScreen() {
                       presets={TV_COLOR_PRESETS}
                       value={settings.accentColor}
                       m={m}
+                      fill
                       atRowStart
                       onChange={(hex) => update({ accentColor: hex })}
                     />
@@ -436,6 +452,7 @@ export function SettingsScreen() {
                       presets={SURFACE_COLOR_PRESETS}
                       value={settings.surfaceColor}
                       m={m}
+                      fill
                       atRowStart
                       onChange={(hex) => update({ surfaceColor: hex })}
                     />

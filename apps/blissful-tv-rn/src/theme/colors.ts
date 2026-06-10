@@ -82,6 +82,10 @@ export const font = {
   body: 'IBMPlexSans_400Regular',
   bodyMed: 'IBMPlexSans_500Medium',
   bodySemi: 'IBMPlexSans_600SemiBold',
+  // Spectral — the immersive Home design's display serif (titles/row headers).
+  spectral: 'Spectral_400Regular',
+  spectralSemi: 'Spectral_600SemiBold',
+  spectralBold: 'Spectral_700Bold',
 } as const;
 
 // NOTE: the Android TV emulator (and most 1080p TVs) run at density 320 (2x),

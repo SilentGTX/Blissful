@@ -1,4 +1,4 @@
-import { Image, type ImageContentFit, type ImageStyle } from 'expo-image';
+import { Image, type ImageContentFit, type ImageContentPosition, type ImageStyle } from 'expo-image';
 import type { StyleProp } from 'react-native';
 import { proxiedImage } from '../lib/images';
 
@@ -11,12 +11,21 @@ export function Img({
   uri,
   style,
   contentFit = 'cover',
+  contentPosition,
+  blurRadius,
   onLoad,
+  onError,
 }: {
   uri: string | null | undefined;
   style: StyleProp<ImageStyle>;
   contentFit?: ImageContentFit;
+  /** Alignment of a `contain`/`cover` image within its box (e.g. 'left'). */
+  contentPosition?: ImageContentPosition;
+  /** Gaussian blur radius — used for the blurred fill behind a `contain` poster. */
+  blurRadius?: number;
   onLoad?: () => void;
+  /** Fired when the image fails to load (404 / decode) — lets callers fall back. */
+  onError?: () => void;
 }) {
   const src = proxiedImage(uri);
   if (!src) return null;
@@ -25,9 +34,12 @@ export function Img({
       source={{ uri: src }}
       style={style}
       contentFit={contentFit}
+      contentPosition={contentPosition}
+      blurRadius={blurRadius}
       cachePolicy="memory-disk"
       transition={0}
       onLoad={onLoad ? () => onLoad() : undefined}
+      onError={onError ? () => onError() : undefined}
     />
   );
 }

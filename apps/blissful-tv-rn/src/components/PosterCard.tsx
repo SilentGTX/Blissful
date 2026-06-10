@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { normalizeStremioImage } from '@blissful/core';
 import { useTvFocusable } from '../lib/useTvFocusable';
@@ -41,6 +41,15 @@ const PosterVisual = memo(function PosterVisual({
   const poster = normalizeStremioImage(item.poster);
   const h = width * POSTER_RATIO;
   const [loaded, setLoaded] = useState(false);
+  // Only show the shimmer if the image is genuinely slow to load. A disk-cached
+  // poster (expo-image memory-disk) loads in a few ms, so the timer never fires
+  // and there's no flash on re-mount (rail virtualization / navigating back).
+  const [showSkeleton, setShowSkeleton] = useState(false);
+  useEffect(() => {
+    if (loaded) return;
+    const t = setTimeout(() => setShowSkeleton(true), 180);
+    return () => clearTimeout(t);
+  }, [loaded]);
   return (
     <>
       <View
@@ -72,9 +81,9 @@ const PosterVisual = memo(function PosterVisual({
             <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: `${Math.min(100, progress)}%`, backgroundColor: colors.accent }} />
           </View>
         ) : null}
-        {/* Shimmer placeholder until the poster image loads (covers everything;
-            the posterWrap's overflow:hidden clips it to the rounded shape). */}
-        {poster && !loaded ? (
+        {/* Shimmer placeholder only for genuinely-slow loads (cached posters skip
+            it). The posterWrap's overflow:hidden clips it to the rounded shape. */}
+        {poster && !loaded && showSkeleton ? (
           <Skeleton width={width} height={h} style={{ position: 'absolute', top: 0, left: 0 }} />
         ) : null}
       </View>

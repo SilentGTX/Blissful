@@ -9,6 +9,10 @@ export type CwItem = {
   resumeSeconds: number; // saved playback position
   episodeLabel?: string; // "S2E4" for series
   videoId?: string; // current episode id (imdb:S:E) for series playback
+  /** The exact stream the progress was made on — lets Resume play it instantly
+   *  instead of re-resolving a (possibly different) torrent. */
+  streamUrl?: string;
+  streamTitle?: string;
 };
 
 function resumeSecondsOf(item: LibraryItem): number {
@@ -70,6 +74,7 @@ export async function fetchContinueWatching(token: string): Promise<CwItem[]> {
     .slice(0, 14)
     .map((it) => {
       const { label, videoId } = episodeLabelOf(it);
+      const stream = it as unknown as { _blissStreamUrl?: string; _blissStreamTitle?: string };
       return {
         id: it._id,
         type: it.type,
@@ -79,6 +84,8 @@ export async function fetchContinueWatching(token: string): Promise<CwItem[]> {
         resumeSeconds: resumeSecondsOf(it),
         episodeLabel: label,
         videoId,
+        streamUrl: stream._blissStreamUrl ?? undefined,
+        streamTitle: stream._blissStreamTitle ?? undefined,
       };
     });
 }

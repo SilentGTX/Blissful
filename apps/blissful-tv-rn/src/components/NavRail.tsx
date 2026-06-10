@@ -1,5 +1,4 @@
 import { useNavigation } from '@react-navigation/native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { forwardRef, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Animated, findNodeHandle, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, useTVEventHandler, View } from 'react-native';
 import { colors, font, radius } from '../theme/colors';
@@ -8,12 +7,13 @@ import { ICONS, StrokeIcon } from '../icons/StrokeIcon';
 import { useToast } from './Toast';
 import { useAuth } from '../context/AuthContext';
 import { useFriends, statusLine } from '../lib/friends';
-import { isAtLeftEdge } from '../lib/focusBus';
+import { atLeftEdgeRaw, focusStamp } from '../lib/focusBus';
 import { setRailOpen } from '../lib/railStore';
 import { FriendAvatar } from './FriendAvatar';
 
-type NavKey = 'Home' | 'Discover' | 'Library' | 'Addons' | 'JoinParty' | 'Settings';
+type NavKey = 'Search' | 'Home' | 'Discover' | 'Library' | 'Addons' | 'JoinParty' | 'Settings';
 const ITEMS: { key: NavKey; icon: keyof typeof ICONS; label: string }[] = [
+  { key: 'Search', icon: 'search', label: 'Search' },
   { key: 'Home', icon: 'home', label: 'Home' },
   { key: 'Discover', icon: 'discover', label: 'Discover' },
   { key: 'Library', icon: 'library', label: 'Library' },
@@ -35,7 +35,7 @@ const Row = forwardRef<View, {
   labelColor?: string;
   labelFont?: string;
   labelSize: number;
-  icon: ReactNode;
+  renderIcon: (color: string) => ReactNode;
   onRailFocus?: (focused: boolean) => void;
   onPress?: () => void;
   nextFocusUp?: number;
@@ -52,7 +52,7 @@ const Row = forwardRef<View, {
   labelColor,
   labelFont,
   labelSize,
-  icon,
+  renderIcon,
   onRailFocus,
   onPress,
   nextFocusUp,
@@ -63,6 +63,8 @@ const Row = forwardRef<View, {
   // No color change on focus ("just leave the purple") — label color is constant;
   // the purple ring overlay is the only focus indicator.
   const lc = labelColor ?? (active ? colors.accent : colors.textDim);
+  // Design nav style: focus = solid accent FILL with ink icon + label (not a ring).
+  const iconColor = focused ? colors.accentInk : lc;
   const body = (
     <View
       style={{
@@ -71,17 +73,15 @@ const Row = forwardRef<View, {
         flexDirection: 'row',
         alignItems: 'center',
         borderRadius: radius.card,
+        backgroundColor: focused ? colors.accent : 'transparent',
       }}
     >
-      {/* Focus ring as an absolute overlay so it does NOT inset the row content
-          (a layout border would shift the icon off-center). */}
-      {focused ? <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: radius.card, borderWidth: 1, borderColor: colors.accent }} /> : null}
       {/* Fixed-width icon column in BOTH states: anchored to the row's left, so
           the icon X never moves on expand/collapse (no jump). iconW == the
           collapsed row content width, so when collapsed the icon is centered. */}
-      <View style={{ width: iconW, alignItems: 'center', justifyContent: 'center' }}>{icon}</View>
+      <View style={{ width: iconW, alignItems: 'center', justifyContent: 'center' }}>{renderIcon(iconColor)}</View>
       {expanded ? (
-        <Text numberOfLines={1} style={{ fontFamily: labelFont ?? font.bodySemi, fontSize: labelSize, color: lc, flex: 1, marginLeft: 2 }}>
+        <Text numberOfLines={1} style={{ fontFamily: labelFont ?? font.bodySemi, fontSize: labelSize, color: focused ? colors.accentInk : lc, flex: 1, marginLeft: 2 }}>
           {label}
         </Text>
       ) : null}
@@ -116,7 +116,8 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
   const { token } = useAuth();
   const { friends, incoming, presence } = useFriends(token);
 
-  const railLeft = m.s(6);
+  // Flush to the screen's left edge (design Sidebar.jsx aside: left 0, full height).
+  const railLeft = 0;
   const collapsedW = m.railCollapsed - railLeft * 2;
   const rowMargin = m.s(5);
   const iconW = collapsedW - rowMargin * 2;
@@ -149,6 +150,11 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
   // open, leaving the rail (focus to content) collapses it; Right also closes it.
   const justCollapsedRef = useRef(0);
   const [openKey, setOpenKey] = useState(0);
+  // The content-focus stamp seen at the PREVIOUS Left event — lets us tell a Left
+  // that moved focus onto the edge tile (stamp advanced) from a Left pressed while
+  // already parked on it (stamp unchanged). Fixes the rail expanding spuriously when
+  // a (slightly long) Left just lands you on the first poster.
+  const leftSeenStampRef = useRef(0);
   const onRailFocus = (focused: boolean) => {
     focusedRef.current = focused;
   };
@@ -165,9 +171,15 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
   useTVEventHandler((evt) => {
     const t = evt.eventType;
     if (t === 'left' || t === 'swipeLeft') {
-      // Synchronous: open only if focus is on a left-edge content element. (Left
-      // on a non-edge card just moves to the card on its left — no open.)
-      if (!expandedRef.current && isAtLeftEdge() && !focusedRef.current && Date.now() - justCollapsedRef.current > 400) {
+      // Open ONLY when this Left didn't move focus — i.e. focus is parked on a
+      // left-edge content element. A Left that moves another card -> the first card
+      // bumps the focus stamp, so we suppress it (was opening on the landing Left).
+      // The >400ms resting fallback covers the very first Left after route entry.
+      const stamp = focusStamp();
+      const moved = stamp !== leftSeenStampRef.current;
+      leftSeenStampRef.current = stamp;
+      const parked = atLeftEdgeRaw() && (!moved || Date.now() - stamp > 400);
+      if (!expandedRef.current && parked && !focusedRef.current && Date.now() - justCollapsedRef.current > 400) {
         setOpenKey((k) => k + 1);
         setExp(true);
       }
@@ -184,7 +196,7 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
 
   // Chain the rail rows vertically so D-pad Up/Down deterministically cycle the
   // rail items instead of escaping to the content grid (the native focus engine
-  // is non-deterministic about this). Indices: 0..5 nav items, 6 = Friends.
+  // is non-deterministic about this). Indices: 0..6 nav items, 7 = Friends.
   const navRefs = useRef<(View | null)[]>([]);
   const [navTags, setNavTags] = useState<(number | null)[]>([]);
   useLayoutEffect(() => {
@@ -210,25 +222,22 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
   const Divider = ({ mx, my }: { mx: number; my: number }) => <View style={{ height: 1, marginHorizontal: mx, marginVertical: my, backgroundColor: 'rgba(255,255,255,0.1)' }} />;
 
   return (
-    <Animated.View style={[styles.rail, { left: railLeft, top: m.safeY, bottom: m.safeY, width: widthAnim, borderRadius: m.s(28), zIndex: expanded ? 70 : 10 }]}>
-      {/* Glass sheen — brighter top-right rim fading to near-nothing, for the
-          pronounced shiny edge (matches the old app's nav glass). */}
-      <LinearGradient colors={['rgba(255,255,255,0.18)', 'rgba(255,255,255,0.05)', 'rgba(255,255,255,0.015)']} locations={[0, 0.32, 1]} start={{ x: 0.9, y: 0 }} end={{ x: 0.1, y: 1 }} style={StyleSheet.absoluteFill} />
-      {/* Bright hairline catching light along the top + inner-left glass rim. */}
-      <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: m.s(14), right: m.s(14), height: 1.5, borderRadius: 1, backgroundColor: 'rgba(255,255,255,0.32)' }} />
-      <View style={{ flex: 1, paddingVertical: m.s(10) }}>
-        <Row iconW={iconW} itemH={m.s(48)} mx={rowMargin} expanded={expanded} focusable={false} label="Blissful" labelColor={colors.text} labelFont={font.serif} labelSize={m.s(22)} icon={<Image source={require('../../assets/blissful-small-logo.png')} style={{ width: m.s(36), height: m.s(36), borderRadius: m.s(10) }} resizeMode="contain" />} />
+    <Animated.View style={[styles.rail, { left: railLeft, top: 0, bottom: 0, width: widthAnim, zIndex: expanded ? 70 : 10, backgroundColor: expanded ? NAV_PANEL : 'transparent', borderRightWidth: expanded ? 1 : 0, borderRightColor: 'rgba(255,255,255,0.07)' }]}>
+      {/* Flush full-height panel (design Sidebar.jsx): transparent when collapsed
+          (icons float on the home scrim), dark panel when expanded. No glass pill /
+          sheen / rounded corners — that was the old nav look. */}
+      <View style={{ flex: 1, paddingTop: m.safeY, paddingBottom: m.safeY }}>
+        <Row iconW={iconW} itemH={m.s(48)} mx={rowMargin} expanded={expanded} focusable={false} label="Blissful" labelColor={colors.text} labelFont={font.serif} labelSize={m.s(22)} renderIcon={() => <Image source={require('../../assets/blissful-small-logo.png')} style={{ width: m.s(36), height: m.s(36), borderRadius: m.s(10) }} resizeMode="contain" />} />
         <Divider mx={m.s(10)} my={m.s(6)} />
         {ITEMS.map((it, i) => (
-          <Row key={i === 0 ? `${it.key}-${openKey}` : it.key} ref={(el) => { navRefs.current[i] = el; }} focusable={expanded} autoFocus={i === 0 && expanded} nextFocusUp={upTag(i)} nextFocusDown={downTag(i)} iconW={iconW} itemH={m.navItemH} mx={rowMargin} expanded={expanded} active={active === it.key} label={it.label} labelSize={m.s(16)} icon={ico(it.icon, active === it.key ? colors.accent : colors.textDim, active === it.key)} onRailFocus={onRailFocus} onPress={() => { if (it.key === 'Home') navigation.navigate('Home'); else if (it.key === 'Discover') navigation.navigate('Discover', { type: 'movie' }); else if (it.key === 'Library') navigation.navigate('Library'); else if (it.key === 'Addons') navigation.navigate('Addons'); else if (it.key === 'Settings') navigation.navigate('Settings'); else if (it.key === 'JoinParty') toast.show('Watch Party is coming soon'); }} />
+          <Row key={i === 0 ? `${it.key}-${openKey}` : it.key} ref={(el) => { navRefs.current[i] = el; }} focusable={expanded} autoFocus={i === 0 && expanded} nextFocusUp={upTag(i)} nextFocusDown={downTag(i)} iconW={iconW} itemH={m.navItemH} mx={rowMargin} expanded={expanded} active={active === it.key} label={it.label} labelSize={m.s(16)} renderIcon={(c) => ico(it.icon, c, c === colors.accent)} onRailFocus={onRailFocus} onPress={() => { if (it.key === 'Search') navigation.navigate('Search'); else if (it.key === 'Home') navigation.navigate('Home'); else if (it.key === 'Discover') navigation.navigate('Discover', { type: 'movie' }); else if (it.key === 'Library') navigation.navigate('Library'); else if (it.key === 'Addons') navigation.navigate('Addons'); else if (it.key === 'Settings') navigation.navigate('Settings'); else if (it.key === 'JoinParty') toast.show('Watch Party is coming soon'); }} />
         ))}
 
-        {!expanded ? <View style={{ flex: 1 }} /> : null}
         <Divider mx={m.s(8)} my={m.s(8)} />
 
         {expanded ? (
           <>
-            <Row ref={(el) => { navRefs.current[6] = el; }} nextFocusUp={upTag(6)} iconW={iconW} itemH={m.navItemH} mx={rowMargin} expanded label="Friends" labelColor={colors.text} labelSize={m.s(17)} icon={friendsIcon(colors.text)} onRailFocus={onRailFocus} />
+            <Row ref={(el) => { navRefs.current[7] = el; }} nextFocusUp={upTag(7)} iconW={iconW} itemH={m.navItemH} mx={rowMargin} expanded label="Friends" labelColor={colors.text} labelSize={m.s(17)} renderIcon={(c) => friendsIcon(c)} onRailFocus={onRailFocus} />
             {token ? (
               <FriendsBody m={m} mx={rowMargin} friends={friends} incoming={incoming} presence={presence} tab={tab} setTab={setTab} query={query} setQuery={setQuery} onRailFocus={onRailFocus} onTabFocus={(f: boolean) => (tabFocusedRef.current = f)} />
             ) : (
@@ -238,7 +247,7 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
             )}
           </>
         ) : (
-          <Row focusable={false} iconW={iconW} itemH={m.navItemH} mx={rowMargin} expanded={false} label="Friends" labelSize={m.s(16)} icon={friendsIcon(colors.accent)} />
+          <Row focusable={false} iconW={iconW} itemH={m.navItemH} mx={rowMargin} expanded={false} label="Friends" labelSize={m.s(16)} renderIcon={() => friendsIcon(colors.textDim)} />
         )}
       </View>
     </Animated.View>
@@ -300,6 +309,9 @@ function Tab({ m, active, label, onRailFocus, onTabFocus, onPress }: any) {
   );
 }
 
+// Design Sidebar.jsx panel colour (rgba(15,18,26,0.99)) — the dark flush drawer.
+const NAV_PANEL = 'rgba(13,16,24,0.99)';
+
 const styles = StyleSheet.create({
-  rail: { position: 'absolute', backgroundColor: 'rgba(28,33,46,0.97)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.22)', overflow: 'hidden' },
+  rail: { position: 'absolute', overflow: 'hidden' },
 });

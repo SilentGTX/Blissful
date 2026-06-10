@@ -89,7 +89,7 @@ export function SearchScreen() {
 
   return (
     <View style={styles.root}>
-      <NavRail active="Home" />
+      <NavRail active="Search" />
       {/* Don't auto-open the IME when arriving with a pre-filled query (cast/
           genre chip) — show results instead. Only auto-focus an empty search. */}
       <TopBar searchValue={query} onSearchChange={setQuery} searchAutoFocus={!route.params?.query} />

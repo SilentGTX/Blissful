@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
@@ -17,11 +18,15 @@ type M = ReturnType<typeof useMetrics>;
 export type ToastOptions = {
   /** Auto-dismiss delay in ms. Default ~3.2s. */
   durationMs?: number;
+  /** Optional second line (dim) — turns the pill into the desktop's two-line
+   *  "title + detail" toast (with an info icon), e.g. Subtitles loaded / lang - src. */
+  description?: string;
 };
 
 type ToastItem = {
   id: number;
   message: string;
+  description?: string;
   durationMs: number;
 };
 
@@ -58,7 +63,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setToasts((prev) => {
       // Newest at the front; keep the stack bounded so a burst can't
       // pile up off-screen.
-      const next = [{ id, message, durationMs }, ...prev];
+      const next = [{ id, message, description: opts?.description, durationMs }, ...prev];
       return next.slice(0, MAX_VISIBLE);
     });
     return id;
@@ -135,18 +140,29 @@ function ToastPill({ item, m, onDismiss }: { item: ToastItem; m: M; onDismiss: (
           transform: [{ translateY }],
           marginBottom: m.s(10),
           borderRadius: radius.pill,
-          paddingHorizontal: m.s(28),
+          paddingHorizontal: item.description ? m.s(20) : m.s(28),
           paddingVertical: m.s(14),
           maxWidth: Math.min(m.s(820), m.width * 0.72),
         },
       ]}
     >
-      <Text
-        numberOfLines={2}
-        style={{ fontFamily: font.bodySemi, fontSize: m.s(20), lineHeight: m.s(26), color: colors.text, textAlign: 'center' }}
-      >
-        {item.message}
-      </Text>
+      {item.description ? (
+        // Two-line "title + detail" with an info icon — the desktop toast.
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(12) }}>
+          <Ionicons name="information-circle-outline" size={m.s(26)} color="rgba(255,255,255,0.65)" />
+          <View>
+            <Text numberOfLines={1} style={{ fontFamily: font.bodySemi, fontSize: m.s(20), color: colors.text }}>{item.message}</Text>
+            <Text numberOfLines={1} style={{ fontFamily: font.body, fontSize: m.s(16), color: 'rgba(255,255,255,0.6)', marginTop: m.s(2) }}>{item.description}</Text>
+          </View>
+        </View>
+      ) : (
+        <Text
+          numberOfLines={2}
+          style={{ fontFamily: font.bodySemi, fontSize: m.s(20), lineHeight: m.s(26), color: colors.text, textAlign: 'center' }}
+        >
+          {item.message}
+        </Text>
+      )}
     </Animated.View>
   );
 }

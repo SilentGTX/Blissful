@@ -23,10 +23,21 @@ const NO_STREAM_RE = /(v3-cinemeta\.strem\.io|opensubtitles|v3-channels|publicdo
 // block the others ("30s exclude" rule).
 const ADDON_TIMEOUT_MS = 30_000;
 
+// Cache the resolved addon-URL list so a stream/subtitle open doesn't re-fetch
+// /state + /settings every time (that prelude — two storage round-trips — was the
+// "torrents load slower than the desktop" lag; the desktop keeps its addon list
+// in a provider). 5-min TTL, keyed by token.
+const ADDON_URLS_TTL_MS = 5 * 60_000;
+let addonUrlsCache: { key: string; urls: string[]; at: number } | null = null;
+
 /** Build the user's addon transport-URL list: their stored addons (or guest
  *  defaults), with the Torrentio Real-Debrid addon injected when an RD key is
  *  set (stripping the non-RD Torrentio so torrents resolve to ready HTTP urls). */
 export async function loadAddonUrls(token: string | null): Promise<string[]> {
+  const key = token ?? 'guest';
+  if (addonUrlsCache && addonUrlsCache.key === key && Date.now() - addonUrlsCache.at < ADDON_URLS_TTL_MS) {
+    return addonUrlsCache.urls;
+  }
   const [state, settings] = await Promise.all([
     fetchStoredState(token),
     fetchStoredSettings(token),
@@ -41,7 +52,16 @@ export async function loadAddonUrls(token: string | null): Promise<string[]> {
     sourceUrls.push(`https://torrentio.strem.fun/realdebrid=${rdKey}/manifest.json`);
   }
   // Cinemeta first (dedup), like the desktop.
-  return [CINEMETA_URL, ...sourceUrls.filter((u) => u !== CINEMETA_URL)];
+  const urls = [CINEMETA_URL, ...sourceUrls.filter((u) => u !== CINEMETA_URL)];
+  addonUrlsCache = { key, urls, at: Date.now() };
+  return urls;
+}
+
+/** Drop the cached addon list — call when the user edits addons / the RD key so
+ *  the next open rebuilds it. */
+export function invalidateAddonUrlsCache(): void {
+  addonUrlsCache = null;
+  streamResultCache.clear();
 }
 
 /** transport URL → base (no trailing /manifest.json). */
@@ -222,6 +242,12 @@ function toRows(transportUrl: string, streams: StremioStream[]): PickerStream[] 
   });
 }
 
+// Per-title stream-result cache (mirrors the desktop's 5-min addon cache) so
+// re-opening the same title — e.g. Back to Detail then Watch again — is instant
+// instead of re-querying every addon. Keyed by token+type+id.
+const STREAM_RESULT_TTL_MS = 5 * 60_000;
+const streamResultCache = new Map<string, { rows: PickerStream[]; at: number }>();
+
 /** Fetch streams across the user's torrent addons PROGRESSIVELY: `onRows` is
  *  called with the merged+ranked rows each time an addon responds, so results
  *  appear as they arrive and a slow/dead addon (dropped after ADDON_TIMEOUT_MS)
@@ -233,6 +259,13 @@ export async function loadStreams(
   id: string,
   opts: { signal?: AbortSignal; onRows?: (rows: PickerStream[]) => void } = {},
 ): Promise<PickerStream[]> {
+  const cacheKey = `${token ?? 'guest'}|${type}|${id}`;
+  const cached = streamResultCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < STREAM_RESULT_TTL_MS) {
+    opts.onRows?.(cached.rows);
+    return cached.rows;
+  }
+
   const allUrls = await loadAddonUrls(token);
   const transportUrls = allUrls.filter((u) => !NO_STREAM_RE.test(u));
 
@@ -259,5 +292,9 @@ export async function loadStreams(
     }),
   );
 
-  return rankStreams(merged);
+  const final = rankStreams(merged);
+  // Only cache a non-empty result so a transient all-addons-failed open doesn't
+  // pin "no streams" for 5 minutes.
+  if (final.length > 0) streamResultCache.set(cacheKey, { rows: final, at: Date.now() });
+  return final;
 }

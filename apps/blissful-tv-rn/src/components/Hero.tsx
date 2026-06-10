@@ -6,6 +6,7 @@ import { memo, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { fetchMeta, normalizeStremioImage, type StremioMetaDetail, type StremioMetaPreview } from '@blissful/core';
 import { useTvFocusable } from '../lib/useTvFocusable';
+import { formatReleaseInfo } from '../lib/releaseInfo';
 import { Img } from './Img';
 import { Rating } from './Rating';
 import { colors, font, radius } from '../theme/colors';
@@ -89,7 +90,7 @@ export const Hero = memo(function Hero({ item, upTag }: { item: StremioMetaPrevi
 
   const bg = normalizeStremioImage(meta?.background) ?? normalizeStremioImage(item?.poster);
   const genres = (meta?.genres ?? meta?.genre ?? item?.genres ?? []).slice(0, 3);
-  const year = meta?.releaseInfo ?? item?.releaseInfo ?? (meta?.year != null ? String(meta.year) : '');
+  const year = formatReleaseInfo(meta?.releaseInfo ?? item?.releaseInfo) || (meta?.year != null ? String(meta.year) : '');
   const rating = meta?.imdbRating ?? item?.imdbRating;
   const runtime = meta?.runtime;
   const desc = meta?.description ?? item?.description ?? '';

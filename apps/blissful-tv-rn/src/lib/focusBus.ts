@@ -19,3 +19,16 @@ export function markContentFocus(rowStart: boolean): void {
 export function isAtLeftEdge(minAgeMs = 130): boolean {
   return atLeftEdge && Date.now() - lastFocusAt > minAgeMs;
 }
+
+/** True if the currently-focused content element is at its row's left edge,
+ *  regardless of how recently it got focus. */
+export function atLeftEdgeRaw(): boolean {
+  return atLeftEdge;
+}
+
+/** Timestamp of the last content-focus change. The NavRail uses this to tell a
+ *  Left that MOVED focus onto the edge tile (don't open) from a Left pressed while
+ *  already parked on it (open) — the move bumps this, a parked Left doesn't. */
+export function focusStamp(): number {
+  return lastFocusAt;
+}

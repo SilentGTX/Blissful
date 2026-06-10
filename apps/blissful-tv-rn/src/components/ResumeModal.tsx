@@ -38,6 +38,10 @@ export function ResumeModal({
   const r2 = useRef<View>(null);
   const refs = [r0, r1, r2];
   const [tags, setTags] = useState<(number | undefined)[]>([]);
+  // The close (X) button — focusable + wired so D-pad Up from the top button reaches it.
+  const rX = useRef<View>(null);
+  const [xTag, setXTag] = useState<number | undefined>(undefined);
+  const [xFocused, setXFocused] = useState(false);
 
   useEffect(() => {
     if (!item) return;
@@ -45,7 +49,10 @@ export function ResumeModal({
       onClose();
       return true;
     });
-    const id = setTimeout(() => setTags(refs.map((r) => (r.current ? findNodeHandle(r.current) ?? undefined : undefined))), 220);
+    const id = setTimeout(() => {
+      setTags(refs.map((r) => (r.current ? findNodeHandle(r.current) ?? undefined : undefined)));
+      setXTag(rX.current ? findNodeHandle(rX.current) ?? undefined : undefined);
+    }, 220);
     return () => {
       sub.remove();
       clearTimeout(id);
@@ -55,7 +62,7 @@ export function ResumeModal({
 
   if (!item) return null;
 
-  const cardW = m.s(440);
+  const cardW = m.s(520);
   const buttons = [
     { label: `Resume ${fmtTime(item.resumeSeconds)}`, primary: true, run: () => onResume(item) },
     { label: 'Start from beginning', run: () => onStartOver(item) },
@@ -72,11 +79,21 @@ export function ResumeModal({
           </>
         ) : null}
 
-        <Pressable onPress={onClose} style={{ position: 'absolute', right: m.s(12), top: m.s(12), zIndex: 2, width: m.s(40), height: m.s(40), borderRadius: 999, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' }}>
+        <Pressable
+          ref={rX}
+          onFocus={() => setXFocused(true)}
+          onBlur={() => setXFocused(false)}
+          nextFocusDown={tags[0]}
+          nextFocusUp={xTag}
+          nextFocusLeft={xTag}
+          nextFocusRight={xTag}
+          onPress={onClose}
+          style={{ position: 'absolute', right: m.s(12), top: m.s(12), zIndex: 2, width: m.s(40), height: m.s(40), borderRadius: 999, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: xFocused ? colors.accent : 'transparent' }}
+        >
           <Ionicons name="close" size={m.s(22)} color="rgba(255,255,255,0.9)" />
         </Pressable>
 
-        <View style={{ height: m.s(120) }} />
+        <View style={{ height: m.s(190) }} />
 
         <View style={{ paddingHorizontal: m.s(20), paddingBottom: m.s(20) }}>
           <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(16), letterSpacing: m.s(2), textTransform: 'uppercase', color: colors.accent }}>Continue watching</Text>
@@ -91,7 +108,7 @@ export function ResumeModal({
                 label={b.label}
                 primary={b.primary}
                 autoFocus={i === 0}
-                nextUp={tags[i - 1] ?? tags[i]}
+                nextUp={i === 0 ? (xTag ?? tags[i]) : (tags[i - 1] ?? tags[i])}
                 nextDown={tags[i + 1] ?? tags[i]}
                 self={tags[i]}
                 m={m}
