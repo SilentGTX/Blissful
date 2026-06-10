@@ -176,11 +176,65 @@ question has been addressed.
 
 - `apps/blissful-shell/` — Rust native shell (Windows desktop). Hosts a same-origin local HTTP server (`/addon-proxy`, `/storage/*`, `/stremio/*`, `/subtitles.vtt`, `/opensubHash`), spawns + supervises the bundled `stremio-service`, drives playback via in-process `libmpv2`, ships the GitHub-Releases auto-updater.
 - `apps/blissful-mvs/` — React UI, shared by **all** shells. Built into `dist/` and served by whichever shell hosts it.
-- `apps/blissful-tv-shell/` — **Tauri v2 shell for Android TV** (in active development on the `android-tv` branch). Re-implements the `window.blissfulDesktop` bridge, the same-origin backend proxy, and a notify-only updater for Android. See the **Blissful TV** section below — its own [`SPEC.md`](apps/blissful-tv-shell/SPEC.md) + [`docs/PORT-MAP.md`](apps/blissful-tv-shell/docs/PORT-MAP.md) are the source of truth.
+- `apps/blissful-tv-shell/` — **Tauri v2 shell for Android TV** (the PRIOR TV approach, superseded by the React Native app below). Re-implements the `window.blissfulDesktop` bridge, the same-origin backend proxy, and a notify-only updater for Android. Its own [`SPEC.md`](apps/blissful-tv-shell/SPEC.md) + [`docs/PORT-MAP.md`](apps/blissful-tv-shell/docs/PORT-MAP.md) document it.
+- `apps/blissful-tv-rn/` — **React Native (react-native-tvos) rewrite for Android TV — the CURRENT active TV effort** (branch `react-native-blissful`). A ground-up native rewrite that matches the Windows/web app 1:1. See the dedicated section below.
+- `packages/blissful-core/` (`@blissful/core`) — shared TypeScript logic (stremio API, addon protocol, storage/auth, presence, friends, watch-party REST, Trakt) consumed **as source** by the RN app.
 
 The desktop shell auto-detects whether a Vite dev server is up on `:5173` and proxies UI requests to it; otherwise it serves the prebuilt `apps/blissful-mvs/dist/`.
 
 **Scope of this repo:** the **Windows desktop client is the maintained focus**. The same React UI also runs in (a) a browser context (`SimplePlayer` instead of `NativeMpvPlayer`, `isNativeShell()` gating) — those paths exist but the web deployment is not maintained here; and (b) the Android TV Tauri shell, which is a separate in-progress effort with its own docs. **The TV port adds TV-awareness directly into `apps/blissful-mvs` (the `src/spatial/` D-pad layer, `isTvMode()`/`isTauri()` gating, Trakt) — all additive and gated, so the desktop build is unaffected.** When editing shared UI, keep TV branches gated and don't break the desktop path.
+
+## Reference apps & terminology (READ FIRST)
+
+When the user says "match/port/copy from the X app", these are the canonical sources of truth. Read their code with the Read tool and replicate behaviour/visuals exactly — never invent generic UI.
+
+- **"Windows app" / "desktop app"** → `D:\JS\Blissful\apps\blissful-mvs` (the React UI) **and** `D:\JS\Blissful\apps\blissful-shell` (the Rust shell). This is the production reference for feature parity — playback, watch party, player UX, etc. Watch-party logic in particular lives here (`apps/blissful-mvs/src/lib/useWatchPartyMpv.ts` + `lib/watchParty.ts` + `components/WatchParty/*` + `PartyInviteListener.tsx`), NOT in OpenCode.
+- **"Web version"** → `D:\JS\OpenCode\apps\blissful-mvs` (the SilentGTX/OpenCode fork, checked out locally). Check here FIRST for any `blissful-mvs` bug fix — it usually has the fix already; read it locally rather than `gh api`.
+
+## Blissful TV — React Native (apps/blissful-tv-rn) — CURRENT ACTIVE TV EFFORT
+
+A ground-up **React Native (react-native-tvos) rewrite** of the Blissful client for **Android TV** (leanback) and the real living-room TV. Replaces the Tauri `blissful-tv-shell`. **Goal: match the Windows/web app 1:1** in visuals and behaviour — read the reference component + `index.css` and replicate exactly; no generic UI. Branch: `react-native-blissful`. Per-session state + decisions live in the memory dir (`MEMORY.md` index — `project_rn_migration_progress`, `project_tv_rn_*`).
+
+**Feature registry — read first, keep updated:** [apps/blissful-tv-rn/docs/FEATURES.md](apps/blissful-tv-rn/docs/FEATURES.md) holds one structured record per screen/feature (files, the reference it mirrors, deliberate decisions, gotchas, how to verify). **Before** working on a feature, Grep that file for its heading and read the record (plus the *Cross-cutting: D-pad focus* record). **After** adding or changing behaviour — or discovering a new decision/gotcha — update the record in the same change. Records are current-state pointers, not changelogs; keep them ≤ ~15 lines.
+
+### Stack
+- **Expo SDK 56** + **react-native-tvos@0.85.3-0** + **New Architecture** (Fabric/Hermes). IMPORTANT (see `apps/blissful-tv-rn/AGENTS.md`): Expo changed a lot — read the versioned docs at https://docs.expo.dev/versions/v56.0.0/ before writing Expo code.
+- **expo-video** for playback (the mpv analogue; bridged via hook opts `{getTime, pausedRef, seek, play, pause, setRate}`). The **emulator cannot decode most video** (no x86 decoder → frozen picture) — the **real TV is the truth** for playback/4K. 4K MUST play perfectly; never downscale the pick to work around the emulator.
+- react-native-svg, expo-linear-gradient, MMKV (`kv`), @react-navigation/stack (+ `lib/navigationRef`), reanimated/gesture-handler.
+- **`@blissful/core`** consumed as source — the single home of cross-platform logic.
+
+### Build / run / test
+
+**Start the dev environment (emulator + Metro + app)** — Windows/PowerShell; `$adb` = `%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe`, `$emulator` = `%LOCALAPPDATA%\Android\Sdk\emulator\emulator.exe`, package = `com.blissful.tv.rn`:
+1. **Boot the TV emulator** (background): `& $emulator -avd Television_1080p -no-snapshot-save -gpu host`. AVDs: `Television_1080p` (use this), `Television_1080p_old`. Wait until `& $adb shell getprop sys.boot_completed` → `1` and `& $adb devices` shows `emulator-5554  device`.
+2. **Start Metro from the PROJECT ROOT** (`apps/blissful-tv-rn`) — NOT `assets/`; a wrong cwd makes Expo look for `assets/package.json` and fail. Background: `Set-Location D:\JS\Blissful\apps\blissful-tv-rn; npx expo start --port 8081`. If port 8081 is taken, `expo start` is non-interactive and silently skips the dev server — free it first: kill the PID from `Get-NetTCPConnection -LocalPort 8081 -State Listen`. Ready when `http://localhost:8081/status` returns `packager-status:running`.
+3. **Point the device at Metro + launch:** `& $adb reverse tcp:8081 tcp:8081` then `& $adb shell monkey -p com.blissful.tv.rn -c android.intent.category.LAUNCHER 1`.
+4. **Redbox "Cannot find native module …"** = the installed APK is stale vs the current native deps. Reinstall the dev build: `& $adb install -r android\app\build\outputs\apk\debug\app-debug.apk` (if signatures clash: `& $adb uninstall com.blissful.tv.rn` then `install` without `-r`). For a from-scratch native rebuild: `npx expo run:android`.
+
+- **Typecheck (run before trusting changes):** `npx tsc --noEmit -p tsconfig.json` from `apps/blissful-tv-rn`.
+- **Release APK:** `npm run build:release` → standalone universal `app-release.apk` (debug-keystore signed, cleartext-traffic patched) — runs on emulator + real TV. Tee the build log, don't rely on bg output.
+- **Hot reload on the real TV:** debug APK + `adb reverse tcp:8081 tcp:8081` (Metro Fast Refresh on the TV). Real TV = Philips 65PUS7354 @ `192.168.1.2:5555` (adb-wifi, Android 12, armeabi-v7a); scrcpy to view.
+- **Verify TV interactions by DRIVING the app:** `adb shell input keyevent <code>` then `screencap`/pull and read the screenshot after each step. Never claim a screen works from one static shot — focus/nav/avatar bugs are invisible otherwise. adb is at `%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe`.
+
+### D-pad / focus model (the core of TV UX)
+- **`useTvFocusable({atRowStart, autoFocus, onPress, ...})`** → `{ focused, focusProps }`: spread `focusProps` on a `Pressable`, style off `focused`. Geometry is the native engine's job — add NOTHING for interior moves. The ONLY `nextFocus` override is at a row's LEFT EDGE (`atRowStart`: trap Left on self). Fix focus bugs at the shared-control layer, not per-control.
+- **Metrics:** `useMetrics()` → `m.s(px)` scales 1920-design px to dp (TV canvas ~960×540 dp @ density 2×); plus `m.safeX/safeY/width/height/railCollapsed/railExpanded/navItemH/cardTitle`.
+- **Nav rail focus trap** (`NavRail.tsx` + `lib/railStore` `setRailOpen`/`useRailOpen` + `lib/focusBus`): collapsed rail is non-focusable; opens on D-pad LEFT at a content row's left edge; while open, ALL content focusables go `isTVSelectable={!railOpen}` (flip ONE ScrollView, which cascades — per-card flips stalled tvos); closes ONLY on Right. Search lives in the rail; the friends list/accordion lives in the rail's expanded panel.
+- **Modals/overlays:** wrap in `TVFocusGuideView` trapFocus\* (a FocusTrap) so D-pad can't escape behind them.
+- **Accent:** `colors.accent` is a SINGLE hex (default lavender `#95a2ff`) used for focus rings (`borderColor: focused ? colors.accent`), fills, progress, active icon/text. **Keep it solid** — a gradient-accent experiment was built and fully REVERTED; do not reintroduce it.
+
+### Screens & key components
+- `App.tsx` — providers (Theme > Auth > Toast > UserSocket) + stack navigator + `navigationRef` + global `PartyInviteListener` + `usePresenceHeartbeat` + BootSplash.
+- Screens: `HomeScreen` (immersive redesign — focus-following full-bleed backdrop + landscape 16:9 tiles w/ TMDB backdrops, Spectral font, no topbar, Search in the rail), `DetailScreen`, `PlayerScreen` (expo-video; player UX rules in `project_tv_rn_player_ux_rules`), `DiscoverScreen`, `LibraryScreen`, `SearchScreen`, `SettingsScreen`, `AddonsScreen`, `LoginScreen`, `ProfileScreen`.
+- Components: `NavRail` (nav + friends accordion), `TopBar`, `PosterCard`/`LibraryPosterCard`, `home/{LandscapeTile,LandscapeRail,HomeHero,HomeTopRight}`, `Rating` (reusable IMDb pill — size sm/md/lg + `badge`), settings controls (`TvSelect`/`TvTextField`/`TvToggle`/`ColorSwatchRow`/`AppearancePreview`), `StreamPicker`, `ProfileMenu`, `ResumeModal`, `player/{PlayerControls,PauseOverlay,EpisodesDrawer,SubtitleMenu,WatchPartyDrawer,WatchPartyToast}`.
+
+### Watch Party / Trakt / presence
+Ported from the **Windows app** (NOT OpenCode — it lacks `useWatchPartyMpv`). Full protocol + file map + status in the memory note `project_tv_rn_watch_party`. Summary: 2 WebSockets (`/ws/room` sync, `/ws/user` invites) + REST to `blissful.budinoff.com/storage`; democratised control; `useWatchPartyRoom` bridges expo-video; drift held by playback-rate micro-correction; join is non-destructive (promoted host adopts `lastTick`, members ignore fresh joiners). Friends: accept/decline + inline actions accordion (View profile / Request|Join party / Nickname / Remove). Trakt is INERT until creds are filled in `lib/traktConfig.ts`.
+
+### Conventions
+- **1:1 with the windows/web app** — read the reference component + `index.css`, replicate exact visuals: Fraunces (headings) / Spectral (immersive-home display) / IBM Plex Sans (body); glass surfaces; lavender accent `#95a2ff`; brand teal `#19f7d2`; IMDb-badged cards.
+- TypeScript strict, 2-space indent. No emojis in code/commits. Commit messages end with the `Co-Authored-By` line.
+- Lean agent fan-out: verify findings in batch (1–2 agents); keep multi-agent workflows in the low tens of agents.
 
 ## Build & Dev Commands
 
