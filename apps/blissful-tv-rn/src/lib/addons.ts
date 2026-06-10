@@ -12,6 +12,8 @@ import {
   getStorageBaseUrl,
   normalizeAddonBaseUrl,
 } from '@blissful/core';
+import { kv } from './storage';
+import type { HomeRowPrefs } from './homeRows';
 
 // Mirror of lib/streamPicker.ts + useAddonsManager.ts default list (guest mode).
 const CINEMETA_URL = 'https://v3-cinemeta.strem.io/manifest.json';
@@ -62,6 +64,68 @@ async function fetchRawState(token: string): Promise<Record<string, unknown>> {
 async function saveAddonUrls(token: string, urls: string[]): Promise<void> {
   const current = await fetchRawState(token);
   const next = { ...current, addons: urls };
+  const res = await fetch(`${getStorageBaseUrl()}/state`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify({ state: next }),
+  });
+  if (!res.ok) throw new Error(`Storage /state save failed (${res.status})`);
+}
+
+// ── Home-row prefs (customize home) ──────────────────────────────────────────
+// The { order, hidden } row lists live at /state.homeRowPrefs (same field the
+// Windows app writes). We mirror them to the local kv store so they apply
+// instantly on boot and so guests (no token) can still customize locally.
+
+const HOME_PREFS_KEY = 'blissHomeRowPrefs';
+const EMPTY_PREFS: HomeRowPrefs = { order: [], hidden: [] };
+
+function coercePrefs(value: unknown): HomeRowPrefs | null {
+  if (!value || typeof value !== 'object') return null;
+  const { order, hidden } = value as { order?: unknown; hidden?: unknown };
+  if (!Array.isArray(order) || !Array.isArray(hidden)) return null;
+  return {
+    order: order.filter((x): x is string => typeof x === 'string'),
+    hidden: hidden.filter((x): x is string => typeof x === 'string'),
+  };
+}
+
+/** The locally-cached prefs (synchronous) — used to seed the home screen before
+ *  the authoritative /state copy lands. Defaults to empty (all rows, no hide). */
+export function readCachedHomeRowPrefs(): HomeRowPrefs {
+  try {
+    const raw = kv.get(HOME_PREFS_KEY);
+    if (raw) return coercePrefs(JSON.parse(raw)) ?? EMPTY_PREFS;
+  } catch {
+    /* corrupt cache — fall through */
+  }
+  return EMPTY_PREFS;
+}
+
+/** Authoritative prefs: /state.homeRowPrefs for signed-in users (mirrored to kv),
+ *  the local cache for guests. Never throws. */
+export async function fetchHomeRowPrefs(token: string | null): Promise<HomeRowPrefs> {
+  if (!token) return readCachedHomeRowPrefs();
+  try {
+    const raw = await fetchRawState(token);
+    const prefs = coercePrefs(raw.homeRowPrefs);
+    if (prefs) {
+      kv.set(HOME_PREFS_KEY, JSON.stringify(prefs));
+      return prefs;
+    }
+  } catch {
+    /* offline / not signed in — fall back to cache */
+  }
+  return readCachedHomeRowPrefs();
+}
+
+/** Persist prefs: always write the local cache (so the change applies immediately
+ *  and guests keep it); read-merge-write /state.homeRowPrefs when signed in. */
+export async function saveHomeRowPrefs(token: string | null, prefs: HomeRowPrefs): Promise<void> {
+  kv.set(HOME_PREFS_KEY, JSON.stringify(prefs));
+  if (!token) return;
+  const current = await fetchRawState(token);
+  const next = { ...current, homeRowPrefs: prefs };
   const res = await fetch(`${getStorageBaseUrl()}/state`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
@@ -163,6 +227,69 @@ export async function uninstallAddon(token: string | null, transportUrl: string,
   if (!token) return;
   const next = existing.filter((u) => u !== transportUrl);
   await saveAddonUrls(token, next);
+}
+
+// ── Discover: addon catalogs + their genre filter options ───────────────────
+// A catalog the addon exposes, with the genre options it declares in the Stremio
+// manifest (`catalog.extra` where name === 'genre'). core's lean StremioAddonManifest
+// drops `extra.options`, so we read the raw /manifest.json here.
+export type AddonCatalogInfo = { id: string; type: string; name: string; genres: string[] };
+
+/** Fetch the addon's catalogs (id/type/name) + each catalog's manifest genre
+ *  options — used by Discover to show the addon's catalogs + genre filters
+ *  (Anime Kitsu's "Most Popular" etc. declare 61 genres; "Trending" declares none). */
+export async function fetchAddonCatalogs(transportUrl: string, signal?: AbortSignal): Promise<AddonCatalogInfo[]> {
+  try {
+    const res = await fetch(`${toBaseUrl(transportUrl)}/manifest.json`, { headers: { Accept: 'application/json' }, signal });
+    if (!res.ok) return [];
+    const man = (await res.json()) as {
+      catalogs?: Array<{ id?: string; type?: string; name?: string; extra?: Array<{ name?: string; options?: unknown }> }>;
+    };
+    return (man.catalogs ?? [])
+      .filter((c): c is { id: string; type: string; name?: string; extra?: Array<{ name?: string; options?: unknown }> } => Boolean(c.id && c.type))
+      .map((c) => {
+        const opts = c.extra?.find((e) => e.name === 'genre')?.options;
+        return {
+          id: c.id,
+          type: c.type,
+          name: c.name ?? c.id,
+          genres: Array.isArray(opts) ? opts.filter((g): g is string => typeof g === 'string') : [],
+        };
+      });
+  } catch {
+    return [];
+  }
+}
+
+export type AddonCatalogEntry = AddonCatalogInfo & { transportUrl: string };
+
+let allCatalogsCache: { key: string; cats: AddonCatalogEntry[]; at: number } | null = null;
+const ALL_CATALOGS_TTL_MS = 5 * 60_000;
+
+/** Every installed addon's catalogs, each tagged with its transportUrl — for the
+ *  Discover Type/Catalog selectors that browse all addons (Cinemeta movie/series,
+ *  Anime Kitsu's anime catalogs, channels, …), like the Windows app. 5-min cache. */
+export async function loadAllAddonCatalogs(token: string | null): Promise<AddonCatalogEntry[]> {
+  const key = token ?? 'guest';
+  if (allCatalogsCache && allCatalogsCache.key === key && Date.now() - allCatalogsCache.at < ALL_CATALOGS_TTL_MS) {
+    return allCatalogsCache.cats;
+  }
+  let urls: string[] = [];
+  try {
+    urls = await loadInstalledAddonUrls(token);
+  } catch {
+    urls = [];
+  }
+  const lists = await Promise.all(
+    urls.map((u) =>
+      fetchAddonCatalogs(u)
+        .then((cs) => cs.map((c) => ({ ...c, transportUrl: u })))
+        .catch(() => [] as AddonCatalogEntry[]),
+    ),
+  );
+  const flat = lists.flat();
+  if (flat.length) allCatalogsCache = { key, cats: flat, at: Date.now() };
+  return flat;
 }
 
 /** Display name: manifest name → Torrentio special-case → URL. Same logic as

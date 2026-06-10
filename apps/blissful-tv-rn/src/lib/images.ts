@@ -14,7 +14,7 @@ function imgBase(): string {
  *  already-edge-cached bytes (both layers the old app had). */
 export function proxiedImage(src: string | null | undefined): string | undefined {
   if (!src) return undefined;
-  if (src.startsWith('data:') || src.includes('/img?url=')) return src;
+  if (src.startsWith('data:') || src.includes('/img?url=') || src.includes('images.weserv.nl')) return src;
   let abs = src;
   if (abs.startsWith('//')) abs = `https:${abs}`;
   if (!/^https?:\/\//i.test(abs)) return src; // local / bundled asset
@@ -22,6 +22,15 @@ export function proxiedImage(src: string | null | undefined): string | undefined
     const host = new URL(abs).hostname;
     if (/(^|\.)metahub\.space$/i.test(host) || host === 'image.tmdb.org') {
       return `${imgBase()}/img?url=${encodeURIComponent(abs)}`;
+    }
+    // The Kitsu addon's meta.background is ALWAYS an assets.fanart.tv url, and
+    // fanart.tv blocks / rate-limits direct native fetches (so the backdrop came
+    // up black for most Kitsu titles). The backend /img proxy only allowlists
+    // metahub/tmdb, so route fanart.tv through the public weserv.nl image cache
+    // (server-side fetch + Cloudflare CDN) — this loads the REAL landscape
+    // backdrops for every Kitsu title, matching the Windows app's detail page.
+    if (/(^|\.)fanart\.tv$/i.test(host)) {
+      return `https://images.weserv.nl/?url=${encodeURIComponent(abs)}`;
     }
   } catch {
     /* not parseable — leave as-is */

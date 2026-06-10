@@ -16,7 +16,7 @@ import { Img } from '../components/Img';
 import { NavRail } from '../components/NavRail';
 import { TopBar } from '../components/TopBar';
 import { markContentFocus } from '../lib/focusBus';
-import { useRailOpen } from '../lib/railStore';
+import { useContentInert } from '../lib/contentFocus';
 import { useSelfTag } from '../lib/useSelfTag';
 import { useTvFocusable } from '../lib/useTvFocusable';
 import { colors, font, radius } from '../theme/colors';
@@ -234,7 +234,7 @@ function AddonCard({
 
 export function AddonsScreen() {
   const m = useMetrics();
-  const railOpen = useRailOpen();
+  const railOpen = useContentInert();
   const { token } = useAuth();
   const toast = useToast();
 

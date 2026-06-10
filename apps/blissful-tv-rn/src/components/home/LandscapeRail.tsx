@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { useTvFocusable } from '../../lib/useTvFocusable';
 import { colors, font, radius } from '../../theme/colors';
 import type { useMetrics } from '../../theme/metrics';
@@ -14,9 +14,9 @@ function SeeAll({ m, onPress }: { m: M; onPress: () => void }) {
   return (
     <Pressable
       {...focusProps}
-      style={{ height: m.s(40), paddingHorizontal: m.s(18), borderRadius: radius.pill, justifyContent: 'center', borderWidth: 1.5, borderColor: focused ? 'transparent' : 'rgba(255,255,255,0.14)', backgroundColor: focused ? colors.accent : 'transparent' }}
+      style={{ height: m.s(40), paddingHorizontal: m.s(20), borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: focused ? colors.accent : 'rgba(255,255,255,0.14)', backgroundColor: focused ? colors.accent : 'transparent' }}
     >
-      <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(19), color: focused ? colors.accentInk : 'rgba(255,255,255,0.82)' }}>See all  ›</Text>
+      <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(19), includeFontPadding: false, textAlignVertical: 'center', color: focused ? colors.accentInk : 'rgba(255,255,255,0.82)' }}>See all</Text>
     </Pressable>
   );
 }
@@ -87,8 +87,22 @@ export const LandscapeRail = memo(function LandscapeRail({
             />
           )}
         />
-        {/* Right-edge fade — shadows the cut-off last tile into the background. */}
-        <LinearGradient colors={['transparent', colors.bg]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[styles.rightFade, { width: m.s(110) }]} pointerEvents="none" />
+        {/* Right-edge fade — a RADIAL vignette centred on the right-middle so the
+            shadow blends out on the LEFT and feathers at the TOP and BOTTOM (a flat
+            horizontal gradient left hard top/bottom edges). Semi-transparent so it's
+            a gentle vignette over the full-bleed backdrop, not a hard dark band. */}
+        <View style={[styles.rightFade, { width: m.s(120) }]} pointerEvents="none">
+          <Svg width="100%" height="100%">
+            <Defs>
+              <RadialGradient id="railFade" cx="100%" cy="50%" rx="100%" ry="58%">
+                <Stop offset="0" stopColor="#080a0e" stopOpacity="0.62" />
+                <Stop offset="0.6" stopColor="#080a0e" stopOpacity="0.32" />
+                <Stop offset="1" stopColor="#080a0e" stopOpacity="0" />
+              </RadialGradient>
+            </Defs>
+            <Rect x="0" y="0" width="100%" height="100%" fill="url(#railFade)" />
+          </Svg>
+        </View>
       </View>
     </View>
   );

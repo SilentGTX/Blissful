@@ -1,11 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
 import { useEffect, useRef, useState } from 'react';
 import { findNodeHandle, Image, Pressable, Text, View } from 'react-native';
 import { colors, font, radius } from '../../theme/colors';
 import type { useMetrics } from '../../theme/metrics';
 import { markContentFocus } from '../../lib/focusBus';
-import { useRailOpen } from '../../lib/railStore';
+import { useContentInert } from '../../lib/contentFocus';
+import { openLogin } from '../../lib/loginStore';
 import { useAuth } from '../../context/AuthContext';
 import { resolveAvatar } from '../../lib/avatars';
 
@@ -22,10 +22,8 @@ function timeNow(): string {
 // account menu). isTVSelectable is gated on the rail so an open sidebar traps
 // focus (same contract as the old TopBar avatar).
 export function HomeTopRight({ m, onOpenProfile, onAvatarTag }: { m: M; onOpenProfile: () => void; onAvatarTag?: (tag: number | null) => void }) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const navigation = useNavigation<any>();
   const { user } = useAuth();
-  const railOpen = useRailOpen();
+  const railOpen = useContentInert();
   const [now, setNow] = useState(timeNow());
   const [focused, setFocused] = useState(false);
   // Publish the avatar's native node tag so the InfoPanel CTAs can route D-pad Up
@@ -52,7 +50,7 @@ export function HomeTopRight({ m, onOpenProfile, onAvatarTag }: { m: M; onOpenPr
         isTVSelectable={!railOpen}
         onFocus={() => { setFocused(true); markContentFocus(false); }}
         onBlur={() => setFocused(false)}
-        onPress={() => (user ? onOpenProfile() : navigation.navigate('Login'))}
+        onPress={() => (user ? onOpenProfile() : openLogin())}
         style={{ width: sz, height: sz }}
       >
         {av && av.kind === 'image' ? (

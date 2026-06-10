@@ -138,7 +138,7 @@ export const Hero = memo(function Hero({ item, upTag }: { item: StremioMetaPrevi
           {metaLine ? (
             <Text style={{ fontFamily: font.bodyMed, fontSize: m.s(26), color: 'rgba(255,255,255,0.8)' }}>{metaLine}</Text>
           ) : null}
-          <Rating imdbId={imdbId} initialRating={rating} numberSize={m.s(26)} iconSize={m.s(28)} gap={m.s(7)} />
+          <Rating imdbId={imdbId} initialRating={rating} size="lg" />
         </View>
         {desc ? (
           <Text

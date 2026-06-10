@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useEffect, useRef, type RefObject } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { normalizeStremioImage } from '@blissful/core';
 import { useTvFocusable } from '../lib/useTvFocusable';
@@ -8,41 +8,50 @@ import { POSTER_RATIO, type CardItem } from './PosterCard';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 
-// A PosterCard clone for the Library grid that adds HOLD-OK removal
-// (onLongPress -> onLongSelect). The shared PosterCard has no long-press, and
-// editing it is out of scope here, so this is a dedicated wrapper. Visuals are
-// identical: lavender focus ring + 1.06 scale, IMDb pill, bottom progress bar,
-// title that turns lavender on focus.
-//
-// Mirrors the web TV LibraryPage: on TV, removal is hold-OK on the card
-// (onItemLongPress) rather than the mouse-only X overlay.
+// A PosterCard clone for the Library grid that adds HOLD-OK quick actions: a
+// `longSelect` on the focused card opens an on-poster action overlay (Remove
+// from library), mirroring the Continue Watching tile (HomeActionOverlay). The
+// card reports focus up + measures its frame rect when it's the active target
+// so LibraryScreen can lay the root-level overlay exactly on the poster. The
+// shared PosterCard has none of this, so this stays a dedicated wrapper.
+// Visuals are identical: lavender focus ring + 1.06 scale, IMDb pill, bottom
+// progress bar, title that turns lavender on focus.
 
 const IMDB_RE = /^tt\d{5,}$/;
 
 type M = ReturnType<typeof useMetrics>;
 
+export type CardRect = { x: number; y: number; w: number; h: number };
+
 const PosterVisual = memo(function PosterVisual({
   item,
   width,
   focused,
+  active,
   progress,
   m,
+  frameRef,
 }: {
   item: CardItem;
   width: number;
   focused: boolean;
+  /** This card's action overlay is open — drop the ring + scale (the overlay
+      draws its own accent border) so the measured frame matches the overlay. */
+  active?: boolean;
   progress?: number;
   m: M;
+  frameRef?: RefObject<View | null>;
 }) {
   const poster = normalizeStremioImage(item.poster);
   const h = width * POSTER_RATIO;
   return (
     <>
       <View
+        ref={frameRef}
         style={[
           styles.posterWrap,
           { width, height: h, borderRadius: m.s(16), borderWidth: 1 },
-          focused && { borderColor: colors.accent, transform: [{ scale: 1.06 }] },
+          focused && !active && { borderColor: colors.accent, transform: [{ scale: 1.06 }] },
         ]}
       >
         {poster ? (
@@ -57,10 +66,9 @@ const PosterVisual = memo(function PosterVisual({
         <Rating
           imdbId={IMDB_RE.test(item.id) ? item.id : null}
           initialRating={item.imdbRating}
-          numberSize={m.s(22)}
-          iconSize={m.s(22)}
-          gap={m.s(5)}
-          containerStyle={{ position: 'absolute', left: m.s(12), top: m.s(12), borderRadius: radius.pill, paddingLeft: m.s(11), paddingRight: m.s(8), paddingVertical: m.s(4), backgroundColor: 'rgba(0,0,0,0.45)' }}
+          size="md"
+          badge
+          containerStyle={{ position: 'absolute', left: m.s(12), top: m.s(12) }}
         />
         {progress != null && progress > 0 ? (
           <View style={{ position: 'absolute', bottom: m.s(12), left: m.s(12), right: m.s(12), height: m.s(6), borderRadius: radius.pill, overflow: 'hidden', backgroundColor: 'rgba(0,0,0,0.35)' }}>
@@ -84,28 +92,49 @@ export function LibraryPosterCard({
   autoFocus,
   atRowStart,
   progress,
+  active,
   onSelect,
-  onLongSelect,
+  onFocusItem,
+  onBlurItem,
+  onActiveRect,
 }: {
   item: CardItem;
   width: number;
   autoFocus?: boolean;
   atRowStart?: boolean;
   progress?: number;
+  /** This card's hold-OK action overlay is open — report the frame rect. */
+  active?: boolean;
   onSelect: (item: CardItem) => void;
-  onLongSelect?: (item: CardItem) => void;
+  onFocusItem?: (item: CardItem) => void;
+  onBlurItem?: () => void;
+  onActiveRect?: (r: CardRect) => void;
 }) {
   const m = useMetrics();
+  const frameRef = useRef<View | null>(null);
   const { focused, focusProps } = useTvFocusable({
     atRowStart,
     autoFocus,
     onPress: () => onSelect(item),
-    onLongPress: onLongSelect ? () => onLongSelect(item) : undefined,
+    onFocus: onFocusItem ? () => onFocusItem(item) : undefined,
+    onBlur: onBlurItem,
   });
+
+  // When this card becomes the action target, measure its frame rect (next tick,
+  // after the un-scale settles) so the root overlay lands exactly on the poster.
+  // Gated on `focused` too — only the on-screen held card reports. The overlay
+  // can't render until the rect is set, so the card keeps focus through measure.
+  useEffect(() => {
+    if (!active || !focused) return;
+    const id = setTimeout(() => {
+      frameRef.current?.measureInWindow((x, y, ww, hh) => onActiveRect?.({ x, y, w: ww, h: hh }));
+    }, 30);
+    return () => clearTimeout(id);
+  }, [active, focused, onActiveRect]);
 
   return (
     <Pressable {...focusProps} style={{ width }}>
-      <PosterVisual item={item} width={width} focused={focused} progress={progress} m={m} />
+      <PosterVisual item={item} width={width} focused={focused} active={active} progress={progress} m={m} frameRef={frameRef} />
     </Pressable>
   );
 }

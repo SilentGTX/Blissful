@@ -4,6 +4,7 @@ import { Text, View } from 'react-native';
 import { font } from '../../theme/colors';
 import { useMetrics } from '../../theme/metrics';
 import { volumeFillColor } from '../../lib/colorUtils';
+import { avatarBg, initials, type WatchPartyParticipant } from '../../lib/watchParty';
 
 type M = ReturnType<typeof useMetrics>;
 const ACCENT = '#95a2ff';
@@ -11,7 +12,9 @@ const ACCENT = '#95a2ff';
 // Non-focusable transport button — focus is driven by the player's virtual index
 // (the old app's model), NOT native tvos focus. `focused` lights the lavender ring
 // + bg tint + scale(1.12) (matches .bliss-tv-ctrl-focused). 40x40 hit area.
-export function PlayerIconBtn({ m, focused, children }: { m: M; focused: boolean; children: (color: string) => React.ReactNode }) {
+// `dimmed` = present-but-disabled (the desktop's unaired next-episode look) — it
+// stays in the focus walk so the virtual index never shifts, just renders at 40%.
+export function PlayerIconBtn({ m, focused, dimmed, children }: { m: M; focused: boolean; dimmed?: boolean; children: (color: string) => React.ReactNode }) {
   return (
     <View
       style={{
@@ -23,6 +26,7 @@ export function PlayerIconBtn({ m, focused, children }: { m: M; focused: boolean
         borderWidth: focused ? m.s(2) : 0,
         borderColor: focused ? ACCENT : 'transparent',
         backgroundColor: focused ? 'rgba(255,255,255,0.16)' : 'transparent',
+        opacity: dimmed ? 0.4 : 1,
         // Always an array — toggling transform to `undefined` on the New Arch
         // throws "Cannot read property 'forEach' of null".
         transform: [{ scale: focused ? 1.12 : 1 }],
@@ -34,7 +38,9 @@ export function PlayerIconBtn({ m, focused, children }: { m: M; focused: boolean
 }
 
 export function PlayIcon({ m, paused, color }: { m: M; paused: boolean; color: string }) {
-  return <Ionicons name={paused ? 'play' : 'pause'} size={m.s(24)} color={color} />;
+  // The play triangle's optical centre sits left of its glyph box — nudge it
+  // right so it reads centred inside the circular button (pause is symmetric).
+  return <Ionicons name={paused ? 'play' : 'pause'} size={m.s(24)} color={color} style={paused ? { marginLeft: m.s(3) } : undefined} />;
 }
 export function MuteIcon({ m, level, muted, color }: { m: M; level: number; muted: boolean; color: string }) {
   const name = muted || level <= 0 ? 'volume-mute' : level < 0.5 ? 'volume-low' : level < 1 ? 'volume-medium' : 'volume-high';
@@ -56,6 +62,40 @@ export function SubsIcon({ m, color }: { m: M; color: string }) {
 // OpenCode's BlissfulPlayer bottom-controls "Releases" button.
 export function ReleasesIcon({ m, color }: { m: M; color: string }) {
   return <Ionicons name="cloud-outline" size={m.s(24)} color={color} />;
+}
+// Next episode — skip-forward (the desktop BottomControls next-episode button).
+export function NextEpisodeIcon({ m, color }: { m: M; color: string }) {
+  return <Ionicons name="play-skip-forward" size={m.s(22)} color={color} />;
+}
+// Episodes drawer — list icon (the desktop's "episodes" StremioIcon).
+export function EpisodesIcon({ m, color }: { m: M; color: string }) {
+  return <Ionicons name="list" size={m.s(24)} color={color} />;
+}
+
+// Labelled transport pill (icon + text) — the desktop's "Episodes" button
+// (`rounded-full px-3` with the icon and a text label). Same virtual-index focus
+// treatment as PlayerIconBtn.
+export function PlayerLabelBtn({ m, focused, label, children }: { m: M; focused: boolean; label: string; children: (color: string) => React.ReactNode }) {
+  const color = focused ? ACCENT : 'rgba(255,255,255,0.85)';
+  return (
+    <View
+      style={{
+        height: m.s(40),
+        borderRadius: 999,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: m.s(8),
+        paddingHorizontal: m.s(14),
+        borderWidth: focused ? m.s(2) : 0,
+        borderColor: focused ? ACCENT : 'transparent',
+        backgroundColor: focused ? 'rgba(255,255,255,0.16)' : 'transparent',
+        transform: [{ scale: focused ? 1.08 : 1 }],
+      }}
+    >
+      {children(color)}
+      <Text style={{ fontFamily: font.bodyMed, fontSize: m.s(15), color }}>{label}</Text>
+    </View>
+  );
 }
 // Equalizer bars (audio tracks) — pure Views.
 export function AudioIcon({ m, color }: { m: M; color: string }) {
@@ -108,11 +148,37 @@ export function SourceBadges({ m, badges }: { m: M; badges: string[] }) {
   );
 }
 
-// Top-right "Watch Party" pill (focus driven by virtual index).
-export function WatchPartyButton({ m, focused }: { m: M; focused: boolean }) {
+// Top-right "Watch Party" pill (focus driven by virtual index). Two states:
+// no room -> "Watch Party" label; in a room -> connection dot + avatar stack +
+// room code (mirrors the desktop WatchPartyButton).
+export function WatchPartyButton({ m, focused, roomCode, connected, participants }: { m: M; focused: boolean; roomCode?: string | null; connected?: boolean; participants?: WatchPartyParticipant[] }) {
+  const list = participants ?? [];
+  const visible = list.slice(0, 3);
+  const overflow = list.length - visible.length;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(8), borderRadius: 999, borderWidth: 1, borderColor: focused ? ACCENT : 'rgba(255,255,255,0.1)', backgroundColor: focused ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.4)', paddingHorizontal: m.s(14), paddingVertical: m.s(9) }}>
-      <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(16), color: focused ? ACCENT : '#fff' }}>Watch Party</Text>
+      {roomCode ? (
+        <>
+          <View style={{ width: m.s(9), height: m.s(9), borderRadius: 999, backgroundColor: connected ? ACCENT : '#f59e0b' }} />
+          {visible.length > 0 ? (
+            <View style={{ flexDirection: 'row' }}>
+              {visible.map((p, i) => (
+                <View key={p.userId} style={{ width: m.s(26), height: m.s(26), borderRadius: 999, alignItems: 'center', justifyContent: 'center', backgroundColor: avatarBg(p.userId), borderWidth: m.s(1.5), borderColor: 'rgba(0,0,0,0.5)', marginLeft: i === 0 ? 0 : -m.s(8) }}>
+                  <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(11), color: '#fff' }}>{initials(p.displayName)}</Text>
+                </View>
+              ))}
+              {overflow > 0 ? (
+                <View style={{ width: m.s(26), height: m.s(26), borderRadius: 999, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.18)', borderWidth: m.s(1.5), borderColor: 'rgba(0,0,0,0.5)', marginLeft: -m.s(8) }}>
+                  <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(11), color: '#fff' }}>+{overflow}</Text>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+          <Text style={{ fontFamily: font.body, fontSize: m.s(14), letterSpacing: m.s(1), textTransform: 'uppercase', color: 'rgba(255,255,255,0.75)' }}>{roomCode}</Text>
+        </>
+      ) : (
+        <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(16), color: focused ? ACCENT : '#fff' }}>Watch Party</Text>
+      )}
     </View>
   );
 }

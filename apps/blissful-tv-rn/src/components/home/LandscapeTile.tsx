@@ -2,6 +2,7 @@ import { memo, useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTvFocusable } from '../../lib/useTvFocusable';
+import { useContentInert } from '../../lib/contentFocus';
 import { useAuth } from '../../context/AuthContext';
 import { fetchTmdbBackdrop } from '../../lib/tmdbArt';
 import { Img } from '../Img';
@@ -50,6 +51,10 @@ export const LandscapeTile = memo(function LandscapeTile({
     onBlur: onBlurItem,
     onPress: () => onPress(item),
   });
+  // While the nav rail is open ALL home tiles go non-focusable so D-pad focus is
+  // trapped inside the rail (it can only leave via Right, which closes the rail) —
+  // otherwise focus escapes into the tiles behind the rail when navigating Friends.
+  const railOpen = useContentInert();
   const w = m.s(432);
   const h = m.s(243);
   // EXPERIMENT: prefer the TMDB 16:9 backdrop; fall back to the metahub backdrop.
@@ -81,7 +86,7 @@ export const LandscapeTile = memo(function LandscapeTile({
     return () => clearTimeout(id);
   }, [active, focused, onActiveRect]);
   return (
-    <Pressable {...focusProps} nextFocusUp={upTag} style={{ width: w, height: h }}>
+    <Pressable {...focusProps} isTVSelectable={!railOpen} nextFocusUp={upTag} style={{ width: w, height: h }}>
       {/* OUTER wrapper = the fixed-size frame + accent ring (never scales, so the
           tile keeps its footprint and the border stays put). */}
       <View ref={frameRef} style={{ width: w, height: h, borderRadius: m.s(16), backgroundColor: colors.surface }}>

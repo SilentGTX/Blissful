@@ -71,10 +71,9 @@ const PosterVisual = memo(function PosterVisual({
         <Rating
           imdbId={IMDB_RE.test(item.id) ? item.id : null}
           initialRating={item.imdbRating}
-          numberSize={m.s(22)}
-          iconSize={m.s(22)}
-          gap={m.s(5)}
-          containerStyle={{ position: 'absolute', left: m.s(12), top: m.s(12), borderRadius: radius.pill, paddingLeft: m.s(11), paddingRight: m.s(8), paddingVertical: m.s(4), backgroundColor: 'rgba(0,0,0,0.45)' }}
+          size="md"
+          badge
+          containerStyle={{ position: 'absolute', left: m.s(12), top: m.s(12) }}
         />
         {progress != null && progress > 0 ? (
           <View style={{ position: 'absolute', bottom: m.s(12), left: m.s(12), right: m.s(12), height: m.s(6), borderRadius: radius.pill, overflow: 'hidden', backgroundColor: 'rgba(0,0,0,0.35)' }}>

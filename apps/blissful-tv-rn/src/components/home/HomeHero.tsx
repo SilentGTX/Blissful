@@ -1,9 +1,10 @@
 import { useNavigation } from '@react-navigation/native';
-import { memo } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { normalizeStremioImage, type StremioMetaDetail } from '@blissful/core';
 import { useTvFocusable } from '../../lib/useTvFocusable';
+import { useContentInert } from '../../lib/contentFocus';
 import { formatFullDate, formatReleaseInfo } from '../../lib/releaseInfo';
 import { Img } from '../Img';
 import { Rating } from '../Rating';
@@ -19,13 +20,31 @@ const IMDB_RE = /^tt\d{5,}$/;
 // Paints the derived landscape art instantly, then swaps to the hi-res meta.background
 // (byte-identical for metahub titles, so no flash).
 export const Backdrop = memo(function Backdrop({ item, meta }: { item: HomeItem | null; meta: Meta | null }) {
-  const art = normalizeStremioImage(meta?.background) ?? landscapeArt(item?.poster);
+  // Backdrop sources, best first (matches the Windows detail page): meta.background
+  // then meta.poster. Some fanart.tv backgrounds 404 / block a direct fetch, so we
+  // ADVANCE to the next source on load error instead of leaving a black frame.
+  const candidates = useMemo(
+    () => Array.from(new Set([normalizeStremioImage(meta?.background), normalizeStremioImage(meta?.poster)].filter((u): u is string => !!u))),
+    [meta?.background, meta?.poster],
+  );
+  const candKey = candidates.join('|');
+  const [idx, setIdx] = useState(0);
+  useEffect(() => setIdx(0), [candKey]);
+  const real = candidates[idx];
+  // Keep the PREVIOUS real backdrop while a newly-focused item's meta is still
+  // resolving (no low-q poster flash); the catalog poster is only the first paint.
+  const lastRealRef = useRef<string | undefined>(undefined);
+  if (real) lastRealRef.current = real;
+  const art = real ?? lastRealRef.current ?? landscapeArt(item?.poster);
   return (
     <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.bg }]}>
-      {art ? <Img key={art} uri={art} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}
+      {art ? <Img uri={art} style={StyleSheet.absoluteFill} contentFit="cover" transition={350} onError={() => setIdx((i) => i + 1)} /> : null}
       {/* subtle brand-accent (lavender) wash over the backdrop art — below the
           scrims so text legibility is unaffected. Tied to the themed accent. */}
       {art ? <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: colors.accent, opacity: 0.12 }]} /> : null}
+      {/* top scrim — pronounced shadow at the very top blending down, so the clock /
+          avatar + hero title stay legible even over a LIGHT backdrop (e.g. anime). */}
+      <LinearGradient colors={['rgba(6,8,12,0.85)', 'rgba(6,8,12,0.3)', 'transparent']} locations={[0, 0.2, 0.45]} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} pointerEvents="none" />
       {/* left scrim — legibility for the InfoPanel */}
       <LinearGradient colors={['rgba(6,8,12,0.96)', 'rgba(6,8,12,0.55)', 'transparent']} locations={[0.12, 0.42, 0.74]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} pointerEvents="none" />
       {/* bottom scrim — under the rows band */}
@@ -38,10 +57,14 @@ export const Backdrop = memo(function Backdrop({ item, meta }: { item: HomeItem 
 // GenreChip behaviour, restored after the redesign). nextUp routes D-pad Up to the
 // avatar so it stays reachable above the InfoPanel.
 function GenreChip({ label, m, nextUp, atRowStart, onPress }: { label: string; m: M; nextUp?: number; atRowStart?: boolean; onPress: () => void }) {
+  // Inert (non-focusable) while the rail or login modal is open, so the D-pad can't
+  // escape into a genre chip behind the overlay.
+  const inert = useContentInert();
   const { focused, focusProps } = useTvFocusable({ atRowStart, onPress });
   return (
     <Pressable
       {...focusProps}
+      isTVSelectable={!inert}
       nextFocusUp={nextUp}
       style={{ backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: radius.pill, paddingHorizontal: m.s(20), paddingVertical: m.s(9), borderWidth: 1.5, borderColor: focused ? colors.accent : 'rgba(255,255,255,0.16)' }}
     >
@@ -81,9 +104,7 @@ export const InfoPanel = memo(function InfoPanel({ item, meta, m, avatarUpTag }:
         <Rating
           imdbId={imdbId}
           initialRating={rating ?? undefined}
-          numberSize={m.s(24)}
-          iconSize={m.s(26)}
-          gap={m.s(7)}
+          size="lg"
           leading={bits.length ? <Text style={[dot, { marginRight: m.s(8) }]}>·</Text> : null}
         />
       </View>

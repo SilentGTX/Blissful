@@ -61,7 +61,7 @@ function AvatarCell({ src, size, selected, autoFocus, onPress }: { src: number; 
     >
       <Image source={src} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
       {selected ? (
-        <View style={{ position: 'absolute', right: size * 0.06, top: size * 0.06, width: size * 0.24, height: size * 0.24, borderRadius: 999, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' }}>
+        <View style={{ position: 'absolute', right: size * 0.06, top: size * 0.06, width: size * 0.24, height: size * 0.24, borderRadius: 999, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accent }}>
           <Text style={{ fontSize: size * 0.13, color: colors.accentInk, fontFamily: font.bodySemi }}>✓</Text>
         </View>
       ) : null}
@@ -69,7 +69,7 @@ function AvatarCell({ src, size, selected, autoFocus, onPress }: { src: number; 
   );
 }
 
-export function ProfileMenu({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+export function ProfileMenu({ visible, onClose, onCustomizeHome }: { visible: boolean; onClose: () => void; onCustomizeHome?: () => void }) {
   const m = useMetrics();
   const navigation = useNavigation<any>();
   const { user, logout, updateProfile } = useAuth();
@@ -154,7 +154,7 @@ export function ProfileMenu({ visible, onClose }: { visible: boolean; onClose: (
             </Pressable>
             <View style={{ height: 1, backgroundColor: colors.hairline, marginBottom: m.s(6) }} />
             <Row label="Settings" icon="settings-outline" m={m} onPress={() => { onClose(); navigation.navigate('Settings'); }} />
-            <Row label="Customize Home" icon="grid-outline" m={m} onPress={onClose} />
+            <Row label="Customize Home" icon="grid-outline" m={m} onPress={() => { onClose(); onCustomizeHome?.(); }} />
             <Row label="Log out" icon="log-out-outline" danger m={m} onPress={() => { logout(); onClose(); }} />
         </FocusTrap>
       ) : (

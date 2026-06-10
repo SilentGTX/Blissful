@@ -3,7 +3,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, StyleSheet, Text, useTVEventHandler, View } from 'react-native';
 import { font } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
@@ -11,15 +11,22 @@ import { useToast } from '../components/Toast';
 import { BufferingVeil } from '../components/player/BufferingVeil';
 import { PauseOverlay } from '../components/player/PauseOverlay';
 import { SettingsDrawer, type DrawerAudioTrack, type DrawerRelease, type DrawerSubtitleTrack } from '../components/player/SettingsDrawer';
-import { AudioIcon, BackPill, PlayIcon, PlayerIconBtn, ReleasesIcon, SourceBadges, SubsIcon, WatchPartyButton } from '../components/player/PlayerControls';
+import { EpisodesDrawer, isUnaired, type DrawerEpisode } from '../components/player/EpisodesDrawer';
+import { WatchPartyDrawer } from '../components/player/WatchPartyDrawer';
+import { WatchPartyToast } from '../components/player/WatchPartyToast';
+import { useWatchPartyRoom } from '../lib/useWatchPartyRoom';
+import { createWatchPartyRoom, getOrCreateGuestUserId, getStashedWatchPartyPassword, getStoredGuestName, getWatchPartyRoom, stashWatchPartyPassword, clearWatchPartyPassword, type WatchPartyRoomInfo } from '../lib/watchParty';
+import { AudioIcon, BackPill, EpisodesIcon, NextEpisodeIcon, PlayIcon, PlayerIconBtn, PlayerLabelBtn, ReleasesIcon, SourceBadges, SubsIcon, WatchPartyButton } from '../components/player/PlayerControls';
 import { detectSource, is4kTitle, isHdrTitle, normColor, toRgba } from '../lib/colorUtils';
 import { readTvSettings, writeTvSettings } from '../lib/tvSettings';
 import { subtitleLangLabel, loadSubtitles, type SubtitleTrack } from '../lib/subtitles';
 import { activeCueText, fetchSubtitleCues, type SubtitleCue } from '../lib/subtitleCues';
 import { SubtitleOverlay } from '../components/player/SubtitleOverlay';
+import { formatFullDate } from '../lib/releaseInfo';
+import { setCurrentActivity, clearCurrentActivity } from '../lib/presence';
 import { loadStreams, type PickerStream } from '../lib/streamPicker';
 import { useAuth } from '../context/AuthContext';
-import { updateBlissfulLibraryProgress } from '@blissful/core';
+import { fetchMeta, getStorageBaseUrl, normalizeStremioImage, updateBlissfulLibraryProgress } from '@blissful/core';
 import type { RootStackParamList } from '../navigation/types';
 
 type PlayerRoute = RouteProp<RootStackParamList, 'Player'>;
@@ -32,10 +39,14 @@ const DMCA_MAX_SECONDS = 45;
 // Two playback control rows (TV has no volume/mute/fullscreen — the remote owns
 // volume and the app is always fullscreen). Walked by virtual index. `releases`
 // is the cloud button that opens the drawer's Releases tab (switch torrent),
-// mirroring OpenCode's BlissfulPlayer bottom controls.
+// mirroring OpenCode's BlissfulPlayer bottom controls. Series additionally get
+// `next` (instant next-episode jump) + `episodes` (the episode-selector drawer),
+// matching the desktop BottomControls order.
 type Row = 'none' | 'bottom' | 'top';
-type Drawer = 'none' | 'audio' | 'subtitles' | 'releases';
-const BOTTOM = ['play', 'subtitles', 'audio', 'releases'] as const;
+type Drawer = 'none' | 'audio' | 'subtitles' | 'releases' | 'episodes' | 'watchparty';
+const BOTTOM_SERIES = ['play', 'next', 'episodes', 'subtitles', 'audio', 'releases'] as const;
+const BOTTOM_MOVIE = ['play', 'subtitles', 'audio', 'releases'] as const;
+type BottomId = (typeof BOTTOM_SERIES)[number];
 const TOP = ['back', 'watchparty'] as const;
 
 type Track = { id: string; label?: string | null; language?: string | null };
@@ -61,7 +72,7 @@ export function PlayerScreen() {
   const navigation = useNavigation<PlayerNav>();
   const m = useMetrics();
   const toast = useToast();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
 
   // The ranked playable list + start index (auto-advances past a debrid DMCA
   // placeholder). The Releases tab swaps the whole list to a different release's
@@ -78,8 +89,98 @@ export function PlayerScreen() {
   const skippedRef = useRef(false);
   const autoSubRef = useRef(false); // whether we've auto-loaded the preferred subtitle for this file
 
+  // ── Series episodes (next-episode button + the Episodes drawer) ────────────
+  const isSeries = params.streamTarget?.type === 'series';
+  const bottom: readonly BottomId[] = isSeries ? BOTTOM_SERIES : BOTTOM_MOVIE;
+  // The show's full episode list (sorted by season/episode, specials last) from
+  // the show meta — fetched once (core caches metas ~5 min, so this is usually
+  // instant after the Detail page).
+  const [seriesVideos, setSeriesVideos] = useState<DrawerEpisode[]>([]);
+  useEffect(() => {
+    if (!isSeries || !params.detailId) return;
+    let cancelled = false;
+    fetchMeta({ type: 'series', id: params.detailId })
+      .then((r) => {
+        if (cancelled) return;
+        const vids: DrawerEpisode[] = (r.meta.videos ?? []).map((v) => {
+          const extra = v as { overview?: string; description?: string };
+          return {
+            id: v.id,
+            title: v.title ?? v.name ?? null,
+            season: typeof v.season === 'number' ? v.season : null,
+            episode: typeof v.episode === 'number' ? v.episode : null,
+            thumbnail: normalizeStremioImage(v.thumbnail) ?? null,
+            released: v.released ?? null,
+            description: extra.overview ?? extra.description ?? null,
+          };
+        });
+        const ord = (s: number | null) => (s && s > 0 ? s : Number.MAX_SAFE_INTEGER); // specials (S0) last
+        vids.sort((a, b) => ord(a.season) - ord(b.season) || (a.episode ?? 0) - (b.episode ?? 0));
+        setSeriesVideos(vids);
+      })
+      .catch(() => { /* no meta — the next/episodes buttons stay dimmed/empty */ });
+    return () => { cancelled = true; };
+  }, [isSeries, params.detailId]);
+  // The episode after the playing one in broadcast order (desktop nextEpisodeInfo).
+  const nextEp = useMemo(() => {
+    const id = params.streamTarget?.id;
+    if (!id || seriesVideos.length === 0) return null;
+    const i = seriesVideos.findIndex((v) => v.id === id);
+    return i >= 0 ? seriesVideos[i + 1] ?? null : null;
+  }, [seriesVideos, params.streamTarget?.id]);
+  const nextUnaired = nextEp ? isUnaired(nextEp) : false;
+  // The CURRENT episode (for the pause overlay's "Season N · Episode M" + title +
+  // summary). From the loaded show videos, matched by the playing episode id.
+  const currentEp = useMemo(() => {
+    const id = params.streamTarget?.id;
+    if (!isSeries || !id) return null;
+    return seriesVideos.find((v) => v.id === id) ?? null;
+  }, [seriesVideos, params.streamTarget?.id, isSeries]);
+  // The current episode's TMDB rating (the "6.3 IMDb" pill next to the episode
+  // title in the pause overlay). Direct per-season lookup keyed by episode_number
+  // via the backend's server-keyed proxy (the web player drawer's approach).
+  const [episodeRating, setEpisodeRating] = useState<number | null>(null);
+  useEffect(() => {
+    setEpisodeRating(null);
+    const imdb = params.detailId;
+    const s = currentEp?.season;
+    const e = currentEp?.episode;
+    if (!isSeries || !imdb || s == null || e == null) return;
+    let cancelled = false;
+    const base = getStorageBaseUrl().replace(/\/storage\/?$/, '');
+    void (async () => {
+      try {
+        const f = await fetch(`${base}/tmdb-find?imdbId=${encodeURIComponent(imdb)}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+        const tid = f && typeof f.tmdbId === 'number' ? (f.tmdbId as number) : null;
+        if (!tid || cancelled) return;
+        const d = await fetch(`${base}/tmdb-season-info?tmdbId=${tid}&season=${s}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+        if (cancelled) return;
+        const ep = ((d?.episodes ?? []) as { episode_number?: number; vote_average?: number }[]).find((x) => x.episode_number === e);
+        if (ep && typeof ep.vote_average === 'number' && ep.vote_average > 0) setEpisodeRating(ep.vote_average);
+      } catch { /* no rating — title shows without the pill */ }
+    })();
+    return () => { cancelled = true; };
+  }, [isSeries, params.detailId, currentEp?.season, currentEp?.episode]);
+  // The drawer's Auto play switch = the account's binge-watching setting. When on,
+  // reaching the end of an episode auto-advances to the next aired one (the
+  // desktop's EndFile + bingeWatching path).
+  const [autoPlay, setAutoPlay] = useState(() => readTvSettings().bingeWatching);
+  const autoPlayRef = useRef(autoPlay);
+  autoPlayRef.current = autoPlay;
+  const toggleAutoPlay = () => {
+    setAutoPlay((prev) => {
+      const next = !prev;
+      try { writeTvSettings({ ...readTvSettings(), bingeWatching: next }); } catch { /* local cache */ }
+      return next;
+    });
+  };
+  const nextEpRef = useRef<DrawerEpisode | null>(null);
+  nextEpRef.current = nextEp;
+  const endFiredRef = useRef(false);
+
   const player = useVideoPlayer(current.url, (p) => {
     p.timeUpdateEventInterval = 0.5;
+    p.preservesPitch = true; // keep audio natural when the watch-party rate-syncs
     p.play();
   });
 
@@ -146,6 +247,7 @@ export function PlayerScreen() {
     setSubTracks([]);
     skippedRef.current = false;
     autoSubRef.current = false;
+    endFiredRef.current = false;
     // Key on the URL (not just index) so switching to a different release via the
     // Sources picker — which may land on the same index — still reloads the player.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -224,8 +326,10 @@ export function PlayerScreen() {
     const was = drawerRef.current;
     drawerRef.current = 'none';
     setDrawer('none');
-    const back = was === 'audio' ? 'audio' : was === 'releases' ? 'releases' : 'subtitles';
-    goRow('bottom', BOTTOM.indexOf(back));
+    // Watch Party lives on the TOP row; everything else on the bottom.
+    if (was === 'watchparty') { goRow('top', TOP.indexOf('watchparty')); return; }
+    const back: BottomId = was === 'audio' ? 'audio' : was === 'releases' ? 'releases' : was === 'episodes' ? 'episodes' : 'subtitles';
+    goRow('bottom', Math.max(0, bottom.indexOf(back)));
   };
 
   // Lazily load the full release list for the Releases tab (cached in
@@ -277,6 +381,183 @@ export function PlayerScreen() {
   // Final write when leaving the player.
   useEffect(() => () => saveProgressRef.current(), []);
 
+  // Report presence "watching <title>" so friends can invite us to a party; clear
+  // it when we leave the player (the heartbeat at the app root posts it every 30s).
+  useEffect(() => {
+    const st = params.streamTarget;
+    setCurrentActivity({
+      type: st?.type ?? 'movie',
+      id: params.detailId ?? st?.id ?? null,
+      name: params.title ?? null,
+      videoId: st?.type === 'series' ? st?.id ?? null : null,
+    });
+    return () => clearCurrentActivity();
+  }, [params.streamTarget, params.detailId, params.title]);
+
+  // ── Switch to another episode (Next button / Episodes drawer pick) ─────────
+  // Mirrors the desktop advanceToNextEpisode/onSelectEpisode: resolve the new
+  // episode's ranked streams, then REPLACE the player route so the whole screen
+  // remounts with fresh params (progress key, subtitles, badges). While resolving,
+  // the black+logo veil covers the screen and merges into the new player's
+  // buffering veil (the CW-resume pattern). No streams → the episode's Detail.
+  const [switching, setSwitching] = useState(false);
+  const switchingRef = useRef(false);
+  // Assigned after the watch-party hook below; let the host broadcast an episode
+  // change so guests follow (guests don't re-announce).
+  const announceEpisodeRef = useRef<(v: string | null) => void>(() => {});
+  const isHostRef = useRef(false);
+  const switchToEpisode = (video: DrawerEpisode) => {
+    if (video.id === params.streamTarget?.id) { if (drawerRef.current !== 'none') closeDrawer(); return; }
+    if (isUnaired(video)) {
+      const d = formatFullDate(video.released);
+      toast.show(d ? `Next episode airs ${d}` : "Next episode hasn't aired yet");
+      return;
+    }
+    if (switchingRef.current) return;
+    switchingRef.current = true;
+    // Host tells the room to follow; guests just switch locally.
+    if (params.roomCode && isHostRef.current) announceEpisodeRef.current(video.id);
+    saveProgressRef.current(); // persist the leaving episode's position
+    drawerRef.current = 'none';
+    setDrawer('none');
+    setSwitching(true);
+    loadStreams(token, 'series', video.id)
+      .then((streams) => {
+        const playable = streams.filter((s) => s.url).map((s) => ({ url: s.url as string, title: s.title }));
+        if (playable.length === 0) {
+          // Desktop fallback: open the episode's Detail page (picker) instead.
+          navigation.reset({
+            index: 1,
+            routes: [
+              { name: 'Home' },
+              { name: 'Detail', params: { id: params.detailId ?? video.id.split(':')[0], type: 'series', name: params.title, poster: params.poster ?? undefined, season: video.season ?? undefined, episode: video.episode ?? undefined } },
+            ],
+          });
+          return;
+        }
+        navigation.replace('Player', {
+          url: playable[0].url,
+          title: params.title,
+          playlist: playable,
+          startIndex: 0,
+          logo: params.logo,
+          background: params.background,
+          poster: params.poster,
+          startSeconds: 0,
+          description: params.description,
+          releaseInfo: params.releaseInfo,
+          imdbId: params.imdbId,
+          rating: params.rating,
+          streamTarget: { type: 'series', id: video.id, title: params.title },
+          detailId: params.detailId,
+          roomCode: params.roomCode, // keep the watch party across episode changes
+        });
+      })
+      .catch(() => {
+        switchingRef.current = false;
+        setSwitching(false);
+        toast.show('No streams found for that episode');
+      });
+  };
+  // Fresh closure for the 400ms interval (binge auto-advance at end-of-episode).
+  const switchToEpisodeRef = useRef(switchToEpisode);
+  switchToEpisodeRef.current = switchToEpisode;
+
+  // ── Watch Party ────────────────────────────────────────────────────────────
+  // The room rides on `params.roomCode` (mirrors the desktop `?room=`). A guest
+  // needs a display name; a password room needs the stashed password. The button
+  // opens the drawer (Open / Join / Active room) — see the render below.
+  const [guestId] = useState(() => getOrCreateGuestUserId());
+  const [roomInfo, setRoomInfo] = useState<WatchPartyRoomInfo | null>(null);
+  const [wpTab, setWpTab] = useState<'open' | 'join'>('open');
+  const [creatingRoom, setCreatingRoom] = useState(false);
+  const profileName = (user?.displayName ?? '').trim();
+  const wpDisplayName = profileName && profileName !== 'Guest' ? profileName : getStoredGuestName();
+  const partyPassword = params.roomCode ? getStashedWatchPartyPassword(params.roomCode) : null;
+  // Fetch the room meta (hasPassword + gate) whenever the room code changes.
+  useEffect(() => {
+    if (!params.roomCode) { setRoomInfo(null); return; }
+    let cancelled = false;
+    getWatchPartyRoom(params.roomCode).then((r) => { if (!cancelled) setRoomInfo(r); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [params.roomCode]);
+  const partyShouldConnect = !!params.roomCode && roomInfo != null && (!roomInfo.hasPassword || !!partyPassword) && !!wpDisplayName;
+
+  const watchParty = useWatchPartyRoom({
+    roomCode: partyShouldConnect ? params.roomCode ?? null : null,
+    authToken: token,
+    guestId: token ? null : guestId,
+    displayName: wpDisplayName,
+    password: partyPassword,
+    onHostEpisodeChange: (videoId) => {
+      // The host switched episode — follow them (resolves streams + replaces,
+      // preserving the room code).
+      const v = videoId ? seriesVideos.find((e) => e.id === videoId) : null;
+      if (v) switchToEpisodeRef.current(v);
+    },
+    getTime: () => player.currentTime ?? 0,
+    pausedRef: userPausedRef,
+    seek: (s) => { try { player.currentTime = s; } catch { /* not ready */ } },
+    play: () => { userPausedRef.current = false; player.play(); setPlaying(true); },
+    pause: () => { userPausedRef.current = true; player.pause(); setPlaying(false); },
+    setRate: (r) => { try { player.playbackRate = r; } catch { /* not ready */ } },
+  });
+  const watchPartyRef = useRef(watchParty);
+  watchPartyRef.current = watchParty;
+  announceEpisodeRef.current = watchParty.announceEpisode;
+  isHostRef.current = watchParty.isHost;
+
+  // Create a room for the title being watched — just adds ?roomCode to the player
+  // params (you keep watching; the room is keyed to this title). Stashes a password.
+  const createParty = async (password: string | null) => {
+    if (!params.streamTarget || creatingRoom) return;
+    setCreatingRoom(true);
+    try {
+      const code = await createWatchPartyRoom({
+        authToken: token,
+        guestId: token ? null : guestId,
+        type: params.streamTarget.type === 'series' ? 'series' : 'movie',
+        imdbId: params.detailId ?? params.streamTarget.id,
+        videoId: params.streamTarget.type === 'series' ? params.streamTarget.id : null,
+        password,
+      });
+      if (password) stashWatchPartyPassword(code, password);
+      navigation.setParams({ roomCode: code });
+      toast.show('Watch party started', { description: `Room ${code.toUpperCase()} — share the code from the panel.` });
+    } catch {
+      toast.show('Could not start the party');
+    } finally {
+      setCreatingRoom(false);
+    }
+  };
+  const leaveParty = () => {
+    if (params.roomCode) clearWatchPartyPassword(params.roomCode);
+    watchPartyRef.current.leave();
+    navigation.setParams({ roomCode: undefined });
+    closeDrawer();
+  };
+  // Join from the drawer's Join view: a room I'm not in yet (different title) →
+  // resolve its stream + open the player in that room. Same title → just set the code.
+  const joinRoom = (room: WatchPartyRoomInfo) => {
+    closeDrawer();
+    if (params.detailId === room.imdbId || params.streamTarget?.id === room.videoId) {
+      navigation.setParams({ roomCode: room.code });
+      return;
+    }
+    const videoId = room.videoId ?? room.imdbId;
+    loadStreams(token, room.type, videoId)
+      .then((streams) => {
+        const playable = streams.filter((s) => s.url).map((s) => ({ url: s.url as string, title: s.title }));
+        if (playable.length === 0) { toast.show('No streams for that room\'s title'); return; }
+        navigation.replace('Player', {
+          url: playable[0].url, title: room.imdbId, playlist: playable, startIndex: 0, startSeconds: 0,
+          streamTarget: { type: room.type, id: videoId, title: room.imdbId }, detailId: room.imdbId, roomCode: room.code,
+        });
+      })
+      .catch(() => toast.show('Could not join that room'));
+  };
+  const inviteLink = `${getStorageBaseUrl().replace(/\/storage\/?$/, '')}/invite/${params.roomCode ?? ''}`;
+
   useEffect(() => {
     bumpControls();
     const id = setInterval(() => {
@@ -302,6 +583,19 @@ export function PlayerScreen() {
           player.pause();
         }
         setPlaying(!userPausedRef.current);
+      }
+      // Binge auto-advance — the desktop's EndFile(eof)+bingeWatching path: when
+      // the episode plays to (within half a second of) its end and Auto play is
+      // on, jump to the next aired episode. endFiredRef makes it one-shot per file.
+      if (
+        revealedRef.current &&
+        !endFiredRef.current &&
+        durationRef.current > DMCA_MAX_SECONDS &&
+        timeRef.current >= durationRef.current - 0.5
+      ) {
+        endFiredRef.current = true;
+        const next = nextEpRef.current;
+        if (autoPlayRef.current && next && !isUnaired(next)) switchToEpisodeRef.current(next);
       }
       // Idle auto-hide (the desktop's 3s mouse-idle hide, TV-shaped): once the
       // video is revealed, not user-paused, and no drawer is open, hide the chrome
@@ -369,10 +663,15 @@ export function PlayerScreen() {
     if (wantPlay) player.play();
     else player.pause();
     setPlaying(wantPlay);
+    // Tell the watch party (echo-suppressed inside the hook so a remote-applied
+    // play/pause doesn't bounce back).
+    if (wantPlay) watchPartyRef.current.broadcastPlay();
+    else watchPartyRef.current.broadcastPause();
     bumpControls();
   };
   const seek = (delta: number) => {
     player.seekBy(delta);
+    watchPartyRef.current.broadcastSeek((player.currentTime ?? time) + delta);
     bumpControls();
   };
 
@@ -422,8 +721,15 @@ export function PlayerScreen() {
     if (t) { p.subtitleTrack = t; setCurSub(t.id); setCurExtId(null); setCues([]); toast.show('Subtitles loaded', { description: `${langLabel(t, 'Subtitle')} - Embedded` }); }
   };
 
-  const runBottom = (id: (typeof BOTTOM)[number]) => {
+  const runBottom = (id: BottomId) => {
     if (id === 'play') { togglePlay(); return false; }
+    if (id === 'next') {
+      // Dimmed when there's no next episode yet (last ep / meta still loading);
+      // unaired next shows the air-date toast inside switchToEpisode.
+      if (nextEp) switchToEpisode(nextEp);
+      return true; // keep focus on the button (the veil/replace takes over)
+    }
+    if (id === 'episodes') { openDrawer('episodes'); return true; }
     if (id === 'releases') { fetchReleases(); openDrawer('releases'); return true; }
     if (id === 'subtitles') { openDrawer('subtitles'); return true; }
     if (id === 'audio') { openDrawer('audio'); return true; }
@@ -459,7 +765,7 @@ export function PlayerScreen() {
   };
   const runTop = (id: (typeof TOP)[number]) => {
     if (id === 'back') exitToDetail();
-    // watchparty: backlog
+    else if (id === 'watchparty') { if (!params.roomCode) setWpTab('open'); openDrawer('watchparty'); }
   };
 
   useTVEventHandler((evt) => {
@@ -479,7 +785,7 @@ export function PlayerScreen() {
       case 'select': {
         if (now - lastOk.current < 300) break;
         lastOk.current = now;
-        if (r === 'bottom') { const stay = runBottom(BOTTOM[i]); if (!stay) goRow('none'); }
+        if (r === 'bottom') { const stay = runBottom(bottom[i]); if (!stay) goRow('none'); }
         else if (r === 'top') { runTop(TOP[i]); goRow('none'); }
         else {
           const wasPlaying = !userPausedRef.current;
@@ -515,7 +821,7 @@ export function PlayerScreen() {
         break;
       case 'right':
       case 'fastForward':
-        if (r === 'bottom') goRow('bottom', Math.min(BOTTOM.length - 1, i + 1));
+        if (r === 'bottom') goRow('bottom', Math.min(bottom.length - 1, i + 1));
         else if (r === 'top') goRow('top', Math.min(TOP.length - 1, i + 1));
         else seek(SEEK_STEP);
         break;
@@ -547,7 +853,7 @@ export function PlayerScreen() {
   // real times appear.
   const pct = revealed && duration > 0 ? Math.min(1, time / duration) : 0;
   const badges = [detectSource(current.url)?.code, is4kTitle(current.title) ? '4K' : null, isHdrTitle(current.title) ? 'HDR' : null].filter(Boolean) as string[];
-  const bf = (id: (typeof BOTTOM)[number]) => row === 'bottom' && BOTTOM[idx] === id;
+  const bf = (id: BottomId) => row === 'bottom' && bottom[idx] === id;
   const tf = (id: (typeof TOP)[number]) => row === 'top' && TOP[idx] === id;
   const drawerOpen = drawer !== 'none';
 
@@ -579,11 +885,16 @@ export function PlayerScreen() {
         visible={!playing && revealed}
         logo={params.logo}
         title={params.title}
-        description={params.description}
+        // Series: show the CURRENT EPISODE (Season·Episode + title + episode summary);
+        // movie: the show's release/rating + summary. Episode summary falls back to
+        // the show summary until the episode list loads.
+        description={(currentEp?.description ?? params.description) ?? null}
         releaseInfo={params.releaseInfo}
-        imdbId={params.imdbId}
-        rating={params.rating}
+        imdbId={currentEp ? null : params.imdbId}
+        rating={currentEp ? (episodeRating != null ? episodeRating.toFixed(1) : null) : params.rating}
         duration={duration}
+        episodeLabel={currentEp && currentEp.season != null && currentEp.episode != null ? `Season ${currentEp.season} · Episode ${currentEp.episode}` : null}
+        episodeTitle={currentEp?.title ?? null}
       />
 
       {/* TOP OVERLAY — full chrome (Back + badges + watch-party), shown over the
@@ -594,7 +905,7 @@ export function PlayerScreen() {
             <BackPill m={m} title={params.title} focused={tf('back')} />
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(12) }}>
               <SourceBadges m={m} badges={badges} />
-              <WatchPartyButton m={m} focused={tf('watchparty')} />
+              <WatchPartyButton m={m} focused={tf('watchparty')} roomCode={params.roomCode} connected={watchParty.connected} participants={watchParty.participants} />
             </View>
           </View>
         </LinearGradient>
@@ -618,6 +929,14 @@ export function PlayerScreen() {
               <PlayerIconBtn m={m} focused={bf('play')}>{(c) => <PlayIcon m={m} paused={!playing} color={c} />}</PlayerIconBtn>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(4) }}>
+              {isSeries ? (
+                <>
+                  {/* Next episode — dimmed when none/unaired (desktop disabled look). */}
+                  <PlayerIconBtn m={m} focused={bf('next')} dimmed={!nextEp || nextUnaired}>{(c) => <NextEpisodeIcon m={m} color={c} />}</PlayerIconBtn>
+                  {/* Episodes drawer — icon + label pill (desktop parity). */}
+                  <PlayerLabelBtn m={m} focused={bf('episodes')} label="Episodes">{(c) => <EpisodesIcon m={m} color={c} />}</PlayerLabelBtn>
+                </>
+              ) : null}
               <PlayerIconBtn m={m} focused={bf('subtitles')}>{(c) => <SubsIcon m={m} color={c} />}</PlayerIconBtn>
               <PlayerIconBtn m={m} focused={bf('audio')}>{(c) => <AudioIcon m={m} color={c} />}</PlayerIconBtn>
               <PlayerIconBtn m={m} focused={bf('releases')}>{(c) => <ReleasesIcon m={m} color={c} />}</PlayerIconBtn>
@@ -626,10 +945,56 @@ export function PlayerScreen() {
         </View>
       ) : null}
 
+      {/* Episodes drawer (series) — the in-player episode selector, ported from
+          the desktop EpisodesDrawer. Self-contained native focus; Back/X/Left
+          close. Selection routes through switchToEpisode. */}
+      {drawer === 'episodes' ? (
+        <EpisodesDrawer
+          episodes={seriesVideos}
+          currentId={params.streamTarget?.id ?? null}
+          imdbId={params.imdbId ?? (params.detailId && /^tt\d{5,}$/.test(params.detailId) ? params.detailId : null)}
+          fallbackArt={params.background ?? params.poster ?? null}
+          currentProgressPct={revealed && duration > 0 ? (time / duration) * 100 : 0}
+          autoPlay={autoPlay}
+          onToggleAutoPlay={toggleAutoPlay}
+          onSelectEpisode={switchToEpisode}
+          onClose={closeDrawer}
+        />
+      ) : null}
+
+      {/* Watch Party drawer — Open / Join / Active room (people + chat). Self-
+          contained native focus + FocusTrap; Back/X close. */}
+      {drawer === 'watchparty' ? (
+        <WatchPartyDrawer
+          onClose={closeDrawer}
+          tab={wpTab}
+          onTabChange={setWpTab}
+          roomCode={params.roomCode ?? null}
+          connected={watchParty.connected}
+          selfUserId={watchParty.selfUserId}
+          hostUserId={watchParty.hostUserId}
+          participants={watchParty.participants}
+          chat={watchParty.chat}
+          reactions={watchParty.reactions}
+          typingNames={watchParty.typingNames}
+          hasPassword={roomInfo?.hasPassword ?? false}
+          error={watchParty.error}
+          inviteLink={inviteLink}
+          sendChat={watchParty.sendChat}
+          sendTyping={watchParty.sendTyping}
+          toggleReaction={watchParty.toggleReaction}
+          onLeave={leaveParty}
+          canCreate={!!params.streamTarget}
+          creatingRoom={creatingRoom}
+          onCreateRoom={createParty}
+          onNavigateToRoom={joinRoom}
+        />
+      ) : null}
+
       {/* Settings drawer (Releases / Audio / Subtitles) — slides in from the
           right, native D-pad focus (X / Back / Left closes). Mounted only while
           open so the focus trap reliably claims focus on entry. */}
-      {drawerOpen ? (
+      {drawer === 'audio' || drawer === 'subtitles' || drawer === 'releases' ? (
         <SettingsDrawer
           initialTab={drawer === 'audio' ? 'audio' : drawer === 'releases' ? 'releases' : 'subtitles'}
           onClose={closeDrawer}
@@ -664,6 +1029,14 @@ export function PlayerScreen() {
           defaultSubtitleColor={seedSubColor(tvs.subtitlesTextColor)}
         />
       ) : null}
+
+      {/* Watch-party activity pills (join/leave/play/pause/seek by others). */}
+      {watchParty.connected ? <WatchPartyToast activity={watchParty.activity} selfUserId={watchParty.selfUserId} /> : null}
+
+      {/* Episode-switch veil — black + the title's logo while the next episode's
+          streams resolve; merges into the replacing player's own buffering veil
+          (the CW-resume hand-off pattern). */}
+      {switching ? <BufferingVeil visible black logo={params.logo} /> : null}
     </View>
   );
 }

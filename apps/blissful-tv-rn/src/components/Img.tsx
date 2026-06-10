@@ -13,6 +13,7 @@ export function Img({
   contentFit = 'cover',
   contentPosition,
   blurRadius,
+  transition = 0,
   onLoad,
   onError,
 }: {
@@ -23,6 +24,10 @@ export function Img({
   contentPosition?: ImageContentPosition;
   /** Gaussian blur radius — used for the blurred fill behind a `contain` poster. */
   blurRadius?: number;
+  /** Cross-dissolve duration (ms) when the source changes; 0 = instant (default).
+   *  Keep the SAME <Img> mounted (don't change its React key) for the crossfade
+   *  to actually run between the old and new image. */
+  transition?: number;
   onLoad?: () => void;
   /** Fired when the image fails to load (404 / decode) — lets callers fall back. */
   onError?: () => void;
@@ -37,7 +42,7 @@ export function Img({
       contentPosition={contentPosition}
       blurRadius={blurRadius}
       cachePolicy="memory-disk"
-      transition={0}
+      transition={transition}
       onLoad={onLoad ? () => onLoad() : undefined}
       onError={onError ? () => onError() : undefined}
     />

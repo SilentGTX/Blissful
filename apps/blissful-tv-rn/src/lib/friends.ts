@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   fetchFriends,
   lookupPresence,
@@ -56,6 +56,15 @@ export function useFriends(token: string | null) {
   const [incoming, setIncoming] = useState<FriendRecord[]>([]);
   const [presence, setPresence] = useState<Map<string, PresenceRecord>>(new Map());
 
+  // Manual re-fetch (after accept / decline / request) so the list updates without
+  // waiting for the 60s poll.
+  const refresh = useCallback(() => {
+    if (!token) return;
+    fetchFriends(token)
+      .then((s) => { setFriends(s.friends); setIncoming(s.incoming); })
+      .catch(() => {});
+  }, [token]);
+
   useEffect(() => {
     if (!token) {
       setFriends([]);
@@ -110,5 +119,5 @@ export function useFriends(token: string | null) {
     [friends, presence],
   );
 
-  return { friends: sorted, incoming, presence };
+  return { friends: sorted, incoming, presence, refresh };
 }

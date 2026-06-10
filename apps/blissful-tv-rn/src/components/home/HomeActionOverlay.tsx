@@ -55,7 +55,7 @@ export function HomeActionOverlay({
       {/* light full-screen scrim — neighbours stay faintly visible behind */}
       <Pressable style={styles.scrim} focusable={false} onPress={onClose} />
       {/* the action box, sized + placed exactly over the focused tile */}
-      <View style={{ position: 'absolute', top: rect.y, left: rect.x, width: rect.w, height: rect.h, borderRadius: m.s(16), overflow: 'hidden', borderWidth: m.s(3), borderColor: colors.accent }}>
+      <View style={{ position: 'absolute', top: rect.y, left: rect.x, width: rect.w, height: rect.h, borderRadius: m.s(16), overflow: 'hidden' }}>
         <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(5,7,11,0.9)' }]} />
         <FocusTrap style={{ flex: 1, justifyContent: 'center', gap: m.s(10), paddingHorizontal: m.s(16) }}>
           <ActionBtn
@@ -69,6 +69,7 @@ export function HomeActionOverlay({
             <ActionBtn label="Remove progress" icon="trash-outline" danger m={m} onPress={() => onRemoveProgress(item)} />
           ) : null}
         </FocusTrap>
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: m.s(16), borderWidth: m.s(3), borderColor: colors.accent }]} />
       </View>
     </View>
   );

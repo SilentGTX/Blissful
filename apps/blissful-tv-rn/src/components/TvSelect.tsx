@@ -105,10 +105,21 @@ export function TvSelectOverlay({ anchor, onClose, m }: { anchor: DropdownAnchor
     return () => sub.remove();
   }, [onClose]);
   const idx = Math.max(0, anchor.options.findIndex((o) => o.key === anchor.value));
+  // Keep the list on-screen: open DOWN by default, but flip UP when the trigger
+  // sits low (the episode-range selector is near the bottom of the detail page)
+  // so the options never spill off the bottom edge. maxHeight is clamped to the
+  // chosen side's free space; the list scrolls within it.
+  const gap = m.s(6);
+  const margin = m.s(16);
+  const belowSpace = m.height - (anchor.pos.y + anchor.pos.h) - margin;
+  const aboveSpace = anchor.pos.y - margin;
+  const openUp = belowSpace < m.s(360) && aboveSpace > belowSpace;
+  const maxH = Math.min(m.s(420), Math.max(m.s(140), openUp ? aboveSpace : belowSpace));
+  const vstyle = openUp ? { bottom: m.height - anchor.pos.y + gap } : { top: anchor.pos.y + anchor.pos.h + gap };
   return (
     <View style={styles.overlay}>
       <Pressable style={StyleSheet.absoluteFill} focusable={false} onPress={onClose} />
-      <FocusTrap style={{ position: 'absolute', left: anchor.pos.x, top: anchor.pos.y + anchor.pos.h + m.s(6), minWidth: Math.max(anchor.pos.w, m.s(220)), maxHeight: m.s(420), borderRadius: m.s(16), padding: m.s(6), backgroundColor: 'rgba(20,24,33,0.98)', borderWidth: 1, borderColor: colors.hairline, overflow: 'hidden' }}>
+      <FocusTrap style={{ position: 'absolute', left: anchor.pos.x, ...vstyle, minWidth: Math.max(anchor.pos.w, m.s(220)), maxHeight: maxH, borderRadius: m.s(16), padding: m.s(6), backgroundColor: 'rgba(20,24,33,0.98)', borderWidth: 1, borderColor: colors.hairline, overflow: 'hidden' }}>
         <ScrollView showsVerticalScrollIndicator={false}>
           {anchor.options.map((o, i) => (
             <Row key={o.key} label={o.label} selected={o.key === anchor.value} autoFocus={i === idx} m={m} onPress={() => { anchor.onChange(o.key); onClose(); }} />

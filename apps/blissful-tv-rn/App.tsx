@@ -23,17 +23,21 @@ import {
   IBMPlexSans_600SemiBold,
   useFonts,
 } from '@expo-google-fonts/ibm-plex-sans';
-import { AuthProvider } from './src/context/AuthContext';
+import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { ToastProvider } from './src/components/Toast';
+import { UserSocketProvider } from './src/context/UserSocketContext';
+import { PartyInviteListener } from './src/components/PartyInviteListener';
+import { usePresenceHeartbeat } from './src/lib/presence';
+import { navigationRef } from './src/lib/navigationRef';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { DetailScreen } from './src/screens/DetailScreen';
 import { PlayerScreen } from './src/screens/PlayerScreen';
-import { LoginScreen } from './src/screens/LoginScreen';
 import { SearchScreen } from './src/screens/SearchScreen';
 import { DiscoverScreen } from './src/screens/DiscoverScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { LibraryScreen } from './src/screens/LibraryScreen';
 import { AddonsScreen } from './src/screens/AddonsScreen';
+import { ProfileScreen } from './src/screens/ProfileScreen';
 import type { RootStackParamList } from './src/navigation/types';
 import { colors } from './src/theme/colors';
 
@@ -50,10 +54,13 @@ const navTheme = {
 // Settings surface colour.
 function ThemedRoot() {
   const { bgGradient } = useTheme();
+  const { token } = useAuth();
+  // Report online/watching so friends see presence + can invite us to a party.
+  usePresenceHeartbeat(token);
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <LinearGradient colors={bgGradient as [string, string, string]} locations={[0, 0.55, 1]} style={StyleSheet.absoluteFill} />
-      <NavigationContainer theme={navTheme}>
+      <NavigationContainer ref={navigationRef} theme={navTheme}>
         <Stack.Navigator
           screenOptions={{
             headerShown: false,
@@ -64,14 +71,16 @@ function ThemedRoot() {
           <Stack.Screen name="Home" component={HomeScreen} />
           <Stack.Screen name="Detail" component={DetailScreen} />
           <Stack.Screen name="Player" component={PlayerScreen} />
-          <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="Search" component={SearchScreen} />
           <Stack.Screen name="Discover" component={DiscoverScreen} />
           <Stack.Screen name="Settings" component={SettingsScreen} />
           <Stack.Screen name="Library" component={LibraryScreen} />
           <Stack.Screen name="Addons" component={AddonsScreen} />
+          <Stack.Screen name="Profile" component={ProfileScreen} />
         </Stack.Navigator>
       </NavigationContainer>
+      {/* Global watch-party invite pills — above every screen. */}
+      <PartyInviteListener />
     </View>
   );
 }
@@ -106,7 +115,9 @@ export default function App() {
           <ThemeProvider>
             <AuthProvider>
               <ToastProvider>
-                <ThemedRoot />
+                <UserSocketProvider>
+                  <ThemedRoot />
+                </UserSocketProvider>
               </ToastProvider>
             </AuthProvider>
           </ThemeProvider>

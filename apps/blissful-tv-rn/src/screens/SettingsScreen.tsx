@@ -6,7 +6,7 @@ import { colors, font } from '../theme/colors';
 import { useTheme } from '../theme/ThemeProvider';
 import { SettingsLeftTargetContext } from '../lib/settingsLeftTarget';
 import { useMetrics } from '../theme/metrics';
-import { useRailOpen } from '../lib/railStore';
+import { useContentInert } from '../lib/contentFocus';
 import { markContentFocus } from '../lib/focusBus';
 import { useSelfTag } from '../lib/useSelfTag';
 import { useAuth } from '../context/AuthContext';
@@ -183,7 +183,7 @@ function Hint({ children, m, danger }: { children: ReactNode; m: M; danger?: boo
 
 export function SettingsScreen() {
   const m = useMetrics();
-  const railOpen = useRailOpen();
+  const railOpen = useContentInert();
   const toast = useToast();
   const { setTheme } = useTheme();
   const { token, user, updateProfile } = useAuth();

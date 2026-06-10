@@ -6,7 +6,8 @@ import { Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-nativ
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { markContentFocus } from '../lib/focusBus';
-import { useRailOpen } from '../lib/railStore';
+import { useContentInert } from '../lib/contentFocus';
+import { openLogin } from '../lib/loginStore';
 import { useSelfTag } from '../lib/useSelfTag';
 import { useAuth } from '../context/AuthContext';
 import { resolveAvatar } from '../lib/avatars';
@@ -47,7 +48,7 @@ export function TopBar({
   const navigation = useNavigation<any>();
   const { user } = useAuth();
   const m = useMetrics();
-  const railOpen = useRailOpen(); // gate the 2-3 top-bar focusables (cheap) so an
+  const railOpen = useContentInert(); // gate the 2-3 top-bar focusables (cheap) so an
   // open rail traps focus here too; the rail's own ScrollView cascade covers the cards.
   const [searchFocused, setSearchFocused] = useState(false);
   const [avatarFocused, setAvatarFocused] = useState(false);
@@ -122,7 +123,7 @@ export function TopBar({
         isTVSelectable={!railOpen}
         onFocus={() => { setAvatarFocused(true); markContentFocus(false); }}
         onBlur={() => setAvatarFocused(false)}
-        onPress={() => (user ? setMenuOpen(true) : navigation.navigate('Login'))}
+        onPress={() => (user ? setMenuOpen(true) : openLogin())}
         style={[styles.avatarPress, { width: m.topbarH, height: m.topbarH }]}
       >
         {(() => {

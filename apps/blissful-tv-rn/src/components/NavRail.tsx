@@ -1,15 +1,24 @@
-import { useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { forwardRef, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Animated, findNodeHandle, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, useTVEventHandler, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { ICONS, StrokeIcon } from '../icons/StrokeIcon';
 import { useToast } from './Toast';
 import { useAuth } from '../context/AuthContext';
 import { useFriends, statusLine } from '../lib/friends';
+import { acceptFriendRequest, removeFriend, requestPartyInvite, setFriendNickname } from '@blissful/core';
 import { atLeftEdgeRaw, focusStamp } from '../lib/focusBus';
 import { setRailOpen } from '../lib/railStore';
+import { closeLogin, openLogin, useLoginOpen } from '../lib/loginStore';
+import { isOverlayOpen } from '../lib/overlayStore';
+import { useActiveParties } from '../lib/activeParties';
+import { joinWatchPartyRoom } from '../lib/joinWatchParty';
 import { FriendAvatar } from './FriendAvatar';
+import { JoinPartyModal } from './JoinPartyModal';
+import { LoginModal } from './LoginModal';
 
 type NavKey = 'Search' | 'Home' | 'Discover' | 'Library' | 'Addons' | 'JoinParty' | 'Settings';
 const ITEMS: { key: NavKey; icon: keyof typeof ICONS; label: string }[] = [
@@ -114,7 +123,15 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
   const toast = useToast();
   const m = useMetrics();
   const { token } = useAuth();
-  const { friends, incoming, presence } = useFriends(token);
+  const { friends, incoming, presence, refresh } = useFriends(token);
+  const [joinOpen, setJoinOpen] = useState(false);
+  // The global Login modal is opened from many places (avatar, this rail, the
+  // Library empty state). Render it IN-TREE here — same spot as JoinPartyModal —
+  // so its FocusTrap reliably traps the D-pad (a root-level sibling of the
+  // navigator did not). `isFocused` so a stacked-but-inactive screen's rail
+  // (e.g. Home under Discover) doesn't render a second copy.
+  const loginOpen = useLoginOpen();
+  const isFocused = useIsFocused();
 
   // Flush to the screen's left edge (design Sidebar.jsx aside: left 0, full height).
   const railLeft = 0;
@@ -171,6 +188,7 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
   useTVEventHandler((evt) => {
     const t = evt.eventType;
     if (t === 'left' || t === 'swipeLeft') {
+      if (isOverlayOpen()) return; // a modal/overlay (FocusTrap) is up — don't open the rail behind it
       // Open ONLY when this Left didn't move focus — i.e. focus is parked on a
       // left-edge content element. A Left that moves another card -> the first card
       // bumps the focus stamp, so we suppress it (was opening on the landing Left).
@@ -212,7 +230,7 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
     <View>
       <StrokeIcon path={ICONS.watchParty} size={sz} color={color} />
       {incoming.length > 0 ? (
-        <View style={{ position: 'absolute', top: -sz * 0.32, right: -sz * 0.4, minWidth: sz * 0.72, height: sz * 0.72, borderRadius: 999, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' }}>
+        <View style={{ position: 'absolute', top: -sz * 0.32, right: -sz * 0.4, minWidth: sz * 0.72, height: sz * 0.72, borderRadius: 999, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accent }}>
           <Text style={{ fontFamily: font.bodySemi, fontSize: sz * 0.5, color: colors.accentInk }}>{incoming.length}</Text>
         </View>
       ) : null}
@@ -222,6 +240,7 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
   const Divider = ({ mx, my }: { mx: number; my: number }) => <View style={{ height: 1, marginHorizontal: mx, marginVertical: my, backgroundColor: 'rgba(255,255,255,0.1)' }} />;
 
   return (
+    <>
     <Animated.View style={[styles.rail, { left: railLeft, top: 0, bottom: 0, width: widthAnim, zIndex: expanded ? 70 : 10, backgroundColor: expanded ? NAV_PANEL : 'transparent', borderRightWidth: expanded ? 1 : 0, borderRightColor: 'rgba(255,255,255,0.07)' }]}>
       {/* Flush full-height panel (design Sidebar.jsx): transparent when collapsed
           (icons float on the home scrim), dark panel when expanded. No glass pill /
@@ -230,7 +249,7 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
         <Row iconW={iconW} itemH={m.s(48)} mx={rowMargin} expanded={expanded} focusable={false} label="Blissful" labelColor={colors.text} labelFont={font.serif} labelSize={m.s(22)} renderIcon={() => <Image source={require('../../assets/blissful-small-logo.png')} style={{ width: m.s(36), height: m.s(36), borderRadius: m.s(10) }} resizeMode="contain" />} />
         <Divider mx={m.s(10)} my={m.s(6)} />
         {ITEMS.map((it, i) => (
-          <Row key={i === 0 ? `${it.key}-${openKey}` : it.key} ref={(el) => { navRefs.current[i] = el; }} focusable={expanded} autoFocus={i === 0 && expanded} nextFocusUp={upTag(i)} nextFocusDown={downTag(i)} iconW={iconW} itemH={m.navItemH} mx={rowMargin} expanded={expanded} active={active === it.key} label={it.label} labelSize={m.s(16)} renderIcon={(c) => ico(it.icon, c, c === colors.accent)} onRailFocus={onRailFocus} onPress={() => { if (it.key === 'Search') navigation.navigate('Search'); else if (it.key === 'Home') navigation.navigate('Home'); else if (it.key === 'Discover') navigation.navigate('Discover', { type: 'movie' }); else if (it.key === 'Library') navigation.navigate('Library'); else if (it.key === 'Addons') navigation.navigate('Addons'); else if (it.key === 'Settings') navigation.navigate('Settings'); else if (it.key === 'JoinParty') toast.show('Watch Party is coming soon'); }} />
+          <Row key={i === 0 ? `${it.key}-${openKey}` : it.key} ref={(el) => { navRefs.current[i] = el; }} focusable={expanded} autoFocus={i === 0 && expanded} nextFocusUp={upTag(i)} nextFocusDown={downTag(i)} iconW={iconW} itemH={m.navItemH} mx={rowMargin} expanded={expanded} active={active === it.key} label={it.label} labelSize={m.s(16)} renderIcon={(c) => ico(it.icon, c, c === colors.accent)} onRailFocus={onRailFocus} onPress={() => { if (it.key === 'Search') navigation.navigate('Search'); else if (it.key === 'Home') navigation.navigate('Home'); else if (it.key === 'Discover') navigation.navigate('Discover', { type: 'movie' }); else if (it.key === 'Library') navigation.navigate('Library'); else if (it.key === 'Addons') navigation.navigate('Addons'); else if (it.key === 'Settings') navigation.navigate('Settings'); else if (it.key === 'JoinParty') setJoinOpen(true); }} />
         ))}
 
         <Divider mx={m.s(8)} my={m.s(8)} />
@@ -239,9 +258,9 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
           <>
             <Row ref={(el) => { navRefs.current[7] = el; }} nextFocusUp={upTag(7)} iconW={iconW} itemH={m.navItemH} mx={rowMargin} expanded label="Friends" labelColor={colors.text} labelSize={m.s(17)} renderIcon={(c) => friendsIcon(c)} onRailFocus={onRailFocus} />
             {token ? (
-              <FriendsBody m={m} mx={rowMargin} friends={friends} incoming={incoming} presence={presence} tab={tab} setTab={setTab} query={query} setQuery={setQuery} onRailFocus={onRailFocus} onTabFocus={(f: boolean) => (tabFocusedRef.current = f)} />
+              <FriendsBody m={m} mx={rowMargin} token={token} friends={friends} incoming={incoming} presence={presence} refresh={refresh} tab={tab} setTab={setTab} query={query} setQuery={setQuery} onRailFocus={onRailFocus} onTabFocus={(f: boolean) => (tabFocusedRef.current = f)} />
             ) : (
-              <Pressable onFocus={() => onRailFocus(true)} onBlur={() => onRailFocus(false)} onPress={() => navigation.navigate('Login')} style={{ paddingHorizontal: rowMargin + m.s(6), paddingVertical: m.s(10) }}>
+              <Pressable onFocus={() => onRailFocus(true)} onBlur={() => onRailFocus(false)} onPress={openLogin} style={{ paddingHorizontal: rowMargin + m.s(6), paddingVertical: m.s(10) }}>
                 <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(16), color: colors.textDim }}>Login to see friends</Text>
               </Pressable>
             )}
@@ -251,12 +270,32 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
         )}
       </View>
     </Animated.View>
+    {joinOpen ? <JoinPartyModal token={token} onClose={() => setJoinOpen(false)} /> : null}
+    {loginOpen && isFocused ? <LoginModal onClose={closeLogin} /> : null}
+    </>
   );
 }
 
-function FriendsBody({ m, mx, friends, incoming, presence, tab, setTab, query, setQuery, onRailFocus, onTabFocus }: any) {
+function FriendsBody({ m, mx, token, friends, incoming, presence, refresh, tab, setTab, query, setQuery, onRailFocus, onTabFocus }: any) {
   const [sf, setSf] = useState(false);
+  const toast = useToast();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const nav = useNavigation<any>();
+  // The friend row whose actions accordion is open (friends tab only).
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  // The friend whose inline nickname field is open.
+  const [nickId, setNickId] = useState<string | null>(null);
+  const [nickVal, setNickVal] = useState('');
+  // Friends with an OPEN room (they accepted our invite / are hosting) -> the row
+  // shows "Join party" instead of "Request party" until their room closes.
+  const activeParties = useActiveParties();
   const list = tab === 'requests' ? incoming : friends;
+  const acceptReq = (f: any) => { if (token) acceptFriendRequest(token, f.id).then(refresh).catch(() => toast.show('Could not accept')); };
+  const declineReq = (f: any) => { if (token) removeFriend(token, f.id).then(refresh).catch(() => toast.show('Could not decline')); };
+  const requestParty = (f: any) => { setExpandedId(null); if (token) requestPartyInvite(token, f.userId).then(() => toast.show('Invite sent', { description: `Waiting for ${f.nickname || f.displayName} to accept.` })).catch(() => toast.show('Invite failed')); };
+  const joinParty = (room: any) => { setExpandedId(null); joinWatchPartyRoom(token, { code: room.code, type: room.type, imdbId: room.imdbId, videoId: room.videoId, hasPassword: false, participantCount: 0 }).then((res) => { if (!res.ok) toast.show(res.reason ?? 'Could not join the party'); }); };
+  const unfriend = (f: any) => { setExpandedId(null); if (token) removeFriend(token, f.id).then(refresh).catch(() => toast.show('Could not remove')); };
+  const saveNick = (f: any) => { setNickId(null); setExpandedId(null); if (token) setFriendNickname(token, f.id, nickVal.trim()).then(refresh).catch(() => toast.show('Could not save')); };
   return (
     <View style={{ flex: 1, minHeight: 0, marginHorizontal: mx }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', height: m.s(38), borderRadius: radius.pill, paddingHorizontal: m.s(14), gap: m.s(10), marginTop: m.s(6), backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: 1, borderColor: sf ? colors.accent : 'rgba(255,255,255,0.12)' }}>
@@ -268,30 +307,137 @@ function FriendsBody({ m, mx, friends, incoming, presence, tab, setTab, query, s
           <Tab key={t} m={m} active={tab === t} label={`${t === 'friends' ? 'Friends' : 'Requests'} ${t === 'friends' ? friends.length : incoming.length}`} onRailFocus={onRailFocus} onTabFocus={onTabFocus} onPress={() => setTab(t)} />
         ))}
       </View>
-      <ScrollView style={{ flex: 1, marginTop: m.s(10) }} contentContainerStyle={{ gap: m.s(6), paddingBottom: m.s(10) }} showsVerticalScrollIndicator>
-        {list.length === 0 ? (
-          <Text style={{ fontFamily: font.body, fontSize: m.s(14), color: colors.textFaint, padding: m.s(10) }}>{tab === 'requests' ? 'No requests.' : 'No friends yet.'}</Text>
-        ) : (
-          list.map((f: any) => {
-            const p = presence.get(f.userId);
-            return (
-              <Pressable
-                key={f.id}
-                onFocus={() => onRailFocus(true)}
-                onBlur={() => onRailFocus(false)}
-                style={({ focused }: any) => ({ flexDirection: 'row', alignItems: 'center', gap: m.s(11), paddingVertical: m.s(8), paddingHorizontal: m.s(10), borderRadius: m.s(14), backgroundColor: 'rgba(255,255,255,0.043)', borderWidth: 1, borderColor: focused ? colors.accent : 'transparent' })}
-              >
-                <FriendAvatar name={f.nickname || f.displayName} size={m.s(46)} online={Boolean(p?.online)} />
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text numberOfLines={1} style={{ fontFamily: font.bodySemi, fontSize: m.s(15), color: colors.text }}>{f.nickname || f.displayName}</Text>
-                  <Text numberOfLines={1} style={{ fontFamily: font.body, fontSize: m.s(13), color: 'rgba(255,255,255,0.5)' }}>{tab === 'requests' ? 'wants to be friends' : statusLine(p)}</Text>
+      {/* The list scrolls; a bottom fade dissolves the last row into the panel
+          instead of a hard clip, signalling "more below" (matches the home peek). */}
+      <View style={{ flex: 1, minHeight: 0, marginTop: m.s(10) }}>
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: m.s(6), paddingBottom: m.s(56) }} showsVerticalScrollIndicator>
+          {list.length === 0 ? (
+            <Text style={{ fontFamily: font.body, fontSize: m.s(14), color: colors.textFaint, padding: m.s(10) }}>{tab === 'requests' ? 'No requests.' : 'No friends yet.'}</Text>
+          ) : (
+            list.map((f: any) => {
+              const p = presence.get(f.userId);
+              const watching = tab === 'friends' && Boolean(p?.online && p?.activity?.name);
+              const activeRoom = tab === 'friends' ? activeParties[f.userId] : undefined;
+              const isReq = tab === 'requests';
+              const expanded = !isReq && expandedId === f.id;
+              const editingNick = nickId === f.id;
+              return (
+                <View key={f.id} style={{ borderRadius: m.s(14), overflow: 'hidden', backgroundColor: expanded ? 'rgba(255,255,255,0.06)' : 'transparent' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(8) }}>
+                    {/* OK on a friend EXPANDS the row (accordion); on a request it accepts. */}
+                    <FriendRow m={m} expanded={expanded} onRailFocus={onRailFocus} onPress={() => { if (isReq) acceptReq(f); else setExpandedId(expanded ? null : f.id); }}>
+                      <FriendAvatar name={f.nickname || f.displayName} size={m.s(46)} online={Boolean(p?.online)} />
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text numberOfLines={1} style={{ fontFamily: font.bodySemi, fontSize: m.s(15), color: colors.text }}>{f.nickname || f.displayName}</Text>
+                        <Text numberOfLines={1} style={{ fontFamily: font.body, fontSize: m.s(13), color: 'rgba(255,255,255,0.5)' }}>{isReq ? 'wants to be friends' : statusLine(p)}</Text>
+                      </View>
+                      {isReq ? (
+                        <StrokeIcon path="M5 13l4 4L19 7" size={m.s(20)} color="#34d399" />
+                      ) : (
+                        <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={m.s(18)} color="rgba(255,255,255,0.5)" />
+                      )}
+                    </FriendRow>
+                    {isReq ? <FriendActionBtn m={m} icon="M6 6l12 12M18 6L6 18" color="#f87171" onRailFocus={onRailFocus} onPress={() => declineReq(f)} /> : null}
+                  </View>
+                  {/* Accordion: actions revealed below the name (the OpenCode PersonActionsRow). */}
+                  {expanded ? (
+                    <View style={{ paddingHorizontal: m.s(8), paddingBottom: m.s(8), gap: m.s(2) }}>
+                      {editingNick ? (
+                        <>
+                          <FriendNickField m={m} value={nickVal} onChange={setNickVal} onSubmit={() => saveNick(f)} onRailFocus={onRailFocus} />
+                          <OptionRow m={m} label="Save nickname" accent onRailFocus={onRailFocus} onPress={() => saveNick(f)} />
+                          <OptionRow m={m} label="Back" onRailFocus={onRailFocus} onPress={() => setNickId(null)} />
+                        </>
+                      ) : (
+                        <>
+                          <OptionRow m={m} label="View profile" autoFocus onRailFocus={onRailFocus} onPress={() => { setExpandedId(null); nav.navigate('Profile', { userId: f.userId, displayName: f.nickname || f.displayName }); }} />
+                          {activeRoom ? (
+                            <OptionRow m={m} label="Join party" accent onRailFocus={onRailFocus} onPress={() => joinParty(activeRoom)} />
+                          ) : watching ? (
+                            <OptionRow m={m} label="Request party" accent onRailFocus={onRailFocus} onPress={() => requestParty(f)} />
+                          ) : null}
+                          <OptionRow m={m} label="Nickname" onRailFocus={onRailFocus} onPress={() => { setNickId(f.id); setNickVal(f.nickname ?? ''); }} />
+                          <OptionRow m={m} label="Remove friend" danger onRailFocus={onRailFocus} onPress={() => unfriend(f)} />
+                        </>
+                      )}
+                    </View>
+                  ) : null}
                 </View>
-              </Pressable>
-            );
-          })
-        )}
-      </ScrollView>
+              );
+            })
+          )}
+        </ScrollView>
+        <LinearGradient pointerEvents="none" colors={['transparent', NAV_PANEL]} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: m.s(48) }} />
+      </View>
     </View>
+  );
+}
+
+// The focusable friend-row body (avatar + name/status + a right-side hint icon).
+// OK runs the row's primary action; it's a real focus stop so the D-pad walks the
+// list. The decline ✕ (requests) sits beside it as a separate focusable.
+function FriendRow({ m, expanded, onRailFocus, onPress, children }: any) {
+  const [f, setF] = useState(false);
+  return (
+    <Pressable
+      onFocus={() => { setF(true); onRailFocus(true); }}
+      onBlur={() => { setF(false); onRailFocus(false); }}
+      onPress={onPress}
+      style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: m.s(11), paddingVertical: m.s(8), paddingHorizontal: m.s(10), borderRadius: m.s(14), backgroundColor: f ? 'rgba(255,255,255,0.1)' : expanded ? 'transparent' : 'rgba(255,255,255,0.043)', borderWidth: m.s(2), borderColor: f ? colors.accent : 'transparent' }}
+    >
+      {children}
+    </Pressable>
+  );
+}
+
+// One action inside the expanded friend accordion (View profile / Request party /
+// Nickname / Remove friend).
+function OptionRow({ m, label, accent, danger, autoFocus, onRailFocus, onPress }: any) {
+  const [f, setF] = useState(false);
+  const color = danger ? '#f87171' : accent ? colors.accent : colors.text;
+  return (
+    <Pressable
+      hasTVPreferredFocus={autoFocus}
+      onFocus={() => { setF(true); onRailFocus(true); }}
+      onBlur={() => { setF(false); onRailFocus(false); }}
+      onPress={onPress}
+      style={{ borderRadius: m.s(10), paddingHorizontal: m.s(12), paddingVertical: m.s(10), backgroundColor: f ? 'rgba(255,255,255,0.12)' : 'transparent', borderWidth: m.s(2), borderColor: f ? colors.accent : 'transparent' }}
+    >
+      <Text style={{ fontFamily: font.bodyMed, fontSize: m.s(15), color }}>{label}</Text>
+    </Pressable>
+  );
+}
+
+// Inline nickname text field inside the accordion (OK focuses it -> IME).
+function FriendNickField({ m, value, onChange, onSubmit, onRailFocus }: any) {
+  const [f, setF] = useState(false);
+  const ref = useRef<TextInput>(null);
+  return (
+    <Pressable
+      hasTVPreferredFocus
+      onFocus={() => { setF(true); onRailFocus(true); }}
+      onBlur={() => { setF(false); onRailFocus(false); }}
+      onPress={() => ref.current?.focus()}
+      style={{ borderRadius: m.s(10), borderWidth: m.s(2), borderColor: f ? colors.accent : 'rgba(255,255,255,0.15)', backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: m.s(12), minHeight: m.s(44), justifyContent: 'center' }}
+    >
+      <TextInput ref={ref} value={value} onChangeText={onChange} onFocus={() => { setF(true); onRailFocus(true); }} onBlur={() => { setF(false); onRailFocus(false); }} onSubmitEditing={onSubmit} placeholder="Nickname (blank to clear)" placeholderTextColor={colors.textGhost} maxLength={40}
+        style={{ fontFamily: font.body, fontSize: m.s(15), color: colors.text, paddingVertical: m.s(8) }} />
+    </Pressable>
+  );
+}
+
+// A focusable round icon button on a friend row (accept ✓ / decline ✕ / party).
+function FriendActionBtn({ m, icon, color, onRailFocus, onPress }: any) {
+  const [f, setF] = useState(false);
+  return (
+    <Pressable
+      onFocus={() => { setF(true); onRailFocus(true); }}
+      onBlur={() => { setF(false); onRailFocus(false); }}
+      onPress={onPress}
+      style={{ width: m.s(42), height: m.s(42), borderRadius: 999, alignItems: 'center', justifyContent: 'center', backgroundColor: f ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.06)', borderWidth: m.s(2), borderColor: f ? colors.accent : 'transparent' }}
+    >
+      <StrokeIcon path={icon} size={m.s(20)} color={color} />
+    </Pressable>
   );
 }
 

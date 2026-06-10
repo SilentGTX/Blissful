@@ -3,13 +3,16 @@ import type { StackNavigationProp } from '@react-navigation/stack';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, ScrollView, StyleSheet, useTVEventHandler, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { fetchBlissfulLibrary, fetchCatalog, fetchMeta, normalizeStremioImage, putBlissfulLibraryItem, type LibraryItem, type MediaType, type StremioMetaDetail } from '@blissful/core';
+import { fetchBlissfulLibrary, fetchCatalog, normalizeStremioImage, putBlissfulLibraryItem, type LibraryItem, type MediaType, type StremioMetaDetail } from '@blissful/core';
 import { colors } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { useAuth } from '../context/AuthContext';
 import { fetchContinueWatching, type CwItem } from '../lib/continueWatching';
 import { formatReleaseInfo } from '../lib/releaseInfo';
 import { loadStreams } from '../lib/streamPicker';
+import { resolveMeta } from '../lib/metaResolver';
+import { proxiedImage } from '../lib/images';
+import { Image as ExpoImage } from 'expo-image';
 import { NavRail } from '../components/NavRail';
 import { ProfileMenu } from '../components/ProfileMenu';
 import { ResumeModal } from '../components/ResumeModal';
@@ -20,6 +23,16 @@ import { HomeTopRight } from '../components/home/HomeTopRight';
 import { LandscapeRail } from '../components/home/LandscapeRail';
 import type { TileRect } from '../components/home/LandscapeTile';
 import { cwToHomeItem, metaToHomeItem, type HomeItem } from '../components/home/homeData';
+import { useAddonRows } from '../components/home/useAddonRows';
+import { CustomizeHomeModal } from '../components/home/CustomizeHomeModal';
+import {
+  getHomeRowOptions,
+  resolveHomeRowOrder,
+  HOME_ROW_POPULAR_MOVIE,
+  HOME_ROW_POPULAR_SERIES,
+  type HomeRowPrefs,
+} from '../lib/homeRows';
+import { fetchHomeRowPrefs, readCachedHomeRowPrefs } from '../lib/addons';
 import type { RootStackParamList } from '../navigation/types';
 
 type Nav = StackNavigationProp<RootStackParamList, 'Home'>;
@@ -47,6 +60,11 @@ export function HomeScreen() {
   const [cwReady, setCwReady] = useState(false); // CW fetch resolved → safe to mount rows
   const [popMovies, setPopMovies] = useState<HomeItem[]>([]);
   const [popSeries, setPopSeries] = useState<HomeItem[]>([]);
+  // Installed catalog addons (e.g. Anime Kitsu) → home rows + the row "menu", plus
+  // the user's customize-home prefs (row order + hidden set) and the modal toggle.
+  const { addons, addonRows } = useAddonRows(token);
+  const [homeRowPrefs, setHomeRowPrefs] = useState<HomeRowPrefs>(() => readCachedHomeRowPrefs());
+  const [customizeOpen, setCustomizeOpen] = useState(false);
   // The focused item drives the Backdrop + InfoPanel; its full meta (blurb /
   // genres / runtime / hi-res backdrop) is fetched lazily on focus.
   const [focused, setFocused] = useState<HomeItem | null>(null);
@@ -134,11 +152,38 @@ export function HomeScreen() {
     return () => { cancelled = true; };
   }, []);
 
-  const rows: RowDef[] = useMemo(() => [
-    ...(cw.length ? [{ key: 'cw', title: 'Continue Watching', items: cw }] : []),
-    { key: 'pm', title: 'Popular Movies', items: popMovies, seeAll: () => navigation.navigate('Discover', { type: 'movie' as MediaType }) },
-    { key: 'ps', title: 'Popular Series', items: popSeries, seeAll: () => navigation.navigate('Discover', { type: 'series' as MediaType }) },
-  ], [cw, popMovies, popSeries, navigation]);
+  // The authoritative customize-home prefs: /state for signed-in users, the local
+  // cache for guests. Seeded synchronously from kv above; refined here on login.
+  useEffect(() => {
+    let cancelled = false;
+    fetchHomeRowPrefs(token).then((p) => { if (!cancelled) setHomeRowPrefs(p); });
+    return () => { cancelled = true; };
+  }, [token]);
+
+  // The customize-home row "menu": Popular Movies/Series + one entry per installed
+  // catalog addon (its first catalog). Drives both the rendered order and the modal.
+  const homeRowOptions = useMemo(() => getHomeRowOptions(addons), [addons]);
+
+  // Build the rendered rows from the resolved order, skipping hidden rows. Continue
+  // Watching is always pinned at the top (it isn't part of the customize-home order,
+  // matching the web). Row keys are the home-row IDs so prefs map 1:1.
+  const rows: RowDef[] = useMemo(() => {
+    const out: RowDef[] = [];
+    if (cw.length) out.push({ key: 'cw', title: 'Continue Watching', items: cw });
+    const { order, hidden } = resolveHomeRowOrder(homeRowOptions, homeRowPrefs);
+    for (const id of order) {
+      if (hidden.includes(id)) continue;
+      if (id === HOME_ROW_POPULAR_MOVIE) {
+        out.push({ key: id, title: 'Popular Movies', items: popMovies, seeAll: () => navigation.navigate('Discover', { type: 'movie' as MediaType }) });
+      } else if (id === HOME_ROW_POPULAR_SERIES) {
+        out.push({ key: id, title: 'Popular Series', items: popSeries, seeAll: () => navigation.navigate('Discover', { type: 'series' as MediaType }) });
+      } else {
+        const addonRow = addonRows[id];
+        if (addonRow && addonRow.items.length) out.push({ key: id, title: addonRow.title, items: addonRow.items, seeAll: () => navigation.navigate('Discover', { type: addonRow.type, transportUrl: addonRow.transportUrl, catalogId: addonRow.catalogId, title: addonRow.title }) });
+      }
+    }
+    return out;
+  }, [cw, popMovies, popSeries, addonRows, homeRowOptions, homeRowPrefs, navigation]);
 
   // Seed the featured item once the first row has data so the backdrop / InfoPanel
   // aren't blank before the user moves focus. Gated on cwReady so it seeds from the
@@ -160,12 +205,45 @@ export function HomeScreen() {
     if (cached) { setFocusedMeta({ key, meta: cached }); return; }
     const ctrl = new AbortController();
     const t = setTimeout(() => {
-      fetchMeta({ type, id, signal: ctrl.signal })
-        .then((r) => { metaCache.set(key, r.meta); setFocusedMeta({ key, meta: r.meta }); })
+      // Route through the owning addon so kitsu items get their real background
+      // (the big poster behind) + meta, not Cinemeta's empty sentinel.
+      resolveMeta(type, id, token, ctrl.signal)
+        .then((r) => { if (r) { metaCache.set(key, r.meta); setFocusedMeta({ key, meta: r.meta }); } })
         .catch(() => {});
     }, 180);
     return () => { clearTimeout(t); ctrl.abort(); };
-  }, [focused?.id, focused?.type]);
+  }, [focused?.id, focused?.type, token]);
+
+  // Warm the meta cache for addon-row (e.g. Anime Kitsu) items so focusing one
+  // paints its real backdrop + info INSTANTLY. Without this, each first focus
+  // briefly showed the low-q catalog poster + the *previous* title's meta while
+  // the addon-routed fetch ran. Cinemeta rows are fast + metahub-backed (their
+  // poster-derived backdrop already matches meta.background), so skip them.
+  useEffect(() => {
+    const items = Object.values(addonRows).flatMap((r) => r.items);
+    if (!items.length) return;
+    let cancelled = false;
+    let i = 0;
+    const worker = async () => {
+      while (!cancelled && i < items.length) {
+        const it = items[i++];
+        const key = `${it.type}:${it.id}`;
+        if (metaCache.has(key)) continue;
+        const r = await resolveMeta(it.type, it.id, token).catch(() => null);
+        if (r && !cancelled) {
+          metaCache.set(key, r.meta);
+          // Warm the on-disk image cache for the backdrop so focusing the item
+          // paints instantly (and the crossfade has the bytes ready).
+          const bg = proxiedImage(normalizeStremioImage(r.meta.background) ?? normalizeStremioImage(r.meta.poster));
+          if (bg) ExpoImage.prefetch(bg).catch(() => {});
+        }
+      }
+    };
+    // 2 workers (not more): the focused item's own meta fetch shares the Kitsu
+    // host, and a heavier burst starved it (the backdrop lagged seconds behind).
+    void Promise.all(Array.from({ length: 2 }, () => worker()));
+    return () => { cancelled = true; };
+  }, [addonRows, token]);
 
   const onFocusItem = useCallback((it: HomeItem, rowIndex: number) => {
     setFocused(it);
@@ -257,7 +335,7 @@ export function HomeScreen() {
     const type = (item.type === 'series' ? 'series' : 'movie') as MediaType;
     const streamId = item.type === 'series' ? (item.videoId ?? item.id) : item.id;
     try {
-      const metaP = fetchMeta({ type: item.type as MediaType, id: item.id, signal: ctrl.signal }).then((r) => r.meta).catch(() => null);
+      const metaP = resolveMeta(item.type as MediaType, item.id, token, ctrl.signal).then((r) => r?.meta ?? null).catch(() => null);
       const streamsP = item.streamUrl ? Promise.resolve([]) : loadStreams(token, type, streamId, { signal: ctrl.signal });
       void metaP.then((mta) => {
         if (ctrl.signal.aborted) return;
@@ -302,7 +380,7 @@ export function HomeScreen() {
   return (
     <View style={styles.root}>
       <Backdrop item={focused} meta={focused && focusedMeta?.key === `${focused.type}:${focused.id}` ? focusedMeta.meta : null} />
-      <InfoPanel item={focused} meta={focusedMeta?.meta ?? null} m={m} avatarUpTag={avatarTag ?? undefined} />
+      <InfoPanel item={focused} meta={focused && focusedMeta?.key === `${focused.type}:${focused.id}` ? focusedMeta.meta : null} m={m} avatarUpTag={avatarTag ?? undefined} />
 
       {/* rows band — lower portion, vertical focus-scroll (touch disabled). */}
       <View style={{ position: 'absolute', left: CONTENT_LEFT, right: 0, top: ROWS_TOP, bottom: 0, overflow: 'hidden' }} pointerEvents="box-none">
@@ -343,7 +421,7 @@ export function HomeScreen() {
         onClose={() => setResumeItem(null)}
       />
       {resolving ? <BufferingVeil visible black logo={resolving.logo} /> : null}
-      <ProfileMenu visible={profileOpen} onClose={() => setProfileOpen(false)} />
+      <ProfileMenu visible={profileOpen} onClose={() => setProfileOpen(false)} onCustomizeHome={() => setCustomizeOpen(true)} />
       <HomeActionOverlay
         item={actionItem}
         rect={actionRect}
@@ -352,6 +430,14 @@ export function HomeScreen() {
         onToggleLibrary={toggleLibrary}
         onRemoveProgress={removeProgress}
         onClose={closeActions}
+      />
+      <CustomizeHomeModal
+        visible={customizeOpen}
+        options={homeRowOptions}
+        prefs={homeRowPrefs}
+        token={token}
+        onSave={setHomeRowPrefs}
+        onClose={() => setCustomizeOpen(false)}
       />
     </View>
   );

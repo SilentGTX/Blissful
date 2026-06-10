@@ -5,7 +5,7 @@ import type { StackNavigationProp } from '@react-navigation/stack';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
-import { fetchBlissfulLibrary, fetchCatalog, fetchMeta, getStorageBaseUrl, normalizeStremioImage, putBlissfulLibraryItem, type LibraryItem, type StremioMetaDetail, type StremioMetaPreview } from '@blissful/core';
+import { fetchBlissfulLibrary, fetchCatalog, getStorageBaseUrl, normalizeStremioImage, putBlissfulLibraryItem, type LibraryItem, type StremioMetaDetail, type StremioMetaPreview } from '@blissful/core';
 import { colors, font, radius } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { useAuth } from '../context/AuthContext';
@@ -16,6 +16,7 @@ import { ResumeModal } from '../components/ResumeModal';
 import { StreamPicker, type StreamPickerTarget } from '../components/StreamPicker';
 import { TvSelect, TvSelectOverlay, type DropdownAnchor, type SelectOption } from '../components/TvSelect';
 import { metahubPosterToBackdrop } from '../lib/images';
+import { resolveMeta } from '../lib/metaResolver';
 import { formatReleaseInfo } from '../lib/releaseInfo';
 import type { CwItem } from '../lib/continueWatching';
 import type { RootStackParamList } from '../navigation/types';
@@ -119,28 +120,22 @@ function EpisodeCard({ video, m, runtime, imgs, poster, watched, rating, progres
   const exhausted = imgIdx >= imgList.length;
   const date = shortDate(video.released);
   const sub = [runtime, date].filter(Boolean).join('   ');
-  const ratingText = rating != null && String(rating).trim() && Number(rating) > 0 ? Number(rating).toFixed(1) : null;
   return (
     <Pressable hasTVPreferredFocus={autoFocus} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onPress={onPress} style={{ width: w }}>
       <View style={{ width: w, aspectRatio: 16 / 9, borderRadius: m.s(12), overflow: 'hidden', backgroundColor: colors.surface, borderWidth: 1, borderColor: focused ? colors.accent : 'transparent' }}>
         {current ? <Img key={current} uri={current} style={styles.fill} contentFit="cover" onError={() => setImgIdx((i) => i + 1)} /> : null}
         {exhausted && poster ? <Img uri={poster} style={styles.fill} contentFit="cover" /> : null}
+        {/* IMDb rating badge, top-left (shared Rating component). */}
+        <Rating size="sm" badge initialRating={rating} containerStyle={{ position: 'absolute', left: m.s(8), top: m.s(8) }} />
         {/* WATCHED pill (amber), top-right. */}
         {watched ? (
           <View style={{ position: 'absolute', right: m.s(8), top: m.s(8), borderRadius: m.s(6), backgroundColor: colors.imdbGold, paddingHorizontal: m.s(8), paddingVertical: m.s(2) }}>
             <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(12), letterSpacing: m.s(0.5), color: '#1a1205' }}>WATCHED</Text>
           </View>
         ) : null}
-        {/* IMDb rating pill, bottom-right. */}
-        {ratingText ? (
-          <View style={{ position: 'absolute', right: m.s(8), bottom: m.s(8), flexDirection: 'row', alignItems: 'center', gap: m.s(5), borderRadius: m.s(6), backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: m.s(8), paddingVertical: m.s(3) }}>
-            <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(15), color: '#fff' }}>{ratingText}</Text>
-            <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(11), color: colors.imdbGold }}>IMDb</Text>
-          </View>
-        ) : null}
         {focused ? (
           <View style={{ position: 'absolute', left: m.s(10), bottom: m.s(10), width: m.s(42), height: m.s(42), borderRadius: radius.pill, backgroundColor: 'rgba(0,0,0,0.55)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)', alignItems: 'center', justifyContent: 'center' }}>
-            <Ionicons name="play" size={m.s(22)} color="#fff" />
+            <Ionicons name="play" size={m.s(22)} color="#fff" style={{ marginLeft: m.s(3) }} />
           </View>
         ) : null}
         {/* Watch-progress bar along the bottom of the still. */}
@@ -246,18 +241,23 @@ export function DetailScreen() {
     void putBlissfulLibraryItem(token, params.id, base).then(() => setLibVersion((v) => v + 1)).catch(() => {});
   }, [token, inLibrary, libItem, meta?.poster, meta?.name, params.id, params.type, params.name, params.poster]);
 
-  const isSeries = params.type === 'series';
+  // Anime (Kitsu) is series-like: it has seasons/episodes, no standalone Watch button.
+  const isSeries = params.type === 'series' || params.type === 'anime';
 
   useEffect(() => {
     let cancelled = false;
+    const ctrl = new AbortController();
     setLoading(true);
-    fetchMeta({ type: params.type, id: params.id })
-      .then((r) => !cancelled && setMeta(r.meta))
+    // Route through the owning addon (Cinemeta has no kitsu: ids) so the page
+    // actually populates — title, background, genres, cast, episodes.
+    resolveMeta(params.type, params.id, token, ctrl.signal)
+      .then((r) => { if (!cancelled && r) setMeta(r.meta); })
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
+      ctrl.abort();
     };
-  }, [params.type, params.id]);
+  }, [params.type, params.id, token]);
 
   const videos = meta?.videos ?? [];
   const seasons = useMemo(() => {
@@ -403,11 +403,27 @@ export function DetailScreen() {
   // from the poster we already have (metahub poster -> background/medium), which
   // is byte-identical to meta.background once it arrives, so the <Image> source
   // never swaps. Falls back to the raw poster (hidden under the scrim) otherwise.
-  const background =
-    normalizeStremioImage(meta?.background) ??
-    normalizeStremioImage(meta?.poster) ??
-    metahubPosterToBackdrop(normalizeStremioImage(params.poster)) ??
-    normalizeStremioImage(params.poster);
+  // Backdrop sources, best first (matches the Windows detail page). Some fanart.tv
+  // backgrounds 404 / block a direct fetch, so the <Img> advances through these on
+  // load error (onError below) instead of showing a black frame.
+  const bgCandidates = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [
+            normalizeStremioImage(meta?.background),
+            normalizeStremioImage(meta?.poster),
+            metahubPosterToBackdrop(normalizeStremioImage(params.poster)),
+            normalizeStremioImage(params.poster),
+          ].filter((u): u is string => !!u),
+        ),
+      ),
+    [meta?.background, meta?.poster, params.poster],
+  );
+  const [bgIdx, setBgIdx] = useState(0);
+  const bgKey = bgCandidates.join('|');
+  useEffect(() => setBgIdx(0), [bgKey]);
+  const background = bgCandidates[bgIdx] ?? null;
   const cast = (meta?.cast ?? []).slice(0, 5);
   const released = fmtDate(meta?.released) ?? (meta?.releaseInfo ? formatReleaseInfo(meta.releaseInfo) : null) ?? (meta?.year != null ? String(meta.year) : null);
   const metaBits = [meta?.runtime, released].filter(Boolean) as string[];
@@ -467,7 +483,7 @@ export function DetailScreen() {
 
   return (
     <View style={styles.root}>
-      {background ? <Img uri={background} style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '72%' }} contentFit="cover" /> : null}
+      {background ? <Img uri={background} style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '72%' }} contentFit="cover" transition={350} onError={() => setBgIdx((i) => i + 1)} /> : null}
       {/* subtle brand-accent (lavender) wash over the backdrop art — below the
           scrims. Same 72% region as the backdrop image. Tied to the themed accent. */}
       {background ? <View pointerEvents="none" style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '72%', backgroundColor: colors.accent, opacity: 0.12 }} /> : null}
@@ -497,10 +513,8 @@ export function DetailScreen() {
             <Rating
               imdbId={meta?.imdb_id ?? (IMDB_RE.test(params.id) ? params.id : null)}
               initialRating={rating}
-              numberSize={m.s(20)}
-              iconSize={m.s(22)}
-              gap={m.s(6)}
-              leading={metaBits.length ? <Text style={{ fontSize: m.s(20), color: 'rgba(255,255,255,0.4)', marginRight: m.s(8) }}>·</Text> : null}
+              size="md"
+              leading={metaBits.length ? <Text style={{ fontSize: m.s(22), color: 'rgba(255,255,255,0.4)', marginRight: m.s(8) }}>·</Text> : null}
             />
           </View>
 
@@ -540,7 +554,7 @@ export function DetailScreen() {
 
         {/* .tv-detail-bottom — episodes (series) or similar (movie). */}
         {isSeries && seasons.length ? (
-          <View>
+          <View style={{ marginBottom: m.s(40) }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(20), marginBottom: m.s(12) }}>
               <Text style={{ fontFamily: font.serif, fontSize: m.s(36), color: colors.text }}>Episodes</Text>
               {seasons.length > 1 ? (() => {
@@ -571,7 +585,7 @@ export function DetailScreen() {
                     value={String(safeChunk)}
                     onChange={(k) => setEpChunk(Number(k))}
                     m={m}
-                    minWidth={m.s(200)}
+                    minWidth={m.s(300)}
                     onOpen={setDropdown}
                   />
                   <SeasonChevron icon="chevron-forward" m={m} disabled={safeChunk >= chunkCount - 1} onPress={() => setEpChunk(safeChunk + 1)} />
@@ -612,7 +626,7 @@ export function DetailScreen() {
             />
           </View>
         ) : !isSeries && similar.length ? (
-          <View>
+          <View style={{ marginBottom: m.s(40) }}>
             <Text style={{ fontFamily: font.serif, fontSize: m.s(36), color: colors.text, marginBottom: m.s(12) }}>You may also like</Text>
             <FlatList horizontal data={similar} keyExtractor={(it) => it.id} showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: m.s(20), paddingTop: m.s(14), paddingBottom: m.s(8), paddingLeft: m.s(8), paddingRight: m.safeX }} renderItem={({ item }) => <PosterCard item={item} width={m.s(180)} onSelect={onSimilar} />} />
           </View>

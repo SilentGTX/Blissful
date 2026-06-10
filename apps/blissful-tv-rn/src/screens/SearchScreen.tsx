@@ -2,7 +2,7 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Keyboard, ScrollView, StyleSheet, Text, useTVEventHandler, View } from 'react-native';
 import { fetchCatalog, type StremioMetaPreview } from '@blissful/core';
-import { useRailOpen } from '../lib/railStore';
+import { useContentInert } from '../lib/contentFocus';
 import { colors, font } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { NavRail } from '../components/NavRail';
@@ -85,7 +85,7 @@ export function SearchScreen() {
   });
 
   const hasResults = movies.length > 0 || series.length > 0;
-  const railOpen = useRailOpen();
+  const railOpen = useContentInert();
 
   return (
     <View style={styles.root}>

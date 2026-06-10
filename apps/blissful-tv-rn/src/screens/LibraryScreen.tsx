@@ -1,6 +1,6 @@
-import { useNavigation } from '@react-navigation/native';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { BackHandler, FlatList, Pressable, ScrollView, StyleSheet, Text, useTVEventHandler, View } from 'react-native';
 import { PosterGridSkeleton } from '../components/Skeleton';
 import {
   fetchBlissfulLibrary,
@@ -11,13 +11,15 @@ import {
 } from '@blissful/core';
 import { colors, font } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
-import { useRailOpen } from '../lib/railStore';
+import { useContentInert } from '../lib/contentFocus';
+import { openLogin } from '../lib/loginStore';
 import { useAuth } from '../context/AuthContext';
 import { useTvFocusable } from '../lib/useTvFocusable';
 import { NavRail } from '../components/NavRail';
 import { TopBar } from '../components/TopBar';
 import { type CardItem } from '../components/PosterCard';
-import { LibraryPosterCard } from '../components/LibraryPosterCard';
+import { LibraryPosterCard, type CardRect } from '../components/LibraryPosterCard';
+import { LibraryActionOverlay } from '../components/LibraryActionOverlay';
 import { TvSelect, TvSelectOverlay, type DropdownAnchor, type SelectOption } from '../components/TvSelect';
 
 // 1:1 with apps/blissful-mvs/src/pages/LibraryPage.tsx — same filters, sort
@@ -115,7 +117,7 @@ function Chip({
 export function LibraryScreen() {
   const navigation = useNavigation<any>();
   const m = useMetrics();
-  const railOpen = useRailOpen();
+  const railOpen = useContentInert();
   const { token } = useAuth();
 
   const [items, setItems] = useState<LibraryItem[]>([]);
@@ -127,6 +129,22 @@ export function LibraryScreen() {
   const [watchedFilter, setWatchedFilter] = useState<WatchedFilter>('all');
   const [dropdown, setDropdown] = useState<DropdownAnchor | null>(null);
   const hasLoadedOnceRef = useRef(false);
+
+  // Hold-OK quick-action overlay (Remove from library) — mirrors the Continue
+  // Watching tile. `actionRect` is the held card's measured window rect so the
+  // root overlay lands on it. The TV-event hold signal is global, so gate it on
+  // this screen being the active route + a library card actually being focused.
+  const [actionCard, setActionCard] = useState<CardItem | null>(null);
+  const [actionRect, setActionRect] = useState<CardRect | null>(null);
+  const focusedCardRef = useRef<CardItem | null>(null);
+  // Android TV fires longSelect AND the focused view's onPress on release; this
+  // flag (set by longSelect) makes the trailing onPress a no-op so a hold doesn't
+  // ALSO open Detail. Safety-cleared after 1s.
+  const longPressConsumedRef = useRef(false);
+  const longPressClearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isFocused = useIsFocused();
+  const isFocusedRef = useRef(isFocused);
+  isFocusedRef.current = isFocused;
 
   // Load + 30s refresh, exactly like LibraryPage. There is no window 'focus'
   // event on RN; the interval covers the same staleness window.
@@ -232,6 +250,13 @@ export function LibraryScreen() {
 
   const onSelect = useCallback(
     (card: CardItem) => {
+      // A hold (longSelect) also fires the focused card's onPress on release;
+      // swallow that one trailing press so a hold opens the overlay, not Detail.
+      if (longPressConsumedRef.current) {
+        longPressConsumedRef.current = false;
+        if (longPressClearTimer.current) clearTimeout(longPressClearTimer.current);
+        return;
+      }
       const cell = byId.get(card.id);
       if (!cell) return;
       const type = (cell.item.type === 'series' ? 'series' : cell.item.type === 'channel' ? 'channel' : 'movie') as MediaType;
@@ -245,6 +270,26 @@ export function LibraryScreen() {
     [byId, navigation]
   );
 
+  const onFocusCard = useCallback((card: CardItem) => { focusedCardRef.current = card; }, []);
+  const onBlurCard = useCallback(() => { focusedCardRef.current = null; }, []);
+  const closeActions = useCallback(() => { setActionCard(null); setActionRect(null); }, []);
+
+  // Hold OK → quick-action overlay on the focused card. On Android TV the reliable
+  // hold signal is the `longSelect` TV event (Pressable.onLongPress doesn't fire
+  // for the OK button); arm the consumed flag so the trailing onPress doesn't also
+  // open Detail. Refs only (no render-scoped state) so the global handler is correct
+  // regardless of re-subscription.
+  useTVEventHandler((evt) => {
+    if (evt?.eventType !== 'longSelect') return;
+    if (!isFocusedRef.current) return; // Library not the active route
+    const card = focusedCardRef.current;
+    if (!card) return; // focus is on a chip / dropdown / rail, not a card
+    longPressConsumedRef.current = true;
+    if (longPressClearTimer.current) clearTimeout(longPressClearTimer.current);
+    longPressClearTimer.current = setTimeout(() => { longPressConsumedRef.current = false; }, 1000);
+    setActionCard(card);
+  });
+
   // Soft-remove (upsert removed:true), optimistically dropping it from the grid.
   // Same backend write as the detail page; the 30s refresh reconciles failures.
   const removeItem = useCallback(
@@ -257,6 +302,19 @@ export function LibraryScreen() {
     },
     [byId, token]
   );
+
+  // Overlay "Remove from library": close the overlay, then soft-remove.
+  const onRemoveFromLibrary = useCallback((card: CardItem) => {
+    closeActions();
+    removeItem(card);
+  }, [closeActions, removeItem]);
+
+  // Back closes the on-card action overlay (it's not a routed modal, so wire Back here).
+  useEffect(() => {
+    if (!actionCard) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => { closeActions(); return true; });
+    return () => sub.remove();
+  }, [actionCard, closeActions]);
 
   const posterW = m.s(180);
   const padL = m.s(20); // clears the focused first-column card's 1.06 scale (no left clip)
@@ -279,7 +337,7 @@ export function LibraryScreen() {
               Login to see your Stremio library.
             </Text>
             <View style={{ marginTop: m.s(22), flexDirection: 'row' }}>
-              <Chip label="Login" active atRowStart m={m} onPress={() => navigation.navigate('Login')} />
+              <Chip label="Login" active atRowStart m={m} onPress={openLogin} />
             </View>
           </View>
         </View>
@@ -365,6 +423,9 @@ export function LibraryScreen() {
             maxToRenderPerBatch={cols * 2}
             windowSize={5}
             keyExtractor={(c) => c.item._id}
+            // Re-render cells when the held card changes so `active` propagates
+            // to the card (drives its rect measurement + ring suppression).
+            extraData={actionCard?.id}
             contentContainerStyle={{ gap: m.s(20), paddingTop: m.s(8), paddingBottom: m.s(40), paddingLeft: padL }}
             columnWrapperStyle={{ gap: m.s(24) }}
             showsVerticalScrollIndicator={false}
@@ -375,8 +436,11 @@ export function LibraryScreen() {
                 progress={item.progress}
                 autoFocus={index === 0}
                 atRowStart={index % cols === 0}
+                active={actionCard?.id === item.card.id}
                 onSelect={onSelect}
-                onLongSelect={removeItem}
+                onFocusItem={onFocusCard}
+                onBlurItem={onBlurCard}
+                onActiveRect={setActionRect}
               />
             )}
           />
@@ -384,6 +448,8 @@ export function LibraryScreen() {
       </View>
 
       {dropdown ? <TvSelectOverlay anchor={dropdown} onClose={() => { const r = dropdown.requestFocus; setDropdown(null); setTimeout(() => r(), 50); }} m={m} /> : null}
+
+      <LibraryActionOverlay item={actionCard} rect={actionRect} m={m} onRemove={onRemoveFromLibrary} onClose={closeActions} />
     </View>
   );
 }

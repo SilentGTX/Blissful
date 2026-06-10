@@ -31,10 +31,19 @@ export type RootStackParamList = {
     // id) so Back always lands on the right Detail page (mirrors the desktop
     // NativeMpvPlayer.onBack: navigate(`/detail/:type/:id`), never goBack()).
     detailId?: string;
+    // Watch-party room code (mirrors the desktop `?room=` on /player). When set,
+    // the player joins/hosts that room and syncs playback. setParams toggles it
+    // on create / clears it on leave.
+    roomCode?: string;
   };
-  Login: undefined;
+  // A friend's profile (identity + recently watched). Reached from the Friends
+  // accordion's "View profile".
+  Profile: { userId: string; displayName?: string };
   Search: { query?: string } | undefined;
-  Discover: { type: MediaType; genre?: string } | undefined;
+  // `transportUrl` + `catalogId` scope Discover to a specific addon catalog (the
+  // "See All" from an addon home row, e.g. Anime Kitsu); absent = Cinemeta top.
+  // `title` is the addon catalog's display name for the header.
+  Discover: { type: MediaType; genre?: string; transportUrl?: string; catalogId?: string; title?: string } | undefined;
   Settings: undefined;
   Library: undefined;
   Addons: undefined;
