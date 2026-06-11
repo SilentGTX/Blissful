@@ -249,12 +249,21 @@ types) stay in `blissful-mvs/src/lib` for now. This phase activates only if/when
 strategy changes (Ivan's call). Until then, watch-party protocol changes are coordinated
 manually across main, the RN branch, and the storage server.
 
-### Phase 5 — Backend services move (optional, recommended later)
+### Phase 5 — Backend services move — **DONE 2026-06-11 (`ff8248b` / OpenCode `eaadcc8f`)**
 
-`apps/blissful-storage`, `apps/addon-proxy`, `infra/` (resolver + transcoder + launchd),
-compose files → this repo. Mac deploy re-points its checkout. OpenCode archived. Until then,
-watch-party protocol changes still span two repos — coordinate (the 2026-06-11 port's
-`subs`/`gate` messages already depend on OpenCode's storage server being deployed).
+Moved here: `apps/blissful-storage`, `apps/addon-proxy`, blissful infra scripts + launchd
+plists (transcoder, videasy resolver/minter, backup, cache-cleanup, health-monitor, nas
+tools, mac-up), stremio-dev compose, and a root `docker-compose.yml` carrying the 5 blissful
+services (identical container names/ports/NAS binds — all state is NAS bind-mounted, so the
+project move touched no data). The Mac runs the stack from `~/home-lab/Blissful` (compose
+project `blissful`); launchd agents repointed + reloaded (transcoder 13098, resolver 13099
+verified). Secrets: `~/home-lab/Blissful/.env` (subset carved from OpenCode's).
+
+Stayed in OpenCode (per Ivan's scope): `discord-bot`, `mac-monitor`, `monitor`, nextcloud,
+the shared Traefik proxy + ALL its dynamic configs (including `blissful.yml` — routing config
+for the shared proxy), machine-level launchd, MCP/auth scripts. OpenCode's compose now
+carries only `discord-bot`; its README points here; `apps/blissful-mvs` there is frozen
+history. Protocol changes are now single-repo: client types + server handlers in one commit.
 
 ## 5. Risks
 

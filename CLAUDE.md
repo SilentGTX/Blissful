@@ -4,14 +4,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Overview
 
-**Blissful** — a native Windows Stremio client. Two apps under one repo:
+**Blissful** — the Blissful monorepo (since the 2026-06-11 migration; see
+[docs/MONOREPO-MIGRATION-PLAN.md](docs/MONOREPO-MIGRATION-PLAN.md)). One UI codebase serves
+web and Windows desktop; the backend lives here too:
 
-- `apps/blissful-shell/` — Rust native shell. Hosts a same-origin local HTTP server (`/addon-proxy`, `/storage/*`, `/stremio/*`, `/subtitles.vtt`, `/opensubHash`), spawns + supervises the bundled `stremio-service`, drives playback via in-process `libmpv2`, ships the GitHub-Releases auto-updater.
-- `apps/blissful-mvs/` — React UI. Built into `dist/` and served by the shell.
+- `apps/blissful-mvs/` — THE React UI, one codebase with two personalities gated by
+  `isNativeShell()`: desktop (NativeMpvPlayer/libmpv, multi-addon search, addon home rows,
+  Stremio accounts) and web (BlissfulPlayer + Vidking/RD resolve, mini-player/PiP). Deployed
+  to `https://blissful.budinoff.com`; the desktop shell loads that URL in release builds
+  (**thin shell** — web deploys update every install instantly; `BLISSFUL_UI_URL` overrides,
+  dev builds serve locally).
+- `apps/blissful-shell/` — Rust native Windows shell. Local same-origin HTTP server
+  (`/addon-proxy`, `/storage/*`, `/stremio/*`, `/tmdb-season-info`, `/rd-fallback`,
+  `/imdb-rating`, `/resolve-url`), spawns + supervises the bundled `stremio-service`, drives
+  playback via in-process `libmpv2`, GitHub-Releases auto-updater (now shell-only updates).
+- `apps/blissful-storage/` — the MongoDB-backed backend (auth, library/CW, friends, presence,
+  watch-party WS). `apps/addon-proxy/` — the server-side proxy (rd-fallback, imdb-rating,
+  tmdb-season-info, transcode endpoints, videasy). Both deploy on the Mac
+  (`~/home-lab/Blissful`) via the root `docker-compose.yml`; blissful infra scripts/launchd
+  live in `infra/`.
+- Android TV lives on the `react-native-blissful` branch — **never merged into main, never
+  touched** (standing rule).
 
-The shell auto-detects whether a Vite dev server is up on `:5173` and proxies UI requests to it; otherwise it serves the prebuilt `apps/blissful-mvs/dist/`.
-
-**Scope of this repo:** Windows desktop client only. The React UI also runs in a browser context (`SimplePlayer` instead of `NativeMpvPlayer`, `isNativeShell()` gating, etc.) — those code paths exist but the web deployment is not maintained from this repo and is not the focus of work here.
+The shell auto-detects whether a Vite dev server is up on `:5173` and proxies UI requests to it; otherwise it serves the prebuilt `apps/blissful-mvs/dist/` (dev builds) or loads the deployed site (release builds).
 
 ## Build & Dev Commands
 
@@ -136,7 +151,7 @@ The shell writes `server-settings.json` to `%APPDATA%\stremio\stremio-server\` w
 
 1. **Stremio Core API** (`lib/stremioApi.ts`) — auth, library sync, addon management. Endpoint `https://api.strem.io/api/*`.
 2. **Addon protocol** (`lib/stremioAddon.ts`) — fetches manifest/catalog/meta/stream/subtitles from addon URLs. All requests go through `/addon-proxy` for CORS. 5-minute in-memory cache per resource type. `normalizeAddonBaseUrl()` is unit-tested.
-3. **Storage server** (`lib/storageApi.ts`) — persists user prefs (player settings, home row order, theme, etc.) to a remote MongoDB-backed `blissful-storage` server. The shell proxies these calls through `/storage/*` so the renderer treats them as same-origin. The storage service is hosted separately and out of scope for this repo.
+3. **Storage server** (`lib/storageApi.ts`) — persists user prefs (player settings, home row order, theme, etc.) to the MongoDB-backed `blissful-storage` server, which lives in this repo at `apps/blissful-storage/` and deploys on the Mac via the root `docker-compose.yml`. The shell proxies these calls through `/storage/*` so the renderer treats them as same-origin (web hits it directly).
 4. **Local state** — watch progress (`progressStore.ts`), stream history (`streamHistory.ts`), library bookmarks (`libraryStore.ts`) all use `localStorage` under `bliss*` key prefixes.
 
 ### Provider architecture
