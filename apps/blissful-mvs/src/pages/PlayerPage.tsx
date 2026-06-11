@@ -3,7 +3,6 @@ import { useSearchParams } from 'react-router-dom';
 import { useAddons } from '../context/AddonsProvider';
 import { useAuth } from '../context/AuthProvider';
 import { useStorage } from '../context/StorageProvider';
-import SimplePlayer from '../components/SimplePlayer';
 import NativeMpvPlayer from '../components/NativeMpvPlayer';
 import { isNativeShell } from '../lib/desktop';
 import type { PlayerSettings } from '../lib/playerSettings';
@@ -269,11 +268,12 @@ export default function PlayerPage() {
 
   if (!url) return null;
 
-  // Native Rust shell → libmpv-backed NativeMpvPlayer (non-nullable
-  // props, coerce-or-bail at the boundary).
-  // Browser/web → SimplePlayer (accepts nullables throughout because
-  // it had to handle url-only entry paths before).
-  if (isNativeShell()) {
+  // This page is the DESKTOP player route. Browsers never reach it: the
+  // /player route dispatches to <PlayerSeeder/> outside the shell, and the
+  // web player (PlayerPageWeb + BlissfulPlayer) renders inside
+  // PersistentPlayerHost. The guard is defense-in-depth only.
+  if (!isNativeShell()) return null;
+  {
     if (!type || !id || (type !== 'movie' && type !== 'series')) return null;
     return (
       <NativeMpvPlayer
@@ -301,23 +301,4 @@ export default function PlayerPage() {
       />
     );
   }
-
-  return (
-    <SimplePlayer
-      url={url}
-      title={title}
-      metaTitle={metaTitle}
-      poster={poster}
-      logo={logo}
-      startTimeSeconds={startTime}
-      type={type}
-      id={id}
-      videoId={videoId}
-      addons={addons}
-      authKey={authKey}
-      playerSettings={resolvedPlayerSettings}
-      savePlayerSettings={savePlayerSettings}
-      nextEpisodeInfo={nextEpisodeInfo}
-    />
-  );
 }

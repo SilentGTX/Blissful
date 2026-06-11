@@ -5,8 +5,11 @@ import { MiniPlayerWindow } from './MiniPlayerWindow';
 
 // The player is hoisted out of the /player route into one persistent instance so
 // it survives navigation. Lazy so the heavy player chunk only loads once a
-// session actually starts.
-const PersistentPlayerPage = lazy(() => import('../pages/PlayerPage'));
+// session actually starts. This is the WEB player page (BlissfulPlayer +
+// resolve pipeline) — the desktop shell mounts pages/PlayerPage
+// (NativeMpvPlayer) directly on the /player route instead and never renders
+// this host.
+const PersistentPlayerPage = lazy(() => import('../pages/PlayerPageWeb'));
 
 // Owns the persistent player. A single stable DOM node (`mountEl`) always holds
 // the player; only its PARENT is reparented — full-screen host, the real PiP

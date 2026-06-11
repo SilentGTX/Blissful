@@ -167,15 +167,16 @@ export default function AppShell() {
     void applyStreamingServerCacheSize(playerSettings.streamingServerCacheSizeBytes);
   }, [storageHydrated, playerSettings.streamingServerCacheSizeBytes]);
 
-  // Prefetch the lazy PlayerPage chunk as soon as AppShell mounts so the
+  // Prefetch the lazy web-player chunk as soon as AppShell mounts so the
   // module is already in the browser cache before the user clicks Play —
   // whether they come from /detail or directly from Continue Watching on
   // /home. Without this, the Suspense fallback (transparent) renders for
   // however long the chunk download takes, which reads as a blank "empty
   // page" between the click and the player's `bliss-player-enter`
-  // scale-from-center animation.
+  // scale-from-center animation. Desktop doesn't need it: its PlayerPage
+  // (NativeMpvPlayer) is eagerly bundled on the /player route.
   useEffect(() => {
-    void import('../pages/PlayerPage');
+    if (!isNativeShell()) void import('../pages/PlayerPageWeb');
   }, []);
 
   // ---------- AppShell-local state (truly layout-scoped only) --------------
