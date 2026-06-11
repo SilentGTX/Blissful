@@ -129,14 +129,21 @@ from shared code directly — always through the platform module or behind a cap
 
 Baseline: OpenCode `15ce2f0a` (re-snapshot at execution time; OpenCode keeps moving).
 
-**Progress (2026-06-11):** Phase 0 done (`6923e22` port, `c873993` plan). Steps 1–3 done:
-audit refreshed; additive libs (`72e6c4f`), `base/` (`2fdf442`), BlissfulPlayer suite + web
-pages + cascade deps (`264447c`) all landed compile-only; lib foundation platform-branched
-(`2fd7284` — watchParty/useWatchParty/playerSettings; blissfulAuthApi hand-merged in
-`264447c`). tsc + vitest + vite build green throughout. Remaining: step 4 (shared-file
-convergence — context → components → pages, incl. the SearchPage reversal), step 5 (visual
-identity / index.css), step 6 (auth audit), then routing/provider wiring (App.tsx, AppShell,
-ProvidersGlue: MiniPlayerProvider + new page routes).
+**Progress (2026-06-11):** Phase 0 done (`6923e22` port, `c873993` plan). Steps 1–5 done:
+additive libs (`72e6c4f`), `base/` (`2fdf442`), BlissfulPlayer suite (`264447c`), lib
+foundation (`2fd7284`), 64-file bulk + detail cluster (`cc39878`), wiring layer — App routes /
+AppShell / SideNav (`5a9e55e`), pages + index.css (`4c576cc`). tsc + vitest + vite build +
+cargo test green throughout. **Desktop-ahead reversals applied as planned:** HomePage +
+homeRows (addon rows — OpenCode's web home went curated-only), DiscoverPage, SearchPage,
+useContinueWatchingActions, stremioAddon, storageBaseUrl. Platform branches:
+watchPartyWsUrl/UserSocketProvider WS, buildRoomPlayerUrl, /player route (PlayerPage vs
+PlayerSeeder), PersistentPlayerHost (web-only), unreleased-episode block (web-only), Vidking
+play CTA (web-only), imageProxy (desktop no-op). New shell route: `/imdb-rating` forward.
+
+Remaining in Phase 1: **manual desktop pass** (the look changed — base/ components +
+OpenCode's index.css landed; verify home rows, jujutsu-kaisen search test, detail, playback,
+watch party), auth audit step 6 (stremioApi/AccountsPage surface), then Phase 2 (PlayerPage
+unification — kept-ours desktop PlayerPage + web's persistent-player model merge).
 
 1. Refresh the divergence audit against OpenCode's then-current HEAD:
    `git diff --no-index --numstat apps/blissful-mvs/src ../OpenCode/apps/blissful-mvs/src`.
