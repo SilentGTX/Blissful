@@ -5,7 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, StyleSheet, Text, useTVEventHandler, View } from 'react-native';
-import { font } from '../theme/colors';
+import { colors, font } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { useToast } from '../components/Toast';
 import { BufferingVeil } from '../components/player/BufferingVeil';
@@ -25,15 +25,15 @@ import { SubtitleOverlay } from '../components/player/SubtitleOverlay';
 import { formatFullDate } from '../lib/releaseInfo';
 import { setCurrentActivity, clearCurrentActivity } from '../lib/presence';
 import { loadStreams, type PickerStream } from '../lib/streamPicker';
+import { resolveMeta } from '../lib/metaResolver';
 import { useAuth } from '../context/AuthContext';
-import { fetchMeta, getStorageBaseUrl, normalizeStremioImage, updateBlissfulLibraryProgress } from '@blissful/core';
+import { getStorageBaseUrl, normalizeStremioImage, updateBlissfulLibraryProgress } from '@blissful/core';
 import type { RootStackParamList } from '../navigation/types';
 
 type PlayerRoute = RouteProp<RootStackParamList, 'Player'>;
 type PlayerNav = StackNavigationProp<RootStackParamList, 'Player'>;
 const SEEK_STEP = 10;
 const CONTROLS_TIMEOUT = 3500;
-const ACCENT = '#95a2ff';
 const DMCA_MAX_SECONDS = 45;
 
 // Two playback control rows (TV has no volume/mute/fullscreen — the remote owns
@@ -99,9 +99,13 @@ export function PlayerScreen() {
   useEffect(() => {
     if (!isSeries || !params.detailId) return;
     let cancelled = false;
-    fetchMeta({ type: 'series', id: params.detailId })
+    // Route through the OWNING addon — raw fetchMeta defaults to Cinemeta, which
+    // has no addon-specific ids (e.g. Anime Kitsu's `kitsu:NNN`), so it 404s to an
+    // empty meta and the Episodes drawer shows "No episodes found". resolveMeta is
+    // the same addon-routed resolver the Detail page uses.
+    resolveMeta('series', params.detailId, token)
       .then((r) => {
-        if (cancelled) return;
+        if (cancelled || !r) return;
         const vids: DrawerEpisode[] = (r.meta.videos ?? []).map((v) => {
           const extra = v as { overview?: string; description?: string };
           return {
@@ -120,7 +124,7 @@ export function PlayerScreen() {
       })
       .catch(() => { /* no meta — the next/episodes buttons stay dimmed/empty */ });
     return () => { cancelled = true; };
-  }, [isSeries, params.detailId]);
+  }, [isSeries, params.detailId, token]);
   // The episode after the playing one in broadcast order (desktop nextEpisodeInfo).
   const nextEp = useMemo(() => {
     const id = params.streamTarget?.id;
@@ -136,6 +140,10 @@ export function PlayerScreen() {
     if (!isSeries || !id) return null;
     return seriesVideos.find((v) => v.id === id) ?? null;
   }, [seriesVideos, params.streamTarget?.id, isSeries]);
+  // Ref mirror so the Back handler (exitToDetail) always reads the latest match
+  // even though its BackHandler closure is only re-bound on `drawer` changes.
+  const currentEpRef = useRef<DrawerEpisode | null>(currentEp);
+  currentEpRef.current = currentEp;
   // The current episode's TMDB rating (the "6.3 IMDb" pill next to the episode
   // title in the pause overlay). Direct per-season lookup keyed by episode_number
   // via the backend's server-keyed proxy (the web player drawer's approach).
@@ -223,6 +231,11 @@ export function PlayerScreen() {
   const rowRef = useRef<Row>('none');
   const idxRef = useRef(0);
   const drawerRef = useRef<Drawer>('none');
+  // When a drawer closes via OK-on-X, the same physical OK can fire a second
+  // event (TVs emit select+playPause per press) that the now-active player handler
+  // would read as "re-open episodes" (focus is parked on that button). Swallow
+  // select/playPause for a beat after a close so the drawer doesn't bounce back.
+  const drawerClosedAtRef = useRef(0);
   const revealedRef = useRef(false);
   revealedRef.current = revealed;
   // THE single source of truth for play/pause. `userPausedRef.current === false`
@@ -325,6 +338,7 @@ export function PlayerScreen() {
   const closeDrawer = () => {
     const was = drawerRef.current;
     drawerRef.current = 'none';
+    drawerClosedAtRef.current = Date.now();
     setDrawer('none');
     // Watch Party lives on the TOP row; everything else on the bottom.
     if (was === 'watchparty') { goRow('top', TOP.indexOf('watchparty')); return; }
@@ -634,10 +648,14 @@ export function PlayerScreen() {
     return () => { cancelled = true; ctrl.abort(); };
   }, [params.streamTarget, token]);
 
-  // Auto-load the preferred-language subtitle once tracks are available — prefer
-  // an EXTERNAL sub (we render it styled), falling back to embedded. Fires once.
+  // Auto-load the preferred-language subtitle for the file we actually land on —
+  // prefer an EXTERNAL sub (we render it styled), falling back to embedded. Gated
+  // on `revealed`: the player auto-advances PAST debrid-DMCA/errored releases, each
+  // of which resets autoSubRef on the url change; since extTracks is content-keyed
+  // (loaded once, always present), without this gate every skipped release re-fired
+  // its own "Subtitles loaded" toast. Only the revealed (real) file applies + toasts.
   useEffect(() => {
-    if (autoSubRef.current) return;
+    if (autoSubRef.current || !revealed) return;
     const pref = (tvs.subtitlesLanguage ?? '').trim().toLowerCase();
     if (!pref || pref === 'none') return;
     const matches = (lang: string | null | undefined) => {
@@ -650,7 +668,7 @@ export function PlayerScreen() {
     const ext = extTracks.find((t) => matches(t.lang) || matches(t.langName));
     if (ext) { autoSubRef.current = true; applySubtitle(ext.id); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [extTracks, subTracks]);
+  }, [extTracks, subTracks, revealed]);
 
   const togglePlay = () => {
     const now = Date.now();
@@ -743,15 +761,28 @@ export function PlayerScreen() {
     const st = params.streamTarget;
     const id = params.detailId ?? (st ? st.id.split(':')[0] : null);
     if (id && st) {
-      // For a series, carry the season/episode (from the episode id imdb:S:E) so
-      // the Detail page opens on the episode that was playing. Guard non-numeric
-      // ids (e.g. kitsu) → undefined.
-      const parts = st.id.split(':');
-      const sNum = Number(parts[parts.length - 2]);
-      const eNum = Number(parts[parts.length - 1]);
-      const hasSE = st.type === 'series' && parts.length >= 3 && Number.isFinite(sNum) && Number.isFinite(eNum);
-      const season = hasSE ? sNum : undefined;
-      const episode = hasSE ? eNum : undefined;
+      // Open the Detail page on the episode that was playing. Take the season +
+      // episode from the PLAYED VIDEO's own fields (looked up in the loaded show
+      // meta) — this is correct for every addon, including Anime Kitsu whose ids
+      // (`kitsu:showId:ep`) don't encode a season. We must NOT parse parts[-2] of a
+      // Kitsu id as a season: the numeric middle part is the show id (e.g. 48363),
+      // which matches no video and blanks Detail's episode list. Fall back to the
+      // IMDb `tt…:S:E` shape only when the meta list hasn't loaded yet.
+      let season: number | undefined;
+      let episode: number | undefined;
+      const cur = currentEpRef.current;
+      if (st.type === 'series' && cur && cur.season != null && cur.episode != null) {
+        season = cur.season;
+        episode = cur.episode;
+      } else if (st.type === 'series') {
+        const parts = st.id.split(':');
+        const sNum = Number(parts[parts.length - 2]);
+        const eNum = Number(parts[parts.length - 1]);
+        if (/^tt\d+$/.test(parts[0]) && parts.length >= 3 && Number.isFinite(sNum) && Number.isFinite(eNum)) {
+          season = sNum;
+          episode = eNum;
+        }
+      }
       navigation.reset({
         index: 1,
         routes: [
@@ -783,6 +814,7 @@ export function PlayerScreen() {
     const i = idxRef.current;
     switch (type) {
       case 'select': {
+        if (now - drawerClosedAtRef.current < 450) break; // ignore the OK that just closed a drawer
         if (now - lastOk.current < 300) break;
         lastOk.current = now;
         if (r === 'bottom') { const stay = runBottom(bottom[i]); if (!stay) goRow('none'); }
@@ -795,6 +827,7 @@ export function PlayerScreen() {
         break;
       }
       case 'playPause':
+        if (now - drawerClosedAtRef.current < 450) break; // ignore the OK that just closed a drawer
         togglePlay();
         break;
       case 'play':
@@ -918,7 +951,7 @@ export function PlayerScreen() {
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.85)']} style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(16), paddingHorizontal: m.s(22), paddingTop: m.s(40), paddingBottom: m.s(6) }}>
             <Text style={timeStyle(m)}>{revealed ? fmt(time) : '--:--'}</Text>
             <View style={{ flex: 1, height: m.s(4), borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.25)', justifyContent: 'center' }}>
-              <View style={{ position: 'absolute', left: 0, height: m.s(4), borderRadius: 999, width: `${pct * 100}%`, backgroundColor: ACCENT }} />
+              <View style={{ position: 'absolute', left: 0, height: m.s(4), borderRadius: 999, width: `${pct * 100}%`, backgroundColor: colors.accent }} />
               <View style={{ position: 'absolute', left: `${pct * 100}%`, width: m.s(12), height: m.s(12), borderRadius: 999, marginLeft: -m.s(6), backgroundColor: '#fff' }} />
             </View>
             <Text style={[timeStyle(m), { textAlign: 'right' }]}>{revealed ? fmt(duration) : '--:--'}</Text>

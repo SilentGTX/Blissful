@@ -68,12 +68,15 @@ const Row = forwardRef<View, {
   nextFocusDown,
   autoFocus,
 }, ref) {
+  const m = useMetrics();
   const [focused, setFocused] = useState(false);
-  // No color change on focus ("just leave the purple") — label color is constant;
-  // the purple ring overlay is the only focus indicator.
+  // Focus indicator = an accent BORDER ring only — icon + label keep their resting
+  // colour (active page = accent, otherwise textDim). The whole-row accent FILL was
+  // removed per request: a focused row gets the ring, nothing else changes.
   const lc = labelColor ?? (active ? colors.accent : colors.textDim);
-  // Design nav style: focus = solid accent FILL with ink icon + label (not a ring).
-  const iconColor = focused ? colors.accentInk : lc;
+  // Border is ALWAYS present (transparent when unfocused) so gaining focus only
+  // recolours it — the row content never shifts.
+  const ringW = m.s(3);
   const body = (
     <View
       style={{
@@ -82,15 +85,16 @@ const Row = forwardRef<View, {
         flexDirection: 'row',
         alignItems: 'center',
         borderRadius: radius.card,
-        backgroundColor: focused ? colors.accent : 'transparent',
+        borderWidth: ringW,
+        borderColor: focused ? colors.accent : 'transparent',
       }}
     >
       {/* Fixed-width icon column in BOTH states: anchored to the row's left, so
           the icon X never moves on expand/collapse (no jump). iconW == the
           collapsed row content width, so when collapsed the icon is centered. */}
-      <View style={{ width: iconW, alignItems: 'center', justifyContent: 'center' }}>{renderIcon(iconColor)}</View>
+      <View style={{ width: iconW, alignItems: 'center', justifyContent: 'center' }}>{renderIcon(lc)}</View>
       {expanded ? (
-        <Text numberOfLines={1} style={{ fontFamily: labelFont ?? font.bodySemi, fontSize: labelSize, color: focused ? colors.accentInk : lc, flex: 1, marginLeft: 2 }}>
+        <Text numberOfLines={1} style={{ fontFamily: labelFont ?? font.bodySemi, fontSize: labelSize, color: lc, flex: 1, marginLeft: 2 }}>
           {label}
         </Text>
       ) : null}
@@ -237,14 +241,15 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
     </View>
   );
 
-  const Divider = ({ mx, my }: { mx: number; my: number }) => <View style={{ height: 1, marginHorizontal: mx, marginVertical: my, backgroundColor: 'rgba(255,255,255,0.1)' }} />;
+  const Divider = ({ mx, my }: { mx: number; my: number }) => <View style={{ height: 1, marginHorizontal: mx, marginVertical: my, backgroundColor: HAIRLINE }} />;
 
   return (
     <>
-    <Animated.View style={[styles.rail, { left: railLeft, top: 0, bottom: 0, width: widthAnim, zIndex: expanded ? 70 : 10, backgroundColor: expanded ? NAV_PANEL : 'transparent', borderRightWidth: expanded ? 1 : 0, borderRightColor: 'rgba(255,255,255,0.07)' }]}>
-      {/* Flush full-height panel (design Sidebar.jsx): transparent when collapsed
-          (icons float on the home scrim), dark panel when expanded. No glass pill /
-          sheen / rounded corners — that was the old nav look. */}
+    <Animated.View style={[styles.rail, { left: railLeft, top: 0, bottom: 0, width: widthAnim, zIndex: expanded ? 70 : 10, backgroundColor: expanded ? NAV_PANEL : 'transparent', borderRightWidth: 1, borderRightColor: expanded ? 'rgba(255,255,255,0.07)' : HAIRLINE, borderTopRightRadius: expanded ? radius.card : 0, borderBottomRightRadius: expanded ? radius.card : 0 }]}>
+      {/* Full-height panel flush to the left edge: transparent when collapsed —
+          icons float on the home scrim, with a super-subtle right hairline marking
+          where the rail ends — and a dark panel with a gently-rounded RIGHT edge
+          (top-right + bottom-right) when expanded. No glass pill / sheen. */}
       <View style={{ flex: 1, paddingTop: m.safeY, paddingBottom: m.safeY }}>
         <Row iconW={iconW} itemH={m.s(48)} mx={rowMargin} expanded={expanded} focusable={false} label="Blissful" labelColor={colors.text} labelFont={font.serif} labelSize={m.s(22)} renderIcon={() => <Image source={require('../../assets/blissful-small-logo.png')} style={{ width: m.s(36), height: m.s(36), borderRadius: m.s(10) }} resizeMode="contain" />} />
         <Divider mx={m.s(10)} my={m.s(6)} />
@@ -455,8 +460,12 @@ function Tab({ m, active, label, onRailFocus, onTabFocus, onPress }: any) {
   );
 }
 
-// Design Sidebar.jsx panel colour (rgba(15,18,26,0.99)) — the dark flush drawer.
-const NAV_PANEL = 'rgba(13,16,24,0.99)';
+// The dark flush drawer. Pushed darker + less blue than the design's
+// rgba(15,18,26) toward near-black (sits just above the app bg #07090d) per request.
+const NAV_PANEL = 'rgba(10,11,15,0.99)';
+// Super-subtle hairline shared by the collapsed rail's right edge AND the two
+// in-panel dividers (below the logo, above Friends) so they read identically.
+const HAIRLINE = 'rgba(255,255,255,0.022)';
 
 const styles = StyleSheet.create({
   rail: { position: 'absolute', overflow: 'hidden' },

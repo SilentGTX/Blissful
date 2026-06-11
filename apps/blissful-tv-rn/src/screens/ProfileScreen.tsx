@@ -5,15 +5,15 @@
 import type { RouteProp } from '@react-navigation/native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
-import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, BackHandler, FlatList, Pressable, ScrollView, Text, View } from 'react-native';
 import { fetchUserProfile, normalizeStremioImage, type FriendProfileResponse, type MediaType } from '@blissful/core';
-import { colors, font, radius } from '../theme/colors';
+import { colors, font } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { useAuth } from '../context/AuthContext';
 import { FriendAvatar } from '../components/FriendAvatar';
 import { Img } from '../components/Img';
+import { Button } from '../components/ui/Button';
 import { useTvFocusable } from '../lib/useTvFocusable';
 import { formatRelativeTime } from '../lib/friends';
 import type { RootStackParamList } from '../navigation/types';
@@ -71,7 +71,7 @@ export function ProfileScreen() {
 
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: m.safeX, paddingTop: m.safeY + m.s(20), paddingBottom: m.s(40) }}>
-      <BackPill m={m} onPress={() => navigation.goBack()} />
+      <Button variant="glass" size="sm" icon="chevron-back" label="Back" autoFocus onPress={() => navigation.goBack()} />
 
       {/* Header card */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(22), borderRadius: m.s(28), backgroundColor: 'rgba(255,255,255,0.06)', padding: m.s(24), marginTop: m.s(20) }}>
@@ -144,12 +144,3 @@ function HistoryTile({ m, poster, name, sub, progress, autoFocus, onPress }: { m
   );
 }
 
-function BackPill({ m, onPress }: { m: ReturnType<typeof useMetrics>; onPress: () => void }) {
-  const { focused, focusProps } = useTvFocusable({ autoFocus: true, onPress });
-  return (
-    <Pressable {...focusProps} style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(8), alignSelf: 'flex-start', borderRadius: radius.pill, paddingHorizontal: m.s(16), paddingVertical: m.s(10), backgroundColor: focused ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.08)', borderWidth: m.s(2), borderColor: focused ? colors.accent : 'transparent' }}>
-      <Ionicons name="chevron-back" size={m.s(20)} color={colors.text} />
-      <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(17), color: colors.text }}>Back</Text>
-    </Pressable>
-  );
-}

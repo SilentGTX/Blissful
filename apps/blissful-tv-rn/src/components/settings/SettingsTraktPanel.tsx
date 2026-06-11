@@ -3,7 +3,7 @@ import { ActivityIndicator, Text, View } from 'react-native';
 import { colors, font, radius } from '../../theme/colors';
 import { useMetrics } from '../../theme/metrics';
 import { useToast } from '../Toast';
-import { PillButton } from './PillButton';
+import { Button } from '../ui/Button';
 import {
   disconnectTrakt,
   getTraktUser,
@@ -225,11 +225,11 @@ export function SettingsTraktPanel({ m }: { m: M }) {
         </View>
         <View style={{ flexDirection: 'row', gap: m.s(10) }}>
           {!configured ? null : connected === null ? null : connected ? (
-            <PillButton label="Disconnect" m={m} onPress={handleDisconnect} disabled={busy} atRowStart />
+            <Button label="Disconnect" onPress={handleDisconnect} disabled={busy} atRowStart />
           ) : phase === 'idle' ? (
-            <PillButton label="Connect Trakt" m={m} onPress={() => void handleConnect()} atRowStart />
+            <Button label="Connect Trakt" onPress={() => void handleConnect()} atRowStart />
           ) : (
-            <PillButton label="Cancel" m={m} onPress={handleCancel} atRowStart />
+            <Button label="Cancel" onPress={handleCancel} atRowStart />
           )}
         </View>
       </View>

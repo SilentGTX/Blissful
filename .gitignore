@@ -55,3 +55,6 @@ desktop.ini
 
 # Local dev tools (scrcpy for real-TV mirroring) — not committed
 /tools/
+
+# Scratch screenshots pulled from the emulator/TV during verification
+/.tmp-shots/

@@ -32,13 +32,12 @@ import {
   useTVEventHandler,
   View,
 } from 'react-native';
-import { font } from '../../theme/colors';
+import { colors, font } from '../../theme/colors';
 import { useMetrics } from '../../theme/metrics';
 import { subtitleLangLabel } from '../../lib/subtitles';
 import { normColor } from '../../lib/colorUtils';
 import { FocusTrap } from '../FocusTrap';
 
-const ACCENT = '#95a2ff';
 type M = ReturnType<typeof useMetrics>;
 
 // ── Public data shapes ───────────────────────────────────────────────────────
@@ -345,7 +344,7 @@ export function SettingsDrawer(props: SettingsDrawerProps) {
               {tab === 'releases' ? (
                 releasesLoading && releases.length === 0 ? (
                   <View style={{ paddingVertical: m.s(40), alignItems: 'center' }}>
-                    <ActivityIndicator color={ACCENT} size="large" />
+                    <ActivityIndicator color={colors.accent} size="large" />
                   </View>
                 ) : pinned.length === 0 && releaseBuckets.length === 0 ? (
                   <EmptyRow m={m} text="No other releases" />
@@ -527,7 +526,7 @@ export function SettingsDrawer(props: SettingsDrawerProps) {
 function focusStyle(m: M, focused: boolean) {
   return {
     borderWidth: m.s(2),
-    borderColor: focused ? ACCENT : 'transparent',
+    borderColor: focused ? colors.accent : 'transparent',
     transform: [{ scale: focused ? 1.06 : 1 }],
   } as const;
 }
@@ -662,14 +661,14 @@ function ReleaseRow({ m, release, active, autoFocus, onPress }: { m: M; release:
       }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: m.s(8) }}>
-        <Text numberOfLines={2} style={{ flex: 1, fontFamily: font.bodyMed, fontSize: m.s(15), lineHeight: m.s(20), color: active ? ACCENT : 'rgba(255,255,255,0.9)' }}>{release.title}</Text>
-        {active ? <Ionicons name="checkmark" size={m.s(18)} color={ACCENT} /> : null}
+        <Text numberOfLines={2} style={{ flex: 1, fontFamily: font.bodyMed, fontSize: m.s(15), lineHeight: m.s(20), color: active ? colors.accent : 'rgba(255,255,255,0.9)' }}>{release.title}</Text>
+        {active ? <Ionicons name="checkmark" size={m.s(18)} color={colors.accent} /> : null}
       </View>
       {(release.isRd || release.meta) ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(8), marginTop: m.s(5) }}>
           {release.isRd ? (
             <View style={{ borderRadius: m.s(4), backgroundColor: 'rgba(149,162,255,0.2)', paddingHorizontal: m.s(6), paddingVertical: m.s(1) }}>
-              <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(10), letterSpacing: m.s(0.5), color: ACCENT }}>RD</Text>
+              <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(10), letterSpacing: m.s(0.5), color: colors.accent }}>RD</Text>
             </View>
           ) : null}
           {release.meta ? <Text numberOfLines={1} style={{ flex: 1, fontFamily: font.body, fontSize: m.s(12), color: 'rgba(255,255,255,0.55)' }}>{release.meta}</Text> : null}
@@ -700,12 +699,12 @@ function TrackRow({ m, label, meta, active, autoFocus, onPress }: { m: M; label:
         ...focusStyle(m, focused),
       }}
     >
-      <Text numberOfLines={1} style={{ flex: 1, fontFamily: font.body, fontSize: m.s(16), color: active ? ACCENT : 'rgba(255,255,255,0.9)' }}>
+      <Text numberOfLines={1} style={{ flex: 1, fontFamily: font.body, fontSize: m.s(16), color: active ? colors.accent : 'rgba(255,255,255,0.9)' }}>
         {label}
       </Text>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(8) }}>
         {meta ? <MetaPill m={m} text={meta} /> : null}
-        {active ? <Ionicons name="checkmark" size={m.s(20)} color={ACCENT} /> : null}
+        {active ? <Ionicons name="checkmark" size={m.s(20)} color={colors.accent} /> : null}
       </View>
     </Pressable>
   );
@@ -757,13 +756,13 @@ function LanguageRow({ m, canon, embedded, variants, active, onPress }: { m: M; 
         ...focusStyle(m, focused),
       }}
     >
-      <Text numberOfLines={1} style={{ flex: 1, fontFamily: font.body, fontSize: m.s(16), color: active ? ACCENT : 'rgba(255,255,255,0.9)' }}>
+      <Text numberOfLines={1} style={{ flex: 1, fontFamily: font.body, fontSize: m.s(16), color: active ? colors.accent : 'rgba(255,255,255,0.9)' }}>
         {canon}
       </Text>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(8) }}>
         {embedded ? (
           <View style={{ borderRadius: m.s(4), backgroundColor: 'rgba(149,162,255,0.2)', paddingHorizontal: m.s(8), paddingVertical: m.s(2) }}>
-            <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(10), letterSpacing: m.s(0.5), color: ACCENT, textTransform: 'uppercase' }}>Built-in</Text>
+            <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(10), letterSpacing: m.s(0.5), color: colors.accent, textTransform: 'uppercase' }}>Built-in</Text>
           </View>
         ) : null}
         {variants > 1 ? <MetaPill m={m} text={`${variants} Variants`} /> : null}
@@ -793,7 +792,7 @@ function VariantRow({ m, label, tag, embedded, active, onPress }: { m: M; label:
         ...focusStyle(m, focused),
       }}
     >
-      <Text numberOfLines={1} style={{ flex: 1, fontFamily: font.body, fontSize: m.s(16), color: active ? ACCENT : 'rgba(255,255,255,0.9)' }}>
+      <Text numberOfLines={1} style={{ flex: 1, fontFamily: font.body, fontSize: m.s(16), color: active ? colors.accent : 'rgba(255,255,255,0.9)' }}>
         {label}
       </Text>
       <View
@@ -804,7 +803,7 @@ function VariantRow({ m, label, tag, embedded, active, onPress }: { m: M; label:
           paddingVertical: m.s(2),
         }}
       >
-        <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(10), letterSpacing: m.s(0.5), color: embedded ? ACCENT : 'rgba(255,255,255,0.7)', textTransform: 'uppercase' }}>
+        <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(10), letterSpacing: m.s(0.5), color: embedded ? colors.accent : 'rgba(255,255,255,0.7)', textTransform: 'uppercase' }}>
           {tag}
         </Text>
       </View>
@@ -944,7 +943,7 @@ function cardTitle(m: M) {
   return { fontFamily: font.bodyMed, fontSize: m.s(16), color: 'rgba(255,255,255,0.9)' } as const;
 }
 function cardValue(m: M) {
-  return { fontFamily: font.bodySemi, fontSize: m.s(16), color: ACCENT } as const;
+  return { fontFamily: font.bodySemi, fontSize: m.s(16), color: colors.accent } as const;
 }
 
 // Luminance pick so the selected-swatch checkmark stays legible on any colour.
@@ -973,7 +972,7 @@ function Swatch({ m, color, selected, onPress }: { m: M; color: string; selected
         borderRadius: m.s(8),
         backgroundColor: color,
         borderWidth: selected || focused ? m.s(2) : 1,
-        borderColor: focused ? ACCENT : selected ? '#fff' : 'rgba(255,255,255,0.1)',
+        borderColor: focused ? colors.accent : selected ? '#fff' : 'rgba(255,255,255,0.1)',
         transform: [{ scale: focused ? 1.06 : 1 }],
       }}
     >
@@ -1020,7 +1019,7 @@ function ValueCell({ m, label }: { m: M; label: string }) {
         backgroundColor: 'rgba(255,255,255,0.03)',
       }}
     >
-      <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(14), color: ACCENT }}>{label}</Text>
+      <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(14), color: colors.accent }}>{label}</Text>
     </View>
   );
 }
@@ -1038,7 +1037,7 @@ function FooterButton({ m, label, variant, onPress }: { m: M; label: string; var
         justifyContent: 'center',
         borderRadius: m.s(12),
         paddingVertical: m.s(12),
-        backgroundColor: accent ? ACCENT : focused ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.06)',
+        backgroundColor: accent ? colors.accent : focused ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.06)',
         opacity: accent && focused ? 0.9 : 1,
         ...focusStyle(m, focused),
       }}

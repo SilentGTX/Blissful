@@ -6,7 +6,6 @@
 // traps the D-pad inside it; Cancel / hardware Back closes.
 import { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   BackHandler,
   Pressable,
   StyleSheet,
@@ -18,6 +17,7 @@ import {
 import { colors, font } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { useAuth } from '../context/AuthContext';
+import { Button } from './ui/Button';
 import { FocusTrap } from './FocusTrap';
 
 type M = ReturnType<typeof useMetrics>;
@@ -96,50 +96,6 @@ function Field({
         />
       </Pressable>
     </View>
-  );
-}
-
-function Btn({
-  m,
-  label,
-  primary,
-  onPress,
-  busy,
-}: {
-  m: M;
-  label: string;
-  primary?: boolean;
-  onPress: () => void;
-  busy?: boolean;
-}) {
-  const [focused, setFocused] = useState(false);
-  return (
-    <Pressable
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-      onPress={onPress}
-      style={{
-        minWidth: m.s(150),
-        height: m.s(50),
-        borderRadius: 999,
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingHorizontal: m.s(24),
-        borderWidth: m.s(2),
-        borderColor: focused ? colors.accent : 'transparent',
-        backgroundColor: primary
-          ? focused ? '#e6e9ff' : '#fff'
-          : focused ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.07)',
-      }}
-    >
-      {busy ? (
-        <ActivityIndicator color={primary ? colors.ink : colors.text} />
-      ) : (
-        <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(17), color: primary ? colors.ink : 'rgba(255,255,255,0.9)' }}>
-          {label}
-        </Text>
-      )}
-    </Pressable>
   );
 }
 
@@ -259,8 +215,8 @@ export function LoginModal({ onClose }: { onClose: () => void }) {
         {error ? <Text style={{ fontFamily: font.bodyMed, fontSize: m.s(14), color: '#f87171', marginTop: m.s(12) }}>{error}</Text> : null}
 
         <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: m.s(12), marginTop: m.s(22) }}>
-          <Btn m={m} label={isRegister ? 'Create account' : 'Login'} primary onPress={submit} busy={busy} />
-          <Btn m={m} label="Cancel" onPress={onClose} />
+          <Button variant="solid" label={isRegister ? 'Create account' : 'Login'} onPress={submit} busy={busy} />
+          <Button variant="glass" label="Cancel" onPress={onClose} />
         </View>
 
         <Pressable

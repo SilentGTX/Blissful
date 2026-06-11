@@ -3,10 +3,11 @@ import type { StackNavigationProp } from '@react-navigation/stack';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, ScrollView, StyleSheet, useTVEventHandler, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { fetchBlissfulLibrary, fetchCatalog, normalizeStremioImage, putBlissfulLibraryItem, type LibraryItem, type MediaType, type StremioMetaDetail } from '@blissful/core';
+import { fetchBlissfulLibrary, fetchCatalog, normalizeStremioImage, putBlissfulLibraryItem, type LibraryItem, type MediaType } from '@blissful/core';
 import { colors } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { useAuth } from '../context/AuthContext';
+import { useContentInert } from '../lib/contentFocus';
 import { fetchContinueWatching, type CwItem } from '../lib/continueWatching';
 import { formatReleaseInfo } from '../lib/releaseInfo';
 import { loadStreams } from '../lib/streamPicker';
@@ -21,8 +22,9 @@ import { Backdrop, InfoPanel } from '../components/home/HomeHero';
 import { HomeActionOverlay } from '../components/home/HomeActionOverlay';
 import { HomeTopRight } from '../components/home/HomeTopRight';
 import { LandscapeRail } from '../components/home/LandscapeRail';
-import type { TileRect } from '../components/home/LandscapeTile';
+import type { CardRect } from '../components/PosterCard';
 import { cwToHomeItem, metaToHomeItem, type HomeItem } from '../components/home/homeData';
+import { metaCache, useFocusedMeta } from '../components/home/useFocusedMeta';
 import { useAddonRows } from '../components/home/useAddonRows';
 import { CustomizeHomeModal } from '../components/home/CustomizeHomeModal';
 import {
@@ -36,16 +38,11 @@ import { fetchHomeRowPrefs, readCachedHomeRowPrefs } from '../lib/addons';
 import type { RootStackParamList } from '../navigation/types';
 
 type Nav = StackNavigationProp<RootStackParamList, 'Home'>;
-type Meta = StremioMetaDetail['meta'];
 type RowDef = { key: string; title: string; items: HomeItem[]; seeAll?: () => void };
 
 // Remembers each CW title's landscape logo across resumes so the black resolving
 // veil can paint it instantly on a repeat resume (no black-without-logo gap).
 const cwLogoCache = new Map<string, string | null>();
-
-// Caches the featured meta per title (`type:id`) so moving focus back to a title
-// repaints its InfoPanel instantly — no re-fetch, no blank.
-const metaCache = new Map<string, Meta>();
 
 // The immersive 10-foot home (design/home): a full-bleed backdrop + featured
 // InfoPanel that follow the focused tile, over a lower band of landscape-tile
@@ -55,6 +52,10 @@ export function HomeScreen() {
   const navigation = useNavigation<Nav>();
   const m = useMetrics();
   const { token } = useAuth();
+  // One container gate (the "flip ONE container per screen" rule): while the nav
+  // rail is open the whole rows band goes non-focusable so D-pad focus is trapped
+  // in the rail (replaces the per-tile isTVSelectable the old LandscapeTile set).
+  const railOpen = useContentInert();
 
   const [cw, setCw] = useState<HomeItem[]>([]);
   const [cwReady, setCwReady] = useState(false); // CW fetch resolved → safe to mount rows
@@ -66,13 +67,11 @@ export function HomeScreen() {
   const [homeRowPrefs, setHomeRowPrefs] = useState<HomeRowPrefs>(() => readCachedHomeRowPrefs());
   const [customizeOpen, setCustomizeOpen] = useState(false);
   // The focused item drives the Backdrop + InfoPanel; its full meta (blurb /
-  // genres / runtime / hi-res backdrop) is fetched lazily on focus.
+  // genres / runtime / hi-res backdrop) is fetched lazily on focus. The meta
+  // carries the title key it belongs to — the Backdrop only trusts it when the
+  // key matches the focused item (so the big backdrop never shows a stale title).
   const [focused, setFocused] = useState<HomeItem | null>(null);
-  // Carries the meta WITH the title key it belongs to. The InfoPanel keeps showing
-  // it across focus changes (no blank/flash); the Backdrop only trusts it when the
-  // key matches the focused item (else it uses the item's own poster art — so the
-  // big backdrop never shows a stale title).
-  const [focusedMeta, setFocusedMeta] = useState<{ key: string; meta: Meta } | null>(null);
+  const focusedMeta = useFocusedMeta(focused, token);
   const [resumeItem, setResumeItem] = useState<CwItem | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [avatarTag, setAvatarTag] = useState<number | null>(null);
@@ -80,7 +79,7 @@ export function HomeScreen() {
   // The held tile → on-tile action overlay (add/remove library, remove progress).
   // `actionRect` is the tile's measured window rect so the root overlay lands on it.
   const [actionItem, setActionItem] = useState<HomeItem | null>(null);
-  const [actionRect, setActionRect] = useState<TileRect | null>(null);
+  const [actionRect, setActionRect] = useState<CardRect | null>(null);
   // Full library, keyed by id — drives the action sheet's Add/Remove label + carries
   // the raw item for the library toggle / remove-progress writes. Refetched on bump.
   const [libById, setLibById] = useState<Map<string, LibraryItem>>(new Map());
@@ -191,28 +190,6 @@ export function HomeScreen() {
   useEffect(() => {
     if (cwReady && !focused && rows.length && rows[0].items.length) setFocused(rows[0].items[0]);
   }, [cwReady, rows, focused]);
-
-  // Featured meta for the focused item. NEVER blank it on focus change (that made
-  // the rating/genres/blurb section flash + collapse every time the title changed):
-  // a cached title repaints instantly; an uncached one keeps the CURRENT meta on
-  // screen until its own meta arrives (the in-flight fetch is aborted if focus moves
-  // on, so a stale title's meta can't land). Debounced so a fast scrub doesn't spam.
-  useEffect(() => {
-    if (!focused) return;
-    const { id, type } = focused;
-    const key = `${type}:${id}`;
-    const cached = metaCache.get(key);
-    if (cached) { setFocusedMeta({ key, meta: cached }); return; }
-    const ctrl = new AbortController();
-    const t = setTimeout(() => {
-      // Route through the owning addon so kitsu items get their real background
-      // (the big poster behind) + meta, not Cinemeta's empty sentinel.
-      resolveMeta(type, id, token, ctrl.signal)
-        .then((r) => { if (r) { metaCache.set(key, r.meta); setFocusedMeta({ key, meta: r.meta }); } })
-        .catch(() => {});
-    }, 180);
-    return () => { clearTimeout(t); ctrl.abort(); };
-  }, [focused?.id, focused?.type, token]);
 
   // Warm the meta cache for addon-row (e.g. Anime Kitsu) items so focusing one
   // paints its real backdrop + info INSTANTLY. Without this, each first focus
@@ -383,7 +360,7 @@ export function HomeScreen() {
       <InfoPanel item={focused} meta={focused && focusedMeta?.key === `${focused.type}:${focused.id}` ? focusedMeta.meta : null} m={m} avatarUpTag={avatarTag ?? undefined} />
 
       {/* rows band — lower portion, vertical focus-scroll (touch disabled). */}
-      <View style={{ position: 'absolute', left: CONTENT_LEFT, right: 0, top: ROWS_TOP, bottom: 0, overflow: 'hidden' }} pointerEvents="box-none">
+      <View isTVSelectable={!railOpen} style={{ position: 'absolute', left: CONTENT_LEFT, right: 0, top: ROWS_TOP, bottom: 0, overflow: 'hidden' }} pointerEvents="box-none">
         <ScrollView ref={scrollRef} scrollEnabled={false} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: m.height }}>
           {/* Hold the rows until the CW fetch resolves so the row order (and thus
               the autofocused row-0 + its backdrop) is final before anything mounts

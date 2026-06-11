@@ -15,6 +15,7 @@ import { useToast } from '../components/Toast';
 import { Img } from '../components/Img';
 import { NavRail } from '../components/NavRail';
 import { TopBar } from '../components/TopBar';
+import { Chip } from '../components/ui/Chip';
 import { markContentFocus } from '../lib/focusBus';
 import { useContentInert } from '../lib/contentFocus';
 import { useSelfTag } from '../lib/useSelfTag';
@@ -140,23 +141,6 @@ function Field({
   );
 }
 
-// ── A type/resource chip ─────────────────────────────────────────────────────
-function Chip({ label, m }: { label: string; m: M }) {
-  return (
-    <View
-      style={{
-        paddingHorizontal: m.s(12),
-        paddingVertical: m.s(5),
-        borderRadius: radius.pill,
-        backgroundColor: colors.surface08,
-        borderWidth: 1,
-        borderColor: colors.hairline,
-      }}
-    >
-      <Text style={{ fontFamily: font.bodyMed, fontSize: m.s(15), color: colors.textDim }}>{label}</Text>
-    </View>
-  );
-}
 
 // ── One addon card (logo + name + chips + description + Uninstall) ────────────
 function AddonCard({
@@ -214,7 +198,7 @@ function AddonCard({
       {chips.length > 0 ? (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: m.s(8), marginTop: m.s(12) }}>
           {chips.map((c) => (
-            <Chip key={c} label={c} m={m} />
+            <Chip key={c} label={c} />
           ))}
         </View>
       ) : null}

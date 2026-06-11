@@ -1,30 +1,12 @@
-import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors, font } from '../../theme/colors';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { colors } from '../../theme/colors';
 import type { useMetrics } from '../../theme/metrics';
 import { FocusTrap } from '../FocusTrap';
+import { MenuActionButton } from '../ui/MenuActionButton';
 import type { HomeItem } from './homeData';
-import type { TileRect } from './LandscapeTile';
+import type { CardRect } from '../PosterCard';
 
 type M = ReturnType<typeof useMetrics>;
-
-function ActionBtn({ label, icon, danger, autoFocus, m, onPress }: { label: string; icon: keyof typeof Ionicons.glyphMap; danger?: boolean; autoFocus?: boolean; m: M; onPress: () => void }) {
-  const [f, setF] = useState(false);
-  const fg = f ? colors.accentInk : (danger ? colors.danger : '#fff');
-  return (
-    <Pressable
-      hasTVPreferredFocus={autoFocus}
-      onFocus={() => setF(true)}
-      onBlur={() => setF(false)}
-      onPress={onPress}
-      style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(12), height: m.s(46), paddingHorizontal: m.s(16), borderRadius: m.s(12), backgroundColor: f ? colors.accent : 'rgba(255,255,255,0.1)' }}
-    >
-      <Ionicons name={icon} size={m.s(22)} color={fg} />
-      <Text numberOfLines={1} style={{ fontFamily: font.bodySemi, fontSize: m.s(18), color: fg }}>{label}</Text>
-    </Pressable>
-  );
-}
 
 // The hold-OK quick actions, laid out directly ON the focused tile: a root-level
 // overlay positioned at the tile's measured rect (so the focus trap / Back work
@@ -41,7 +23,7 @@ export function HomeActionOverlay({
   onClose,
 }: {
   item: HomeItem | null;
-  rect: TileRect | null;
+  rect: CardRect | null;
   inLibrary: boolean;
   m: M;
   onToggleLibrary: (it: HomeItem) => void;
@@ -58,15 +40,14 @@ export function HomeActionOverlay({
       <View style={{ position: 'absolute', top: rect.y, left: rect.x, width: rect.w, height: rect.h, borderRadius: m.s(16), overflow: 'hidden' }}>
         <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(5,7,11,0.9)' }]} />
         <FocusTrap style={{ flex: 1, justifyContent: 'center', gap: m.s(10), paddingHorizontal: m.s(16) }}>
-          <ActionBtn
+          <MenuActionButton
             label={inLibrary ? 'Remove from library' : 'Add to library'}
             icon={inLibrary ? 'bookmark' : 'bookmark-outline'}
             autoFocus
-            m={m}
             onPress={() => onToggleLibrary(item)}
           />
           {isCw ? (
-            <ActionBtn label="Remove progress" icon="trash-outline" danger m={m} onPress={() => onRemoveProgress(item)} />
+            <MenuActionButton label="Remove progress" icon="trash-outline" danger onPress={() => onRemoveProgress(item)} />
           ) : null}
         </FocusTrap>
         <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: m.s(16), borderWidth: m.s(3), borderColor: colors.accent }]} />

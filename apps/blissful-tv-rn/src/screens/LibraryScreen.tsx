@@ -1,6 +1,6 @@
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BackHandler, FlatList, Pressable, ScrollView, StyleSheet, Text, useTVEventHandler, View } from 'react-native';
+import { BackHandler, FlatList, StyleSheet, Text, useTVEventHandler, View } from 'react-native';
 import { PosterGridSkeleton } from '../components/Skeleton';
 import {
   fetchBlissfulLibrary,
@@ -14,18 +14,22 @@ import { useMetrics } from '../theme/metrics';
 import { useContentInert } from '../lib/contentFocus';
 import { openLogin } from '../lib/loginStore';
 import { useAuth } from '../context/AuthContext';
-import { useTvFocusable } from '../lib/useTvFocusable';
 import { NavRail } from '../components/NavRail';
-import { TopBar } from '../components/TopBar';
-import { type CardItem } from '../components/PosterCard';
-import { LibraryPosterCard, type CardRect } from '../components/LibraryPosterCard';
+import { Backdrop } from '../components/home/HomeHero';
+import { useFocusedMeta } from '../components/home/useFocusedMeta';
+import type { HomeItem } from '../components/home/homeData';
+import { PosterCard, type CardItem, type CardRect } from '../components/PosterCard';
 import { LibraryActionOverlay } from '../components/LibraryActionOverlay';
 import { TvSelect, TvSelectOverlay, type DropdownAnchor, type SelectOption } from '../components/TvSelect';
+import { Chip } from '../components/ui/Chip';
+import { Button } from '../components/ui/Button';
 
-// 1:1 with apps/blissful-mvs/src/pages/LibraryPage.tsx — same filters, sort
-// chips, watched chips, type dropdown, progress bars + the soft-remove write.
-// On TV removal is hold-OK on the card (onLongPress), mirroring the web TV
-// build (the X overlay is desktop-mouse only there).
+// The Windows app's LibraryPage (same filters, sort/watched chips, type dropdown,
+// progress bars + the soft-remove write), restyled with the immersive Discover
+// language: an ambient full-bleed backdrop of the FOCUSED card behind a heavy dim
+// (the grid stays the star), the Spectral display serif heading inline with the
+// filter pills, no topbar (Search lives in the NavRail). On TV removal is hold-OK
+// on the card (longSelect) → LibraryActionOverlay, mirroring the web TV build.
 
 type SortMode = 'last_watched' | 'az' | 'za' | 'most_watched';
 type WatchedFilter = 'all' | 'watched' | 'not_watched';
@@ -74,47 +78,8 @@ function withMtime(it: LibraryItem): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-// A focusable pill chip with the lavender ring on focus. Matches the web TV
-// rounded-full chip (white when active, white/10 otherwise).
-function Chip({
-  label,
-  active,
-  atRowStart,
-  m,
-  onPress,
-}: {
-  label: string;
-  active: boolean;
-  atRowStart?: boolean;
-  m: ReturnType<typeof useMetrics>;
-  onPress: () => void;
-}) {
-  const { focused, focusProps } = useTvFocusable({ atRowStart, onPress });
-  return (
-    <Pressable
-      {...focusProps}
-      style={{
-        height: m.s(52),
-        paddingHorizontal: m.s(22),
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderRadius: 999,
-        backgroundColor: active ? colors.text : 'rgba(255,255,255,0.10)',
-        borderWidth: 1,
-        borderColor: focused ? colors.accent : 'transparent',
-      }}
-    >
-      <Text
-        numberOfLines={1}
-        style={{ fontFamily: font.bodySemi, fontSize: m.s(20), color: active ? colors.ink : 'rgba(255,255,255,0.9)' }}
-      >
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
 export function LibraryScreen() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const navigation = useNavigation<any>();
   const m = useMetrics();
   const railOpen = useContentInert();
@@ -129,6 +94,11 @@ export function LibraryScreen() {
   const [watchedFilter, setWatchedFilter] = useState<WatchedFilter>('all');
   const [dropdown, setDropdown] = useState<DropdownAnchor | null>(null);
   const hasLoadedOnceRef = useRef(false);
+
+  // The focused card drives the ambient backdrop (the immersive Home/Discover
+  // model, dimmed way down here). Never null-cleared (nulling = flash).
+  const [focused, setFocused] = useState<HomeItem | null>(null);
+  const focusedMeta = useFocusedMeta(focused, token);
 
   // Hold-OK quick-action overlay (Remove from library) — mirrors the Continue
   // Watching tile. `actionRect` is the held card's measured window rect so the
@@ -248,6 +218,15 @@ export function LibraryScreen() {
   );
   const byId = useMemo(() => new Map(cells.map((c) => [c.item._id, c])), [cells]);
 
+  // Seed the ambient backdrop from the first card once (the autoFocused first
+  // card also sets it on mount; this covers the rare case it doesn't grab). Never
+  // re-seeds — the 30s poll rebuilds `cells` but must NOT reset the backdrop.
+  useEffect(() => {
+    if (focused || !cells.length) return;
+    const c = cells[0].card;
+    setFocused({ id: c.id, type: c.type as MediaType, name: c.name, poster: c.poster });
+  }, [cells, focused]);
+
   const onSelect = useCallback(
     (card: CardItem) => {
       // A hold (longSelect) also fires the focused card's onPress on release;
@@ -270,7 +249,11 @@ export function LibraryScreen() {
     [byId, navigation]
   );
 
-  const onFocusCard = useCallback((card: CardItem) => { focusedCardRef.current = card; }, []);
+  // Card focus drives BOTH the hold-OK target ref and the ambient backdrop.
+  const onFocusCard = useCallback((card: CardItem) => {
+    focusedCardRef.current = card;
+    setFocused({ id: card.id, type: card.type as MediaType, name: card.name, poster: card.poster });
+  }, []);
   const onBlurCard = useCallback(() => { focusedCardRef.current = null; }, []);
   const closeActions = useCallback(() => { setActionCard(null); setActionRect(null); }, []);
 
@@ -316,28 +299,28 @@ export function LibraryScreen() {
     return () => sub.remove();
   }, [actionCard, closeActions]);
 
-  const posterW = m.s(180);
-  const padL = m.s(20); // clears the focused first-column card's 1.06 scale (no left clip)
+  const padL = m.s(20);
   const gap = m.s(24);
-  const cols = Math.max(2, Math.floor((m.width - m.contentLeft - m.safeX - padL + gap) / (posterW + gap)));
+  const cols = 4; // landscape cards, 4 per row
+  // Width that fits `cols` landscape cards + (cols-1) gaps across the content area.
+  const posterW = Math.floor((m.width - m.contentLeft - m.safeX - padL - gap * (cols - 1)) / cols);
 
   // Not logged in: a login prompt panel (web shows the same copy + Login CTA).
   if (!token) {
     return (
       <View style={styles.root}>
         <NavRail active="Library" />
-        <TopBar />
         <View
           isTVSelectable={!railOpen}
-          style={{ position: 'absolute', left: m.contentLeft, top: m.contentTop, right: m.safeX, bottom: 0 }}
+          style={{ position: 'absolute', left: m.contentLeft, top: m.safeY + m.s(14), right: m.safeX, bottom: 0 }}
         >
           <View style={[styles.panel, { borderRadius: m.s(28), padding: m.s(28) }]}>
-            <Text style={{ fontFamily: font.serif, fontSize: m.s(40), color: colors.text }}>Library</Text>
-            <Text style={{ fontFamily: font.body, fontSize: m.s(22), color: colors.textFaint, marginTop: m.s(6) }}>
+            <Text style={{ fontFamily: font.spectralBold, fontSize: m.s(52), color: colors.text }}>Library</Text>
+            <Text style={{ fontFamily: font.body, fontSize: m.s(22), color: colors.textFaint, marginTop: m.s(8) }}>
               Login to see your Stremio library.
             </Text>
             <View style={{ marginTop: m.s(22), flexDirection: 'row' }}>
-              <Chip label="Login" active atRowStart m={m} onPress={openLogin} />
+              <Button label="Login" variant="solid" atRowStart autoFocus onPress={openLogin} />
             </View>
           </View>
         </View>
@@ -345,27 +328,25 @@ export function LibraryScreen() {
     );
   }
 
+  const heroMeta = focused && focusedMeta?.key === `${focused.type}:${focused.id}` ? focusedMeta.meta : null;
+
   return (
     <View style={styles.root}>
+      {/* Ambient art of the focused card behind a heavy dim — the immersive Home's
+          backdrop as mood lighting, not a hero. The grid stays fully legible. */}
+      <Backdrop item={focused} meta={heroMeta} />
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(7,9,13,0.60)' }]} pointerEvents="none" />
+
       <NavRail active="Library" />
-      <TopBar />
       {/* One isTVSelectable flip cascades to the dropdown + chips + grid so an
           open rail traps focus (per-card flips stall the tvos focus engine). */}
       <View
         isTVSelectable={!railOpen}
-        style={{ position: 'absolute', left: m.contentLeft, top: m.contentTop, right: m.safeX, bottom: 0 }}
+        style={{ position: 'absolute', left: m.contentLeft, top: m.safeY + m.s(14), right: m.safeX, bottom: 0 }}
       >
-        <Text style={{ fontFamily: font.serif, fontSize: m.s(40), color: colors.text, marginLeft: padL, marginBottom: m.s(14) }}>
-          Library
-        </Text>
-
-        {/* Filters row: Type dropdown + sort chips + watched chips. Horizontal
-            scroll so the chip row never clips on a narrow panel; the type
-            dropdown is the left-edge focusable (atRowStart -> opens the rail). */}
-        {/* A plain wrapping row (NOT a horizontal ScrollView) — the ScrollView's
-            overflow:hidden frame shaved the chips' rounded top/bottom. The chips
-            fit on one line on a TV; flexWrap covers any narrow case. */}
-        <View style={{ flexShrink: 0, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: m.s(12), marginLeft: padL, marginRight: m.safeX, marginBottom: m.s(18) }}>
+        {/* Filter pills row — the screen heading was removed (the NavRail marks the
+            active page); the grid gets the full height. */}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: m.s(12), marginLeft: padL, marginBottom: m.s(20) }}>
           <TvSelect
             iconName="albums-outline"
             options={typeOptions}
@@ -377,20 +358,13 @@ export function LibraryScreen() {
             onOpen={setDropdown}
           />
           {SORT_CHIPS.map((chip) => (
-            <Chip
-              key={chip.key}
-              label={chip.label}
-              active={sortMode === chip.key}
-              m={m}
-              onPress={() => setSortMode(chip.key)}
-            />
+            <Chip key={chip.key} label={chip.label} active={sortMode === chip.key} onPress={() => setSortMode(chip.key)} />
           ))}
           {WATCHED_CHIPS.map((chip) => (
             <Chip
               key={chip.key}
               label={chip.label}
               active={watchedFilter === chip.key}
-              m={m}
               onPress={() => setWatchedFilter((prev) => (prev === chip.key ? 'all' : chip.key))}
             />
           ))}
@@ -398,14 +372,14 @@ export function LibraryScreen() {
 
         {loading ? (
           <View style={{ paddingLeft: padL }}>
-            <PosterGridSkeleton width={posterW} cols={cols} gap={m.s(24)} rows={3} m={m} />
+            <PosterGridSkeleton width={posterW} cols={cols} gap={gap} rows={3} m={m} variant="landscape" />
           </View>
         ) : error ? (
-          <Text style={{ fontFamily: font.body, fontSize: m.s(22), color: colors.danger, marginLeft: padL, marginTop: m.s(20) }}>
+          <Text style={{ fontFamily: font.body, fontSize: m.s(24), color: colors.danger, marginLeft: padL, marginTop: m.s(40) }}>
             {error}
           </Text>
         ) : cells.length === 0 ? (
-          <Text style={{ fontFamily: font.body, fontSize: m.s(22), color: colors.textFaint, marginLeft: padL, marginTop: m.s(20) }}>
+          <Text style={{ fontFamily: font.body, fontSize: m.s(24), color: colors.textFaint, marginLeft: padL, marginTop: m.s(40) }}>
             No library items found.
           </Text>
         ) : (
@@ -413,11 +387,9 @@ export function LibraryScreen() {
             data={cells}
             key={cols}
             numColumns={cols}
-            // Concrete height (a FlatList with flex:1 inside this absolute column
-            // collapses to 0 and renders no rows). The subtracted m.s(150) leaves
-            // room for the title (~m.s(62)) + chips row (~m.s(70)) so the column
-            // doesn't overflow and shrink them; the chips are flexShrink:0 too.
-            style={{ height: m.height - m.contentTop - m.s(150) }}
+            // Explicit height, NOT flex:1 — a flex-sized VirtualizedList inside this
+            // absolutely-positioned parent lays out at zero height (mirrors Discover).
+            style={{ height: m.height - m.safeY - m.s(120) }}
             removeClippedSubviews={false}
             initialNumToRender={cols * 3}
             maxToRenderPerBatch={cols * 2}
@@ -427,19 +399,20 @@ export function LibraryScreen() {
             // to the card (drives its rect measurement + ring suppression).
             extraData={actionCard?.id}
             contentContainerStyle={{ gap: m.s(20), paddingTop: m.s(8), paddingBottom: m.s(40), paddingLeft: padL }}
-            columnWrapperStyle={{ gap: m.s(24) }}
+            columnWrapperStyle={{ gap: gap }}
             showsVerticalScrollIndicator={false}
             renderItem={({ item, index }) => (
-              <LibraryPosterCard
+              <PosterCard
                 item={item.card}
+                variant="landscape"
                 width={posterW}
                 progress={item.progress}
                 autoFocus={index === 0}
                 atRowStart={index % cols === 0}
                 active={actionCard?.id === item.card.id}
                 onSelect={onSelect}
-                onFocusItem={onFocusCard}
-                onBlurItem={onBlurCard}
+                onFocus={onFocusCard}
+                onBlur={onBlurCard}
                 onActiveRect={setActionRect}
               />
             )}
@@ -455,6 +428,6 @@ export function LibraryScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: 'transparent' },
+  root: { flex: 1, backgroundColor: colors.bg },
   panel: { backgroundColor: 'rgba(28,33,46,0.97)', borderWidth: 1, borderColor: colors.hairline, alignSelf: 'flex-start' },
 });

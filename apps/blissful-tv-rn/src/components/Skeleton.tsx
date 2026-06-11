@@ -3,6 +3,7 @@ import { Animated, Easing, StyleSheet, View, type ViewStyle } from 'react-native
 import { LinearGradient } from 'expo-linear-gradient';
 
 const POSTER_RATIO = 1.464; // matches PosterCard.POSTER_RATIO (kept local to avoid a circular import)
+const LANDSCAPE_RATIO = 9 / 16; // matches PosterCard.LANDSCAPE_RATIO
 
 // HeroUI-style skeleton shimmer. Cheap on a low-end TV: ONE module-level Animated
 // value + ONE loop drives every skeleton's sweep (the transform runs on the native
@@ -39,12 +40,15 @@ export function Skeleton({ width, height, br, style }: { width: number; height: 
 }
 
 // A poster-shaped skeleton (image block + title line) for loading rails/grids —
-// the "posters load empty with the skeleton animation" look.
-export function PosterSkeleton({ width, m }: { width: number; m: { s: (n: number) => number } }) {
+// the "posters load empty with the skeleton animation" look. `landscape` matches
+// the 16:9 cards (title line below, left-aligned); portrait is 2:3 (title centered).
+export function PosterSkeleton({ width, m, variant = 'portrait' }: { width: number; m: { s: (n: number) => number }; variant?: 'portrait' | 'landscape' }) {
+  const landscape = variant === 'landscape';
   return (
     <View style={{ width }}>
-      <Skeleton width={width} height={width * POSTER_RATIO} br={m.s(16)} />
-      <Skeleton width={width * 0.7} height={m.s(16)} br={m.s(6)} style={{ marginTop: m.s(15), alignSelf: 'center' }} />
+      <Skeleton width={width} height={width * (landscape ? LANDSCAPE_RATIO : POSTER_RATIO)} br={m.s(16)} />
+      {/* portrait shows a title line below; landscape's title sits INSIDE the card */}
+      {landscape ? null : <Skeleton width={width * 0.7} height={m.s(16)} br={m.s(6)} style={{ marginTop: m.s(15), alignSelf: 'center' }} />}
     </View>
   );
 }
@@ -57,18 +61,20 @@ export function PosterGridSkeleton({
   gap,
   rows = 2,
   m,
+  variant = 'portrait',
 }: {
   width: number;
   cols: number;
   gap: number;
   rows?: number;
   m: { s: (n: number) => number };
+  variant?: 'portrait' | 'landscape';
 }) {
   const cells = Array.from({ length: cols * rows });
   return (
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap }}>
       {cells.map((_, i) => (
-        <PosterSkeleton key={i} width={width} m={m} />
+        <PosterSkeleton key={i} width={width} m={m} variant={variant} />
       ))}
     </View>
   );

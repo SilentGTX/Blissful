@@ -4,7 +4,7 @@ import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { useTvFocusable } from '../../lib/useTvFocusable';
 import { colors, font, radius } from '../../theme/colors';
 import type { useMetrics } from '../../theme/metrics';
-import { LandscapeTile, type TileRect } from './LandscapeTile';
+import { PosterCard, POSTER_W, type CardRect } from '../PosterCard';
 import type { HomeItem } from './homeData';
 
 type M = ReturnType<typeof useMetrics>;
@@ -49,7 +49,7 @@ export const LandscapeRail = memo(function LandscapeRail({
   onFocusItem: (it: HomeItem, rowIndex: number) => void;
   onBlurItem: () => void;
   onPress: (it: HomeItem) => void;
-  onActiveRect: (r: TileRect) => void;
+  onActiveRect: (r: CardRect) => void;
   onSeeAll?: () => void;
 }) {
   return (
@@ -73,16 +73,18 @@ export const LandscapeRail = memo(function LandscapeRail({
           // left edge off the FlatList/band clip edge AND aligns tiles at 150.
           contentContainerStyle={{ gap: m.s(30), paddingTop: m.s(14), paddingBottom: m.s(14), paddingLeft: m.s(20), paddingRight: m.safeX }}
           renderItem={({ item, index }) => (
-            <LandscapeTile
+            <PosterCard
               item={item}
-              m={m}
+              variant="landscape"
+              hideRating
+              width={m.s(POSTER_W.land)}
               autoFocus={firstFocus && index === 0}
               atRowStart={index === 0}
-              upTag={upTag}
+              nextFocusUp={upTag}
               active={item.id === activeActionId}
-              onFocusItem={(it) => onFocusItem(it, rowIndex)}
-              onBlurItem={onBlurItem}
-              onPress={onPress}
+              onFocus={() => onFocusItem(item, rowIndex)}
+              onBlur={onBlurItem}
+              onSelect={() => onPress(item)}
               onActiveRect={onActiveRect}
             />
           )}

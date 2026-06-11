@@ -22,7 +22,6 @@ import { Img } from './Img';
 import { useToast } from './Toast';
 
 type M = ReturnType<typeof useMetrics>;
-const ACCENT = '#95a2ff';
 const DISMISS_AFTER_MS = 60_000;
 
 let inviteOverlayActive = false;
@@ -125,8 +124,8 @@ function InviteCard({ m, imdbId, type, knownName, line, action, onAction, onDism
         ) : null}
         <View style={{ flex: 1, minWidth: 0 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(6), marginBottom: m.s(3) }}>
-            <Ionicons name="people" size={m.s(15)} color={ACCENT} />
-            <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(12), letterSpacing: m.s(1.2), textTransform: 'uppercase', color: ACCENT }}>Watch party</Text>
+            <Ionicons name="people" size={m.s(15)} color={colors.accent} />
+            <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(12), letterSpacing: m.s(1.2), textTransform: 'uppercase', color: colors.accent }}>Watch party</Text>
           </View>
           <Text numberOfLines={1} style={{ fontFamily: font.bodyMed, fontSize: m.s(16), color: '#fff' }}>{line}</Text>
           {name ? <Text numberOfLines={1} style={{ fontFamily: font.bodySemi, fontSize: m.s(18), color: 'rgba(255,255,255,0.95)', marginTop: m.s(1) }}>{name}</Text> : null}
@@ -144,7 +143,7 @@ function CardBtn({ m, label, primary, autoFocus, onPress }: { m: M; label: strin
   const [f, setF] = useState(false);
   return (
     <Pressable hasTVPreferredFocus={autoFocus} onFocus={() => setF(true)} onBlur={() => setF(false)} onPress={onPress}
-      style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(6), borderRadius: 999, paddingHorizontal: m.s(18), paddingVertical: m.s(9), backgroundColor: primary ? ACCENT : f ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.08)', borderWidth: m.s(2), borderColor: f ? (primary ? '#fff' : ACCENT) : 'transparent' }}>
+      style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(6), borderRadius: 999, paddingHorizontal: m.s(18), paddingVertical: m.s(9), backgroundColor: primary ? colors.accent : f ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.08)', borderWidth: m.s(2), borderColor: f ? (primary ? '#fff' : colors.accent) : 'transparent' }}>
       {primary ? <Ionicons name="play" size={m.s(14)} color={colors.accentInk} style={{ marginLeft: -m.s(2) }} /> : null}
       <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(15), color: primary ? colors.accentInk : '#fff' }}>{label}</Text>
     </Pressable>

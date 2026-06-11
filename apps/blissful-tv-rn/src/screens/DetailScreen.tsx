@@ -15,6 +15,9 @@ import { Rating } from '../components/Rating';
 import { ResumeModal } from '../components/ResumeModal';
 import { StreamPicker, type StreamPickerTarget } from '../components/StreamPicker';
 import { TvSelect, TvSelectOverlay, type DropdownAnchor, type SelectOption } from '../components/TvSelect';
+import { ChipRow } from '../components/ui/Chip';
+import { Button } from '../components/ui/Button';
+import { IconButton } from '../components/ui/IconButton';
 import { metahubPosterToBackdrop } from '../lib/images';
 import { resolveMeta } from '../lib/metaResolver';
 import { formatReleaseInfo } from '../lib/releaseInfo';
@@ -44,66 +47,9 @@ function shortDate(iso?: string | null): string | null {
   return `${SHORT_MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 }
 
-// .tv-detail-back — glass pill, top-left.
-function BackPill({ m, onPress }: { m: M; onPress: () => void }) {
-  const [f, setF] = useState(false);
-  return (
-    <Pressable
-      onFocus={() => setF(true)}
-      onBlur={() => setF(false)}
-      onPress={onPress}
-      style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: m.s(8), height: m.s(42), paddingLeft: m.s(16), paddingRight: m.s(20), borderRadius: radius.pill, backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: 1, borderColor: f ? colors.accent : 'transparent' }}
-    >
-      <Ionicons name="chevron-back" size={m.s(22)} color="#fff" />
-      <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(19), color: '#fff' }}>Back</Text>
-    </Pressable>
-  );
-}
-
-// .tv-detail-actions .action-button — height ~40, accent for Watch.
-function ActionBtn({ label, icon, primary, autoFocus, m, onPress }: { label: string; icon: keyof typeof Ionicons.glyphMap; primary?: boolean; autoFocus?: boolean; m: M; onPress: () => void }) {
-  const [f, setF] = useState(false);
-  const fg = primary ? colors.accentInk : colors.text;
-  return (
-    <Pressable
-      hasTVPreferredFocus={autoFocus}
-      onFocus={() => setF(true)}
-      onBlur={() => setF(false)}
-      onPress={onPress}
-      style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(10), height: m.s(40), paddingHorizontal: m.s(24), borderRadius: radius.pill, backgroundColor: primary ? colors.accent : colors.surface10, borderWidth: 1, borderColor: f ? (primary ? colors.text : colors.accent) : 'transparent' }}
-    >
-      <Ionicons name={icon} size={m.s(22)} color={fg} />
-      <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(18), color: fg }}>{label}</Text>
-    </Pressable>
-  );
-}
-
 // .tv-detail-label — uppercase, 0.14em, 50% white.
 function Label({ children, m }: { children: string; m: M }) {
   return <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(16), fontWeight: '700', letterSpacing: m.s(2), textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)', marginBottom: m.s(10) }}>{children}</Text>;
-}
-
-function Chip({ label, m, onPress }: { label: string; m: M; onPress: () => void }) {
-  const [f, setF] = useState(false);
-  return (
-    <Pressable
-      onFocus={() => setF(true)}
-      onBlur={() => setF(false)}
-      onPress={onPress}
-      style={{ backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: radius.pill, paddingHorizontal: m.s(19), paddingVertical: m.s(10), borderWidth: 1, borderColor: f ? colors.accent : 'transparent' }}
-    >
-      <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(18), color: 'rgba(255,255,255,0.92)' }}>{label}</Text>
-    </Pressable>
-  );
-}
-function Chips({ items, m, onPress }: { items: string[]; m: M; onPress: (item: string) => void }) {
-  return (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: m.s(10) }}>
-      {items.map((g) => (
-        <Chip key={g} label={g} m={m} onPress={() => onPress(g)} />
-      ))}
-    </View>
-  );
 }
 
 function EpisodeCard({ video, m, runtime, imgs, poster, watched, rating, progress, autoFocus, onPress }: { video: Video; m: M; runtime?: string | null; imgs?: (string | null | undefined)[]; poster?: string | null; watched?: boolean; rating?: string | number | null; progress?: number; autoFocus?: boolean; onPress: () => void }) {
@@ -150,23 +96,6 @@ function EpisodeCard({ video, m, runtime, imgs, poster, watched, rating, progres
         {video.title || video.name || `Episode ${video.episode ?? ''}`}
       </Text>
       {sub ? <Text style={{ fontFamily: font.body, fontSize: m.s(18), color: 'rgba(255,255,255,0.6)', marginTop: m.s(2) }}>{sub}</Text> : null}
-    </Pressable>
-  );
-}
-
-// ‹ / › season step buttons flanking the season Select.
-function SeasonChevron({ icon, disabled, m, onPress }: { icon: keyof typeof Ionicons.glyphMap; disabled?: boolean; m: M; onPress: () => void }) {
-  const [focused, setFocused] = useState(false);
-  const sz = m.s(46);
-  return (
-    <Pressable
-      focusable={!disabled}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-      onPress={() => { if (!disabled) onPress(); }}
-      style={{ width: sz, height: sz, borderRadius: 999, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: focused ? colors.accent : 'transparent', opacity: disabled ? 0.35 : 1 }}
-    >
-      <Ionicons name={icon} size={m.s(22)} color="#fff" />
     </Pressable>
   );
 }
@@ -399,10 +328,16 @@ export function DetailScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSeries, genres[0], params.id, params.type]);
 
-  // Backdrop with no flash: before meta loads, derive the landscape backdrop
-  // from the poster we already have (metahub poster -> background/medium), which
-  // is byte-identical to meta.background once it arrives, so the <Image> source
-  // never swaps. Falls back to the raw poster (hidden under the scrim) otherwise.
+  // Backdrop with no flash: before meta loads, derive the landscape backdrop from
+  // the poster we already have (metahub poster -> background/medium), which is
+  // byte-identical to meta.background once it arrives, so the <Image> source never
+  // swaps. That trick ONLY works for metahub (Cinemeta) titles; for addon titles
+  // like Anime Kitsu the poster isn't a metahub url, so metahubPosterToBackdrop
+  // returns null. We deliberately DON'T fall back to the raw params.poster here —
+  // it's a PORTRAIT image, and painting it stretched across the landscape backdrop
+  // area and then swapping to the real meta.background (a fanart.tv landscape) is
+  // exactly the "wrong poster flashes to the right one after a second" bug. Better
+  // to show the dark scrim until the correct backdrop fades in (transition below).
   // Backdrop sources, best first (matches the Windows detail page). Some fanart.tv
   // backgrounds 404 / block a direct fetch, so the <Img> advances through these on
   // load error (onError below) instead of showing a black frame.
@@ -414,7 +349,6 @@ export function DetailScreen() {
             normalizeStremioImage(meta?.background),
             normalizeStremioImage(meta?.poster),
             metahubPosterToBackdrop(normalizeStremioImage(params.poster)),
-            normalizeStremioImage(params.poster),
           ].filter((u): u is string => !!u),
         ),
       ),
@@ -492,7 +426,7 @@ export function DetailScreen() {
       <LinearGradient colors={['#07090d', 'rgba(7,9,13,0.4)', 'transparent']} locations={[0.06, 0.32, 0.6]} start={{ x: 0, y: 1 }} end={{ x: 0, y: 0 }} style={StyleSheet.absoluteFill} />
 
       <View style={{ flex: 1, paddingHorizontal: m.safeX, paddingVertical: m.safeY }}>
-        <BackPill m={m} onPress={() => navigation.goBack()} />
+        <Button variant="glass" size="sm" icon="chevron-back" label="Back" onPress={() => navigation.goBack()} />
 
         <View style={{ maxWidth: '48%', marginTop: m.s(13), gap: m.s(10) }}>
           {meta?.logo ? (
@@ -522,13 +456,13 @@ export function DetailScreen() {
             {genres.length ? (
               <View>
                 <Label m={m}>Genres</Label>
-                <Chips items={genres} m={m} onPress={(g) => navigation.navigate('Discover', { type: params.type, genre: g })} />
+                <ChipRow items={genres} onPress={(g) => navigation.navigate('Discover', { type: params.type, genre: g })} />
               </View>
             ) : null}
             {cast.length ? (
               <View>
                 <Label m={m}>Cast</Label>
-                <Chips items={cast} m={m} onPress={(c) => navigation.navigate('Search', { query: c })} />
+                <ChipRow items={cast} onPress={(c) => navigation.navigate('Search', { query: c })} />
               </View>
             ) : null}
           </View>
@@ -543,9 +477,9 @@ export function DetailScreen() {
           ) : null}
 
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: m.s(11), marginTop: m.s(8) }}>
-            {!isSeries ? <ActionBtn label="Watch" icon="play" primary autoFocus m={m} onPress={openMoviePicker} /> : null}
-            <ActionBtn label={inLibrary ? 'Remove from library' : 'Add to library'} icon={inLibrary ? 'bookmark' : 'bookmark-outline'} autoFocus={isSeries && params.episode == null} m={m} onPress={handleToggleLibrary} />
-            {meta?.trailerStreams?.length ? <ActionBtn label="Trailer" icon="film-outline" m={m} onPress={() => { /* trailer modal next */ }} /> : null}
+            {!isSeries ? <Button label="Watch" icon="play" variant="accent" size="sm" autoFocus onPress={openMoviePicker} /> : null}
+            <Button label={inLibrary ? 'Remove from library' : 'Add to library'} icon={inLibrary ? 'bookmark' : 'bookmark-outline'} variant="glass" size="sm" autoFocus={isSeries && params.episode == null} onPress={handleToggleLibrary} />
+            {meta?.trailerStreams?.length ? <Button label="Trailer" icon="film-outline" variant="glass" size="sm" onPress={() => { /* trailer modal next */ }} /> : null}
           </View>
 
         </View>
@@ -561,7 +495,7 @@ export function DetailScreen() {
                 const idx = Math.max(0, seasons.indexOf(season ?? seasons[0]));
                 return (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(8) }}>
-                    <SeasonChevron icon="chevron-back" m={m} disabled={idx <= 0} onPress={() => setSeason(seasons[idx - 1])} />
+                    <IconButton icon="chevron-back" size="md" disabled={idx <= 0} onPress={() => setSeason(seasons[idx - 1])} />
                     <TvSelect
                       iconName="albums-outline"
                       options={seasons.map((s): SelectOption => ({ key: String(s), label: `Season ${s}` }))}
@@ -571,14 +505,14 @@ export function DetailScreen() {
                       minWidth={m.s(220)}
                       onOpen={setDropdown}
                     />
-                    <SeasonChevron icon="chevron-forward" m={m} disabled={idx >= seasons.length - 1} onPress={() => setSeason(seasons[idx + 1])} />
+                    <IconButton icon="chevron-forward" size="md" disabled={idx >= seasons.length - 1} onPress={() => setSeason(seasons[idx + 1])} />
                   </View>
                 );
               })() : null}
               {/* Episode-range selector for huge seasons (One Piece etc.). */}
               {needsRanges ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(8) }}>
-                  <SeasonChevron icon="chevron-back" m={m} disabled={safeChunk <= 0} onPress={() => setEpChunk(safeChunk - 1)} />
+                  <IconButton icon="chevron-back" size="md" disabled={safeChunk <= 0} onPress={() => setEpChunk(safeChunk - 1)} />
                   <TvSelect
                     iconName="list-outline"
                     options={rangeOptions}
@@ -588,7 +522,7 @@ export function DetailScreen() {
                     minWidth={m.s(300)}
                     onOpen={setDropdown}
                   />
-                  <SeasonChevron icon="chevron-forward" m={m} disabled={safeChunk >= chunkCount - 1} onPress={() => setEpChunk(safeChunk + 1)} />
+                  <IconButton icon="chevron-forward" size="md" disabled={safeChunk >= chunkCount - 1} onPress={() => setEpChunk(safeChunk + 1)} />
                 </View>
               ) : null}
             </View>

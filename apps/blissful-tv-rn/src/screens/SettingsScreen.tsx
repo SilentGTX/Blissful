@@ -19,7 +19,7 @@ import { TvToggle } from '../components/settings/TvToggle';
 import { ColorSwatchRow } from '../components/settings/ColorSwatchRow';
 import { AccentPreview, GlassPreview } from '../components/settings/AppearancePreview';
 import { SubtitleColorPicker } from '../components/settings/SubtitleColorPicker';
-import { PillButton } from '../components/settings/PillButton';
+import { Button } from '../components/ui/Button';
 import { SettingsStremioPanel } from '../components/settings/SettingsStremioPanel';
 import { SettingsTraktPanel } from '../components/settings/SettingsTraktPanel';
 import { APP_NAME, APP_TAGLINE, APP_VERSION } from '../lib/appInfo';
@@ -439,7 +439,7 @@ export function SettingsScreen() {
                       atRowStart
                       onChange={(hex) => update({ accentColor: hex })}
                     />
-                    <PillButton label="Reset" m={m} onPress={() => update({ accentColor: '#95a2ff' })} />
+                    <Button label="Reset" onPress={() => update({ accentColor: '#95a2ff' })} />
                   </Card>
                   <Card title="Surface color" m={m}>
                     <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(17), color: colors.text }}>Glass surface</Text>
@@ -456,7 +456,7 @@ export function SettingsScreen() {
                       atRowStart
                       onChange={(hex) => update({ surfaceColor: hex })}
                     />
-                    <PillButton label="Reset" m={m} onPress={() => update({ surfaceColor: '#282f40' })} />
+                    <Button label="Reset" onPress={() => update({ surfaceColor: '#282f40' })} />
                   </Card>
                 </>
               ) : null}
@@ -619,10 +619,9 @@ export function SettingsScreen() {
                         atRowStart
                       />
                       <View style={{ flexDirection: 'row', marginTop: m.s(10) }}>
-                        <PillButton
+                        <Button
                           label={usernameSaving ? 'Saving...' : 'Save'}
-                          m={m}
-                          primary
+                          variant="solid"
                           disabled={usernameSaveDisabled}
                           busy={usernameSaving}
                           onPress={() => void handleSaveUsername()}
@@ -654,10 +653,9 @@ export function SettingsScreen() {
                         atRowStart
                       />
                       <View style={{ flexDirection: 'row', marginTop: m.s(10) }}>
-                        <PillButton
+                        <Button
                           label={displayNameSaving ? 'Saving...' : 'Save'}
-                          m={m}
-                          primary
+                          variant="solid"
                           disabled={displayNameSaveDisabled}
                           busy={displayNameSaving}
                           onPress={() => void handleSaveDisplayName()}

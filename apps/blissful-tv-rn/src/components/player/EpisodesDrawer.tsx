@@ -37,11 +37,10 @@ import {
   View,
 } from 'react-native';
 import { getStorageBaseUrl } from '@blissful/core';
-import { font } from '../../theme/colors';
+import { colors, font } from '../../theme/colors';
 import { useMetrics } from '../../theme/metrics';
 import { Img } from '../Img';
 
-const ACCENT = '#95a2ff';
 type M = ReturnType<typeof useMetrics>;
 
 /** One episode — mapped from the show meta's videos by the PlayerScreen. */
@@ -304,8 +303,13 @@ export function EpisodesDrawer({
       case 'left':
       case 'rewind':
         if (z === 'seasonMenu') setZone('header'); // dismiss the dropdown
-        else if (z === 'header') setHIdx(Math.max(0, hIdxRef.current - 1));
-        else onClose(); // the right-anchored drawer's dismiss gesture
+        else if (z === 'header') {
+          // Left walks the header items; past the left-most one it DISMISSES the
+          // right-anchored panel (same Left-to-close gesture as the list), so you
+          // can never get stuck in the header pressing Left with nothing happening.
+          if (hIdxRef.current <= 0) onClose();
+          else setHIdx(hIdxRef.current - 1);
+        } else onClose(); // list zone — the right-anchored drawer's dismiss gesture
         break;
       case 'right':
       case 'fastForward':
@@ -358,7 +362,7 @@ export function EpisodesDrawer({
                 height: m.s(32),
                 borderRadius: 999,
                 borderWidth: m.s(1.5),
-                borderColor: hFocused('search') ? ACCENT : 'rgba(255,255,255,0.1)',
+                borderColor: hFocused('search') ? colors.accent : 'rgba(255,255,255,0.1)',
                 paddingHorizontal: m.s(10),
                 gap: m.s(6),
               }}
@@ -391,7 +395,7 @@ export function EpisodesDrawer({
                     height: m.s(32),
                     borderRadius: 999,
                     borderWidth: m.s(1.5),
-                    borderColor: hFocused('season') || zone === 'seasonMenu' ? ACCENT : 'rgba(255,255,255,0.1)',
+                    borderColor: hFocused('season') || zone === 'seasonMenu' ? colors.accent : 'rgba(255,255,255,0.1)',
                     backgroundColor: hFocused('season') ? 'rgba(255,255,255,0.1)' : 'transparent',
                     paddingHorizontal: m.s(10),
                   }}
@@ -404,7 +408,7 @@ export function EpisodesDrawer({
                   <View style={{ position: 'absolute', top: m.s(38), left: -m.s(8), minWidth: m.s(118), borderRadius: m.s(12), paddingVertical: m.s(6), backgroundColor: 'rgba(10,11,15,0.97)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}>
                     {seasons.map((s, i) => (
                       <View key={s} style={{ paddingHorizontal: m.s(14), paddingVertical: m.s(8), backgroundColor: i === menuIdx ? 'rgba(149,162,255,0.22)' : 'transparent' }}>
-                        <Text style={{ fontFamily: i === menuIdx ? font.bodySemi : font.bodyMed, fontSize: m.s(13), color: i === menuIdx ? ACCENT : '#fff' }}>{`Season ${s}`}</Text>
+                        <Text style={{ fontFamily: i === menuIdx ? font.bodySemi : font.bodyMed, fontSize: m.s(13), color: i === menuIdx ? colors.accent : '#fff' }}>{`Season ${s}`}</Text>
                       </View>
                     ))}
                   </View>
@@ -420,12 +424,12 @@ export function EpisodesDrawer({
                 height: m.s(32),
                 borderRadius: 999,
                 borderWidth: m.s(1.5),
-                borderColor: hFocused('autoplay') ? ACCENT : 'transparent',
+                borderColor: hFocused('autoplay') ? colors.accent : 'transparent',
                 paddingHorizontal: m.s(8),
               }}
             >
               <Text style={{ fontFamily: font.bodyMed, fontSize: m.s(13), color: '#fff' }}>Auto play</Text>
-              <View style={{ width: m.s(44), height: m.s(26), borderRadius: 999, backgroundColor: autoPlay ? ACCENT : 'rgba(255,255,255,0.2)', justifyContent: 'center', paddingHorizontal: m.s(3) }}>
+              <View style={{ width: m.s(44), height: m.s(26), borderRadius: 999, backgroundColor: autoPlay ? colors.accent : 'rgba(255,255,255,0.2)', justifyContent: 'center', paddingHorizontal: m.s(3) }}>
                 <View style={{ width: m.s(20), height: m.s(20), borderRadius: 999, backgroundColor: autoPlay ? '#000' : '#fff', alignSelf: autoPlay ? 'flex-end' : 'flex-start' }} />
               </View>
             </View>
@@ -439,7 +443,7 @@ export function EpisodesDrawer({
               alignItems: 'center',
               justifyContent: 'center',
               borderWidth: m.s(1.5),
-              borderColor: hFocused('close') ? ACCENT : 'rgba(255,255,255,0.1)',
+              borderColor: hFocused('close') ? colors.accent : 'rgba(255,255,255,0.1)',
               backgroundColor: hFocused('close') ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.45)',
             }}
           >
@@ -530,7 +534,7 @@ export function EpisodesDrawer({
                       {/* current-episode progress bar */}
                       {isCurrent && currentProgressPct > 0 ? (
                         <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: m.s(5), backgroundColor: 'rgba(255,255,255,0.15)' }}>
-                          <View style={{ height: '100%', width: `${Math.min(100, currentProgressPct)}%`, backgroundColor: ACCENT }} />
+                          <View style={{ height: '100%', width: `${Math.min(100, currentProgressPct)}%`, backgroundColor: colors.accent }} />
                         </View>
                       ) : null}
                       {/* distance darken overlay */}

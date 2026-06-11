@@ -11,6 +11,14 @@ import { useSettingsLeftTarget } from '../lib/settingsLeftTarget';
 export type SelectOption = { key: string; label: string };
 type M = ReturnType<typeof useMetrics>;
 
+export type TvSelectSize = 'sm' | 'md';
+// md = the standard filter/season select (height 52, font 20); sm = a denser
+// row. Sizes are 1920-design px scaled by m.s() at render.
+const SELECT_SIZES: Record<TvSelectSize, { height: number; font: number; icon: number; chevron: number; padH: number; gap: number }> = {
+  sm: { height: 44, font: 18, icon: 20, chevron: 18, padH: 14, gap: 8 },
+  md: { height: 52, font: 20, icon: 22, chevron: 20, padH: 18, gap: 10 },
+};
+
 // What the screen needs to host the dropdown overlay at the root level.
 export type DropdownAnchor = {
   pos: { x: number; y: number; w: number; h: number };
@@ -34,6 +42,7 @@ export function TvSelect({
   minWidth,
   atRowStart,
   onOpen,
+  size = 'md',
 }: {
   iconName: keyof typeof Ionicons.glyphMap;
   options: SelectOption[];
@@ -43,9 +52,13 @@ export function TvSelect({
   minWidth: number;
   atRowStart?: boolean;
   onOpen: (anchor: DropdownAnchor) => void;
+  size?: TvSelectSize;
 }) {
+  const sz = SELECT_SIZES[size];
   const [focused, setFocused] = useState(false);
   const triggerRef = useRef<View>(null);
+  // Same Left→category / rail-trap routing as useTvFocusable, kept inline because
+  // the trigger needs its own ref for measureInWindow() + requestTVFocus().
   const leftTarget = useSettingsLeftTarget();
   const railTrap = leftTarget == null && Boolean(atRowStart);
   const selfTag = useSelfTag(triggerRef, railTrap);
@@ -67,13 +80,13 @@ export function TvSelect({
       onFocus={() => { setFocused(true); markContentFocus(railTrap); }}
       onBlur={() => setFocused(false)}
       onPress={open}
-      style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(10), minWidth, height: m.s(52), paddingHorizontal: m.s(18), borderRadius: radius.pill, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: focused ? colors.accent : 'rgba(255,255,255,0.12)' }}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(sz.gap), minWidth, height: m.s(sz.height), paddingHorizontal: m.s(sz.padH), borderRadius: radius.pill, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: focused ? colors.accent : 'rgba(255,255,255,0.12)' }}
     >
-      <Ionicons name={iconName} size={m.s(22)} color={colors.textDim} />
+      <Ionicons name={iconName} size={m.s(sz.icon)} color={colors.textDim} />
       {/* Fall back to the raw value (never blank) when it isn't one of the
           options — e.g. a saved language outside the TV's short preset list. */}
-      <Text numberOfLines={1} style={{ flex: 1, fontFamily: font.bodySemi, fontSize: m.s(20), color: colors.text }}>{current?.label ?? value}</Text>
-      <Ionicons name="chevron-down" size={m.s(20)} color={colors.textDim} />
+      <Text numberOfLines={1} style={{ flex: 1, fontFamily: font.bodySemi, fontSize: m.s(sz.font), color: colors.text }}>{current?.label ?? value}</Text>
+      <Ionicons name="chevron-down" size={m.s(sz.chevron)} color={colors.textDim} />
     </Pressable>
   );
 }

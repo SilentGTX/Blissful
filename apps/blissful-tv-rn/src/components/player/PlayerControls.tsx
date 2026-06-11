@@ -1,13 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Text, View } from 'react-native';
-import { font } from '../../theme/colors';
+import { colors, font } from '../../theme/colors';
 import { useMetrics } from '../../theme/metrics';
 import { volumeFillColor } from '../../lib/colorUtils';
 import { avatarBg, initials, type WatchPartyParticipant } from '../../lib/watchParty';
 
 type M = ReturnType<typeof useMetrics>;
-const ACCENT = '#95a2ff';
 
 // Non-focusable transport button — focus is driven by the player's virtual index
 // (the old app's model), NOT native tvos focus. `focused` lights the lavender ring
@@ -24,7 +23,7 @@ export function PlayerIconBtn({ m, focused, dimmed, children }: { m: M; focused:
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: focused ? m.s(2) : 0,
-        borderColor: focused ? ACCENT : 'transparent',
+        borderColor: focused ? colors.accent : 'transparent',
         backgroundColor: focused ? 'rgba(255,255,255,0.16)' : 'transparent',
         opacity: dimmed ? 0.4 : 1,
         // Always an array — toggling transform to `undefined` on the New Arch
@@ -32,7 +31,7 @@ export function PlayerIconBtn({ m, focused, dimmed, children }: { m: M; focused:
         transform: [{ scale: focused ? 1.12 : 1 }],
       }}
     >
-      {children(focused ? ACCENT : 'rgba(255,255,255,0.85)')}
+      {children(focused ? colors.accent : 'rgba(255,255,255,0.85)')}
     </View>
   );
 }
@@ -76,7 +75,7 @@ export function EpisodesIcon({ m, color }: { m: M; color: string }) {
 // (`rounded-full px-3` with the icon and a text label). Same virtual-index focus
 // treatment as PlayerIconBtn.
 export function PlayerLabelBtn({ m, focused, label, children }: { m: M; focused: boolean; label: string; children: (color: string) => React.ReactNode }) {
-  const color = focused ? ACCENT : 'rgba(255,255,255,0.85)';
+  const color = focused ? colors.accent : 'rgba(255,255,255,0.85)';
   return (
     <View
       style={{
@@ -87,7 +86,7 @@ export function PlayerLabelBtn({ m, focused, label, children }: { m: M; focused:
         gap: m.s(8),
         paddingHorizontal: m.s(14),
         borderWidth: focused ? m.s(2) : 0,
-        borderColor: focused ? ACCENT : 'transparent',
+        borderColor: focused ? colors.accent : 'transparent',
         backgroundColor: focused ? 'rgba(255,255,255,0.16)' : 'transparent',
         transform: [{ scale: focused ? 1.08 : 1 }],
       }}
@@ -156,10 +155,10 @@ export function WatchPartyButton({ m, focused, roomCode, connected, participants
   const visible = list.slice(0, 3);
   const overflow = list.length - visible.length;
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(8), borderRadius: 999, borderWidth: 1, borderColor: focused ? ACCENT : 'rgba(255,255,255,0.1)', backgroundColor: focused ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.4)', paddingHorizontal: m.s(14), paddingVertical: m.s(9) }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(8), borderRadius: 999, borderWidth: 1, borderColor: focused ? colors.accent : 'rgba(255,255,255,0.1)', backgroundColor: focused ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.4)', paddingHorizontal: m.s(14), paddingVertical: m.s(9) }}>
       {roomCode ? (
         <>
-          <View style={{ width: m.s(9), height: m.s(9), borderRadius: 999, backgroundColor: connected ? ACCENT : '#f59e0b' }} />
+          <View style={{ width: m.s(9), height: m.s(9), borderRadius: 999, backgroundColor: connected ? colors.accent : '#f59e0b' }} />
           {visible.length > 0 ? (
             <View style={{ flexDirection: 'row' }}>
               {visible.map((p, i) => (
@@ -177,7 +176,7 @@ export function WatchPartyButton({ m, focused, roomCode, connected, participants
           <Text style={{ fontFamily: font.body, fontSize: m.s(14), letterSpacing: m.s(1), textTransform: 'uppercase', color: 'rgba(255,255,255,0.75)' }}>{roomCode}</Text>
         </>
       ) : (
-        <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(16), color: focused ? ACCENT : '#fff' }}>Watch Party</Text>
+        <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(16), color: focused ? colors.accent : '#fff' }}>Watch Party</Text>
       )}
     </View>
   );
@@ -186,9 +185,9 @@ export function WatchPartyButton({ m, focused, roomCode, connected, participants
 // Top-left back pill: chevron + title.
 export function BackPill({ m, title, focused }: { m: M; title: string; focused: boolean }) {
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(8), alignSelf: 'flex-start', maxWidth: '40%', borderRadius: 999, borderWidth: 1, borderColor: focused ? ACCENT : 'rgba(255,255,255,0.1)', backgroundColor: focused ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.4)', paddingHorizontal: m.s(12), paddingVertical: m.s(8) }}>
-      <Ionicons name="chevron-back" size={m.s(20)} color={focused ? ACCENT : '#fff'} />
-      <Text numberOfLines={1} style={{ fontFamily: font.bodySemi, fontSize: m.s(16), color: focused ? ACCENT : '#fff' }}>{title}</Text>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(8), alignSelf: 'flex-start', maxWidth: '40%', borderRadius: 999, borderWidth: 1, borderColor: focused ? colors.accent : 'rgba(255,255,255,0.1)', backgroundColor: focused ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.4)', paddingHorizontal: m.s(12), paddingVertical: m.s(8) }}>
+      <Ionicons name="chevron-back" size={m.s(20)} color={focused ? colors.accent : '#fff'} />
+      <Text numberOfLines={1} style={{ fontFamily: font.bodySemi, fontSize: m.s(16), color: focused ? colors.accent : '#fff' }}>{title}</Text>
     </View>
   );
 }

@@ -8,6 +8,7 @@ import { BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from 'reac
 import { colors, font } from '../../theme/colors';
 import { useMetrics } from '../../theme/metrics';
 import { FocusTrap } from '../FocusTrap';
+import { Button } from '../ui/Button';
 import { saveHomeRowPrefs } from '../../lib/addons';
 import { resolveHomeRowOrder, type HomeRowOption, type HomeRowPrefs } from '../../lib/homeRows';
 
@@ -126,8 +127,8 @@ export function CustomizeHomeModal({
         </ScrollView>
 
         <View style={{ flexDirection: 'row', gap: m.s(12), marginTop: m.s(2) }}>
-          <ActionBtn m={m} label="Save" primary onPress={save} />
-          <ActionBtn m={m} label="Cancel" onPress={onClose} />
+          <Button variant="solid" label="Save" onPress={save} style={{ flex: 1 }} />
+          <Button variant="glass" label="Cancel" onPress={onClose} style={{ flex: 1 }} />
         </View>
       </FocusTrap>
     </View>
@@ -220,30 +221,6 @@ function MiniBtn({
       }}
     >
       <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(15), color: f ? colors.accentInk : 'rgba(255,255,255,0.85)' }}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-function ActionBtn({ m, label, primary, onPress }: { m: M; label: string; primary?: boolean; onPress: () => void }) {
-  const [f, setF] = useState(false);
-  return (
-    <Pressable
-      onFocus={() => setF(true)}
-      onBlur={() => setF(false)}
-      onPress={onPress}
-      style={{
-        flex: 1,
-        alignItems: 'center',
-        borderRadius: 999,
-        paddingVertical: m.s(13),
-        backgroundColor: primary ? (f ? '#e6e9ff' : '#fff') : f ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.07)',
-        borderWidth: m.s(2),
-        borderColor: f ? colors.accent : 'transparent',
-      }}
-    >
-      <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(16), color: primary ? '#000' : 'rgba(255,255,255,0.85)' }}>
         {label}
       </Text>
     </Pressable>

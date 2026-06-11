@@ -6,7 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../Toast';
 import { StremioLogo } from '../../icons/StremioLogo';
 import { TvTextField } from './TvTextField';
-import { PillButton } from './PillButton';
+import { Button } from '../ui/Button';
 import {
   exchangeStremioCredentialsForAuthKey,
   fetchStremioLinkStatus,
@@ -193,19 +193,17 @@ export function SettingsStremioPanel({ m }: { m: M }) {
         <View style={{ flexDirection: 'row', gap: m.s(10) }}>
           {loadingStatus ? null : status?.linked ? (
             <>
-              <PillButton
+              <Button
                 label={busy ? 'Working...' : syncOnCooldown ? `Wait ${syncCooldownSecondsLeft}s` : 'Sync now'}
-                m={m}
                 onPress={() => void handleSync()}
                 disabled={busy || syncOnCooldown}
                 atRowStart
               />
-              <PillButton label="Unlink" m={m} onPress={() => void handleUnlink()} disabled={busy} />
+              <Button label="Unlink" onPress={() => void handleUnlink()} disabled={busy} />
             </>
           ) : (
-            <PillButton
+            <Button
               label={linkOpen ? 'Cancel' : 'Authenticate'}
-              m={m}
               onPress={() => {
                 setActionError(null);
                 setLinkOpen((v) => !v);
@@ -241,9 +239,8 @@ export function SettingsStremioPanel({ m }: { m: M }) {
             atRowStart
           />
           <View style={{ flexDirection: 'row' }}>
-            <PillButton
+            <Button
               label={busy ? 'Linking...' : 'Link account'}
-              m={m}
               onPress={() => void handleLink()}
               disabled={busy}
               busy={busy}

@@ -14,7 +14,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type TextInput as RNTextInput } from 'react-native';
-import { font } from '../../theme/colors';
+import { colors, font } from '../../theme/colors';
 import { useMetrics } from '../../theme/metrics';
 import { FocusTrap } from '../FocusTrap';
 import {
@@ -33,7 +33,6 @@ import {
   type WatchPartyRoomInfo,
 } from '../../lib/watchParty';
 
-const ACCENT = '#95a2ff';
 type M = ReturnType<typeof useMetrics>;
 const REACT_EMOJIS = ['👍', '😂', '😮', '❤️', '🔥', '👀'];
 
@@ -226,7 +225,7 @@ function PeopleTab({ m, ...p }: WatchPartyDrawerProps & { m: M }) {
               </Text>
               {isHost ? (
                 <View style={{ borderRadius: 999, backgroundColor: 'rgba(149,162,255,0.2)', paddingHorizontal: m.s(10), paddingVertical: m.s(3) }}>
-                  <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(11), letterSpacing: m.s(0.5), color: ACCENT, textTransform: 'uppercase' }}>Host</Text>
+                  <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(11), letterSpacing: m.s(0.5), color: colors.accent, textTransform: 'uppercase' }}>Host</Text>
                 </View>
               ) : null}
             </View>
@@ -292,14 +291,14 @@ function ChatBubble({ m, mine, text, onReact }: { m: M; mine: boolean; text: str
       <Pressable
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
-        style={{ maxWidth: m.s(300), borderRadius: m.s(14), paddingHorizontal: m.s(12), paddingVertical: m.s(8), backgroundColor: mine ? 'rgba(149,162,255,0.85)' : 'rgba(255,255,255,0.1)', borderWidth: m.s(2), borderColor: focused ? ACCENT : 'transparent' }}
+        style={{ maxWidth: m.s(300), borderRadius: m.s(14), paddingHorizontal: m.s(12), paddingVertical: m.s(8), backgroundColor: mine ? 'rgba(149,162,255,0.85)' : 'rgba(255,255,255,0.1)', borderWidth: m.s(2), borderColor: focused ? colors.accent : 'transparent' }}
       >
         <Text style={{ fontFamily: font.body, fontSize: m.s(15), color: mine ? '#0a0c12' : '#fff' }}>{text}</Text>
       </Pressable>
       {focused ? (
         <View style={{ flexDirection: 'row', gap: m.s(4), marginTop: m.s(4) }}>
           {REACT_EMOJIS.map((e) => (
-            <Pressable key={e} onPress={() => onReact(e)} style={({ focused: f }) => ({ borderRadius: 999, paddingHorizontal: m.s(6), paddingVertical: m.s(2), backgroundColor: f ? 'rgba(149,162,255,0.3)' : 'rgba(255,255,255,0.08)', borderWidth: m.s(1.5), borderColor: f ? ACCENT : 'transparent' })}>
+            <Pressable key={e} onPress={() => onReact(e)} style={({ focused: f }) => ({ borderRadius: 999, paddingHorizontal: m.s(6), paddingVertical: m.s(2), backgroundColor: f ? 'rgba(149,162,255,0.3)' : 'rgba(255,255,255,0.08)', borderWidth: m.s(1.5), borderColor: f ? colors.accent : 'transparent' })}>
               <Text style={{ fontSize: m.s(15) }}>{e}</Text>
             </Pressable>
           ))}
@@ -317,7 +316,7 @@ function RoomFooter({ m, ...p }: WatchPartyDrawerProps & { m: M }) {
         <Text style={{ fontFamily: font.body, fontSize: m.s(12), color: p.error ? '#f87171' : 'rgba(255,255,255,0.55)' }}>{p.error ? p.error : p.connected ? 'Connected' : 'Connecting...'}</Text>
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(8) }}>
-        <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(30), letterSpacing: m.s(3), textTransform: 'uppercase', color: ACCENT }}>{p.roomCode}</Text>
+        <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(30), letterSpacing: m.s(3), textTransform: 'uppercase', color: colors.accent }}>{p.roomCode}</Text>
         {p.hasPassword ? <Ionicons name="lock-closed" size={m.s(18)} color="rgba(255,255,255,0.7)" /> : null}
       </View>
       <Text numberOfLines={1} style={{ fontFamily: font.body, fontSize: m.s(13), color: 'rgba(255,255,255,0.5)' }}>{p.inviteLink}</Text>
@@ -332,7 +331,7 @@ function RoomFooter({ m, ...p }: WatchPartyDrawerProps & { m: M }) {
 function Pill({ m, label, active, onPress }: { m: M; label: string; active: boolean; onPress: () => void }) {
   const [f, setF] = useState(false);
   return (
-    <Pressable onFocus={() => setF(true)} onBlur={() => setF(false)} onPress={onPress} style={{ borderRadius: 999, paddingHorizontal: m.s(14), paddingVertical: m.s(6), backgroundColor: f ? 'rgba(255,255,255,0.12)' : active ? 'rgba(255,255,255,0.15)' : 'transparent', borderWidth: m.s(2), borderColor: f ? ACCENT : 'transparent' }}>
+    <Pressable onFocus={() => setF(true)} onBlur={() => setF(false)} onPress={onPress} style={{ borderRadius: 999, paddingHorizontal: m.s(14), paddingVertical: m.s(6), backgroundColor: f ? 'rgba(255,255,255,0.12)' : active ? 'rgba(255,255,255,0.15)' : 'transparent', borderWidth: m.s(2), borderColor: f ? colors.accent : 'transparent' }}>
       <Text style={{ fontFamily: font.bodyMed, fontSize: m.s(12), color: active ? '#fff' : 'rgba(255,255,255,0.6)' }}>{label}</Text>
     </Pressable>
   );
@@ -341,7 +340,7 @@ function Pill({ m, label, active, onPress }: { m: M; label: string; active: bool
 function RoundBtn({ m, onPress, children }: { m: M; onPress: () => void; children: React.ReactNode }) {
   const [f, setF] = useState(false);
   return (
-    <Pressable onFocus={() => setF(true)} onBlur={() => setF(false)} onPress={onPress} style={{ width: m.s(36), height: m.s(36), borderRadius: 999, alignItems: 'center', justifyContent: 'center', backgroundColor: f ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.6)', borderWidth: m.s(2), borderColor: f ? ACCENT : 'transparent' }}>
+    <Pressable onFocus={() => setF(true)} onBlur={() => setF(false)} onPress={onPress} style={{ width: m.s(36), height: m.s(36), borderRadius: 999, alignItems: 'center', justifyContent: 'center', backgroundColor: f ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.6)', borderWidth: m.s(2), borderColor: f ? colors.accent : 'transparent' }}>
       {children}
     </Pressable>
   );
@@ -351,7 +350,7 @@ function ModeCard({ m, emoji, title, sub, active, autoFocus, onPress }: { m: M; 
   const [f, setF] = useState(false);
   return (
     <Pressable hasTVPreferredFocus={autoFocus} onFocus={() => setF(true)} onBlur={() => setF(false)} onPress={onPress}
-      style={{ flexDirection: 'row', gap: m.s(12), borderRadius: m.s(16), paddingHorizontal: m.s(14), paddingVertical: m.s(12), backgroundColor: active ? 'rgba(149,162,255,0.1)' : 'rgba(255,255,255,0.04)', borderWidth: m.s(2), borderColor: f ? ACCENT : active ? 'rgba(149,162,255,0.5)' : 'transparent' }}>
+      style={{ flexDirection: 'row', gap: m.s(12), borderRadius: m.s(16), paddingHorizontal: m.s(14), paddingVertical: m.s(12), backgroundColor: active ? 'rgba(149,162,255,0.1)' : 'rgba(255,255,255,0.04)', borderWidth: m.s(2), borderColor: f ? colors.accent : active ? 'rgba(149,162,255,0.5)' : 'transparent' }}>
       <Text style={{ fontSize: m.s(20) }}>{emoji}</Text>
       <View style={{ flex: 1 }}>
         <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(15), color: '#fff' }}>{title}</Text>
@@ -366,7 +365,7 @@ function DrawerInput({ m, value, onChange, placeholder, autoFocus, maxLength, ce
   const ref = useRef<RNTextInput | null>(null);
   return (
     <Pressable hasTVPreferredFocus={autoFocus} onFocus={() => setF(true)} onBlur={() => setF(false)} onPress={() => ref.current?.focus()}
-      style={{ borderRadius: m.s(12), borderWidth: m.s(2), borderColor: f ? ACCENT : 'rgba(255,255,255,0.15)', backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: m.s(14), minHeight: m.s(48), justifyContent: 'center' }}>
+      style={{ borderRadius: m.s(12), borderWidth: m.s(2), borderColor: f ? colors.accent : 'rgba(255,255,255,0.15)', backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: m.s(14), minHeight: m.s(48), justifyContent: 'center' }}>
       <TextInput
         ref={ref}
         value={value}
@@ -379,6 +378,8 @@ function DrawerInput({ m, value, onChange, placeholder, autoFocus, maxLength, ce
         maxLength={maxLength}
         autoCapitalize="none"
         autoCorrect={false}
+        cursorColor={colors.accent}
+        selectionColor={colors.accent}
         style={{ fontFamily: mono ? font.body : font.body, fontSize: m.s(mono ? 22 : 16), letterSpacing: mono ? m.s(6) : 0, textAlign: center ? 'center' : 'left', color: '#fff', paddingVertical: m.s(10) }}
       />
     </Pressable>
@@ -389,7 +390,7 @@ function SolidBtn({ m, label, disabled, onPress }: { m: M; label: string; disabl
   const [f, setF] = useState(false);
   return (
     <Pressable disabled={disabled} onFocus={() => setF(true)} onBlur={() => setF(false)} onPress={onPress}
-      style={{ marginTop: m.s(4), alignItems: 'center', borderRadius: 999, paddingVertical: m.s(12), backgroundColor: disabled ? 'rgba(255,255,255,0.15)' : f ? '#e6e9ff' : '#fff', opacity: disabled ? 0.5 : 1, borderWidth: m.s(2), borderColor: f ? ACCENT : 'transparent' }}>
+      style={{ marginTop: m.s(4), alignItems: 'center', borderRadius: 999, paddingVertical: m.s(12), backgroundColor: disabled ? 'rgba(255,255,255,0.15)' : f ? '#e6e9ff' : '#fff', opacity: disabled ? 0.5 : 1, borderWidth: m.s(2), borderColor: f ? colors.accent : 'transparent' }}>
       {label.endsWith('...') ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(8) }}><ActivityIndicator size="small" color="#000" /><Text style={{ fontFamily: font.bodySemi, fontSize: m.s(14), color: '#000' }}>{label}</Text></View>
       ) : (
@@ -403,7 +404,7 @@ function SmallBtn({ m, label, disabled, onPress }: { m: M; label: string; disabl
   const [f, setF] = useState(false);
   return (
     <Pressable disabled={disabled} onFocus={() => setF(true)} onBlur={() => setF(false)} onPress={onPress}
-      style={{ borderRadius: 999, paddingHorizontal: m.s(14), paddingVertical: m.s(9), backgroundColor: disabled ? 'rgba(149,162,255,0.3)' : ACCENT, opacity: disabled ? 0.5 : 1, borderWidth: m.s(2), borderColor: f ? '#fff' : 'transparent' }}>
+      style={{ borderRadius: 999, paddingHorizontal: m.s(14), paddingVertical: m.s(9), backgroundColor: disabled ? 'rgba(149,162,255,0.3)' : colors.accent, opacity: disabled ? 0.5 : 1, borderWidth: m.s(2), borderColor: f ? '#fff' : 'transparent' }}>
       <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(13), color: '#0a0c12' }}>{label}</Text>
     </Pressable>
   );
@@ -412,7 +413,7 @@ function SmallBtn({ m, label, disabled, onPress }: { m: M; label: string; disabl
 function BackRow({ m, label, onPress }: { m: M; label: string; onPress: () => void }) {
   const [f, setF] = useState(false);
   return (
-    <Pressable hasTVPreferredFocus onFocus={() => setF(true)} onBlur={() => setF(false)} onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(6), alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: m.s(10), paddingVertical: m.s(6), backgroundColor: f ? 'rgba(255,255,255,0.12)' : 'transparent', borderWidth: m.s(2), borderColor: f ? ACCENT : 'transparent' }}>
+    <Pressable hasTVPreferredFocus onFocus={() => setF(true)} onBlur={() => setF(false)} onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(6), alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: m.s(10), paddingVertical: m.s(6), backgroundColor: f ? 'rgba(255,255,255,0.12)' : 'transparent', borderWidth: m.s(2), borderColor: f ? colors.accent : 'transparent' }}>
       <Ionicons name="chevron-back" size={m.s(16)} color="rgba(255,255,255,0.8)" />
       <Text style={{ fontFamily: font.body, fontSize: m.s(14), color: 'rgba(255,255,255,0.8)' }}>{label}</Text>
     </Pressable>
