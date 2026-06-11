@@ -129,11 +129,20 @@ from shared code directly — always through the platform module or behind a cap
 
 Baseline: OpenCode `15ce2f0a` (re-snapshot at execution time; OpenCode keeps moving).
 
+**Progress (2026-06-11):** Phase 0 done (`6923e22` port, `c873993` plan). Steps 1–3 done:
+audit refreshed; additive libs (`72e6c4f`), `base/` (`2fdf442`), BlissfulPlayer suite + web
+pages + cascade deps (`264447c`) all landed compile-only; lib foundation platform-branched
+(`2fd7284` — watchParty/useWatchParty/playerSettings; blissfulAuthApi hand-merged in
+`264447c`). tsc + vitest + vite build green throughout. Remaining: step 4 (shared-file
+convergence — context → components → pages, incl. the SearchPage reversal), step 5 (visual
+identity / index.css), step 6 (auth audit), then routing/provider wiring (App.tsx, AppShell,
+ProvidersGlue: MiniPlayerProvider + new page routes).
+
 1. Refresh the divergence audit against OpenCode's then-current HEAD:
    `git diff --no-index --numstat apps/blissful-mvs/src ../OpenCode/apps/blissful-mvs/src`.
-2. **Web-target scaffolding**: read the RN branch's `vite.config.ts` PWA setup and
-   `PlayerPageLazy.tsx` via `git show` (read-only) and write main's own versions, dropping the
-   `TAURI_ENV_PLATFORM` gating and the `@blissful/core` alias (neither applies on main).
+2. ~~Web-target scaffolding~~ **OBSOLETE** — discovered during execution: main's vite config
+   already ships `vite-plugin-pwa` (the build emits `dist/sw.js` + a 36-entry precache), so
+   the web build target already exists. `PlayerPageLazy` remains a Phase 2 nicety.
 3. **Additive imports first** (new files, no conflicts): `components/BlissfulPlayer/`,
    `components/base/`, `MiniPlayerWindow` + `PersistentPlayerHost` + `MiniPlayerProvider`,
    `ReleasesPicker`, web libs (`playerServers`, `playerAudioTracks`, `probeMkvCodecs`,
