@@ -25,12 +25,25 @@ modify anything) and adapted into main's own files by hand.
 "The monorepo contains the Android app" = it lives in this repo, on its own branch, evolving
 independently.
 
-**What "automatically updated" means (expectation-setting):** web and desktop build from the
-same code, so every desktop release snapshots whatever the UI has at tag time — zero porting,
-zero drift. It does *not* mean an installed desktop app hot-swaps its UI when the web deploys:
-the shell serves a local, pinned copy (by design — offline support, and the same-origin IPC
-bridge must never execute remotely-mutable code). The auto-updater closes the loop by shipping
-new UI snapshots with each release.
+**UI delivery: THIN SHELL (decided by Ivan, 2026-06-11, implemented in `34527b1`).** Release
+builds of the desktop shell load the UI live from `https://blissful.budinoff.com` — a web
+deploy updates every install instantly; desktop releases are only needed for Rust shell
+changes. Specifics:
+- Dev builds keep the local server (`npm run dev` hot-reload / `cargo run` serves dist);
+  `BLISSFUL_UI_URL` overrides either mode.
+- Navigation pinning allows exactly two document origins: the local server and the configured
+  UI origin. The JS shim exposes `localServerBase` so loopback-only routes (`/resolve-url`,
+  `/addon-proxy` wraps of the local stremio-service) still hit this machine's shell from the
+  remote origin.
+- Failure safety: remote navigation failure falls back once to the bundled UI; the deployed
+  PWA's service worker absorbs short outages after first visit. (Accepted trade-off: the Mac
+  backend is required for functionality anyway.)
+- **Version-skew rule:** the deployed UI must tolerate older installed shells — IPC changes
+  must be additive and feature-detected (`shellOrigin()` falls back to same-origin on old
+  shells).
+- **ACTIVATION GATE: do not tag a desktop release until the Mac serves THIS repo's unified
+  build** — OpenCode's current web bundle has no native-shell support; installed shells
+  pointing at it would lose mpv playback.
 
 ---
 
@@ -199,9 +212,13 @@ non-native player). Keep both players in lazy chunks.
 ### Phase 3 — Deploy cutover
 
 1. Web: point the Mac compose `blissful` volume at this repo's `apps/blissful-mvs/dist`
-   (or copy the service def here); build from this repo.
-2. Desktop: tag a release — `release.yml` needs **zero changes** (same app path).
-3. Freeze OpenCode's `apps/blissful-mvs`: README pointer "UI moved to Blissful". All UI work
+   (or copy the service def here); build from this repo. **This must land first** — it is the
+   thin-shell activation gate.
+2. Verify the deployed site in a browser AND via `BLISSFUL_UI_URL=https://blissful.budinoff.com`
+   in a dev shell (desktop personality must render: mpv playback, addon rows, version badge).
+3. Desktop: tag a release — `release.yml` needs zero changes. From this release on, installs
+   load the deployed UI (thin shell); subsequent UI changes need web deploys only.
+4. Freeze OpenCode's `apps/blissful-mvs`: README pointer "UI moved to Blissful". All UI work
    happens here from this point; OpenCode is backend-services-only.
 
 ### Phase 4 — Shared core growth (DEFERRED)
