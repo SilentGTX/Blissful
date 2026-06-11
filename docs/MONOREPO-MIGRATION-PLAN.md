@@ -205,12 +205,17 @@ watch party); web build renders and plays in a plain browser. Addon acceptance t
 shows rows for every installed addon (Anime Kitsu, Torrentio RD, YouTube, ...); searching
 "jujutsu kaisen" returns BOTH a Popular Series row and an Anime Kitsu row.
 
-### Phase 2 — PlayerPage unification (own milestone, highest risk)
+### Phase 2 — PlayerPage unification — **DONE 2026-06-11 (`1d91ef3`)**
 
-The single hardest file (~1445 lines churn). End state: `PlayerPage` dispatches by platform —
-desktop → `NativeMpvPlayer` + torrent URLs; web → `BlissfulPlayer` + the resolve
-pipeline (Vidking try → RD fallback → banners). `SimplePlayer` retires (BlissfulPlayer IS the
-non-native player). Keep both players in lazy chunks.
+Shipped shape: the /player route dispatches by platform (`PlayerPage` = desktop,
+route-mounted, NativeMpvPlayer eager — preserves the no-Suspense-flash decision;
+`PlayerSeeder` + `PersistentPlayerHost` → `pages/PlayerPageWeb.tsx` = OpenCode's web player
+verbatim, its own 650 KB lazy chunk web-only). `SimplePlayer` deleted (2,857 lines).
+This also FIXED a live regression: since the cutover, the deployed site's persistent host had
+been importing the desktop PlayerPage (renders null outside the shell) — web playback was
+broken until this landed + deployed. Remaining nicety (optional): desktop's eager player is
+in the shared main bundle, so web downloads ~unused native-player code — acceptable; revisit
+with a PlayerPageLazy-style split if bundle size starts to matter.
 
 **Gate (playback matrix):**
 - Desktop: 4K HEVC torrent, embedded + addon subs, skip-intro, watch party host + guest,
