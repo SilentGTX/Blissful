@@ -189,8 +189,16 @@ unification — kept-ours desktop PlayerPage + web's persistent-player model mer
 5. Visual identity lands here: desktop adopts OpenCode's current design (`base/` components,
    its `index.css`). **This is intended** — web drives the look from now on — but expect the
    desktop app to visibly change.
-6. Auth audit: keep Stremio accounts working on desktop alongside OpenCode's
-   Blissful-first model.
+6. ~~Auth audit~~ **DONE 2026-06-11.** Findings: `AuthProvider` is a Blissful-JWT compat layer
+   (both repos identical) — desktop and web share Blissful-first auth. `savedAccounts` remains
+   functional (feeds `useTorrentioCloneSync`). `useUserSession` was pre-Blissful dead code
+   (no callers even before convergence) — deleted. `AccountsPage`/`/accounts` was ALREADY
+   orphaned on main pre-convergence (route exists, no UI links to it) — kept as-is, candidate
+   for future removal (Ivan's call). Stremio-link popup on desktop: the Facebook path works
+   (opener polls Stremio server-side with a state token, so the external-browser popup is
+   fine); the email/password fallback path relies on `window.opener.postMessage`, which can't
+   cross from the external browser into the shell — known limitation, low priority since the
+   FB path + linked-state polling cover the sync use case.
 
 **Gate:** `tsc -b` + vitest green; desktop full manual pass (browse, detail, play, subtitles,
 watch party); web build renders and plays in a plain browser. Addon acceptance tests: home
