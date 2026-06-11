@@ -79,6 +79,33 @@ fn vite_dev_origin() -> &'static str {
         format!("http://localhost:{}", port)
     })
 }
+
+/// True when a Vite dev server is listening on the configured port. In dev
+/// (`npm run dev`, or `cargo run` with Vite up) this lets the shell prefer the
+/// live Vite over any stale on-disk build that happens to sit next to the exe
+/// (`apps/blissful-mvs/dist`, a staged `blissful-ui/`), so local edits + HMR
+/// are always what you see. A quick TCP connect with a short timeout; a closed
+/// local port refuses immediately, so this costs ~nothing when Vite is down.
+fn vite_is_up() -> bool {
+    let port = std::env::var("BLISSFUL_VITE_PORT")
+        .ok()
+        .and_then(|s| s.parse::<u16>().ok())
+        .unwrap_or(5173);
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    // Retry briefly: under `npm run dev` (concurrently) the shell and Vite boot
+    // together, so Vite may not be listening yet when we first probe. A closed
+    // local port refuses immediately (each miss costs ~0), and the total wait is
+    // capped so a deliberate no-Vite `cargo run` falls through to disk in <2s.
+    for attempt in 0..8 {
+        if std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(250)).is_ok() {
+            return true;
+        }
+        if attempt < 7 {
+            std::thread::sleep(Duration::from_millis(250));
+        }
+    }
+    false
+}
 const ADDON_PROXY_UPSTREAM: &str = "https://blissful.budinoff.com/addon-proxy";
 const STORAGE_UPSTREAM: &str = "https://blissful.budinoff.com/storage";
 const STREMIO_UPSTREAM: &str = "https://www.strem.io";
@@ -110,7 +137,15 @@ type BoxBody = http_body_util::combinators::BoxBody<Bytes, std::io::Error>;
 /// log only — the renderer will see connection refused if anything goes
 /// wrong, surfacing the issue clearly.
 pub fn spawn_in_background() -> Result<()> {
-    let static_root = detect_static_root();
+    // A running Vite dev server wins over any on-disk build: in dev we always
+    // want live edits + HMR, never a stale `dist/` or staged `blissful-ui/`
+    // lying next to the exe. In release Vite is never up (and the WebView
+    // navigates to the remote UI anyway), so this falls through to disk.
+    let static_root = if cfg!(debug_assertions) && vite_is_up() {
+        None
+    } else {
+        detect_static_root()
+    };
     let _ = STATIC_ROOT.set(static_root.clone());
     if let Some(p) = &static_root {
         info!(path = %p.display(), "UI server: serving static React build from disk");
