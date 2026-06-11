@@ -1,9 +1,9 @@
-import { normalizeStremioImage } from '../../lib/stremioApi';
-import type { LibraryItem } from '../../lib/stremioApi';
+import { normalizeStremioImage } from '../../lib/mediaTypes';
+import type { LibraryItem } from '../../lib/mediaTypes';
+import { proxiedImage } from '../../lib/imageProxy';
 import { getContinueSubtitle } from './utils';
 import { CloseIcon } from '../../icons/CloseIcon';
 import { TruncatedText } from '../TruncatedText';
-
 
 export type ContinueWatchingItemProps = {
   item: LibraryItem;
@@ -57,10 +57,14 @@ export function ContinueWatchingItem({ item, onOpen, onRemove, compact = false }
 
       <div className={`flex items-center ${compact ? 'gap-[clamp(0.5rem,1vh,0.75rem)]' : 'gap-3'}`}>
         <div className={`shrink-0 overflow-hidden bg-white/10 ${compact ? 'h-[clamp(2rem,4.5vh,3rem)] w-[clamp(2rem,4.5vh,3rem)] rounded-xl' : 'h-10 w-10 rounded-xl'}`}>
-          {poster ? <img src={poster} alt="" className="h-full w-full object-cover" /> : null}
+          {poster ? <img src={proxiedImage(poster)} alt="" className="h-full w-full object-cover" /> : null}
         </div>
         <div className="min-w-0 flex-1">
-          <TruncatedText content={item.name} placement="right" className={`truncate font-medium text-foreground/90 ${compact ? 'text-[clamp(12px,1.6vh,15px)] leading-tight' : 'text-sm'}`} />
+          <TruncatedText
+            content={item.name ?? ''}
+            placement="right"
+            className={`truncate font-medium text-foreground/90 ${compact ? 'text-[clamp(12px,1.6vh,15px)] leading-tight' : 'text-sm'}`}
+          />
           <div className={`${compact ? 'mt-[clamp(0.125rem,0.5vh,0.375rem)] text-[clamp(10px,1.3vh,12px)]' : 'mt-1 text-xs'} flex items-center gap-1.5 min-w-0`}>
             {subtitle.epLabel && (
               <span className="text-foreground/80 shrink-0">{subtitle.epLabel} · </span>

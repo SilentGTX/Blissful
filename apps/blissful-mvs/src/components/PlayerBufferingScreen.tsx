@@ -1,4 +1,5 @@
 import { useSearchParams } from 'react-router-dom';
+import { proxiedImage } from '../lib/imageProxy';
 
 // Eagerly-loaded buffering screen for /player. Rendered both as the
 // Suspense fallback (while the lazy PlayerPage chunk is still
@@ -12,9 +13,8 @@ import { useSearchParams } from 'react-router-dom';
 // same logo-on-top with the pulsing `bliss-buffer-fade` animation.
 export function PlayerBufferingScreen() {
   const [searchParams] = useSearchParams();
-  // Logo only — no poster fallback. A vertical poster painted at logo
-  // dimensions looks like the wrong image was loaded; titles without
-  // a meta logo fall through to the "Buffering" text instead.
+  // Logo only — no fallbacks. Titles without a meta logo just paint
+  // a clean black backdrop until BlissfulPlayer takes over.
   const displayLogo = searchParams.get('logo');
   return (
     // Very high z-index so this screen sits above BlissfulPlayer
@@ -25,24 +25,24 @@ export function PlayerBufferingScreen() {
     // first frame paints, the buffer screen unmounts and reveals the
     // fully-rendered player underneath instantly, no black gap.
     <div className="fixed inset-0 z-[9999] bg-black">
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-        <div className="bliss-buffering-panel">
-          {displayLogo ? (
-            // `loading="eager"` + `fetchpriority="high"` so the browser
-            // prioritises this image immediately, rather than treating
-            // it like a deferred-priority asset. The URL is the same as
-            // the one DetailPage already rendered so the cache should
-            // hit, but the priority hint still helps on cold loads.
+      {displayLogo ? (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div className="bliss-buffering-panel">
+            {/* `loading="eager"` + `fetchpriority="high"` so the browser
+                prioritises this image immediately, rather than treating
+                it like a deferred-priority asset. The URL is the same as
+                the one DetailPage already rendered so the cache should
+                hit, but the priority hint still helps on cold loads. */}
             <img
               className="bliss-buffering-loader"
-              src={displayLogo}
+              src={proxiedImage(displayLogo)}
               alt=" "
               loading="eager"
               fetchPriority="high"
             />
-          ) : null}
+          </div>
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }

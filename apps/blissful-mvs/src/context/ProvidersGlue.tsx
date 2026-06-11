@@ -7,10 +7,11 @@ import { useStorage } from './StorageProvider';
 import { HomeCatalogProvider } from './HomeCatalogProvider';
 import { ModalsProvider } from './ModalsProvider';
 import { ContinueWatchingProvider } from './ContinueWatchingProvider';
+import { PlayerReadyProvider } from './PlayerReadyProvider';
+import { MiniPlayerProvider } from './MiniPlayerProvider';
 import { FriendsProvider } from './FriendsProvider';
 import { UserSocketProvider } from './UserSocketProvider';
 import { ActivePartiesProvider } from './ActivePartiesProvider';
-import { PlayerReadyProvider } from './PlayerReadyProvider';
 
 // ---------------------------------------------------------------------------
 // Inner component that reads StorageProvider to feed AddonsProvider
@@ -57,7 +58,9 @@ export function ProvidersGlue({ children }: { children: ReactNode }) {
               <UserSocketProvider>
                 <ActivePartiesProvider>
                   <FriendsProvider>
-                    <PlayerReadyProvider>{children}</PlayerReadyProvider>
+                    <PlayerReadyProvider>
+                      <MiniPlayerProvider>{children}</MiniPlayerProvider>
+                    </PlayerReadyProvider>
                   </FriendsProvider>
                 </ActivePartiesProvider>
               </UserSocketProvider>

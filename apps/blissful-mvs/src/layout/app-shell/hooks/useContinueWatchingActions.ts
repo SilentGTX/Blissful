@@ -160,13 +160,18 @@ export function useContinueWatchingActions({
       }
 
       const { logo, background } = await resolveMetaImages();
+      // Build piece-by-piece — `new URLSearchParams({ k: undefined })`
+      // stringifies undefined to the literal "undefined", which then
+      // round-trips into the library row's `name` and shows up as a
+      // tile titled "undefined" in Continue Watching forever.
       const qs = new URLSearchParams({
         url: stored.url,
-        title: stored.title ?? item.name,
-        metaTitle: item.name,
         type: item.type,
         id: item._id,
       });
+      const resolvedTitle = stored.title ?? item.name ?? null;
+      if (resolvedTitle) qs.set('title', resolvedTitle);
+      if (item.name) qs.set('metaTitle', item.name);
       if (logo) qs.set('logo', logo);
       if (background) qs.set('background', background);
       if (item.poster) {

@@ -1,6 +1,41 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDesktopUpdater } from '../hooks/useDesktopUpdater';
+import { subscribeHeroTransition, getHeroTransition } from '../lib/heroTransition';
+import { proxiedImage } from '../lib/imageProxy';
+
+function HeroTransitionOverlay() {
+  const [src, setSrc] = useState<string | null>(getHeroTransition());
+  const [fading, setFading] = useState(false);
+  useEffect(() => {
+    return subscribeHeroTransition((newSrc) => {
+      if (newSrc) {
+        setSrc(newSrc);
+        setFading(false);
+      } else {
+        setFading(true);
+        setTimeout(() => setSrc(null), 400);
+      }
+    });
+  }, []);
+  if (!src) return null;
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 9999,
+        pointerEvents: 'none',
+        opacity: fading ? 0 : 1,
+        transition: 'opacity 0.4s ease',
+      }}
+    >
+      <img src={proxiedImage(src)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+    </div>
+  );
+}
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { RouteTransition } from './RouteTransition';
+import { PlayerBufferingScreen } from './PlayerBufferingScreen';
 import SideNav from './SideNav';
 import { useAuth } from '../context/AuthProvider';
 import { useUI } from '../context/UIProvider';
@@ -8,25 +43,22 @@ import { useStorage } from '../context/StorageProvider';
 import { useAddons } from '../context/AddonsProvider';
 import { useModals } from '../context/ModalsProvider';
 import { useHomeCatalogContext } from '../context/HomeCatalogProvider';
-import { PlayerBufferingScreen } from './PlayerBufferingScreen';
-import { usePlayerReady } from '../context/PlayerReadyProvider';
-import { RouteTransition } from './RouteTransition';
 import { useContinueWatchingContext } from '../context/ContinueWatchingProvider';
+import { usePlayerReady } from '../context/PlayerReadyProvider';
+import { PersistentPlayerHost } from './PersistentPlayerHost';
 import { desktop, isNativeShell } from '../lib/desktop';
 import { resolveHomeRowOrder } from '../lib/homeRows';
-import {
-  fetchHomeState,
-  type StoredProfile,
-} from '../lib/storageApi';
+import { fetchHomeState } from '../lib/storageApi';
 import { applyStreamingServerCacheSize } from '../lib/playerSettings';
 import { TopNav } from '../layout/top-nav/TopNav';
 import { NetflixTopBar } from '../layout/netflix/NetflixTopBar';
 import { AccountModal } from '../layout/app-shell/components/AccountModal';
 import { AddAddonModal } from '../layout/app-shell/components/AddAddonModal';
-import { HomeSettingsDialog } from '../layout/app-shell/components/HomeSettingsDialog';
 import { LoginModal } from '../layout/app-shell/components/LoginModal';
 import { ProfilePromptModal } from '../layout/app-shell/components/ProfilePromptModal';
 import { WhoWatchingModal } from '../layout/app-shell/components/WhoWatchingModal';
+import { WatchPartyJoinModal } from './WatchParty';
+import { HomeSettingsDialog } from '../layout/app-shell/components/HomeSettingsDialog';
 import {
   HOME_PREFS_KEY,
   SIDEBAR_COLLAPSED_KEY,
@@ -35,9 +67,8 @@ import {
 } from '../layout/app-shell/constants';
 import { ResumeOrStartOverModal } from './ResumeOrStartOverModal';
 import { StreamUnavailableModal } from './StreamUnavailableModal';
-import { WatchPartyJoinModal } from './WatchParty';
 import { parseEpisodeLabel } from './SideNav/utils';
-import { normalizeStremioImage } from '../lib/stremioApi';
+import { normalizeStremioImage } from '../lib/mediaTypes';
 import { useSearchMenu } from '../layout/app-shell/hooks/useSearchMenu';
 import {
   extractImdbId,
@@ -56,31 +87,33 @@ import { PartyInviteListener } from './PartyInviteListener';
 const MIGRATION_KEY = 'bliss:migrated:tagOldItemsWeb';
 
 export default function AppShell() {
+  // Heartbeat every ~30s while signed in so friends can see online +
+  // currently-watching status. Player code calls `setCurrentActivity`
+  // to populate the activity payload.
   usePresenceHeartbeat();
+  // Desktop auto-updater (inert outside the native shell).
   const { updateReady, isInstalling, installNow, dismissUpdate } = useDesktopUpdater();
+  // ---------- read from providers ------------------------------------------
+  const { authKey, user, savedAccounts, logout } = useAuth();
 
-  // One-time migration: tag all untagged library items as 'web'.
-  const { authKey: migAuthKey } = useAuth();
+  // One-time migration: tag all untagged library items as 'web' so
+  // desktop's Continue Watching re-picks a torrent for them instead of
+  // trying to replay a non-replayable stream URL.
   useEffect(() => {
-    if (!migAuthKey) return;
+    if (!authKey) return;
     if (localStorage.getItem(MIGRATION_KEY)) return;
     void (async () => {
       try {
         const { fetchBlissfulLibrary, putBlissfulLibraryItem } = await import('../lib/blissfulAuthApi');
-        const items = await fetchBlissfulLibrary<Record<string, unknown> & { _id: string }>(migAuthKey);
+        const items = await fetchBlissfulLibrary<Record<string, unknown> & { _id: string }>(authKey);
         const untagged = items.filter((it) => !it._blissProgressSource && it.state);
         for (const item of untagged) {
-          await putBlissfulLibraryItem(migAuthKey, item._id, { ...item, _blissProgressSource: 'web' });
+          await putBlissfulLibraryItem(authKey, item._id, { ...item, _blissProgressSource: 'web' });
         }
         localStorage.setItem(MIGRATION_KEY, '1');
       } catch { /* ignore — will retry next launch */ }
     })();
-  }, [migAuthKey]);
-
-  // ---------- read from providers ------------------------------------------
-  const {
-    authKey, user, savedAccounts, logout,
-  } = useAuth();
+  }, [authKey]);
 
   const {
     uiStyle, isDark,
@@ -92,7 +125,8 @@ export default function AppShell() {
     storageState, storageHydrated,
     homeRowPrefs, setHomeRowPrefs,
     playerSettings,
-    persistStorageState, userProfile, updateUserProfile,
+    persistStorageState, userProfile,
+    updateUserProfile,
   } = useStorage();
 
   const { addons, addonsLoading, addonsError, setAddonsError, installAddon } = useAddons();
@@ -116,6 +150,11 @@ export default function AppShell() {
     runStartOver,
   } = useContinueWatchingContext();
 
+  // BlissfulPlayer flips this to true on mount and false on unmount; we
+  // hide the buffering screen as soon as the real player takes over,
+  // independent of CSS z-index / stacking-context guessing.
+  const { ready: playerReady } = usePlayerReady();
+
   // On app boot, apply the persisted cache size to the streaming server.
   // The shell-spawned runtime starts with whatever's in server-settings.
   // json on disk (100 GB default); this pushes the user's preference on
@@ -127,6 +166,17 @@ export default function AppShell() {
     cacheSizeApplied.current = true;
     void applyStreamingServerCacheSize(playerSettings.streamingServerCacheSizeBytes);
   }, [storageHydrated, playerSettings.streamingServerCacheSizeBytes]);
+
+  // Prefetch the lazy PlayerPage chunk as soon as AppShell mounts so the
+  // module is already in the browser cache before the user clicks Play —
+  // whether they come from /detail or directly from Continue Watching on
+  // /home. Without this, the Suspense fallback (transparent) renders for
+  // however long the chunk download takes, which reads as a blank "empty
+  // page" between the click and the player's `bliss-player-enter`
+  // scale-from-center animation.
+  useEffect(() => {
+    void import('../pages/PlayerPage');
+  }, []);
 
   // ---------- AppShell-local state (truly layout-scoped only) --------------
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -140,9 +190,9 @@ export default function AppShell() {
     };
     document.addEventListener('fullscreenchange', onFsChange);
 
-    // Native desktop shell (Rust or legacy Electron): listen for fullscreen
-    // events from the shell — they're authoritative when present, in
-    // addition to the browser document.fullscreenElement state.
+    // Native desktop shell: listen for fullscreen events from the shell —
+    // they're authoritative when present, in addition to the browser
+    // document.fullscreenElement state.
     const unsubFs = desktop.onFullscreenChanged((fs) => {
       setIsFullscreen(fs);
       closeAccount();
@@ -165,9 +215,9 @@ export default function AppShell() {
 
   const location = useLocation();
   const navigate = useNavigate();
-  const { ready: playerReady } = usePlayerReady();
   const isFullscreenRoute = location.pathname.startsWith('/detail') || location.pathname.startsWith('/player');
   const isNetflix = uiStyle === 'netflix';
+  const isModern = uiStyle === 'modern';
 
   // Default to expanded sidebar
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -312,25 +362,18 @@ export default function AppShell() {
   // ---------- display name -------------------------------------------------
   const displayName =
     userProfile.displayName?.trim() ||
+    user?.displayName?.trim() ||
     user?.username ||
     user?.email?.split('@')[0] ||
     user?.email ||
-    user?._id ||
     'Guest';
 
-  // ---------- profile update (wraps provider) -------
-  const handleUpdateUserProfile = useCallback(
-    async (profile: StoredProfile) => {
-      await updateUserProfile(profile);
-    },
-    [updateUserProfile]
-  );
+  const accountAvatar = userProfile.avatar || user?.avatar || undefined;
 
   // ---------- profile prompt check -----------------------------------------
-  // Only open the "Who's watching?" prompt when the user has NEITHER a
-  // saved display name NOR a saved avatar. Either-or-both is enough to
-  // skip the prompt — if they have only one of the two, we silently
-  // hydrate the missing slot rather than blocking them with a modal.
+  // Only open the "Who's watching?" prompt when the user has no saved
+  // display name AND no saved avatar in remote storage. If either is
+  // present we skip the prompt entirely.
   useEffect(() => {
     if (!needsProfilePromptCheck) return;
     if (!authKey || !user) return;
@@ -339,15 +382,12 @@ export default function AppShell() {
     const remoteName = storageState?.profile?.displayName?.trim() ?? '';
     const remoteAvatar = storageState?.profile?.avatar?.trim() ?? '';
 
-    const haveAnyName = Boolean(remoteName);
-    const haveAnyAvatar = Boolean(remoteAvatar);
-
-    if (haveAnyName || haveAnyAvatar) {
+    if (remoteName || remoteAvatar) {
       setNeedsProfilePromptCheck(false);
       return;
     }
 
-    modals.openProfilePrompt(user.email?.split('@')[0] || '');
+    modals.openProfilePrompt(user.username || user.email?.split('@')[0] || '');
     setNeedsProfilePromptCheck(false);
   }, [
     authKey,
@@ -422,15 +462,19 @@ export default function AppShell() {
   return (
     <>
       <div
-        className={`min-h-screen ${isNetflix ? 'netflix-root' : ''}`}
+        className={`min-h-dvh ${isNetflix ? 'netflix-root' : ''}`}
         style={{ background: 'var(--dynamic-bg)' }}
       >
-        {!isFullscreenRoute && !isNetflix ? (
+        {!isFullscreenRoute && !isNetflix && !isModern ? (
           <>
-            <div className="min-h-screen w-full">
+            <div className="min-h-dvh w-full">
               <div className="min-w-0 bliss-shell" style={navSizeStyle}>
-                {/* Desktop Sidebar - hidden on mobile */}
-                <aside className="bliss-vertical-nav hidden md:block">
+                {/* Desktop Sidebar - hidden on mobile. Also hidden
+                    when viewport height drops below 370px (no room
+                    for sidebar content at all) — the mobile bottom-
+                    nav below takes over via its own matching media
+                    query. */}
+                <aside className="bliss-vertical-nav hidden md:block [@media(max-height:370px)]:!hidden">
                   <div className="h-full">
                     <SideNav
                       active={activeNav}
@@ -487,7 +531,7 @@ export default function AppShell() {
                   onToggleFullscreen={handleToggleFullscreen}
                   onNavigateHome={() => navigate('/')}
                   setSearchMenuOpen={setIsSearchMenuOpen}
-                  accountAvatar={userProfile.avatar}
+                  accountAvatar={accountAvatar}
                   accountDisplayName={displayName}
                   isWhoWatchingOpen={modals.isWhoWatchingOpen}
                 />
@@ -501,7 +545,11 @@ export default function AppShell() {
                 ) : null}
 
                 <div className="bliss-content">
-                  <div className="px-4 pb-24 md:px-5 md:pb-0">
+                  {/* `pb-24` on the mobile path (and re-applied at
+                      short viewport heights via the !important
+                      override) clears the fixed bottom-nav so the
+                      last row of content isn't hidden underneath. */}
+                  <div className="px-4 pb-24 md:px-5 md:pb-0 [@media(max-height:370px)]:!pb-24">
                     <RouteTransition>
                       <Outlet />
                     </RouteTransition>
@@ -522,8 +570,8 @@ export default function AppShell() {
               continueSyncError={continueSyncError}
               collapsed={true}
               onToggleCollapsed={() => { }}
-              onOpenContinueItem={onOpenContinueItem}
-              onRemoveContinueItem={onRemoveContinueItem}
+               onOpenContinueItem={onOpenContinueItem}
+               onRemoveContinueItem={onRemoveContinueItem}
               isMobile={true}
             />
           </>
@@ -572,13 +620,73 @@ export default function AppShell() {
 
         {isFullscreenRoute ? (
           <div className="min-h-screen w-full">
-            <Outlet />
+            {/* Both /detail and /player live in the fullscreen branch, so
+                this RouteTransition coordinates the transition between
+                them via AnimatePresence (player → detail back-nav, and
+                detail → player on Play). Without it the route just swaps
+                instantly with no fade. */}
+            <RouteTransition>
+              <Outlet />
+            </RouteTransition>
           </div>
         ) : isNetflix ? (
           <div className="min-h-screen w-full px-4 pb-24 pt-6 md:px-8 md:pt-8 md:pb-10">
-            <Outlet />
+            <RouteTransition>
+              <Outlet />
+            </RouteTransition>
+          </div>
+        ) : isModern ? (
+          <div className="h-screen w-full flex overflow-hidden" style={{ background: 'rgb(18 24 30)' }}>
+            <nav className="hidden md:flex flex-col w-52 shrink-0 border-r border-white/15 px-6 pt-8 pb-8">
+              <button
+                className="text-left text-base text-white font-medium mb-10 hover:text-white/60 transition"
+                onClick={() => navigate('/search')}
+              >
+                Search
+              </button>
+              {[
+                { label: 'Home', path: '/' },
+                { label: 'Discover', path: '/discover' },
+                { label: 'Library', path: '/library' },
+                { label: 'Settings', path: '/settings' },
+              ].map(({ label, path }) => (
+                <button
+                  key={label}
+                  className="text-left text-[15px] text-white font-normal py-2.5 hover:text-white/60 transition"
+                  onClick={() => navigate(path)}
+                >
+                  {label}
+                </button>
+              ))}
+            </nav>
+            <div className="flex-1 min-w-0 h-screen overflow-hidden">
+              <RouteTransition>
+                <Outlet />
+              </RouteTransition>
+            </div>
           </div>
         ) : null}
+
+        {/* Persistent buffering screen for /player — rendered at the
+            AppShell level so it stays mounted across (a) the lazy
+            chunk download, (b) the Suspense fallback → PlayerPage
+            handoff, and (c) the TMDB lookup. Hidden as soon as
+            BlissfulPlayer mounts via `playerReady` from the context —
+            this avoids relying on CSS z-index winning across
+            Framer Motion's stacking contexts. */}
+        {location.pathname.startsWith('/player') && !playerReady ? <PlayerBufferingScreen /> : null}
+
+        <HeroTransitionOverlay />
+
+        {/* Persistent player — hoisted out of the /player route so it keeps
+            playing across navigation. Full-screen on /player; a real
+            Document-PiP OS window (or in-page floating window as fallback)
+            everywhere else. Owns the stable mount node so the <video> never
+            remounts across the transitions.
+            WEB ONLY: on desktop the /player route mounts NativeMpvPlayer
+            directly (mpv renders behind the WebView; no mini-player).
+            Unifying the two is Phase 2 of docs/MONOREPO-MIGRATION-PLAN.md. */}
+        {!isNativeShell() ? <PersistentPlayerHost /> : null}
 
         {!modals.isWhoWatchingOpen ? (
           <AccountModal
@@ -586,7 +694,7 @@ export default function AppShell() {
             onOpenChange={modals.setIsAccountOpen}
             user={user}
             displayName={displayName}
-            avatar={userProfile.avatar}
+            avatar={accountAvatar}
             isFullscreen={isFullscreen}
             onLogout={handleLogout}
             onLogin={modals.openLogin}
@@ -596,6 +704,9 @@ export default function AppShell() {
             onToggleFullscreen={handleToggleFullscreen}
           />
         ) : null}
+
+        <LoginModal />
+        <PartyInviteListener />
 
         <AddAddonModal
           isOpen={modals.isAddAddonOpen}
@@ -613,7 +724,10 @@ export default function AppShell() {
           settingsKey={homeSettingsKey}
         />
 
-        <LoginModal />
+        <WatchPartyJoinModal
+          isOpen={modals.isJoinPartyOpen}
+          onOpenChange={(open) => (open ? modals.openJoinParty() : modals.closeJoinParty())}
+        />
 
         <ProfilePromptModal
           isOpen={modals.isProfilePromptOpen}
@@ -621,31 +735,29 @@ export default function AppShell() {
           onSave={async (profile) => {
             // Close the modal optimistically — close first so a slow
             // or failing storage-server save doesn't leave the modal
-            // open after the click. Previously the close line ran
-            // AFTER the await, so a `saveStoredState` failure left
-            // the prompt hanging open with no feedback.
+            // open after the click.
             modals.closeProfilePrompt();
             try {
-              await handleUpdateUserProfile(profile);
+              await updateUserProfile(profile);
               notifySuccess('Profile updated', `Welcome, ${profile.displayName}.`);
             } catch (err) {
               console.error('[profile] update failed', err);
             }
           }}
+          onCancel={() => modals.closeProfilePrompt()}
         />
 
         <WhoWatchingModal
           isOpen={modals.isWhoWatchingOpen}
-          onOpenChange={modals.setIsWhoWatchingOpen}
-          profileDisplayName={userProfile.displayName}
-          profileAvatar={userProfile.avatar}
-          onEditProfile={() => {
-            modals.setIsWhoWatchingOpen(false);
-            modals.openProfilePrompt(displayName);
+          onOpenChange={(open) => (open ? modals.openWhoWatching() : modals.closeWhoWatching())}
+          profileDisplayName={userProfile.displayName ?? null}
+          profileAvatar={userProfile.avatar ?? null}
+          onEditProfile={() => modals.openProfilePrompt(userProfile.displayName ?? user?.displayName ?? '')}
+          onSignOut={() => {
+            logout();
           }}
         />
 
-        {/* iOS play prompt removed -- desktop app doesn't need it */}
 
         <StreamUnavailableModal
           isOpen={modals.unavailableItem !== null}
@@ -701,16 +813,11 @@ export default function AppShell() {
           onClose={() => modals.setResumeModalItem(null)}
         />
 
-        <WatchPartyJoinModal
-          isOpen={modals.isJoinPartyOpen}
-          onOpenChange={(open) => { if (!open) modals.closeJoinParty(); }}
-        />
-
         {/* Continue-watching loading veil — identical to DetailPage's
             autoplay short-circuit return: full-screen solid black, the
             movie's pulsing logo (or poster fallback) centered, NO
             backdrop image. Identical look means when the navigation
-            chain ends on /detail?autoplay=1 or /player's mpv-buffering
+            chain ends on /detail?autoplay=1 or /player's buffering
             screen, the visual is one continuous loading state with no
             flash between routes. */}
         {modals.pendingContinueItem ? (
@@ -719,8 +826,8 @@ export default function AppShell() {
           // briefly and looks worse than nothing. The overlay's only
           // job is to hide the previous page so it doesn't peek
           // through during navigation; the route we're heading to
-          // (player's mpv-buffering veil, or /detail's autoplay
-          // overlay) renders its own loading state once mounted.
+          // (player's buffering veil, or /detail's autoplay overlay)
+          // renders its own loading state once mounted.
           <div className="fixed inset-0 z-[9998] bg-black" />
         ) : null}
       </div>
@@ -762,9 +869,6 @@ export default function AppShell() {
           </div>
         </div>
       )}
-
-      <PartyInviteListener />
-      {location.pathname.startsWith('/player') && !playerReady ? <PlayerBufferingScreen /> : null}
     </>
   );
 }

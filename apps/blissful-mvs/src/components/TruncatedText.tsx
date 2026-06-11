@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { BlissTooltip } from './BlissTooltip';
+import { BlissTooltip } from './base/BlissTooltip';
 
 type TruncatedTextProps = {
   /** The full text shown in the tooltip — always the real, unmodified
@@ -22,8 +22,8 @@ type TruncatedTextProps = {
 // multi-line `line-clamp-N` (height overflow); a ResizeObserver
 // re-checks on layout changes. The clamped element IS the tooltip
 // trigger (a single stable node carrying both the measurement ref and
-// the hover binding), and `isDisabled` gates it so the node never
-// remounts.
+// React Aria's hover binding), and `isDisabled` gates it so the node
+// never remounts.
 export function TruncatedText({ content, display, className, placement = 'top' }: TruncatedTextProps) {
   const ref = useRef<HTMLElement | null>(null);
   const [truncated, setTruncated] = useState(false);
@@ -33,7 +33,7 @@ export function TruncatedText({ content, display, className, placement = 'top' }
     if (!el) return;
     const check = () => {
       setTruncated(
-        el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1,
+        el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1
       );
     };
     check();

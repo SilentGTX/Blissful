@@ -18,6 +18,12 @@ import { metaToItem } from '../utils';
 export type HomeCatalog = {
   movieItems: MediaItem[];
   seriesItems: MediaItem[];
+  // Cinemeta `series` catalog filtered to genre=Anime. These carry
+  // real `tt*` ids, so the detail page + Videasy playback work exactly
+  // as they do for any other series — no anime-specific source needed.
+  // (`type: 'series'` on the items, not 'anime', so playback is
+  // unchanged; the row is purely a curated genre slice.)
+  animeItems: MediaItem[];
   loading: boolean;
   error: string | null;
   manifest: StremioAddonManifest | null;
@@ -26,6 +32,7 @@ export type HomeCatalog = {
 export function useHomeCatalog(): HomeCatalog {
   const [movieItems, setMovieItems] = useState<MediaItem[]>([]);
   const [seriesItems, setSeriesItems] = useState<MediaItem[]>([]);
+  const [animeItems, setAnimeItems] = useState<MediaItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [manifest, setManifest] = useState<StremioAddonManifest | null>(null);
@@ -36,12 +43,16 @@ export function useHomeCatalog(): HomeCatalog {
       fetchAddonManifest(),
       fetchCatalog({ type: 'movie', id: 'top' }),
       fetchCatalog({ type: 'series', id: 'top' }),
+      // Anime is a genre filter on the series catalog. Resolves to
+      // `tt*`-id'd entries that play through the existing Videasy path.
+      fetchCatalog({ type: 'series', id: 'top', extra: { genre: 'Anime' } }),
     ])
-      .then(([manifestResult, movies, series]) => {
+      .then(([manifestResult, movies, series, anime]) => {
         if (cancelled) return;
         setManifest(manifestResult);
         setMovieItems(movies.metas.map((meta) => metaToItem({ ...meta, type: 'movie' })));
         setSeriesItems(series.metas.map((meta) => metaToItem({ ...meta, type: 'series' })));
+        setAnimeItems(anime.metas.map((meta) => metaToItem({ ...meta, type: 'series' })));
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -57,5 +68,5 @@ export function useHomeCatalog(): HomeCatalog {
     };
   }, []);
 
-  return { movieItems, seriesItems, loading, error, manifest };
+  return { movieItems, seriesItems, animeItems, loading, error, manifest };
 }

@@ -93,6 +93,12 @@ const TMDB_UPSTREAM: &str = "https://blissful.budinoff.com/tmdb-season-info";
 // key-free direct URLs (DMCA-removed entries already filtered out upstream).
 // Fixed host + path, only the query string is passed through.
 const RD_FALLBACK_UPSTREAM: &str = "https://blissful.budinoff.com/rd-fallback";
+// IMDB rating lookups. The renderer fetches `/imdb-rating?imdbId=tt..`
+// same-origin; we forward it to the blissful backend which resolves
+// Cinemeta -> TMDB server-side and caches ~24h. Replaces the old
+// client-side www.imdb.com HTML scrape. Fixed host + path, only the
+// query string is passed through.
+const IMDB_RATING_UPSTREAM: &str = "https://blissful.budinoff.com/imdb-rating";
 
 static HTTP_CLIENT: OnceCell<Client> = OnceCell::new();
 static STATIC_ROOT: OnceCell<Option<PathBuf>> = OnceCell::new();
@@ -246,6 +252,11 @@ async fn handle_request(
         // ---- /rd-fallback?type=..&id=.. ----
         (&Method::GET, "/rd-fallback") => {
             forward_request(req, RD_FALLBACK_UPSTREAM, "").await
+        }
+
+        // ---- /imdb-rating?imdbId=tt.. ----
+        (&Method::GET, "/imdb-rating") => {
+            forward_request(req, IMDB_RATING_UPSTREAM, "").await
         }
 
         // ---- everything else: React app (static or Vite proxy) ----

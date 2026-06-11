@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { LibraryItem } from '../../../lib/stremioApi';
+import type { LibraryItem } from '../../../lib/mediaTypes';
 import { fetchBlissfulLibrary } from '../../../lib/blissfulAuthApi';
 
 export function useContinueWatching(authKey: string | null) {
@@ -12,17 +12,18 @@ export function useContinueWatching(authKey: string | null) {
     }
 
     let cancelled = false;
-    let activeController: AbortController | null = null;
 
     const refreshContinueWatching = () => {
-      activeController?.abort();
-      const controller = new AbortController();
-      activeController = controller;
-
-      fetchBlissfulLibrary<LibraryItem>(authKey!)
+      fetchBlissfulLibrary<LibraryItem>(authKey)
         .then((items) => {
           if (cancelled) return;
           const inProgress = items
+            // Continue Watching is purely "things I'm currently
+            // watching" — bookmark status (item.removed) is irrelevant
+            // here. The in-CW "Remove" action wipes state.timeOffset to
+            // 0, which is the only thing that hides a row from CW.
+            // Otherwise removing from Library would also nuke CW for
+            // any title the user had played but un-bookmarked.
             .filter((item) => typeof item.state?.timeOffset === 'number')
             .filter((item) => {
               const timeOffset = item.state?.timeOffset ?? 0;
@@ -37,8 +38,7 @@ export function useContinueWatching(authKey: string | null) {
             });
           setContinueWatching(inProgress);
         })
-        .catch((err: unknown) => {
-          if (err instanceof DOMException && err.name === 'AbortError') return;
+        .catch(() => {
           if (cancelled) return;
           setContinueWatching([]);
         });
@@ -53,7 +53,6 @@ export function useContinueWatching(authKey: string | null) {
 
     return () => {
       cancelled = true;
-      activeController?.abort();
       window.clearInterval(interval);
       window.removeEventListener('focus', onFocus);
       window.removeEventListener('blissful:progress', onProgress as EventListener);

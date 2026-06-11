@@ -1,4 +1,4 @@
-import { Button } from '@heroui/react';
+import { BlissButton } from '../../../components/base';
 import { useState } from 'react';
 import { useAuth } from '../../../context/AuthProvider';
 import { useHomeCatalogContext } from '../../../context/HomeCatalogProvider';
@@ -57,30 +57,30 @@ export function HomeSettingsModal({ onClose }: { onClose: () => void }) {
                 <div className="text-xs text-foreground/50">{isHidden ? 'Hidden' : 'Visible'}</div>
               </div>
               <div className="flex items-center gap-2">
-                <Button
+                <BlissButton
                   size="sm"
                   variant="ghost"
-                  className="rounded-full bg-white/10"
+                  tone="glass"
                   onPress={() => moveRow(id, 'up')}
                 >
                   Up
-                </Button>
-                <Button
+                </BlissButton>
+                <BlissButton
                   size="sm"
                   variant="ghost"
-                  className="rounded-full bg-white/10"
+                  tone="glass"
                   onPress={() => moveRow(id, 'down')}
                 >
                   Down
-                </Button>
-                <Button
+                </BlissButton>
+                <BlissButton
                   size="sm"
                   variant="ghost"
-                  className="rounded-full bg-white/10"
+                  tone="glass"
                   onPress={() => toggleRow(id)}
                 >
                   {isHidden ? 'Show' : 'Hide'}
-                </Button>
+                </BlissButton>
               </div>
             </div>
           );
@@ -88,8 +88,8 @@ export function HomeSettingsModal({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="mt-5 flex gap-2">
-        <Button
-          className="rounded-full bg-white text-black"
+        <BlissButton
+          tone="solid"
           onPress={async () => {
             if (!authKey) {
               setSaveError('Login required to sync settings');
@@ -105,10 +105,10 @@ export function HomeSettingsModal({ onClose }: { onClose: () => void }) {
           }}
         >
           Save
-        </Button>
-        <Button variant="ghost" className="rounded-full bg-white/10" onPress={onClose}>
+        </BlissButton>
+        <BlissButton variant="ghost" tone="glass" onPress={onClose}>
           Cancel
-        </Button>
+        </BlissButton>
       </div>
     </div>
   );

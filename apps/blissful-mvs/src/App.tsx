@@ -5,15 +5,21 @@ import { errorQueue, notificationQueue, successQueue } from './lib/toastQueues';
 import { AuthProvider } from './context/AuthProvider';
 import { UIProvider } from './context/UIProvider';
 import { ProvidersGlue } from './context/ProvidersGlue';
+import { PlayerSeeder } from './context/MiniPlayerProvider';
 import { SplashScreen } from './components/SplashScreen';
 import AppShell from './components/AppShell';
 import LoadingRow from './components/LoadingRow';
 import { SkeletonHomeRow, SkeletonDetailPanel, SkeletonSearchGrid } from './components/Skeleton';
 import { ErrorBoundary, ErrorPage } from './components/ErrorBoundary';
 import HomePage from './pages/HomePage';
+import { isNativeShell } from './lib/desktop';
 // Phase 0b spike — temporary. Remove with the PlayerSpikePage component
 // once the native Rust shell graduates to loading the real player route.
 import PlayerSpikePage from './pages/PlayerSpikePage';
+// Desktop: eagerly imported — no Suspense boundary needed. The chunk is
+// prefetched from DetailPage anyway, and Suspense's reconnect cycle
+// in React 19 caused a visible flash on every player open.
+import PlayerPage from './pages/PlayerPage';
 
 // Route-level code splitting: lazy-load all pages except HomePage (landing page)
 const AddonsPage = lazy(() => import('./pages/AddonsPage'));
@@ -21,13 +27,12 @@ const AccountsPage = lazy(() => import('./pages/AccountsPage'));
 const DetailPage = lazy(() => import('./pages/DetailPage'));
 const DiscoverPage = lazy(() => import('./pages/DiscoverPage'));
 const LibraryPage = lazy(() => import('./pages/LibraryPage'));
-// Eagerly imported — no Suspense boundary needed. The chunk is
-// prefetched from DetailPage anyway, and Suspense's reconnect cycle
-// in React 19 caused a visible flash on every player open.
-import PlayerPage from './pages/PlayerPage';
+const VidkingPlayerPage = lazy(() => import('./pages/VidkingPlayerPage'));
 const SearchPage = lazy(() => import('./pages/SearchPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 const InvitePage = lazy(() => import('./pages/InvitePage'));
+const StremioLinkPopupPage = lazy(() => import('./pages/StremioLinkPopupPage'));
 
 export default function App() {
   return (
@@ -35,21 +40,48 @@ export default function App() {
       <Routes>
         {/* Phase 0b spike — top-level, no AppShell wrapper, no providers,
             no splash. Deliberately bare so the Rust shell can verify
-            transparent compositing over libmpv. Remove with the
-            PlayerSpikePage component once Phase 1 is underway. */}
+            transparent compositing over libmpv. Desktop-only. */}
         <Route path="/player-spike" element={<PlayerSpikePage />} />
 
         {/* Everything else — the normal app, wrapped in splash + providers. */}
         <Route
           path="/*"
           element={<SplashScreen>
-      <Toast.Provider placement="top" queue={notificationQueue} />
+      <Toast.Provider placement="bottom" queue={notificationQueue} />
       <Toast.Provider placement="bottom start" queue={errorQueue} />
       <Toast.Provider placement="bottom end" queue={successQueue} />
       <AuthProvider>
         <UIProvider>
           <ProvidersGlue>
             <Routes>
+              {/* Watch-party invite landing — full-bleed, no AppShell.
+                  Looks up the room, shows poster/title/episode/host,
+                  Continue button is the user gesture that unlocks
+                  autoplay before we hand off to /player. */}
+              <Route
+                path="invite/:code"
+                element={
+                  <Suspense fallback={<div className="fixed inset-0 z-[60] bg-black" />}>
+                    <InvitePage />
+                  </Suspense>
+                }
+              />
+              {/* Stremio account link popup — full-bleed, no AppShell.
+                  Opened via window.open() from SettingsStremioPanel; the
+                  page POSTs credentials browser-direct to api.strem.io
+                  and only sends the resulting authKey to blissful-storage.
+                  Path is /link-stremio (NOT /stremio-link) because both
+                  Vite dev proxy and Traefik prod catch /stremio* and
+                  route to the Stremio website proxy — a /stremio-*
+                  path would get forwarded to www.strem.io and 404. */}
+              <Route
+                path="link-stremio"
+                element={
+                  <Suspense fallback={<div className="fixed inset-0 z-[60] bg-black" />}>
+                    <StremioLinkPopupPage />
+                  </Suspense>
+                }
+              />
               <Route path="/" element={<AppShell />}>
                 <Route index element={<HomePage />} />
                 <Route
@@ -87,16 +119,33 @@ export default function App() {
                   }
                 />
                 <Route
+                  path="vidking/:type/:tmdbId"
+                  element={
+                    <Suspense fallback={<div className="fixed inset-0 z-[60] bg-black" />}>
+                      <VidkingPlayerPage />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="vidking/:type/:tmdbId/:seasonId/:episodeId"
+                  element={
+                    <Suspense fallback={<div className="fixed inset-0 z-[60] bg-black" />}>
+                      <VidkingPlayerPage />
+                    </Suspense>
+                  }
+                />
+                <Route
                   path="player"
                   element={
                     <ErrorBoundary fallback={<ErrorPage action="go-back" />}>
-                      {/* No Suspense — the chunk is prefetched from
-                          DetailPage so it's already cached by the time
-                          the user clicks a stream. Suspense's reconnect
-                          cycle caused a visible flash on every player
-                          open (React 19 fires effects twice during
-                          Suspense resolution). */}
-                      <PlayerPage />
+                      {/* Desktop: the player mounts directly on the route (mpv
+                          renders behind the WebView; there is no mini-player).
+                          Web: the player is hoisted to AppShell as a single
+                          persistent instance (survives navigation for the
+                          mini-player) and this route only seeds the active
+                          session from the URL. Unifying these is Phase 2 of
+                          docs/MONOREPO-MIGRATION-PLAN.md. */}
+                      {isNativeShell() ? <PlayerPage /> : <PlayerSeeder />}
                     </ErrorBoundary>
                   }
                 />
@@ -133,10 +182,10 @@ export default function App() {
                   }
                 />
                 <Route
-                  path="invite/:code"
+                  path="profile/:userId"
                   element={
-                    <Suspense fallback={<div className="fixed inset-0 z-[60] bg-black" />}>
-                      <InvitePage />
+                    <Suspense fallback={<LoadingRow />}>
+                      <ProfilePage />
                     </Suspense>
                   }
                 />

@@ -39,11 +39,10 @@ export function getContinueSubtitle(item: LibraryItem): {
 
   const videoId = (item.state as any)?.videoId ?? (item.state as any)?.video_id;
   const epLabel = item.type === 'series' ? parseEpisodeLabel(typeof videoId === 'string' ? videoId : null) : null;
-  const rawSource = (item as Record<string, unknown>)._blissProgressSource;
   const source: 'stremio' | 'web' | 'app' | null =
-    rawSource === 'stremio' ? 'stremio'
-    : rawSource === 'web' ? 'web'
-    : rawSource === 'app' ? 'app'
+    item._blissProgressSource === 'stremio' ? 'stremio'
+    : item._blissProgressSource === 'web' ? 'web'
+    : item._blissProgressSource === 'app' ? 'app'
     : null;
 
   if (isExternalPlayer) {
