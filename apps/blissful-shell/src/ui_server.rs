@@ -154,6 +154,11 @@ fn detect_static_root() -> Option<PathBuf> {
         exe_dir.join("blissful-ui"),
         // Dev / source-tree layouts.
         exe_dir.join("resources").join("blissful-ui"),
+        // Per-crate target dir: exe at apps/blissful-shell/target/debug,
+        // so the repo root is four levels up. Without this, bare
+        // `cargo run` (no Vite on :5173) fell through to Vite-proxy mode
+        // and rendered a white screen.
+        exe_dir.join("../../../../apps/blissful-mvs/dist"),
         exe_dir.join("../../../apps/blissful-mvs/dist"),
         exe_dir.join("../../resources/blissful-ui"),
     ];
