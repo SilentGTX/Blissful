@@ -2,9 +2,9 @@
 // an accepted friend. Pre-fills with the current nickname if any.
 // Empty submit clears the override; cancel discards.
 
-import { Button, Input, Modal } from '@heroui/react';
 import { useEffect, useState, type FormEvent } from 'react';
 import type { FriendRecord } from '../../lib/friendsApi';
+import { BlissButton, BlissInput, BlissModal } from '../base';
 
 type Props = {
   friend: FriendRecord | null;
@@ -39,19 +39,18 @@ export function NicknameModal({ friend, onClose, onSave }: Props) {
   };
 
   return (
-    <Modal>
-      <Modal.Backdrop
+    <BlissModal>
+      <BlissModal.Backdrop
         isOpen={true}
         onOpenChange={(open) => { if (!open) onClose(); }}
-        variant="blur"
         className="bg-black/50"
       >
-        <Modal.Container placement="center" size="md">
-          <Modal.Dialog className="bg-transparent shadow-none">
-            <Modal.Header className="sr-only">
-              <Modal.Heading>Set nickname</Modal.Heading>
-            </Modal.Header>
-            <Modal.Body className="px-0">
+        <BlissModal.Container size="md">
+          <BlissModal.Dialog>
+            <BlissModal.Header className="sr-only">
+              <BlissModal.Heading>Set nickname</BlissModal.Heading>
+            </BlissModal.Header>
+            <BlissModal.Body className="px-0">
               <div className="solid-surface mx-auto w-full max-w-md rounded-[28px] bg-white/10 p-6">
                 <div className="font-[Instrument_Serif] text-2xl font-semibold tracking-tight">
                   Nickname
@@ -65,40 +64,40 @@ export function NicknameModal({ friend, onClose, onSave }: Props) {
                 </div>
 
                 <form onSubmit={onSubmit} className="mt-5 space-y-4">
-                  <Input
+                  <BlissInput
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
                     type="text"
                     autoFocus
                     placeholder={friend.realName ?? friend.displayName}
-                    className="w-full bg-white/10 rounded-xl px-4 py-2"
+                    className="w-full"
                     disabled={saving}
                   />
 
                   <div className="flex items-center justify-end gap-2">
-                    <Button
+                    <BlissButton
                       type="button"
                       variant="ghost"
-                      className="rounded-full bg-white/10"
+                      tone="glass"
                       onPress={onClose}
                       isDisabled={saving}
                     >
                       Cancel
-                    </Button>
-                    <Button
+                    </BlissButton>
+                    <BlissButton
                       type="submit"
-                      className="rounded-full bg-white text-black"
+                      tone="solid"
                       isPending={saving}
                     >
                       Save
-                    </Button>
+                    </BlissButton>
                   </div>
                 </form>
               </div>
-            </Modal.Body>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
-    </Modal>
+            </BlissModal.Body>
+          </BlissModal.Dialog>
+        </BlissModal.Container>
+      </BlissModal.Backdrop>
+    </BlissModal>
   );
 }

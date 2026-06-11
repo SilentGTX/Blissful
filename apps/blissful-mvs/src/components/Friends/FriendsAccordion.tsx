@@ -13,7 +13,7 @@
 // much vertical room is left. No hardcoded heights anywhere — short
 // viewports just see a shorter scroll area.
 
-import { useMemo, useState, type Ref } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type Ref } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useFriends } from '../../context/FriendsProvider';
@@ -89,16 +89,37 @@ export function FriendsAccordion({
   const friendIds = useMemo(() => friends.map((f) => f.userId), [friends]);
   const presenceMap = usePresenceLookup(friendIds);
 
-  // Online friends float to the top of the list; within each bucket
-  // we keep server order (so re-sort doesn't jitter when presence
-  // updates for a single friend). Stable enough that someone going
-  // online during the session just rises to the top of the offline
-  // section, not all the way past their friends.
+  // Records when each friend flipped offline→online this session. A
+  // friend who *just* came online floats to the top of the online
+  // block (and then holds position instead of jittering as their 30s
+  // heartbeats refresh lastSeenAt). Persists across re-sorts via a ref.
+  const onlineSinceRef = useRef<Map<string, number>>(new Map());
+
+  // Order: online first; within online, most-recently-came-online
+  // first; offline below, most-recently-seen first. Recomputes on every
+  // presence poll (presenceMap is a fresh Map each time).
   const sortedFriends = useMemo(() => {
+    const since = onlineSinceRef.current;
+    const now = Date.now();
+    // Reconcile online transitions while deriving the order: stamp ids
+    // that are newly online, drop ids that went offline.
+    for (const f of friends) {
+      const online = Boolean(presenceMap.get(f.userId)?.online);
+      if (online && !since.has(f.userId)) since.set(f.userId, now);
+      else if (!online && since.has(f.userId)) since.delete(f.userId);
+    }
     return [...friends].sort((a, b) => {
-      const aOnline = presenceMap.get(a.userId)?.online ? 1 : 0;
-      const bOnline = presenceMap.get(b.userId)?.online ? 1 : 0;
-      return bOnline - aOnline;
+      const pa = presenceMap.get(a.userId);
+      const pb = presenceMap.get(b.userId);
+      const aOnline = pa?.online ? 1 : 0;
+      const bOnline = pb?.online ? 1 : 0;
+      if (aOnline !== bOnline) return bOnline - aOnline;
+      if (aOnline) {
+        // both online → newest arrival on top
+        return (since.get(b.userId) ?? 0) - (since.get(a.userId) ?? 0);
+      }
+      // both offline → most recently seen first
+      return (pb?.lastSeenAt ?? 0) - (pa?.lastSeenAt ?? 0);
     });
   }, [friends, presenceMap]);
 
@@ -358,17 +379,82 @@ function DefaultView({
   listRef,
   listMaxHeight,
 }: DefaultViewProps) {
+  // Merge our own scroll-node ref with the parent-supplied `listRef`
+  // (which the sidebar's height hook also needs) so we can imperatively
+  // scroll the viewport without stealing the ref.
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const setListNode = useCallback(
+    (node: HTMLDivElement | null) => {
+      scrollRef.current = node;
+      if (typeof listRef === 'function') listRef(node);
+      else if (listRef && typeof listRef === 'object') {
+        (listRef as { current: HTMLDivElement | null }).current = node;
+      }
+    },
+    [listRef]
+  );
+
+  // When a friend newly comes online they jump to the top of the list
+  // (see the sort) — but the viewport may be scrolled down, so the user
+  // wouldn't see them. Snap back to the top on any offline→online
+  // transition so the new arrival is always in view.
+  const prevOnlineRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const online = new Set<string>();
+    for (const f of friends) {
+      if (presenceMap.get(f.userId)?.online) online.add(f.userId);
+    }
+    const prev = prevOnlineRef.current;
+    prevOnlineRef.current = online;
+    if (prev === null) return; // first run: record baseline, don't scroll
+    let appeared = false;
+    for (const id of online) {
+      if (!prev.has(id)) {
+        appeared = true;
+        break;
+      }
+    }
+    if (appeared) scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [friends, presenceMap]);
+
+  // Keep the list pinned to the top through the initial load AND the
+  // server-order → presence-sorted REORDER. When presence arrives the sort
+  // moves rows around; the browser scroll-anchors to keep the old top row in
+  // place, which drags the newest friends out of view (the "loads scrolled
+  // down" bug). A genuine user scroll (wheel/touch/keys) releases the lock;
+  // it also auto-releases once the order has settled. While locked, any
+  // non-user scroll is snapped straight back to the top.
+  const lockTopRef = useRef(true);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const release = () => { lockTopRef.current = false; };
+    const onScroll = () => { if (lockTopRef.current && el.scrollTop !== 0) el.scrollTop = 0; };
+    el.addEventListener('wheel', release, { passive: true });
+    el.addEventListener('touchstart', release, { passive: true });
+    el.addEventListener('keydown', release);
+    el.addEventListener('scroll', onScroll, { passive: true });
+    const t = window.setTimeout(release, 4000);
+    return () => {
+      el.removeEventListener('wheel', release);
+      el.removeEventListener('touchstart', release);
+      el.removeEventListener('keydown', release);
+      el.removeEventListener('scroll', onScroll);
+      window.clearTimeout(t);
+    };
+  }, []);
+
   return (
     // No `flex min-h-0 shrink` wrappers: the parent's animated wrapper
     // is the height authority. Extra flex-shrink chains let rows
     // collapse to 0 mid-animation when the wrapper is height: 0.
     <div
-      ref={listRef}
+      ref={setListNode}
       // snap-y keeps the scroll position aligned with whole rows;
       // maxHeight (from useFooterAccordionHeights) caps the viewport
       // to an exact fit of N whole rows. listRef points HERE so the
       // hook can walk children for real per-row heights.
-      className="flex flex-col gap-[clamp(0.375rem,1vh,0.625rem)] snap-y snap-mandatory overflow-auto pr-1 hide-scrollbar"
+      className="flex flex-col gap-[clamp(0.375rem,1vh,0.625rem)] snap-y snap-proximity [overflow-anchor:none] overflow-auto pr-1 hide-scrollbar"
       style={listMaxHeight != null ? { maxHeight: listMaxHeight } : undefined}
     >
         {friends.length === 0 ? (

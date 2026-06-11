@@ -1,4 +1,4 @@
-import { Button, Input, Modal } from '@heroui/react';
+import { BlissButton, BlissInput, BlissModal } from '../../../components/base';
 
 type AddAddonModalProps = {
   isOpen: boolean;
@@ -20,51 +20,49 @@ export function AddAddonModal({
   onInstall,
 }: AddAddonModalProps) {
   return (
-    <Modal>
-      <Modal.Backdrop
+    <BlissModal>
+      <BlissModal.Backdrop
         isOpen={isOpen}
         onOpenChange={onOpenChange}
-        variant="blur"
         className="bg-black/40"
       >
-        <Modal.Container placement="center">
-          <Modal.Dialog className="bg-transparent shadow-none">
-            <Modal.Header className="sr-only"><Modal.Heading>Add addon</Modal.Heading></Modal.Header>
-            <Modal.Body className="px-0">
+        <BlissModal.Container>
+          <BlissModal.Dialog>
+            <BlissModal.Header className="sr-only"><BlissModal.Heading>Add addon</BlissModal.Heading></BlissModal.Header>
+            <BlissModal.Body className="px-0">
               <div className="solid-surface mx-auto w-full max-w-md rounded-[24px] bg-white/20 p-6">
                 <div className="text-lg font-semibold">Add addon</div>
                 <div className="mt-1 text-sm text-foreground/60">
                   Paste a manifest URL to install.
                 </div>
                 <div className="mt-4">
-                  <Input
+                  <BlissInput
                     value={addonUrlDraft}
                     onChange={(e) => onAddonUrlDraftChange(e.target.value)}
                     placeholder="https://.../manifest.json"
-                    className="bg-white/10 rounded-xl px-4 py-2"
                   />
                 </div>
                 <div className="mt-5 flex gap-2">
-                  <Button
-                    className="rounded-full bg-white text-black"
+                  <BlissButton
+                    tone="solid"
                     isPending={addonsLoading}
                     onPress={onInstall}
                   >
                     Install
-                  </Button>
-                  <Button
+                  </BlissButton>
+                  <BlissButton
                     variant="ghost"
-                    className="rounded-full bg-white/10"
+                    tone="glass"
                     onPress={() => onOpenChange(false)}
                   >
                     Cancel
-                  </Button>
+                  </BlissButton>
                 </div>
               </div>
-            </Modal.Body>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
-    </Modal>
+            </BlissModal.Body>
+          </BlissModal.Dialog>
+        </BlissModal.Container>
+      </BlissModal.Backdrop>
+    </BlissModal>
   );
 }

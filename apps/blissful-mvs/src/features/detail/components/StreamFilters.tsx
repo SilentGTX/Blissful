@@ -1,12 +1,15 @@
-import { ListBox, Select } from '@heroui/react';
+import { BlissButton, BlissSelect } from '../../../components/base';
 
 type StreamFiltersProps = {
   addonSelectItems: Array<{ key: string; label: string }>;
   selectedAddon: string;
   onSelectAddon: (key: string) => void;
   showAddonSelect?: boolean;
+  onlyTorrentioRdResolve: boolean;
+  onToggleWebReady: () => void;
   className?: string;
   addonWidthClassName?: string;
+  showWebReadyToggle?: boolean;
 };
 
 export function StreamFilters({
@@ -14,35 +17,43 @@ export function StreamFilters({
   selectedAddon,
   onSelectAddon,
   showAddonSelect = true,
+  onlyTorrentioRdResolve,
+  onToggleWebReady,
   className,
   addonWidthClassName = 'w-[140px]',
+  showWebReadyToggle = true,
 }: StreamFiltersProps) {
   return (
     <div className={className ?? ''}>
       <div className="flex flex-wrap items-center gap-2">
         {showAddonSelect ? (
-          <Select
-            aria-label="Addon"
+          <BlissSelect
+            ariaLabel="Addon"
             selectedKey={addonSelectItems.some((item) => item.key === selectedAddon) ? selectedAddon : undefined}
             onSelectionChange={(key) => {
               if (key !== null) onSelectAddon(String(key));
             }}
+            items={addonSelectItems}
             className={addonWidthClassName}
+            triggerClassName="h-9"
+            valueClassName="truncate whitespace-nowrap"
+          />
+        ) : null}
+
+        {showWebReadyToggle ? (
+          <BlissButton
+            size="sm"
+            variant="ghost"
+            className={
+              'rounded-full border h-9 px-4 whitespace-nowrap ' +
+              (onlyTorrentioRdResolve
+                ? 'bg-[var(--bliss-accent)]/15 border-[var(--bliss-accent)]/20 text-[var(--bliss-accent)]'
+                : 'bg-white/10 border-white/10 text-white')
+            }
+            onPress={onToggleWebReady}
           >
-            <Select.Trigger className="h-9 bg-white/10 border border-white/10 rounded-full">
-              <Select.Value className="truncate whitespace-nowrap" />
-              <Select.Indicator />
-            </Select.Trigger>
-            <Select.Popover>
-              <ListBox>
-                {addonSelectItems.map((item) => (
-                  <ListBox.Item key={item.key} id={item.key} textValue={item.label}>
-                    {item.label}
-                  </ListBox.Item>
-                ))}
-              </ListBox>
-            </Select.Popover>
-          </Select>
+            WEB Ready
+          </BlissButton>
         ) : null}
       </div>
     </div>

@@ -1,5 +1,7 @@
 import type { LibraryItem } from '../../lib/mediaTypes';
 
+// 'addons' is desktop-only (the dedicated AddonsPage); web manages addons
+// via the in-shell modal flow.
 export type SideNavView = 'home' | 'discover' | 'library' | 'addons' | 'settings';
 
 export type SideNavProps = {

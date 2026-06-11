@@ -4,7 +4,7 @@
 // preserves the original visual language so the home-page open still
 // feels familiar.
 
-import { Avatar, Button, Modal } from '@heroui/react';
+import { BlissAvatar, BlissButton, BlissModal } from '../../../components/base';
 import { useAuth } from '../../../context/AuthProvider';
 import { renderProfileAvatar } from '../../../lib/profileAvatars';
 
@@ -41,14 +41,14 @@ export function WhoWatchingModal({
   };
 
   return (
-    <Modal>
-      <Modal.Backdrop isOpen={isOpen} onOpenChange={onOpenChange} variant="blur" className="bg-black/60">
-        <Modal.Container placement="center" size="lg">
-          <Modal.Dialog className="bg-transparent shadow-none">
-            <Modal.Header className="sr-only">
-              <Modal.Heading>Who's watching?</Modal.Heading>
-            </Modal.Header>
-            <Modal.Body className="px-0">
+    <BlissModal>
+      <BlissModal.Backdrop isOpen={isOpen} onOpenChange={onOpenChange} className="bg-black/60">
+        <BlissModal.Container size="lg">
+          <BlissModal.Dialog>
+            <BlissModal.Header className="sr-only">
+              <BlissModal.Heading>Who's watching?</BlissModal.Heading>
+            </BlissModal.Header>
+            <BlissModal.Body className="px-0">
               <div className="solid-surface mx-auto w-full max-w-3xl rounded-[28px] bg-white/10 p-6 md:p-8">
                 <div className="text-center font-[Instrument_Serif] text-4xl font-semibold tracking-tight">
                   Who's watching?
@@ -62,14 +62,14 @@ export function WhoWatchingModal({
                     onClick={() => onOpenChange(false)}
                   >
                     <div className="relative h-20 w-20">
-                      <Avatar className="h-20 w-20 bg-transparent rounded-none text-3xl">
+                      <BlissAvatar className="h-20 w-20 text-3xl">
                         {avatar.kind === 'image' ? (
-                          <Avatar.Image alt={label} src={avatar.value} className="object-contain" />
+                          <BlissAvatar.Image alt={label} src={avatar.value} />
                         ) : null}
-                        <Avatar.Fallback className="border-none bg-transparent text-3xl">
+                        <BlissAvatar.Fallback className="text-3xl">
                           {avatar.kind === 'image' ? label.slice(0, 1).toUpperCase() : avatar.value}
-                        </Avatar.Fallback>
-                      </Avatar>
+                        </BlissAvatar.Fallback>
+                      </BlissAvatar>
                       <span className="absolute -right-1 -top-1 grid h-5 w-5 place-items-center rounded-full bg-[var(--bliss-accent)] text-[11px] font-bold text-black">
                         ✓
                       </span>
@@ -98,19 +98,19 @@ export function WhoWatchingModal({
                 </div>
 
                 <div className="mt-8 flex justify-center">
-                  <Button
+                  <BlissButton
                     variant="ghost"
-                    className="rounded-full bg-white/10"
+                    tone="glass"
                     onPress={handleSignOut}
                   >
                     Sign out
-                  </Button>
+                  </BlissButton>
                 </div>
               </div>
-            </Modal.Body>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
-    </Modal>
+            </BlissModal.Body>
+          </BlissModal.Dialog>
+        </BlissModal.Container>
+      </BlissModal.Backdrop>
+    </BlissModal>
   );
 }

@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 
+// Pool of glyphs used to scramble the text. Mix of ASCII symbols + a
+// few digits + a few alpha so the scramble looks like noisy decryption
+// rather than a single repeated symbol.
 const SCRAMBLE_POOL = '!<>-_\\/[]{}—=+*^?#@$%&░▒▓0123456789ABCDEFXY';
 
 export type GlitchTextOptions = {

@@ -1,6 +1,7 @@
 import type { MediaItem } from '../../../types/media';
 import type { StremioMetaDetail } from '../../../lib/stremioAddon';
-import { normalizeStremioImage } from '../../../lib/stremioApi';
+import { normalizeStremioImage } from '../../../lib/mediaTypes';
+import { proxiedImage } from '../../../lib/imageProxy';
 import { InfoIcon } from '../../../icons/InfoIcon';
 import { PlayIcon } from '../../../icons/PlayIcon';
 import { TrailerIcon } from '../../../icons/TrailerIcon';
@@ -51,7 +52,7 @@ export function NetflixHero({
     return (
       <div className={`netflix-hero-layer ${className}`.trim()}>
         {background ? (
-          <div className="netflix-hero-bg" style={{ backgroundImage: `url(${background})` }} />
+          <div className="netflix-hero-bg" style={{ backgroundImage: `url(${proxiedImage(background)})` }} />
         ) : null}
         <div className="netflix-hero-overlay" />
         <div className="netflix-hero-content">

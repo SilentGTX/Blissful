@@ -50,7 +50,7 @@ export function ModernRow({ title, items, selectedItem, onSelect }: ModernRowPro
     return () => window.removeEventListener('keydown', handler);
   }, [go]);
 
-  // Wheel: only intercept horizontal scroll -- vertical propagates to parent snap container
+  // Wheel: only intercept horizontal scroll — vertical propagates to parent snap container
   useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
@@ -159,7 +159,7 @@ export function ModernRow({ title, items, selectedItem, onSelect }: ModernRowPro
             onClick={() => go(-1)}
             className="absolute left-4 top-1/2 -translate-y-1/2 z-[70] w-10 h-10 rounded-full bg-white/8 hover:bg-white/20 border border-white/10 flex items-center justify-center text-white text-2xl transition-all duration-200"
           >
-            &lsaquo;
+            ‹
           </button>
         )}
         {activeIdx < items.length - 1 && (
@@ -167,7 +167,7 @@ export function ModernRow({ title, items, selectedItem, onSelect }: ModernRowPro
             onClick={() => go(1)}
             className="absolute right-4 top-1/2 -translate-y-1/2 z-[70] w-10 h-10 rounded-full bg-white/8 hover:bg-white/20 border border-white/10 flex items-center justify-center text-white text-2xl transition-all duration-200"
           >
-            &rsaquo;
+            ›
           </button>
         )}
       </div>

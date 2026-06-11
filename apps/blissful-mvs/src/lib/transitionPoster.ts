@@ -12,6 +12,8 @@
 // preload at click time so the bitmap is in the browser cache by the
 // time the FLIP layer mounts a few ms later.
 
+import { proxiedImage } from './imageProxy';
+
 export type CachedClickPoster = {
   posterUrl: string;
   backdropUrl: string | null;
@@ -40,7 +42,7 @@ export function rememberClickedPoster(
   // be the high-res backdrop. Fire-and-forget — no error handling needed.
   if (backdropUrl) {
     const img = new Image();
-    img.src = backdropUrl;
+    img.src = proxiedImage(backdropUrl);
   }
 }
 

@@ -15,8 +15,8 @@
 // never go via URL params (which would land in browser history).
 
 import { useEffect, useRef, useState } from 'react';
-import { Button, Modal } from '@heroui/react';
 import { useNavigate } from 'react-router-dom';
+import { BlissButton, BlissModal } from '../base';
 import {
   buildRoomPlayerUrl,
   formatRoomCodeInput,
@@ -128,19 +128,18 @@ export function WatchPartyJoinModal({ isOpen, onOpenChange }: JoinPartyModalProp
   };
 
   return (
-    <Modal>
-      <Modal.Backdrop
+    <BlissModal>
+      <BlissModal.Backdrop
         isOpen={isOpen}
         onOpenChange={onOpenChange}
-        variant="blur"
         className="bg-black/40"
       >
-        <Modal.Container placement="center">
-          <Modal.Dialog className="bg-transparent shadow-none">
-            <Modal.Header className="sr-only">
-              <Modal.Heading>Join a watch party</Modal.Heading>
-            </Modal.Header>
-            <Modal.Body className="px-0">
+        <BlissModal.Container>
+          <BlissModal.Dialog>
+            <BlissModal.Header className="sr-only">
+              <BlissModal.Heading>Join a watch party</BlissModal.Heading>
+            </BlissModal.Header>
+            <BlissModal.Body className="px-0">
               <div className="solid-surface mx-auto w-full max-w-md rounded-[24px] bg-white/20 p-6">
                 {step.kind === 'code' ? (
                   <>
@@ -171,21 +170,21 @@ export function WatchPartyJoinModal({ isOpen, onOpenChange }: JoinPartyModalProp
                         <div className="mt-2 text-sm text-red-400">{error}</div>
                       ) : null}
                       <div className="mt-5 flex gap-2">
-                        <Button
+                        <BlissButton
                           type="submit"
-                          className="rounded-full bg-white text-black"
+                          tone="solid"
                           isPending={busy}
                           isDisabled={busy || !isValidRoomCode(code)}
                         >
                           Continue
-                        </Button>
-                        <Button
+                        </BlissButton>
+                        <BlissButton
                           variant="ghost"
-                          className="rounded-full bg-white/10"
+                          tone="glass"
                           onPress={() => onOpenChange(false)}
                         >
                           Cancel
-                        </Button>
+                        </BlissButton>
                       </div>
                     </form>
                   </>
@@ -242,30 +241,30 @@ export function WatchPartyJoinModal({ isOpen, onOpenChange }: JoinPartyModalProp
                         <div className="mt-2 text-sm text-red-400">{error}</div>
                       ) : null}
                       <div className="mt-5 flex gap-2">
-                        <Button
+                        <BlissButton
                           type="submit"
-                          className="rounded-full bg-white text-black"
+                          tone="solid"
                           isPending={busy}
                           isDisabled={busy || !password.trim()}
                         >
                           Join
-                        </Button>
-                        <Button
+                        </BlissButton>
+                        <BlissButton
                           variant="ghost"
-                          className="rounded-full bg-white/10"
+                          tone="glass"
                           onPress={() => onOpenChange(false)}
                         >
                           Cancel
-                        </Button>
+                        </BlissButton>
                       </div>
                     </form>
                   </>
                 )}
               </div>
-            </Modal.Body>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
-    </Modal>
+            </BlissModal.Body>
+          </BlissModal.Dialog>
+        </BlissModal.Container>
+      </BlissModal.Backdrop>
+    </BlissModal>
   );
 }

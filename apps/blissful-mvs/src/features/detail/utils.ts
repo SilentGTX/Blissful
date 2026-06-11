@@ -1,32 +1,10 @@
-export function openInVlc(url: string): void {
-  const encoded = encodeURIComponent(url);
-  try {
-    window.location.href = `vlc-x-callback://x-callback-url/stream?url=${encoded}`;
-    return;
-  } catch {
-    // ignore
-  }
-  try {
-    window.location.href = `vlc://${url}`;
-  } catch {
-    // ignore
-  }
-}
-
-export function formatChannelName(id: string): string {
-  if (!id) return '';
-  const withoutPrefix = id.replace(/^[^:]+:/, '');
-  const withSpaces = withoutPrefix.replace(/[-_]/g, ' ');
-  return withSpaces
-    .split(' ')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(' ');
-}
-
-export function getDisplayName(meta: any, id: string, type: string): string {
-  if (meta?.name) return meta.name;
-  if (type === 'tv' || type === 'channel') return formatChannelName(id);
-  return id;
+export function isIos(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  if (/iPad|iPhone|iPod/i.test(ua)) return true;
+  const platform = (navigator as any).platform as string | undefined;
+  const maxTouchPoints = (navigator as any).maxTouchPoints as number | undefined;
+  return platform === 'MacIntel' && typeof maxTouchPoints === 'number' && maxTouchPoints > 1;
 }
 
 export function formatDate(value?: string) {

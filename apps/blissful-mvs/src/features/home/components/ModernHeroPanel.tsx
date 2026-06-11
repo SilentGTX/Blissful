@@ -3,8 +3,9 @@ import { flushSync } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { showHeroTransition } from '../../../lib/heroTransition';
 import { motion } from 'framer-motion';
-import { Button } from '@heroui/react';
+import { BlissButton } from '../../../components/base';
 import { normalizeStremioImage } from '../../../lib/mediaTypes';
+import { proxiedImage } from '../../../lib/imageProxy';
 import type { MediaItem } from '../../../types/media';
 import type { StremioMetaDetail } from '../../../lib/stremioAddon';
 
@@ -84,9 +85,9 @@ export function ModernHeroPanel({ item, meta, onClose }: ModernHeroPanelProps) {
       >
         {/* Background */}
         {backdrop ? (
-          <img src={backdrop} className="absolute inset-0 w-full h-full object-cover" />
+          <img src={proxiedImage(backdrop)} className="absolute inset-0 w-full h-full object-cover" />
         ) : poster ? (
-          <img src={poster} className="absolute inset-0 w-full h-full object-cover" style={{ filter: 'blur(8px) brightness(0.5) scale(1.1)' }} />
+          <img src={proxiedImage(poster)} className="absolute inset-0 w-full h-full object-cover" style={{ filter: 'blur(8px) brightness(0.5) scale(1.1)' }} />
         ) : (
           <div className="absolute inset-0 bg-black/80" />
         )}
@@ -127,21 +128,21 @@ export function ModernHeroPanel({ item, meta, onClose }: ModernHeroPanelProps) {
             </p>
           )}
           <div className="flex gap-3 pt-2">
-            <Button
+            <BlissButton
               size="sm"
               className="bg-white text-black font-semibold hover:bg-white/90 px-6"
               onPress={handleWatchNow}
             >
               ▶ Watch Now
-            </Button>
-            <Button
+            </BlissButton>
+            <BlissButton
               size="sm"
               variant="ghost"
               className="bg-white/10 text-white hover:bg-white/20 px-6"
               onPress={onClose}
             >
               Close
-            </Button>
+            </BlissButton>
           </div>
         </div>
       </motion.div>

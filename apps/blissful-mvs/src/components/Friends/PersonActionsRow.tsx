@@ -1,11 +1,13 @@
 // Dropdown-menu row for any person in the sidebar:
-//   - Existing friends -> Nickname / Remove friend
-//   - Non-friends      -> Add friend
+//   - Existing friends → Nickname / Remove friend
+//   - Non-friends      → Add friend
 //
-// Chat / DM actions were removed from the friends accordion -- this
+// Chat / DM actions were removed from the friends accordion — this
 // component is friend-graph only.
 
-import { Button, Dropdown, Label } from '@heroui/react';
+import { useNavigate } from 'react-router-dom';
+import { Label } from '@heroui/react';
+import { BlissButton, BlissDropdown } from '../base';
 import { FriendAvatar } from './FriendAvatar';
 import { formatRelativeTime } from './relativeTime';
 import { activityLabel } from './activityLabel';
@@ -29,13 +31,13 @@ type Props = {
   /** Required when `friendRecord` is provided. */
   onSetNickname?: () => void;
   /** Either onRemove (friend) or onAddFriend (non-friend) must be
-   *  provided -- the menu shows whichever matches. */
+   *  provided — the menu shows whichever matches. */
   onRemove?: () => void;
   onAddFriend?: () => void;
   /** Called when the user picks "Cancel invite" on a pending row.
    *  Receives the outgoing friend-edge id. */
   onCancelInvite?: (id: string) => void;
-  /** Optional "Request party" action -- only shown when the friend
+  /** Optional "Request party" action — only shown when the friend
    *  has a fresh `currentActivity` (i.e. is watching something) so
    *  there's a title to ask to join. */
   onRequestParty?: () => void;
@@ -50,7 +52,7 @@ type Props = {
 function statusText(presence?: PresenceRecord | null): string {
   if (!presence) return 'offline';
   if (presence.online && presence.activity?.name) {
-    // The title itself is the status line -- no "watching" prefix
+    // The title itself is the status line — no "watching" prefix
     // since the row's online dot already implies live activity.
     const label = activityLabel(presence.activity);
     return label ?? 'online';
@@ -61,6 +63,7 @@ function statusText(presence?: PresenceRecord | null): string {
 }
 
 export function PersonActionsRow({
+  userId,
   displayName,
   friendRecord,
   pendingOutgoingId,
@@ -74,6 +77,7 @@ export function PersonActionsRow({
   hasActiveParty,
   onJoinParty,
 }: Props) {
+  const navigate = useNavigate();
   const isFriend = Boolean(friendRecord);
   const isPendingOutgoing = Boolean(pendingOutgoingId) && !isFriend;
   const online = Boolean(presence?.online);
@@ -82,14 +86,17 @@ export function PersonActionsRow({
     : statusText(subtitle?.kind === 'status' ? subtitle.presence : presence);
   const canJoinParty = isFriend && Boolean(hasActiveParty) && Boolean(onJoinParty);
   // Request-party only shows when there's no live room with this
-  // friend yet -- once they've accepted, the slot is taken by Join.
+  // friend yet — once they've accepted, the slot is taken by Join.
   const canRequestParty =
     isFriend
     && !canJoinParty
     && Boolean(onRequestParty)
     && Boolean(presence?.online && presence?.activity?.name);
+  // Accepted friends always get at least the "View profile" action, so
+  // the row is always a menu trigger for them.
+  const canViewProfile = isFriend;
   const hasMenu =
-    (isFriend && (Boolean(onSetNickname) || Boolean(onRemove) || canRequestParty || canJoinParty))
+    (isFriend && (canViewProfile || Boolean(onSetNickname) || Boolean(onRemove) || canRequestParty || canJoinParty))
     || (isPendingOutgoing && Boolean(onCancelInvite))
     || (!isFriend && !isPendingOutgoing && Boolean(onAddFriend));
 
@@ -103,15 +110,18 @@ export function PersonActionsRow({
         online={online}
       />
       <div className="min-w-0 flex-1">
-        <div className="truncate font-medium text-white text-[clamp(13px,2vh,16px)] leading-tight">{displayName}</div>
-        <div className="truncate text-white/55 text-[clamp(11px,1.5vh,13px)] mt-0.5">{subText}</div>
+        {/* Font sizes mirror ContinueWatchingItem's compact variant so
+            the Friends rows and the Continue-Watching cards in the same
+            sidebar footer read at a consistent scale. */}
+        <div className="truncate font-medium text-white text-[clamp(12px,1.6vh,15px)] leading-tight">{displayName}</div>
+        <div className="truncate text-white/55 text-[clamp(10px,1.3vh,12px)] mt-[clamp(0.125rem,0.5vh,0.375rem)]">{subText}</div>
       </div>
     </>
   );
 
   // Row padding scales with viewport so each friend gets more
   // breathing room on big screens. `shrink-0 + snap-start` keep the
-  // row at its natural height -- the parent scroll container snaps
+  // row at its natural height — the parent scroll container snaps
   // to row boundaries so we never show a half-clipped friend at the
   // edge of the visible area. The `!` prefixes force overrides on
   // HeroUI's default Button height/padding.
@@ -127,19 +137,20 @@ export function PersonActionsRow({
   }
 
   return (
-    <Dropdown>
-      <Button
+    <BlissDropdown>
+      <BlissButton
         variant="ghost"
         size="sm"
         className={rowClass}
       >
         {rowInner}
-      </Button>
-      <Dropdown.Popover className="solid-surface min-w-[180px] rounded-2xl bg-white/10 p-1 text-white shadow-xl">
-        <Dropdown.Menu
+      </BlissButton>
+      <BlissDropdown.Popover className="solid-surface min-w-[180px] bg-white/10 p-1 shadow-xl">
+        <BlissDropdown.Menu
           onAction={(key) => {
             const action = String(key);
-            if (action === 'nickname' && onSetNickname) onSetNickname();
+            if (action === 'view-profile') navigate(`/profile/${encodeURIComponent(userId)}`);
+            else if (action === 'nickname' && onSetNickname) onSetNickname();
             else if (action === 'request-party' && onRequestParty) onRequestParty();
             else if (action === 'join-party' && onJoinParty) onJoinParty();
             else if (action === 'add' && onAddFriend) onAddFriend();
@@ -147,38 +158,43 @@ export function PersonActionsRow({
             else if (action === 'remove' && onRemove) onRemove();
           }}
         >
+          {canViewProfile ? (
+            <BlissDropdown.Item id="view-profile" textValue="View profile" className="px-3 py-2 text-sm hover:bg-white/10 data-[hovered=true]:bg-white/10">
+              <Label>View profile</Label>
+            </BlissDropdown.Item>
+          ) : null}
           {canJoinParty ? (
-            <Dropdown.Item id="join-party" textValue="Join party" className="rounded-xl px-3 py-2 text-sm hover:bg-white/10 data-[hovered=true]:bg-white/10">
+            <BlissDropdown.Item id="join-party" textValue="Join party" className="px-3 py-2 text-sm hover:bg-white/10 data-[hovered=true]:bg-white/10">
               <Label className="text-[var(--bliss-accent)]">Join party</Label>
-            </Dropdown.Item>
+            </BlissDropdown.Item>
           ) : null}
           {canRequestParty ? (
-            <Dropdown.Item id="request-party" textValue="Request party" className="rounded-xl px-3 py-2 text-sm hover:bg-white/10 data-[hovered=true]:bg-white/10">
+            <BlissDropdown.Item id="request-party" textValue="Request party" className="px-3 py-2 text-sm hover:bg-white/10 data-[hovered=true]:bg-white/10">
               <Label className="text-[var(--bliss-accent)]">Request party</Label>
-            </Dropdown.Item>
+            </BlissDropdown.Item>
           ) : null}
           {isFriend && onSetNickname ? (
-            <Dropdown.Item id="nickname" textValue="Nickname" className="rounded-xl px-3 py-2 text-sm hover:bg-white/10 data-[hovered=true]:bg-white/10">
+            <BlissDropdown.Item id="nickname" textValue="Nickname" className="px-3 py-2 text-sm hover:bg-white/10 data-[hovered=true]:bg-white/10">
               <Label>Nickname</Label>
-            </Dropdown.Item>
+            </BlissDropdown.Item>
           ) : null}
           {isFriend && onRemove ? (
-            <Dropdown.Item id="remove" textValue="Remove friend" className="rounded-xl px-3 py-2 text-sm hover:bg-white/10 data-[hovered=true]:bg-white/10">
+            <BlissDropdown.Item id="remove" textValue="Remove friend" className="px-3 py-2 text-sm hover:bg-white/10 data-[hovered=true]:bg-white/10">
               <Label className="text-red-300">Remove friend</Label>
-            </Dropdown.Item>
+            </BlissDropdown.Item>
           ) : null}
           {isPendingOutgoing && onCancelInvite ? (
-            <Dropdown.Item id="cancel" textValue="Cancel invite" className="rounded-xl px-3 py-2 text-sm hover:bg-white/10 data-[hovered=true]:bg-white/10">
+            <BlissDropdown.Item id="cancel" textValue="Cancel invite" className="px-3 py-2 text-sm hover:bg-white/10 data-[hovered=true]:bg-white/10">
               <Label className="text-white/80">Cancel invite</Label>
-            </Dropdown.Item>
+            </BlissDropdown.Item>
           ) : null}
           {!isFriend && !isPendingOutgoing && onAddFriend ? (
-            <Dropdown.Item id="add" textValue="Add friend" className="rounded-xl px-3 py-2 text-sm hover:bg-white/10 data-[hovered=true]:bg-white/10">
+            <BlissDropdown.Item id="add" textValue="Add friend" className="px-3 py-2 text-sm hover:bg-white/10 data-[hovered=true]:bg-white/10">
               <Label className="text-[var(--bliss-accent)]">Add friend</Label>
-            </Dropdown.Item>
+            </BlissDropdown.Item>
           ) : null}
-        </Dropdown.Menu>
-      </Dropdown.Popover>
-    </Dropdown>
+        </BlissDropdown.Menu>
+      </BlissDropdown.Popover>
+    </BlissDropdown>
   );
 }

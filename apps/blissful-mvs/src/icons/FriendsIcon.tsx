@@ -13,7 +13,7 @@ export function FriendsIcon({ className, size = 18 }: FriendsIconProps) {
       fill="none"
       aria-hidden="true"
     >
-      {/* Two overlapping shoulders silhouette -- front-and-slightly-back
+      {/* Two overlapping shoulders silhouette — front-and-slightly-back
           arrangement reads as "people" / "friends" at small sizes. */}
       <circle cx="9" cy="8" r="3.5" stroke="currentColor" strokeWidth="2" />
       <path

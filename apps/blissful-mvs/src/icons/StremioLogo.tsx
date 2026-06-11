@@ -1,8 +1,8 @@
-﻿import stremioLogoUrl from '../assets/stremio_symbol.png';
+import stremioLogoUrl from '../assets/stremio_symbol.png';
 
 // Stremio's diamond+play mark. Sourced from
 // apps/blissful-mvs/src/assets/stremio_symbol.png (PNG with alpha,
-// imported by Vite as a URL). Used in the Settings -> Linked accounts
+// imported by Vite as a URL). Used in the Settings → Linked accounts
 // panel and the /link-stremio popup.
 
 type Props = {

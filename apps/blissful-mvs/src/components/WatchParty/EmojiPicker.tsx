@@ -12,9 +12,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 export const WATCH_PARTY_EMOJI = [
-  '\u{1F44D}', '\u{2764}\u{FE0F}', '\u{1F602}', '\u{1F525}',
-  '\u{1F62E}', '\u{1F622}', '\u{1F389}', '\u{1F44F}',
-  '\u{1F64F}', '\u{1F621}', '\u{1F914}', '\u{1F440}',
+  '👍', '❤️', '😂', '🔥',
+  '😮', '😢', '🎉', '👏',
+  '🙏', '😡', '🤔', '👀',
 ] as const;
 
 export type EmojiPickerProps = {
@@ -61,7 +61,7 @@ export function EmojiPicker({
   // happen BEFORE the browser paints — otherwise the user sees a
   // one-frame flash of the picker in the wrong position before it
   // settles, and on a second-open the flash is even longer because
-  // effectiveSide has to reset -> render -> measure -> flip -> render.
+  // effectiveSide has to reset → render → measure → flip → render.
   //
   // We measure the TRIGGER's position (the picker's parent) rather
   // than the picker itself: that way the decision is independent
@@ -102,10 +102,10 @@ export function EmojiPicker({
   return (
     <div
       ref={ref}
-      // `w-44` (11rem = 176px) is explicit because the popover lives
+      // `w-44` (11rem ≈ 176px) is explicit because the popover lives
       // inside a narrow `relative` parent (the trigger button is
       // only ~32px wide). Without it, the absolute box shrinks to
-      // fit and `grid-cols-4 -> 1fr` columns collapse, stacking
+      // fit and `grid-cols-4 → 1fr` columns collapse, stacking
       // every emoji in a single column.
       className={
         'absolute z-50 grid w-44 grid-cols-4 gap-1 rounded-2xl border border-white/15 bg-black/85 p-2 shadow-[0_18px_40px_rgba(0,0,0,0.5)] backdrop-blur-xl '

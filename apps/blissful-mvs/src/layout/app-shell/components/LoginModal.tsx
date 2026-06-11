@@ -7,7 +7,8 @@
 // Reads modal state from useModals() so any caller can `openLogin()`
 // and have this thing appear without prop drilling.
 
-import { Button, FieldError, Form, Input, Label, Modal, TextField } from '@heroui/react';
+import { FieldError, Form, Label, TextField } from '@heroui/react';
+import { BlissButton, BlissInput, BlissModal } from '../../../components/base';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../../context/AuthProvider';
 import { useModals } from '../../../context/ModalsProvider';
@@ -20,7 +21,7 @@ const USERNAME_RE = /^[a-z0-9_-]{3,50}$/;
 // are necessary because our `bg-white/10 rounded-xl px-4 py-2` styling
 // otherwise overrides HeroUI's default `.input[data-invalid]` red ring.
 const INPUT_CLASS =
-  'mt-1 w-full bg-white/10 rounded-xl px-4 py-2 ' +
+  'mt-1 w-full ' +
   'data-[invalid=true]:!border-danger ' +
   'data-[invalid=true]:!ring-1 ' +
   'data-[invalid=true]:!ring-danger/40';
@@ -140,17 +141,16 @@ export function LoginModal() {
   };
 
   return (
-    <Modal>
-      <Modal.Backdrop
+    <BlissModal>
+      <BlissModal.Backdrop
         isOpen={modals.isLoginOpen}
         onOpenChange={handleOpenChange}
-        variant="blur"
         className="bg-black/50"
       >
-        <Modal.Container placement="center" size="lg">
-          <Modal.Dialog className="bg-transparent shadow-none">
-            <Modal.Header className="sr-only"><Modal.Heading>Login</Modal.Heading></Modal.Header>
-            <Modal.Body className="px-0">
+        <BlissModal.Container size="lg">
+          <BlissModal.Dialog>
+            <BlissModal.Header className="sr-only"><BlissModal.Heading>Login</BlissModal.Heading></BlissModal.Header>
+            <BlissModal.Body className="px-0">
               <div className="solid-surface mx-auto w-full rounded-[28px] bg-white/10 p-6">
                 <div className="font-[Instrument_Serif] text-2xl font-semibold tracking-tight">
                   {isRegisterMode ? 'Create account' : 'Login'}
@@ -173,7 +173,7 @@ export function LoginModal() {
                         className="w-full"
                       >
                         <Label className={LABEL_CLASS}>Username</Label>
-                        <Input
+                        <BlissInput
                           type="text"
                           autoComplete="username"
                           placeholder="3-50 chars: a-z 0-9 _ -"
@@ -192,7 +192,7 @@ export function LoginModal() {
                         className="w-full"
                       >
                         <Label className={LABEL_CLASS}>Username</Label>
-                        <Input
+                        <BlissInput
                           type="text"
                           autoComplete="username"
                           // No maxLength on login — legacy accounts can
@@ -214,7 +214,7 @@ export function LoginModal() {
                       className="w-full"
                     >
                       <Label className={LABEL_CLASS}>Password</Label>
-                      <Input
+                      <BlissInput
                         autoComplete={isRegisterMode ? 'new-password' : 'current-password'}
                         // 40-char cap only when creating an account.
                         // Login stays unbounded so users with longer
@@ -238,7 +238,7 @@ export function LoginModal() {
                         className="w-full"
                       >
                         <Label className={LABEL_CLASS}>Confirm password</Label>
-                        <Input
+                        <BlissInput
                           autoComplete="new-password"
                           maxLength={50}
                           placeholder="repeat your password"
@@ -250,21 +250,21 @@ export function LoginModal() {
                   </div>
 
                   <div className="mt-6 flex items-center gap-3">
-                    <Button
+                    <BlissButton
                       type="submit"
-                      className="rounded-full bg-white text-black"
+                      tone="solid"
                       isPending={authLoading}
                     >
                       {isRegisterMode ? 'Create account' : 'Login'}
-                    </Button>
-                    <Button
+                    </BlissButton>
+                    <BlissButton
                       type="button"
                       variant="ghost"
-                      className="rounded-full bg-white/10"
+                      tone="glass"
                       onPress={() => modals.closeLogin()}
                     >
                       Cancel
-                    </Button>
+                    </BlissButton>
                   </div>
 
                   <div className="mt-4 text-sm text-foreground/70">
@@ -282,10 +282,10 @@ export function LoginModal() {
                   </div>
                 </Form>
               </div>
-            </Modal.Body>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
-    </Modal>
+            </BlissModal.Body>
+          </BlissModal.Dialog>
+        </BlissModal.Container>
+      </BlissModal.Backdrop>
+    </BlissModal>
   );
 }

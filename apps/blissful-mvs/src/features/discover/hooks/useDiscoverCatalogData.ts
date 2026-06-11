@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { AddonDescriptor } from '../../../lib/stremioApi';
+import type { AddonDescriptor } from '../../../lib/mediaTypes';
 import { fetchCatalog } from '../../../lib/stremioAddon';
 import type { MediaItem, MediaType } from '../../../types/media';
 import { metaToItem } from '../utils';
@@ -68,7 +68,17 @@ export function useDiscoverCatalogData({
       return rawItems.filter((item) => item.year === year);
     }
     if (discoverGenre && discoverGenre !== 'all') {
-      return rawItems.filter((item) => (item.genres ?? []).includes(discoverGenre));
+      // Only client-filter when the genre is actually a per-item tag.
+      // Some genres (e.g. Cinemeta's "Anime") are catalog-level buckets
+      // applied server-side via the `genre=` catalog extra — the items
+      // themselves carry "Animation"/"Action"/… not the bucket name, so
+      // a client re-filter on the bucket name would wipe the whole page.
+      // When no loaded item carries the genre, trust the server's filter.
+      const anyHasGenre = rawItems.some((item) => (item.genres ?? []).includes(discoverGenre));
+      if (anyHasGenre) {
+        return rawItems.filter((item) => (item.genres ?? []).includes(discoverGenre));
+      }
+      return rawItems;
     }
     return rawItems;
   }, [rawItems, discoverCatalog, discoverGenre, discoverYear]);

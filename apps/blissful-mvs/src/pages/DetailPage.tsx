@@ -1,10 +1,11 @@
-import { Button } from '@heroui/react';
+import { BlissButton } from '../components/base';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams, useLocation } from 'react-router-dom';
 import { useAddons } from '../context/AddonsProvider';
 import { useAuth } from '../context/AuthProvider';
 import { useUI } from '../context/UIProvider';
 import { normalizeStremioImage } from '../lib/mediaTypes';
+import { proxiedImage } from '../lib/imageProxy';
 import { getLibraryEntry } from '../lib/libraryStore';
 import { useContinueWatchingContext } from '../context/ContinueWatchingProvider';
 import { showHeroTransition } from '../lib/heroTransition';
@@ -18,13 +19,18 @@ import { DetailStreamsPanel } from '../features/detail/components/DetailStreamsP
 import { DetailModals } from '../features/detail/components/DetailModals';
 import { useEpisodeSelection } from '../features/detail/hooks/useEpisodeSelection';
 import { useStreamFilters } from '../features/detail/hooks/useStreamFilters';
+import { useExternalOpenPrompt } from '../features/detail/hooks/useExternalOpenPrompt';
 import { useLibraryState } from '../features/detail/hooks/useLibraryState';
 import { formatDate, getEpisodeTitle, parseNumber } from '../features/detail/utils';
 import { buildStreamsView } from '../features/detail/streams';
 import { useImdbRating } from '../lib/useImdbRating';
 import { fetchTmdbId, type TmdbLookup } from '../lib/tmdb';
-
-
+import { ResumeOrStartOverModal } from '../components/ResumeOrStartOverModal';
+import { UnreleasedEpisodeModal } from '../components/UnreleasedEpisodeModal';
+import { type ReleaseOption } from '../components/ReleasesPicker';
+import { fetchFallbackReleases } from '../lib/fallbackReleases';
+import { getResumeSeconds } from '../layout/app-shell/utils';
+import { isNativeShell } from '../lib/desktop';
 
 export default function DetailPage() {
   const { addons } = useAddons();
@@ -62,7 +68,11 @@ export default function DetailPage() {
     selectedAddon,
     setSelectedAddon,
     streamSortKey,
+    onlyTorrentioRdResolve,
+    setOnlyTorrentioRdResolve,
   } = useStreamFilters();
+
+  const { externalOpenPrompt, openExternalPrompt, closeExternalPrompt } = useExternalOpenPrompt();
 
   const [logoFailed, setLogoFailed] = useState(false);
 
@@ -94,6 +104,8 @@ export default function DetailPage() {
   const {
     season,
     setSeason,
+    episodeSearch,
+    setEpisodeSearch,
     rightMode,
     seasons,
     seasonIndex,
@@ -153,6 +165,7 @@ export default function DetailPage() {
     handleToggleLibrary,
     getEpisodeProgressInfo,
     libraryVersion,
+    stremioLibraryItem,
   } = useLibraryState({
     authKey,
     id,
@@ -161,30 +174,45 @@ export default function DetailPage() {
     metaPoster: meta?.meta?.poster ?? null,
   });
 
+  // Web-only: filter to the single best release that direct-plays in
+  // Chrome (H.264 video + non-EAC3 audio per title hints). Falls back
+  // to unfiltered if no title matches.
+  const webInstantOnly = true;
+
   const streamsViewDesktop = useMemo(
     () =>
       buildStreamsView(streamsByAddon, {
         selectedAddon,
+        onlyTorrentioRdResolve,
         streamSortKey,
         lastStreamUrl: lastStream?.url ?? null,
+        webInstantOnly,
       }),
-    [lastStream, selectedAddon, streamSortKey, streamsByAddon]
+    [lastStream, onlyTorrentioRdResolve, selectedAddon, streamSortKey, streamsByAddon, webInstantOnly]
   );
 
   const streamsViewMobile = useMemo(
     () =>
       buildStreamsView(streamsByAddon, {
         selectedAddon,
+        onlyTorrentioRdResolve: false,
         streamSortKey,
         lastStreamUrl: lastStream?.url ?? null,
+        webInstantOnly,
       }),
-    [lastStream, selectedAddon, streamSortKey, streamsByAddon]
+    [lastStream, selectedAddon, streamSortKey, streamsByAddon, webInstantOnly]
   );
 
   const desktopRows = streamsViewDesktop.rows;
 
-  // Desktop app: show ALL addon streams, not just Torrentio RD.
-  const mobileTorrentioRows = streamsViewMobile.rows;
+  const mobileTorrentioRows = useMemo(
+    () => streamsViewMobile.rows.filter((row) => row.addonName === 'Torrentio RD'),
+    [streamsViewMobile.rows]
+  );
+
+  const handleToggleWebReady = useCallback(() => {
+    setOnlyTorrentioRdResolve((v) => !v);
+  }, [setOnlyTorrentioRdResolve]);
 
   const addonSelectItems = useMemo(() => {
     const items: Array<{ key: string; label: string }> = [{ key: 'ALL', label: 'All addons' }];
@@ -243,7 +271,7 @@ export default function DetailPage() {
       return;
     }
     const img = new Image();
-    img.src = highResBackdrop;
+    img.src = proxiedImage(highResBackdrop);
   }, [flipPoster, highResBackdrop, guessedBackdrop]);
 
   useEffect(() => {
@@ -254,7 +282,7 @@ export default function DetailPage() {
   useEffect(() => {
     if (!heroImageFromNav || !background) return;
     const img = new Image();
-    img.src = background;
+    img.src = proxiedImage(background);
     const clear = () => showHeroTransition(null);
     if (img.complete) { clear(); return; }
     img.onload = clear;
@@ -298,8 +326,9 @@ export default function DetailPage() {
     setIsShareOpen(true);
   }, []);
 
-  // Look up TMDB id for per-episode ratings. Cached in sessionStorage
-  // by lib/tmdb.ts. Null until lookup completes.
+  // Look up TMDB id (vidking.net uses TMDB IDs, not IMDb). Cached in
+  // sessionStorage by lib/tmdb.ts. Null until lookup completes or if
+  // no TMDB API key is configured in Settings.
   const [tmdbLookup, setTmdbLookup] = useState<TmdbLookup | null>(null);
   useEffect(() => {
     if (!imdbId) return;
@@ -319,6 +348,10 @@ export default function DetailPage() {
   const [episodeRatingsBySeason, setEpisodeRatingsBySeason] = useState<
     Record<number, Record<number, number>>
   >({});
+  // Per-season TMDB still URLs: { [season]: { [episodeNumber]: url } }.
+  // Fallback episode-card artwork when metahub's thumbnail 404s (newer
+  // seasons metahub hasn't generated stills for). Populated alongside the
+  // ratings map from the same /tmdb-season-info fetch.
   const [episodeStillsBySeason, setEpisodeStillsBySeason] = useState<
     Record<number, Record<number, string>>
   >({});
@@ -337,31 +370,52 @@ export default function DetailPage() {
         .then((d: { episodes?: TmdbEp[] }) => d.episodes ?? [])
         .catch(() => []);
     void (async () => {
-      let eps = await fetchSeason(s);
-      // Many anime are listed on TMDB as a single absolute-numbered
-      // season, so a per-season request for S2+ comes back empty. Detect
-      // that, refetch season 1 (absolute), and shift episode numbers by
-      // the count of earlier Cinemeta episodes so the maps stay keyed by
-      // the in-season episode number EpisodePanel looks up.
+      // Cinemeta and TMDB often disagree on how a show is split into
+      // seasons — especially anime (TMDB numbers absolutely or uses
+      // different season boundaries, e.g. Naruto is 35/48/48/48/41 on
+      // Cinemeta but 52/52/54 on TMDB). So we ignore per-season episode
+      // numbers and map by absolute episode POSITION (the Nth episode
+      // overall), which both sides share since they follow broadcast
+      // order. `offset` = episodes in this show's earlier Cinemeta seasons.
+      const counts: Record<number, number> = {};
+      for (const v of videos) {
+        if (typeof v.season === 'number' && v.season > 0) {
+          counts[v.season] = (counts[v.season] ?? 0) + 1;
+        }
+      }
+      const seasonCount = counts[s] ?? 0;
       let offset = 0;
-      if (eps.length === 0 && s > 1) {
-        offset = videos.filter(
-          (v) => typeof v.season === 'number' && v.season > 0 && v.season < s,
-        ).length;
-        eps = await fetchSeason(1);
+      for (const key of Object.keys(counts)) {
+        const n = Number(key);
+        if (n > 0 && n < s) offset += counts[n];
+      }
+      const maxAbs = offset + (seasonCount || 60);
+
+      // Concatenate TMDB seasons in order, assigning each episode a running
+      // absolute index, until we've covered this Cinemeta season's range.
+      const absStill: Record<number, string> = {};
+      const absRating: Record<number, number> = {};
+      let running = 0;
+      for (let ts = 1; ts <= 60 && running < maxAbs; ts++) {
+        const eps = await fetchSeason(ts);
+        if (cancelled) return;
+        if (eps.length === 0) break;
+        for (const e of eps) {
+          running += 1;
+          if (e.still) absStill[running] = e.still;
+          if (e.vote_average != null) absRating[running] = e.vote_average;
+        }
       }
       if (cancelled) return;
-      const map: Record<number, number> = {};
       const stills: Record<number, string> = {};
-      for (const e of eps) {
-        if (e.episode_number == null) continue;
-        const ep = e.episode_number - offset;
-        if (ep < 1) continue;
-        if (e.vote_average != null) map[ep] = e.vote_average;
-        if (e.still) stills[ep] = e.still;
+      const ratings: Record<number, number> = {};
+      for (let ep = 1; ep <= seasonCount; ep++) {
+        const abs = offset + ep;
+        if (absStill[abs]) stills[ep] = absStill[abs];
+        if (absRating[abs] != null) ratings[ep] = absRating[abs];
       }
-      setEpisodeRatingsBySeason((prev) => ({ ...prev, [s]: map }));
       setEpisodeStillsBySeason((prev) => ({ ...prev, [s]: stills }));
+      setEpisodeRatingsBySeason((prev) => ({ ...prev, [s]: ratings }));
     })();
     return () => {
       cancelled = true;
@@ -374,16 +428,103 @@ export default function DetailPage() {
   const episodeStillsPending =
     isSeriesLike && !!tmdbLookup?.tmdbId && season != null && episodeStillsBySeason[season] == null;
 
+  // Parse "tt9813792:4:3" -> { season: 4, episode: 3 } from the
+  // currently-selected episode id (Stremio format).
+  const seriesSeasonEpisode = useMemo(() => {
+    if (!isSeriesLike || !selectedVideoId) return null;
+    const parts = selectedVideoId.split(':');
+    if (parts.length < 3) return null;
+    const season = Number.parseInt(parts[parts.length - 2], 10);
+    const episode = Number.parseInt(parts[parts.length - 1], 10);
+    if (!Number.isFinite(season) || !Number.isFinite(episode)) return null;
+    return { season, episode };
+  }, [isSeriesLike, selectedVideoId]);
+
+  // Vidking iframe playback gate. TMDB lookup must succeed, and for
+  // TV the user must have an episode selected.
+  const canPlayWithVidking = useMemo(() => {
+    if (!tmdbLookup) return false;
+    if (tmdbLookup.mediaType === 'tv') return !!seriesSeasonEpisode;
+    return tmdbLookup.mediaType === 'movie';
+  }, [tmdbLookup, seriesSeasonEpisode]);
+
   // Mobile hero poster (poster is preferred over background for clarity)
   const heroPoster = normalizeStremioImage(meta?.meta?.background) ?? normalizeStremioImage(meta?.meta?.poster);
 
+  // Modal shown when the user tries to play an episode that hasn't
+  // aired yet. Cinemeta lists every scheduled episode with a future
+  // `released` timestamp; trying to resolve a stream for it just
+  // burns the whole pipeline only to fail. Block it at the source
+  // and tell the user when it'll be available.
+  const [unreleasedEpisode, setUnreleasedEpisode] = useState<
+    {
+      season: number | null;
+      episode: number | null;
+      title: string | null;
+      released: string | null;
+      thumbnail: string | null;
+      videoId: string | null;
+      playerLink: string | null;
+    } | null
+  >(null);
+  // Early/leaked torrents often exist before the air date. When the unreleased
+  // modal opens, fetch the house RD fallback releases: null = checking,
+  // [] = none, [...] = available → the modal lists them under "Play with
+  // RealDebrid" and picking one plays it directly.
+  const [unreleasedRdStreams, setUnreleasedRdStreams] = useState<ReleaseOption[] | null>(null);
+  useEffect(() => {
+    const vid = unreleasedEpisode?.videoId;
+    if (!vid) {
+      setUnreleasedRdStreams(unreleasedEpisode ? [] : null);
+      return;
+    }
+    let cancelled = false;
+    setUnreleasedRdStreams(null);
+    fetchFallbackReleases({
+      type: 'series',
+      id: vid,
+      addons,
+      showTitle: meta?.meta?.name ?? undefined,
+      onPartial: (list) => { if (!cancelled && list.length > 0) setUnreleasedRdStreams(list); },
+    })
+      .then((list) => { if (!cancelled) setUnreleasedRdStreams(list); })
+      .catch(() => { if (!cancelled) setUnreleasedRdStreams([]); });
+    return () => { cancelled = true; };
+  }, [unreleasedEpisode, addons, meta?.meta?.name]);
+
   const handleNavigateToPlayer = useCallback(
-    (playerLink: string, options?: { replace?: boolean }) => {
+    (playerLink: string, options?: { replace?: boolean; bypassUnreleased?: boolean; pickReleases?: boolean; rdUrl?: string }) => {
       const url = new URL(playerLink, window.location.origin);
-      // Unreleased TV episodes are NOT blocked: early/leaked torrents often
-      // exist before the official air date, and when none do the stream
-      // picker is simply empty (nothing to click → nothing plays). So we let
-      // the normal flow proceed instead of popping a "not yet released" modal.
+      // A torrent picked in the unreleased selector → play it directly in
+      // fallback mode (skip Videasy). Implies bypassing the unreleased gate.
+      if (options?.rdUrl) {
+        url.searchParams.set('url', options.rdUrl);
+        url.searchParams.set('rdsel', '1');
+        options = { ...options, bypassUnreleased: true };
+      }
+      // Block playback of unreleased TV episodes (unless explicitly bypassed
+      // via the modal's "Play with RD"). Only kicks in for /player URLs that
+      // target a series videoId we can look up in meta.videos.
+      // Desktop: no block at all — early/leaked torrents often exist before
+      // the air date and the stream picker is simply empty when none do
+      // (deliberate desktop decision, 402b53c).
+      const targetVideoId = url.searchParams.get('videoId');
+      if (!isNativeShell() && !options?.bypassUnreleased && targetVideoId && url.pathname === '/player') {
+        const vmeta = (meta?.meta?.videos ?? []).find((v) => v.id === targetVideoId);
+        const releasedAt = vmeta?.released ? Date.parse(vmeta.released) : NaN;
+        if (Number.isFinite(releasedAt) && releasedAt > Date.now()) {
+          setUnreleasedEpisode({
+            season: vmeta?.season ?? null,
+            episode: vmeta?.episode ?? null,
+            title: vmeta?.title ?? vmeta?.name ?? null,
+            released: vmeta?.released ?? null,
+            thumbnail: vmeta?.thumbnail ?? null,
+            videoId: targetVideoId,
+            playerLink,
+          });
+          return;
+        }
+      }
       if (poster && !url.searchParams.get('poster')) {
         url.searchParams.set('poster', poster);
       }
@@ -398,20 +539,70 @@ export default function DetailPage() {
       if (logo && !url.searchParams.get('logo')) {
         url.searchParams.set('logo', logo);
       }
-      // Carry the room code through so the player joins the party
-      // after picking a stream from the detail page.
-      const roomCode = searchParams.get('room');
-      if (roomCode && !url.searchParams.get('room')) {
-        url.searchParams.set('room', roomCode);
-      }
 
       // sessionStorage for next-episode is now written by useEffect above
 
+      // "Play with RD" → land directly in the torrent (Releases) selector.
+      if (options?.pickReleases) url.searchParams.set('pickReleases', '1');
       navigate(`${url.pathname}?${url.searchParams.toString()}`, {
         replace: options?.replace === true,
       });
     },
     [poster, background, meta, logo, navigate]
+  );
+
+  // Resume-or-start-over flow. When the user taps Play on a title
+  // with saved progress, we pop the shared modal first (bitcine-
+  // style). Movies use the LibraryItem's top-level timeOffset; series
+  // use the per-episode progress from `getEpisodeProgressInfo`.
+  const [resumeModalState, setResumeModalState] = useState<{
+    videoId: string | null;
+    seconds: number;
+  } | null>(null);
+
+  const navigateToPlayer = useCallback(
+    (overrideVideoId: string | null, resumeAtSec: number) => {
+      if (!type || !id) return;
+      const params = new URLSearchParams({ url: 'vidking:placeholder', type, id });
+      if (overrideVideoId) params.set('videoId', overrideVideoId);
+      if (resumeAtSec > 0) params.set('t', String(Math.floor(resumeAtSec)));
+      handleNavigateToPlayer(`/player?${params.toString()}`);
+    },
+    [handleNavigateToPlayer, id, type]
+  );
+
+  const handlePlayWithVidking = useCallback(
+    (overrideVideoId?: string | null) => {
+      if (!type || !id) return;
+      const useVideoId = overrideVideoId ?? selectedVideoId;
+      // Compute saved-progress seconds for whatever the user is about
+      // to play. Movies → LibraryItem.timeOffset via getResumeSeconds.
+      // Series → per-episode progress via getEpisodeProgressInfo.
+      let resumeSec = 0;
+      if (isSeriesLike && useVideoId) {
+        const info = getEpisodeProgressInfo(useVideoId);
+        if (info?.hasProgress && info.timeSeconds > 0) resumeSec = info.timeSeconds;
+      } else if (stremioLibraryItem) {
+        const s = getResumeSeconds(stremioLibraryItem);
+        if (typeof s === 'number' && Number.isFinite(s) && s > 0) resumeSec = s;
+      }
+      // No saved progress → play directly. Otherwise bounce through
+      // the Resume / Start-over modal.
+      if (resumeSec <= 0) {
+        navigateToPlayer(useVideoId ?? null, 0);
+        return;
+      }
+      setResumeModalState({ videoId: useVideoId ?? null, seconds: resumeSec });
+    },
+    [
+      type,
+      id,
+      selectedVideoId,
+      isSeriesLike,
+      getEpisodeProgressInfo,
+      stremioLibraryItem,
+      navigateToPlayer,
+    ]
   );
 
   // Auto-resume from Continue Watching when there's no locally-stored
@@ -460,7 +651,8 @@ export default function DetailPage() {
       fallbackCleaned.delete('skip');
       const fallbackQs = fallbackCleaned.toString();
       navigate(
-        `/detail/${encodeURIComponent(type)}/${encodeURIComponent(id)}${fallbackQs ? `?${fallbackQs}` : ''
+        `/detail/${encodeURIComponent(type)}/${encodeURIComponent(id)}${
+          fallbackQs ? `?${fallbackQs}` : ''
         }`,
         { replace: true },
       );
@@ -482,7 +674,8 @@ export default function DetailPage() {
     cleaned.delete('skip');
     const cleanedQs = cleaned.toString();
     navigate(
-      `/detail/${encodeURIComponent(type)}/${encodeURIComponent(id)}${cleanedQs ? `?${cleanedQs}` : ''
+      `/detail/${encodeURIComponent(type)}/${encodeURIComponent(id)}${
+        cleanedQs ? `?${cleanedQs}` : ''
       }`,
       { replace: true },
     );
@@ -514,9 +707,10 @@ export default function DetailPage() {
 
   const sharedStreamsPanelProps = {
     isSeriesLike,
-    // Desktop: let the panel switch between episodes and streams
-    // so users can pick a torrent source after selecting an episode.
-    rightMode,
+    // Web series: force the panel to stay on the episode-list view so
+    // users never see the stream picker — episode click goes straight
+    // to /player (Vidking).
+    rightMode: isSeriesLike ? ('episodes' as const) : rightMode,
     selectedVideoId,
     selectedEpisodeLabel,
     nextEpisode,
@@ -535,6 +729,8 @@ export default function DetailPage() {
       if (!canNextSeason) return;
       setSeason(seasons[seasonIndex + 1] ?? null);
     },
+    episodeSearch,
+    onEpisodeSearchChange: setEpisodeSearch,
     videosForSeason,
     showRuntime: (meta?.meta?.runtime as string | null | undefined) ?? null,
     showRating: meta?.meta?.imdbRating ?? null,
@@ -542,12 +738,18 @@ export default function DetailPage() {
     episodeRatings: currentSeasonRatings,
     episodeStills: currentSeasonStills,
     episodeStillsPending,
-    fallbackPoster,
     allVideos: videos,
     tmdbId: tmdbLookup?.tmdbId ?? null,
-    // Select an episode → switch to stream picker so the user can
-    // choose a torrent source. No auto-play.
-    onSelectEpisode,
+    onSelectEpisode:
+      isSeriesLike
+        ? (vid: string) => {
+            // Web series: set the selected episode AND immediately
+            // navigate to /player (Vidking iframe). The user never
+            // sees an intermediate stream picker.
+            setSelectedVideoId(vid);
+            handlePlayWithVidking(vid);
+          }
+        : onSelectEpisode,
     getEpisodeProgressInfo,
     normalizeImage: normalizeStremioImage,
     formatDate,
@@ -555,19 +757,22 @@ export default function DetailPage() {
     addonSelectItems,
     selectedAddon,
     onSelectAddon: handleSelectAddon,
+    onlyTorrentioRdResolve,
+    onToggleWebReady: handleToggleWebReady,
     streamsLoading: streamsLoadingFiltered,
     type,
     id,
     metaName: meta?.meta?.name ?? null,
     metaPoster: meta?.meta?.poster ?? null,
     onNavigate: handleNavigateToPlayer,
+    onOpenExternalPrompt: openExternalPrompt,
   } as const;
 
   // Hide the mobile stream picker entirely for movies on web (Play
   // button on detail page replaces it). Series keep the panel — it
   // hosts the episode list — but its rightMode is locked to 'episodes'
   // so the stream view never appears.
-  const hideMobileStreamPicker = false;
+  const hideMobileStreamPicker = !isSeriesLike;
   const TorrentsContent = (
     <div className="block px-4 pb-6 lg:hidden">
       {!hideMobileStreamPicker && (isSeriesLike || type === 'movie' || type === 'tv' || type === 'channel') ? (
@@ -627,18 +832,14 @@ export default function DetailPage() {
   if (autoplayFlag === '1') {
     return (
       <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black">
-        <div className="bliss-buffering-panel">
-          {/* Logo only — a vertical poster painted at logo dimensions
-              looks like the wrong image; titles without a meta logo
-              fall through to the "Loading" text. */}
-          {logo ? (
-            <img
-              className="bliss-buffering-loader"
-              src={logo}
-              alt=" "
-            />
-          ) : null}
-        </div>
+        {/* Logo only, no fallback — titles without a meta logo paint
+            a clean black backdrop while the auto-pick effect resolves
+            and the player loads. */}
+        {logo ? (
+          <div className="bliss-buffering-panel">
+            <img className="bliss-buffering-loader" src={proxiedImage(logo)} alt=" " />
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -646,11 +847,13 @@ export default function DetailPage() {
   // Graceful empty state. Some ids exist on IMDB but have no entry in
   // any of our meta sources (Cinemeta only indexes titles above a
   // popularity threshold; fringe/niche titles — often reached via a
-  // stale link or a leftover Kitsu Continue-Watching row — return `{}`).
-  // Without this guard the page renders its full layout against a null
-  // `meta` and the user sees a black void with no way out. Only triggers
-  // once loading is done AND there's no fallback poster to paint (so a
-  // known title mid-load still shows its backdrop).
+  // stale link or a leftover Kitsu Continue-Watching row — return
+  // `{}`). Without this guard the page renders its full layout against
+  // a null `meta` and the user sees a black void with no way to tell
+  // what happened. Show a "couldn't load" card with a Back button
+  // instead. Only triggers once loading is done AND there's no
+  // fallback poster to paint (so a known title mid-load still shows
+  // its backdrop).
   if (!metaLoading && !meta?.meta && !fallbackPoster) {
     return (
       <div className="relative z-10 flex min-h-dvh w-full flex-col items-center justify-center gap-4 bg-black px-6 text-center">
@@ -661,7 +864,7 @@ export default function DetailPage() {
           We couldn&rsquo;t find details for this title. It may be too obscure for
           our metadata sources, or the link may be out of date.
         </div>
-        <Button
+        <BlissButton
           variant="ghost"
           className="mt-2 rounded-full bg-white/10 text-white"
           onPress={() => {
@@ -670,7 +873,7 @@ export default function DetailPage() {
           }}
         >
           Back
-        </Button>
+        </BlissButton>
       </div>
     );
   }
@@ -698,7 +901,7 @@ export default function DetailPage() {
         <div className="background-image-layer-wJa90 hidden lg:block">
           <img
             className="background-image-tSjYu"
-            src={background ?? heroImageFromNav}
+            src={proxiedImage(background ?? heroImageFromNav)}
             alt=" "
             loading={heroImageFromNav ? 'eager' : 'lazy'}
           />
@@ -710,7 +913,7 @@ export default function DetailPage() {
       <div className="relative z-[2] min-h-full lg:h-full">
         {/* Back button - visible on all sizes */}
         <div className="fixed left-4 top-4 z-50 lg:absolute lg:left-5 lg:top-5 lg:z-20">
-          <Button
+          <BlissButton
             variant="ghost"
             className="rounded-full bg-black/50 text-white backdrop-blur lg:bg-white/10"
             onPress={() => {
@@ -724,7 +927,7 @@ export default function DetailPage() {
             }}
           >
             Back
-          </Button>
+          </BlissButton>
         </div>
 
         {/* Mobile action buttons - fixed top right on mobile, hidden on desktop.
@@ -736,12 +939,12 @@ export default function DetailPage() {
           onToggleLibrary={handleToggleLibrary}
           onOpenTrailer={handleOpenTrailer}
           onShare={handleShare}
+          onPlay={!isNativeShell() && !isSeriesLike && canPlayWithVidking ? () => handlePlayWithVidking() : null}
           isLoggedIn={Boolean(authKey)}
-          onPlay={null}
         />
 
         {/* Desktop: Content with sidebar, Mobile: Hero with content overlays */}
-        <div className="flex min-h-full flex-col lg:h-full lg:flex-row lg:pb-6 lg:pt-24">
+        <div className="flex min-h-full flex-col lg:h-full lg:flex-row lg:pb-6 lg:pt-14">
           {/* Mobile: Hero image as background, content overlay */}
           <div className="flex-1 lg:px-8 lg:pb-0 lg:pt-0">
             <MobileHero
@@ -766,8 +969,8 @@ export default function DetailPage() {
                   onToggleLibrary={handleToggleLibrary}
                   onOpenTrailer={handleOpenTrailer}
                   onShare={handleShare}
+                  onPlay={!isNativeShell() && !isSeriesLike && canPlayWithVidking ? () => handlePlayWithVidking() : null}
                   isLoggedIn={Boolean(authKey)}
-                  onPlay={null}
                 />
               </div>
             </div>{/* End of px-4 wrapper */}
@@ -803,14 +1006,90 @@ export default function DetailPage() {
           ) : null}
         </div>
 
+        <ResumeOrStartOverModal
+          isOpen={resumeModalState !== null}
+          title={meta?.meta?.name ?? ''}
+          episodeLabel={(() => {
+            const vid = resumeModalState?.videoId;
+            if (!isSeriesLike || !vid) return null;
+            const parts = vid.split(':');
+            const s = parts[parts.length - 2];
+            const e = parts[parts.length - 1];
+            return s && e
+              ? `S${String(s).padStart(2, '0')}E${String(e).padStart(2, '0')}`
+              : null;
+          })()}
+          poster={normalizeStremioImage(meta?.meta?.poster ?? null) ?? null}
+          resumeSeconds={resumeModalState?.seconds ?? 0}
+          onResume={() => {
+            const s = resumeModalState;
+            setResumeModalState(null);
+            if (s) navigateToPlayer(s.videoId, s.seconds);
+          }}
+          onStartOver={() => {
+            const s = resumeModalState;
+            setResumeModalState(null);
+            if (s) navigateToPlayer(s.videoId, 0);
+          }}
+          onClose={() => setResumeModalState(null)}
+        />
+
         <DetailModals
           isTrailerOpen={isTrailerOpen}
           onTrailerOpenChange={(open) => setIsTrailerOpen(open)}
           firstTrailerId={firstTrailerId}
           isShareOpen={isShareOpen}
           onShareOpenChange={(open) => setIsShareOpen(open)}
+          externalOpenPrompt={externalOpenPrompt}
+          onCloseExternalPrompt={closeExternalPrompt}
+          onOpenExternalPlayer={(streamUrl, title) => {
+            const safeTitle = title.replace(/[\\/:*?"<>|]+/g, '-').trim();
+            const body = `#EXTM3U\n#EXTINF:-1,${safeTitle}\n${streamUrl}\n`;
+            const blob = new Blob([body], { type: 'audio/x-mpegurl' });
+            const href = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = href;
+            a.download = `${safeTitle || 'stream'}.m3u`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.setTimeout(() => URL.revokeObjectURL(href), 1000);
+            closeExternalPrompt();
+          }}
+          onTryWebPlayer={(playerLink) => {
+            if (playerLink) navigate(playerLink);
+            closeExternalPrompt();
+          }}
         />
 
+        {/* Unreleased-episode info modal — shared component with
+            the player's Episodes drawer so both surfaces show the
+            same dialog when a user clicks a future-dated episode. */}
+        <UnreleasedEpisodeModal
+          isOpen={unreleasedEpisode != null}
+          title={meta?.meta?.name ?? ''}
+          episodeLabel={
+            unreleasedEpisode
+              && unreleasedEpisode.season != null
+              && unreleasedEpisode.episode != null
+                ? `S${String(unreleasedEpisode.season).padStart(2, '0')}E${String(unreleasedEpisode.episode).padStart(2, '0')}`
+                + (unreleasedEpisode.title ? ` · ${unreleasedEpisode.title}` : '')
+                : null
+          }
+          poster={unreleasedEpisode?.thumbnail ?? poster ?? null}
+          releaseDate={unreleasedEpisode?.released ?? null}
+          releases={unreleasedRdStreams}
+          onPickTorrent={
+            unreleasedEpisode?.playerLink
+              ? (rdUrl) => {
+                  const link = unreleasedEpisode.playerLink!;
+                  setUnreleasedEpisode(null);
+                  handleNavigateToPlayer(link, { rdUrl });
+                }
+              : undefined
+          }
+          onClose={() => setUnreleasedEpisode(null)}
+        />
       </div>
     </div>
   );

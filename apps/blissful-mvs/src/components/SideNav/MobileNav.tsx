@@ -1,11 +1,14 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import type { LibraryItem } from '../../lib/mediaTypes';
 import type { SideNavView, SideNavProps } from './types';
 import { ICONS } from './utils';
 import { MobileNavItem, MobileContinueItem, MobileFriendsItem } from './NavItem';
 import { normalizeStremioImage } from '../../lib/mediaTypes';
+import { proxiedImage } from '../../lib/imageProxy';
 import { getContinueSubtitle } from './utils';
 import { TrashIcon } from '../../icons/TrashIcon';
+import { StremioLogo } from '../../icons/StremioLogo';
 import BottomDrawer from '../BottomDrawer';
 import { FriendsAccordion } from '../Friends';
 import { useFriends } from '../../context/FriendsProvider';
@@ -131,21 +134,22 @@ function SwipeableContinueItem({ item, onOpen, onRemove }: SwipeableItemProps) {
       >
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 overflow-hidden rounded-xl bg-white/10">
-            {poster ? <img src={poster} alt="" className="h-full w-full object-cover" /> : null}
+            {poster ? <img src={proxiedImage(poster)} alt="" className="h-full w-full object-cover" /> : null}
           </div>
           <div className="min-w-0 flex-1 pr-2">
-            <div className="truncate text-sm font-medium text-foreground/90">{item.name}</div>
-            <div className="mt-1 text-xs flex items-center gap-1.5 flex-wrap">
+            <div className="truncate text-[13px] sm:text-sm font-medium text-foreground/90">{item.name}</div>
+            <div className="mt-1 text-[11px] sm:text-xs flex items-center gap-1.5 min-w-0">
               {subtitle.epLabel && (
-                <span className="text-foreground/80">{subtitle.epLabel} · </span>
+                <span className="text-foreground/80 shrink-0">{subtitle.epLabel} · </span>
               )}
-              <span className={subtitle.isExternal ? 'text-orange-400 font-semibold' : 'text-foreground/60'}>
+              <span className={`truncate ${subtitle.isExternal ? 'text-orange-400 font-semibold' : 'text-foreground/60'}`}>
                 {subtitle.text}
               </span>
               {subtitle.source === 'stremio' ? (
-                <span className="rounded-md bg-purple-500/25 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-purple-200">
-                  Stremio
-                </span>
+                <>
+                  <span className="text-foreground/80 shrink-0">·</span>
+                  <StremioLogo size={12} className="shrink-0" />
+                </>
               ) : null}
             </div>
             {progress !== null ? (
@@ -163,9 +167,18 @@ function SwipeableContinueItem({ item, onOpen, onRemove }: SwipeableItemProps) {
 export function MobileNav(props: MobileNavProps) {
   const [isMobileContinueOpen, setIsMobileContinueOpen] = useState(false);
   const [isMobileFriendsOpen, setIsMobileFriendsOpen] = useState(false);
+  const location = useLocation();
   // Surface unread / actionable count on the Friends pill — incoming
   // friend requests are the standard "needs attention" signal.
   const { incoming: friendsIncoming } = useFriends();
+
+  // Close the bottom drawers on navigation (e.g. "View profile" from
+  // the Friends drawer routes to /profile/:id) so the sheet doesn't
+  // linger over the new page.
+  useEffect(() => {
+    setIsMobileFriendsOpen(false);
+    setIsMobileContinueOpen(false);
+  }, [location.pathname]);
   // userLabel falls back to 'Guest' upstream — check the raw token.
   const { authKey } = useAuth();
   const isSignedIn = Boolean(authKey);
@@ -176,7 +189,7 @@ export function MobileNav(props: MobileNavProps) {
 
   return (
     <>
-      <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden">
+      <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden [@media(max-height:370px)]:!block">
         <div className="solid-surface flex h-[80px] items-center justify-around rounded-[28px] bg-white/6 px-2 shadow-lg backdrop-blur-xl border border-white/10">
           <MobileNavItem
             label="Home"

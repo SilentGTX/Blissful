@@ -12,7 +12,8 @@
 // the old design used are subsumed here.
 
 import { AnimatePresence, motion } from 'framer-motion';
-import { Button, Dropdown, Label, Tabs } from '@heroui/react';
+import { Label } from '@heroui/react';
+import { BlissButton, BlissDropdown, BlissTabs } from '../base';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { StremioIcon, type StremioIconName } from '../PlayerControlIcons';
 import { useFriends } from '../../context/FriendsProvider';
@@ -70,7 +71,7 @@ export type WatchPartyDrawerProps = {
   /** Host-only: transfer host status to a participant. */
   onTransferHost: (targetUserId: string) => void;
 
-  // ---- Create flow (no-room -> Open Room tab) -----------------------------
+  // ---- Create flow (no-room → Open Room tab) -----------------------------
   /** Whether the user *can* create a room — false when there's no auth
    *  key / type / id (e.g. straight after deep-link without context). */
   canCreate: boolean;
@@ -78,7 +79,7 @@ export type WatchPartyDrawerProps = {
   /** Parent runs the POST; receives optional password (null = public). */
   onCreateRoom: (password: string | null) => Promise<void> | void;
 
-  // ---- Join flow (no-room -> Join Room tab) -------------------------------
+  // ---- Join flow (no-room → Join Room tab) -------------------------------
   /** Parent handles the navigation once code (+ optional password) is
    *  verified. The drawer takes care of lookup + verify. May be async
    *  (e.g. for a meta fetch before the navigate) — the drawer awaits
@@ -123,86 +124,69 @@ export function WatchPartyDrawer(props: WatchPartyDrawerProps) {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
-          className="absolute inset-0 z-40 flex items-start justify-end gap-3 bg-black/90 p-4 pb-24 md:bg-black/30 md:px-8 md:pb-28 md:pt-28"
+          className="absolute inset-0 z-40 flex items-start justify-end gap-3 bg-black/90 p-4 pb-24 md:bg-black/30 md:px-8 md:pb-28 md:pt-28 [@media(max-height:520px)]:!p-2"
           onClick={props.onClose}
         >
+          {/* On short-height (landscape phone) screens, scale the drawer down so
+              the participants/chat fit without the giant md: padding squishing
+              it — matches the settings + episodes drawers. */}
           <motion.div
             initial={{ x: 'calc(100% + 2rem)', opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: 'calc(100% + 2rem)', opacity: 0 }}
             transition={{ type: 'spring', stiffness: 280, damping: 32, mass: 0.85 }}
-            className="pointer-events-auto flex max-h-full w-[80%] flex-col gap-3 md:w-[420px]"
+            className="pointer-events-auto flex max-h-full w-[80%] flex-col gap-3 md:w-[420px] [@media(max-height:520px)]:gap-1.5 [@media(max-height:520px)]:[zoom:0.8] [@media(max-height:400px)]:[zoom:0.7]"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Top row: tabs (only when no room) + close button */}
             <div className="pointer-events-auto flex items-center justify-end gap-2">
               {!inRoom ? (
-                <Tabs
+                <BlissTabs
                   // Distinct `key` from the in-room Tabs forces React
                   // (and HeroUI's React Aria machinery) to mount a
                   // fresh component when the user transitions
-                  // lobby->active-room — reusing the same instance
+                  // lobby→active-room — reusing the same instance
                   // would trigger "Cannot change the id of an item"
                   // because the Tab.Tab ids differ between the two
                   // states.
                   key="watch-party-lobby"
                   selectedKey={props.tab}
                   onSelectionChange={(k) => props.onTabChange(k as WatchPartyDrawerTab)}
-                  className="rounded-full bg-black/60 p-1 backdrop-blur-md"
                 >
-                  <Tabs.ListContainer>
-                    <Tabs.List
-                      aria-label="Watch party"
-                      className="relative flex items-center gap-1"
-                    >
-                      <Tabs.Tab
-                        id="open"
-                        className="relative cursor-pointer whitespace-nowrap rounded-full px-4 py-1.5 text-xs font-medium capitalize text-white/60 outline-none transition data-[selected=true]:text-white data-[hovered=true]:text-white"
-                      >
+                  <BlissTabs.ListContainer>
+                    <BlissTabs.List aria-label="Watch party">
+                      <BlissTabs.Tab id="open" className="whitespace-nowrap">
                         Open Room
-                        <Tabs.Indicator className="absolute inset-0 -z-10 rounded-full bg-white/15" />
-                      </Tabs.Tab>
-                      <Tabs.Tab
-                        id="join"
-                        className="relative cursor-pointer whitespace-nowrap rounded-full px-4 py-1.5 text-xs font-medium capitalize text-white/60 outline-none transition data-[selected=true]:text-white data-[hovered=true]:text-white"
-                      >
+                        <BlissTabs.Indicator />
+                      </BlissTabs.Tab>
+                      <BlissTabs.Tab id="join" className="whitespace-nowrap">
                         Join Room
-                        <Tabs.Indicator className="absolute inset-0 -z-10 rounded-full bg-white/15" />
-                      </Tabs.Tab>
-                    </Tabs.List>
-                  </Tabs.ListContainer>
-                </Tabs>
+                        <BlissTabs.Indicator />
+                      </BlissTabs.Tab>
+                    </BlissTabs.List>
+                  </BlissTabs.ListContainer>
+                </BlissTabs>
               ) : (
                 // In-room: People / Chat as a floating tab pill,
                 // matching the SettingsPanel + no-room state layout.
-                <Tabs
+                <BlissTabs
                   key="watch-party-active"
                   selectedKey={props.activeRoomTab}
                   onSelectionChange={(k) => props.onActiveRoomTabChange(k as 'people' | 'chat')}
-                  className="rounded-full bg-black/60 p-1 backdrop-blur-md"
                 >
-                  <Tabs.ListContainer>
-                    <Tabs.List
-                      aria-label="Watch party"
-                      className="relative flex items-center gap-1"
-                    >
-                      <Tabs.Tab
-                        id="people"
-                        className="relative cursor-pointer whitespace-nowrap rounded-full px-4 py-1.5 text-xs font-medium capitalize text-white/60 outline-none transition data-[selected=true]:text-white data-[hovered=true]:text-white"
-                      >
+                  <BlissTabs.ListContainer>
+                    <BlissTabs.List aria-label="Watch party">
+                      <BlissTabs.Tab id="people" className="whitespace-nowrap">
                         People
-                        <Tabs.Indicator className="absolute inset-0 -z-10 rounded-full bg-white/15" />
-                      </Tabs.Tab>
-                      <Tabs.Tab
-                        id="chat"
-                        className="relative cursor-pointer whitespace-nowrap rounded-full px-4 py-1.5 text-xs font-medium capitalize text-white/60 outline-none transition data-[selected=true]:text-white data-[hovered=true]:text-white"
-                      >
+                        <BlissTabs.Indicator />
+                      </BlissTabs.Tab>
+                      <BlissTabs.Tab id="chat" className="whitespace-nowrap">
                         Chat
-                        <Tabs.Indicator className="absolute inset-0 -z-10 rounded-full bg-white/15" />
-                      </Tabs.Tab>
-                    </Tabs.List>
-                  </Tabs.ListContainer>
-                </Tabs>
+                        <BlissTabs.Indicator />
+                      </BlissTabs.Tab>
+                    </BlissTabs.List>
+                  </BlissTabs.ListContainer>
+                </BlissTabs>
               )}
               <button
                 type="button"
@@ -215,7 +199,7 @@ export function WatchPartyDrawer(props: WatchPartyDrawerProps) {
             </div>
 
             {/* Content card — view body is wrapped in AnimatePresence
-                so the transition from Open/Join -> Active Room (when
+                so the transition from Open/Join → Active Room (when
                 the room is created, or when a guest navigates in)
                 cross-fades + slides instead of popping in. Without
                 this the moment the URL gained `?room=` the active-
@@ -337,6 +321,12 @@ function OpenRoomView({ canCreate, creatingRoom, onCreateRoom }: OpenRoomViewPro
         <div className="mt-1 flex flex-col gap-2">
           <input
             ref={pwInputRef}
+            // Plain text input on the create flow — the host is the
+            // one picking the password and needs to read what they
+            // typed before sharing it. `data-*-ignore` attrs +
+            // autoComplete=off keep Bitwarden / 1Password / LastPass
+            // popovers from offering to autofill credentials over
+            // this field (it's a room code, not a login).
             type="text"
             value={password}
             onChange={(e) => {
@@ -369,7 +359,7 @@ function OpenRoomView({ canCreate, creatingRoom, onCreateRoom }: OpenRoomViewPro
         disabled={!canCreate || creatingRoom || (mode === 'password' && !password.trim())}
         className="mt-auto rounded-full bg-white px-4 py-3 text-sm font-semibold text-black disabled:opacity-50"
       >
-        {creatingRoom ? 'Starting...' : mode === 'password' ? 'Create password room' : 'Create public room'}
+        {creatingRoom ? 'Starting…' : mode === 'password' ? 'Create password room' : 'Create public room'}
       </button>
     </div>
   );
@@ -480,7 +470,7 @@ function JoinRoomView({ onNavigateToRoom }: JoinRoomViewProps) {
           disabled={busy || !isValidRoomCode(code)}
           className="mt-auto rounded-full bg-white px-4 py-3 text-sm font-semibold text-black disabled:opacity-50"
         >
-          {busy ? 'Looking up...' : 'Continue'}
+          {busy ? 'Looking up…' : 'Continue'}
         </button>
       </form>
     );
@@ -511,6 +501,13 @@ function JoinRoomView({ onNavigateToRoom }: JoinRoomViewProps) {
       <div className="text-xs text-white/55">
         Room <span className="font-mono uppercase tracking-wider text-white/85">{step.room.code}</span> is password-protected.
       </div>
+      {/* Plain `type="text"` field — a watch-party password is a
+          shared room access code, not an account credential. Using
+          `type="password"` triggers Bitwarden / 1Password / LastPass
+          popovers that try to autofill saved logins, which is the
+          opposite of what we want. The vendor `data-*-ignore` attrs
+          + `autoComplete="off"` belt-and-suspender against any
+          remaining heuristic detection. */}
       <input
         ref={pwRef}
         type="text"
@@ -535,7 +532,7 @@ function JoinRoomView({ onNavigateToRoom }: JoinRoomViewProps) {
         disabled={busy || !password.trim()}
         className="mt-auto rounded-full bg-white px-4 py-3 text-sm font-semibold text-black disabled:opacity-50"
       >
-        {busy ? 'Verifying...' : 'Join'}
+        {busy ? 'Verifying…' : 'Join'}
       </button>
     </form>
   );
@@ -621,6 +618,15 @@ function ActiveRoomView(props: WatchPartyDrawerProps) {
 
   const handleCopy = async (kind: 'code' | 'link') => {
     if (!roomCode) return;
+    // Codes are displayed uppercase everywhere — copy the uppercase
+    // form too so what hits the clipboard matches what the user
+    // sees. The Join modal's `formatRoomCodeInput` always lowercases
+    // on paste back, so the server (which keys rooms lowercase)
+    // still resolves correctly.
+    //
+    // Invite link points to /invite/<code> — a short, readable URL
+    // that opens a landing page (poster, title, episode, Continue).
+    // The Continue click is the user gesture autoplay needs.
     const text =
       kind === 'code'
         ? roomCode.toUpperCase()
@@ -643,6 +649,10 @@ function ActiveRoomView(props: WatchPartyDrawerProps) {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
+      {/* People / Chat sub-tabs live on the floating top row of the
+          drawer (matches the Settings panel's Quality/Subtitles/
+          Servers layout), so the content card itself starts straight
+          with the tab body. */}
       {subTab === 'people' ? (
         <div className="flex-1 space-y-2 overflow-y-auto px-4 py-3">
           {participants.length === 0 ? (
@@ -654,6 +664,10 @@ function ActiveRoomView(props: WatchPartyDrawerProps) {
               const isParticipantGuest = p.userId.startsWith('guest:');
               const canMakeHost = !isSelf && isViewerHost && !isParticipantHost;
               const alreadyFriend = friendUserIds.has(p.userId);
+              // Friend requests need a real Stremio account on the receiving
+              // side (guests have no inbox). The viewer's own auth state is
+              // checked at click-time so guests get a helpful error rather
+              // than being silently hidden from the option.
               const canAddFriend = !isSelf && !isParticipantGuest && !alreadyFriend;
               const hasMenu = canMakeHost || canAddFriend;
               const rowInner = (
@@ -683,15 +697,15 @@ function ActiveRoomView(props: WatchPartyDrawerProps) {
                 );
               }
               return (
-                <Dropdown key={p.userId}>
-                  <Button
+                <BlissDropdown key={p.userId}>
+                  <BlissButton
                     variant="ghost"
                     className="w-full justify-start gap-2 rounded-lg bg-transparent px-1 py-1 text-left hover:bg-white/5"
                   >
                     {rowInner}
-                  </Button>
-                  <Dropdown.Popover className="min-w-[200px] rounded-2xl border border-white/10 bg-[#101116]/95 p-2 text-white shadow-2xl backdrop-blur-md">
-                    <Dropdown.Menu
+                  </BlissButton>
+                  <BlissDropdown.Popover className="min-w-[200px] border border-white/10 bg-[#101116]/95 p-2 shadow-2xl backdrop-blur-md">
+                    <BlissDropdown.Menu
                       onAction={async (key) => {
                         const action = String(key);
                         if (action === 'make-host') {
@@ -716,18 +730,18 @@ function ActiveRoomView(props: WatchPartyDrawerProps) {
                       }}
                     >
                       {canMakeHost ? (
-                        <Dropdown.Item id="make-host" textValue="Make host" className="rounded-xl px-3 py-2 text-sm hover:bg-white/10 data-[hovered=true]:bg-white/10">
+                        <BlissDropdown.Item id="make-host" textValue="Make host" className="px-3 py-2 text-sm hover:bg-white/10 data-[hovered=true]:bg-white/10">
                           <Label>Make host</Label>
-                        </Dropdown.Item>
+                        </BlissDropdown.Item>
                       ) : null}
                       {canAddFriend ? (
-                        <Dropdown.Item id="add-friend" textValue="Add as friend" className="rounded-xl px-3 py-2 text-sm hover:bg-white/10 data-[hovered=true]:bg-white/10">
+                        <BlissDropdown.Item id="add-friend" textValue="Add as friend" className="px-3 py-2 text-sm hover:bg-white/10 data-[hovered=true]:bg-white/10">
                           <Label>Add as friend</Label>
-                        </Dropdown.Item>
+                        </BlissDropdown.Item>
                       ) : null}
-                    </Dropdown.Menu>
-                  </Dropdown.Popover>
-                </Dropdown>
+                    </BlissDropdown.Menu>
+                  </BlissDropdown.Popover>
+                </BlissDropdown>
               );
             })
           )}
@@ -736,13 +750,18 @@ function ActiveRoomView(props: WatchPartyDrawerProps) {
         <div className="flex min-h-0 flex-1 flex-col">
           <div
             ref={chatScrollRef}
+            // `min-h-[18rem]` keeps the chat panel visually
+            // substantial even when there are zero messages — the
+            // empty state used to render as a single tiny line, now
+            // it gets real breathing room. With messages, flex-1
+            // still takes whatever vertical space is available.
             className="min-h-[18rem] flex-1 space-y-2 overflow-y-auto px-4 py-3"
           >
             {timeline.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-                <div className="text-4xl" aria-hidden>Chat</div>
+                <div className="text-4xl" aria-hidden>💬</div>
                 <div className="text-sm font-semibold text-white/70">No messages yet</div>
-                <div className="text-xs text-white/45">Say hi</div>
+                <div className="text-xs text-white/45">Say hi 👋</div>
               </div>
             ) : (
               timeline.map((item) => {
@@ -757,7 +776,7 @@ function ActiveRoomView(props: WatchPartyDrawerProps) {
                     className={'group/msg flex flex-col ' + (item.mine ? 'items-end' : 'items-start')}
                   >
                     <div className="mb-0.5 text-[10px] uppercase tracking-wide text-white/40">
-                      {item.mine ? 'You' : item.from.displayName} - {formatChatTime(item.at)}
+                      {item.mine ? 'You' : item.from.displayName} · {formatChatTime(item.at)}
                     </div>
                     <div className={'relative flex max-w-[85%] items-center gap-1 ' + (item.mine ? 'flex-row-reverse' : 'flex-row')}>
                       <div
@@ -770,6 +789,11 @@ function ActiveRoomView(props: WatchPartyDrawerProps) {
                       >
                         {item.text}
                       </div>
+                      {/* React trigger — visible on hover (desktop)
+                          and always on touch (where there's no
+                          hover). Tap opens the emoji picker anchored
+                          above-left for 'mine' messages (right side
+                          of the row) and above-right otherwise. */}
                       <div className="relative">
                         <button
                           type="button"
@@ -784,6 +808,10 @@ function ActiveRoomView(props: WatchPartyDrawerProps) {
                           open={reactionOpen}
                           onClose={() => setEmojiPickerFor((curr) => (curr === item.messageKey ? null : curr))}
                           onPick={(emoji) => toggleReaction(item.messageKey, emoji)}
+                          // Picker prefers above the bubble; it
+                          // auto-flips to below when the message
+                          // is near the top of the chat scroll
+                          // container (so it doesn't get clipped).
                           align={item.mine ? 'right' : 'left'}
                           side="above"
                         />
@@ -822,6 +850,9 @@ function ActiveRoomView(props: WatchPartyDrawerProps) {
                 );
               })
             )}
+            {/* "X is typing…" indicator. Hides when nobody is
+                actively typing — keeps the chat box visually quiet
+                during silence. */}
             {typingNames.length > 0 ? (
               <div className="flex items-center gap-2 text-[11px] italic text-white/55">
                 <span className="flex gap-0.5" aria-hidden>
@@ -831,10 +862,10 @@ function ActiveRoomView(props: WatchPartyDrawerProps) {
                 </span>
                 <span>
                   {typingNames.length === 1
-                    ? `${typingNames[0]} is typing...`
+                    ? `${typingNames[0]} is typing…`
                     : typingNames.length === 2
-                      ? `${typingNames[0]} and ${typingNames[1]} are typing...`
-                      : `${typingNames.length} people are typing...`}
+                      ? `${typingNames[0]} and ${typingNames[1]} are typing…`
+                      : `${typingNames.length} people are typing…`}
                 </span>
               </div>
             ) : null}
@@ -846,6 +877,9 @@ function ActiveRoomView(props: WatchPartyDrawerProps) {
             }}
             className="flex items-center gap-2 border-t border-white/5 bg-white/[0.03] px-3 py-2"
           >
+            {/* Emoji insert button — popover with the curated emoji
+                set. Picked emoji gets appended to the draft and the
+                input keeps focus. */}
             <div className="relative">
               <button
                 type="button"
@@ -854,13 +888,15 @@ function ActiveRoomView(props: WatchPartyDrawerProps) {
                 aria-label="Insert emoji"
                 title="Insert emoji"
               >
-                :)
+                😀
               </button>
               <EmojiPicker
                 open={emojiPickerFor === 'input'}
                 onClose={() => setEmojiPickerFor((curr) => (curr === 'input' ? null : curr))}
                 onPick={(emoji) => {
                   setDraft((prev) => prev + emoji);
+                  // Refocus the input so the user can keep typing
+                  // immediately after picking.
                   window.setTimeout(() => inputRef.current?.focus(), 0);
                 }}
                 align="left"
@@ -873,9 +909,12 @@ function ActiveRoomView(props: WatchPartyDrawerProps) {
               value={draft}
               onChange={(e) => {
                 setDraft(e.target.value);
+                // Fire a typing ping on each keystroke; the hook
+                // internally debounces so the wire only sees one
+                // every ~2.5s.
                 if (e.target.value.trim()) sendTyping();
               }}
-              placeholder="Type a message..."
+              placeholder="Type a message…"
               maxLength={500}
               className="min-w-0 flex-1 rounded-full border border-white/15 bg-black/40 px-3 py-1.5 text-xs text-white placeholder:text-white/40 focus:border-[var(--bliss-accent)] focus:outline-none"
             />
@@ -890,6 +929,11 @@ function ActiveRoomView(props: WatchPartyDrawerProps) {
         </div>
       )}
 
+      {/* Room footer — code as the headline, Copy code / Copy link
+          buttons under it, Leave party at the very bottom. People
+          tab only: the Chat tab is conversation-focused so the
+          footer would steal vertical room from the message list +
+          input. Users who want to copy / leave switch to People. */}
       {subTab === 'people' ? (
         <div className="border-t border-white/5 bg-white/[0.03] px-4 py-3">
           <div className="flex items-baseline justify-between">
@@ -899,7 +943,7 @@ function ActiveRoomView(props: WatchPartyDrawerProps) {
                 ? <span className="text-red-400">{error}</span>
                 : connected
                   ? 'Connected'
-                  : 'Connecting...'}
+                  : 'Connecting…'}
             </div>
           </div>
           <div className="mt-1 flex items-center gap-2 font-mono text-2xl font-bold uppercase tracking-widest text-[var(--bliss-accent)]">

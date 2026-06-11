@@ -1,3 +1,4 @@
+import { proxiedImage } from '../../../lib/imageProxy';
 import { normalizeStremioImage } from '../../../lib/mediaTypes';
 import type { MediaItem } from '../../../types/media';
 
@@ -22,7 +23,7 @@ export function ModernCard({ item, onClick }: ModernCardProps) {
       onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.transform = ''; }}
     >
       {poster ? (
-        <img src={poster} className="w-full h-full object-cover block" loading="lazy" draggable={false} />
+        <img src={proxiedImage(poster)} className="w-full h-full object-cover block" loading="lazy" draggable={false} />
       ) : (
         <div className="w-full h-full bg-white/10 flex items-center justify-center text-white/40 text-xs px-3 text-center">
           {item.title}

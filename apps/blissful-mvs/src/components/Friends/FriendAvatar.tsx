@@ -31,7 +31,7 @@ export function FriendAvatar({ displayName, size = 24, online }: Props) {
       </span>
       {online ? (
         <span
-          className="absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-[#101116] bg-[var(--bliss-accent)]"
+          className="absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-[#101116] bg-emerald-400"
           style={{
             width: 'max(8px, calc(var(--avatar-size) * 0.32))',
             height: 'max(8px, calc(var(--avatar-size) * 0.32))',

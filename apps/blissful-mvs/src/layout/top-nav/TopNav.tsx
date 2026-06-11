@@ -1,9 +1,12 @@
-import { Avatar, Button, Dropdown, Input, Label, Separator, Tooltip } from '@heroui/react';
+import { Input, Label } from '@heroui/react';
+import { BlissAvatar, BlissButton, BlissDropdown, BlissSeparator } from '../../components/base';
+import { BlissTooltip } from '../../components/base/BlissTooltip';
 import { PenIcon } from '../../icons/PenIcon';
 import { CloseIcon } from '../../icons/CloseIcon';
 import { SearchIcon } from '../../icons/SearchIcon';
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { renderProfileAvatar } from '../../lib/profileAvatars';
+import { proxiedImage } from '../../lib/imageProxy';
 import type { StremioMetaPreview } from '../../lib/stremioAddon';
 
 type TopNavProps = {
@@ -91,8 +94,28 @@ export function TopNav({
       return;
     }
     if (action === 'auth') {
-      if (isLoggedIn) onLogout();
-      else onLogin();
+      // HeroUI Dropdown.Popover doesn't unmount when isOpen flips
+      // false while another portal-rendered surface (the login modal)
+      // is about to open in the same tick — React Aria's overlay
+      // focus management thinks the menu still owns focus. State
+      // alone, rAF, and blur all individually fail. We use the same
+      // sledgehammer the fullscreen action uses: blur + force-hide
+      // the popover's DOM node so it visually goes away regardless
+      // of React Aria's bookkeeping, then open the modal on the
+      // next frame so the close has had a tick to settle.
+      setIsDesktopAccountMenuOpen(false);
+      setIsMobileAccountMenuOpen(false);
+      (document.activeElement as HTMLElement | null)?.blur();
+      document
+        .querySelectorAll('[data-trigger="MenuTrigger"][role="dialog"]')
+        .forEach((el) => {
+          (el as HTMLElement).style.display = 'none';
+        });
+      requestAnimationFrame(() => {
+        if (isLoggedIn) onLogout();
+        else onLogin();
+      });
+      return;
     }
     if (action === 'settings') onNavigateSettings();
     if (action === 'home') onOpenHomeSettings();
@@ -138,16 +161,16 @@ export function TopNav({
       className="h-10 w-10 cursor-pointer overflow-hidden bg-transparent p-0"
       aria-label="Account"
     >
-      <Avatar key={isLoggedIn ? `user-${safeDisplayName}` : 'guest'} className="h-10 w-10 bg-transparent rounded-none">
+      <BlissAvatar key={isLoggedIn ? `user-${safeDisplayName}` : 'guest'} className="h-10 w-10">
           {accountAvatarView.kind === 'image' ? (
-            <Avatar.Image alt={safeDisplayName} src={accountAvatarView.value} className="object-contain" />
+            <BlissAvatar.Image alt={safeDisplayName} src={accountAvatarView.value} />
           ) : null}
-          <Avatar.Fallback className="border-none bg-transparent text-lg leading-none text-white">
+          <BlissAvatar.Fallback className="text-lg leading-none">
             {accountAvatarView.kind === 'image'
               ? guestInitial
               : accountAvatarView.value || guestInitial}
-          </Avatar.Fallback>
-        </Avatar>
+          </BlissAvatar.Fallback>
+        </BlissAvatar>
     </div>
   );
 
@@ -278,7 +301,7 @@ export function TopNav({
                         >
                           {result.poster ? (
                             <img
-                              src={result.poster.startsWith('//') ? `https:${result.poster}` : result.poster}
+                              src={proxiedImage(result.poster.startsWith('//') ? `https:${result.poster}` : result.poster)}
                               alt=""
                               className="h-12 w-8 flex-shrink-0 rounded-md object-cover"
                               loading="lazy"
@@ -305,104 +328,99 @@ export function TopNav({
 
           <div className="hidden md:flex items-center justify-self-end gap-3 flex-shrink-0">
             {isHomeRoute ? (
-              <Tooltip>
-                <Tooltip.Trigger>
-                  <Button
-                    isIconOnly
-                    variant="ghost"
-                    className="h-10 w-10 rounded-full bg-white/10"
-                    aria-label="Toggle home edit"
-                    onPress={onToggleHomeEdit}
-                  >
-                    <PenIcon />
-                  </Button>
-                </Tooltip.Trigger>
-                <Tooltip.Content className="bg-white/10 text-white px-3 py-2 rounded-xl text-sm font-medium backdrop-blur-md">
-                  Show/Hide Addons
-                </Tooltip.Content>
-              </Tooltip>
+              <BlissTooltip content="Show/Hide Addons" placement="bottom">
+                <BlissButton
+                  isIconOnly
+                  variant="ghost"
+                  className="h-10 w-10 rounded-full bg-white/10"
+                  aria-label="Toggle home edit"
+                  onPress={onToggleHomeEdit}
+                >
+                  <PenIcon />
+                </BlissButton>
+              </BlissTooltip>
             ) : null}
             {accountMenuDisabled ? (
               accountTrigger
             ) : (
-              <Dropdown isOpen={isDesktopAccountMenuOpen} onOpenChange={(open) => { if (!fsLockedRef.current) setIsDesktopAccountMenuOpen(open); }}>
-                <Dropdown.Trigger className="rounded-full">{accountTrigger}</Dropdown.Trigger>
-                <Dropdown.Popover className="mt-3 min-w-[260px] -translate-x-[10px] translate-y-[3px] rounded-2xl bg-[#2a2a2a] p-2 text-white backdrop-blur-xl">
-                  <Dropdown.Menu onAction={handleAccountAction}>
-                    <Dropdown.Item id="profiles" textValue="Profiles" className="rounded-xl hover:bg-white/15 data-[hovered=true]:bg-white/15">
+              <BlissDropdown isOpen={isDesktopAccountMenuOpen} onOpenChange={(open) => { if (!fsLockedRef.current) setIsDesktopAccountMenuOpen(open); }}>
+                <BlissDropdown.Trigger className="rounded-full">{accountTrigger}</BlissDropdown.Trigger>
+                <BlissDropdown.Popover className="mt-3 min-w-[260px] -translate-x-[10px] translate-y-[3px] bg-[#2a2a2a] p-2">
+                  <BlissDropdown.Menu onAction={handleAccountAction}>
+                    <BlissDropdown.Item id="profiles" textValue="Profiles" className="hover:bg-white/15 data-[hovered=true]:bg-white/15">
                       <div className="flex items-center gap-2">
-                        <Avatar className="h-8 w-8 bg-transparent rounded-none">
+                        <BlissAvatar className="h-8 w-8">
                           {accountAvatarView.kind === 'image' ? (
-                            <Avatar.Image alt={safeDisplayName} src={accountAvatarView.value} className="object-contain" />
+                            <BlissAvatar.Image alt={safeDisplayName} src={accountAvatarView.value} />
                           ) : null}
-                          <Avatar.Fallback className="border-none bg-transparent text-sm text-white">
+                          <BlissAvatar.Fallback className="text-sm">
                             {guestInitial}
-                          </Avatar.Fallback>
-                        </Avatar>
+                          </BlissAvatar.Fallback>
+                        </BlissAvatar>
                         <div className="min-w-0 text-left">
                           <div className="truncate text-sm font-semibold">{safeDisplayName}</div>
                           <div className="truncate text-xs text-white/60">{userHandle ?? 'Guest'}</div>
                         </div>
                       </div>
-                    </Dropdown.Item>
-                    <Dropdown.Item id="fullscreen" textValue="Fullscreen" className="rounded-xl hover:bg-white/15 data-[hovered=true]:bg-white/15">
+                    </BlissDropdown.Item>
+                    <BlissDropdown.Item id="fullscreen" textValue="Fullscreen" className="hover:bg-white/15 data-[hovered=true]:bg-white/15">
                       <Label className="text-[var(--bliss-accent)]">{isFullscreen ? 'Exit full screen mode' : 'Enter full screen mode'}</Label>
-                    </Dropdown.Item>
-                    <Dropdown.Item id="settings" textValue="Settings" className="rounded-xl hover:bg-white/15 data-[hovered=true]:bg-white/15">
+                    </BlissDropdown.Item>
+                    <BlissDropdown.Item id="settings" textValue="Settings" className="hover:bg-white/15 data-[hovered=true]:bg-white/15">
                       <Label>Settings</Label>
-                    </Dropdown.Item>
-                    <Dropdown.Item id="home" textValue="Customize Home" className="rounded-xl hover:bg-white/15 data-[hovered=true]:bg-white/15">
+                    </BlissDropdown.Item>
+                    <BlissDropdown.Item id="home" textValue="Customize Home" className="hover:bg-white/15 data-[hovered=true]:bg-white/15">
                       <Label>Customize Home</Label>
-                    </Dropdown.Item>
-                    <Separator className="my-1 bg-white/10" />
-                    <Dropdown.Item id="auth" textValue={isLoggedIn ? 'Logout' : 'Login'} className="rounded-xl hover:bg-white/15 data-[hovered=true]:bg-white/15">
+                    </BlissDropdown.Item>
+                    <BlissSeparator />
+                    <BlissDropdown.Item id="auth" textValue={isLoggedIn ? 'Logout' : 'Login'} className="hover:bg-white/15 data-[hovered=true]:bg-white/15">
                       <Label className={isLoggedIn ? 'text-red-400' : 'text-sky-400'}>
                         {isLoggedIn ? 'Logout' : 'Sign in'}
                       </Label>
-                    </Dropdown.Item>
-                  </Dropdown.Menu>
-                </Dropdown.Popover>
-              </Dropdown>
+                    </BlissDropdown.Item>
+                  </BlissDropdown.Menu>
+                </BlissDropdown.Popover>
+              </BlissDropdown>
             )}
           </div>
 
           {accountMenuDisabled ? (
             <div className="md:hidden flex-shrink-0">{accountTrigger}</div>
           ) : (
-            <Dropdown isOpen={isMobileAccountMenuOpen} onOpenChange={(open) => { if (!fsLockedRef.current) setIsMobileAccountMenuOpen(open); }}>
-              <Dropdown.Trigger className="rounded-full">
+            <BlissDropdown isOpen={isMobileAccountMenuOpen} onOpenChange={(open) => { if (!fsLockedRef.current) setIsMobileAccountMenuOpen(open); }}>
+              <BlissDropdown.Trigger className="rounded-full">
                 <div className="md:hidden flex-shrink-0">{accountTrigger}</div>
-              </Dropdown.Trigger>
-              <Dropdown.Popover className="mt-3 min-w-[240px] rounded-2xl bg-[#2a2a2a] p-2 text-white backdrop-blur-xl">
-                <Dropdown.Menu onAction={handleAccountAction}>
-                  <Dropdown.Item id="profiles" textValue="Profiles" className="rounded-xl hover:bg-white/15 data-[hovered=true]:bg-white/15">
+              </BlissDropdown.Trigger>
+              <BlissDropdown.Popover className="mt-3 min-w-[240px] bg-[#2a2a2a] p-2">
+                <BlissDropdown.Menu onAction={handleAccountAction}>
+                  <BlissDropdown.Item id="profiles" textValue="Profiles" className="hover:bg-white/15 data-[hovered=true]:bg-white/15">
                     <div className="flex items-center gap-2">
-                      <Avatar className="h-8 w-8 bg-transparent rounded-none">
+                      <BlissAvatar className="h-8 w-8">
                         {accountAvatarView.kind === 'image' ? (
-                          <Avatar.Image alt={safeDisplayName} src={accountAvatarView.value} className="object-contain" />
+                          <BlissAvatar.Image alt={safeDisplayName} src={accountAvatarView.value} />
                         ) : null}
-                        <Avatar.Fallback className="border-none bg-transparent text-sm text-white">
+                        <BlissAvatar.Fallback className="text-sm">
                           {guestInitial}
-                        </Avatar.Fallback>
-                      </Avatar>
+                        </BlissAvatar.Fallback>
+                      </BlissAvatar>
                       <div className="min-w-0 text-left">
                         <div className="truncate text-sm font-semibold">{safeDisplayName}</div>
                         <div className="truncate text-xs text-white/60">{userHandle ?? 'Guest'}</div>
                       </div>
                     </div>
-                  </Dropdown.Item>
-                  <Dropdown.Item id="settings" textValue="Settings" className="rounded-xl hover:bg-white/15 data-[hovered=true]:bg-white/15">
+                  </BlissDropdown.Item>
+                  <BlissDropdown.Item id="settings" textValue="Settings" className="hover:bg-white/15 data-[hovered=true]:bg-white/15">
                     <Label>Settings</Label>
-                  </Dropdown.Item>
-                  <Separator className="my-1 bg-white/10" />
-                  <Dropdown.Item id="auth" textValue={isLoggedIn ? 'Logout' : 'Login'} className="rounded-xl hover:bg-white/15 data-[hovered=true]:bg-white/15">
+                  </BlissDropdown.Item>
+                  <BlissSeparator />
+                  <BlissDropdown.Item id="auth" textValue={isLoggedIn ? 'Logout' : 'Login'} className="hover:bg-white/15 data-[hovered=true]:bg-white/15">
                     <Label className={isLoggedIn ? 'text-red-400' : 'text-sky-400'}>
                       {isLoggedIn ? 'Logout' : 'Sign in'}
                     </Label>
-                  </Dropdown.Item>
-                </Dropdown.Menu>
-              </Dropdown.Popover>
-            </Dropdown>
+                  </BlissDropdown.Item>
+                </BlissDropdown.Menu>
+              </BlissDropdown.Popover>
+            </BlissDropdown>
           )}
         </div>
       </div>

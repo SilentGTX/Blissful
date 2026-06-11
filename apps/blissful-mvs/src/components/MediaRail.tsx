@@ -1,6 +1,7 @@
-import { Button, ScrollShadow } from '@heroui/react';
+import { ScrollShadow } from '@heroui/react';
 import type { ReactNode } from 'react';
 import { useLayoutEffect, useRef, useState } from 'react';
+import { BlissButton } from './base';
 import type { MediaItem } from '../types/media';
 import MediaCard from './MediaCard';
 import { ChevronLeftIcon } from '../icons/ChevronLeftIcon';
@@ -102,14 +103,14 @@ export default function MediaRail({
           {actions}
         </div>
         {onSeeAll ? (
-          <Button
+          <BlissButton
             size="sm"
             variant="ghost"
             className="text-foreground/70"
             onPress={onSeeAll}
           >
             See All
-          </Button>
+          </BlissButton>
         ) : null}
       </div>
 

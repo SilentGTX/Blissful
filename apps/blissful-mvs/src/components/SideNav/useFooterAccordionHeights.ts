@@ -176,56 +176,46 @@ export function useFooterAccordionHeights(params: FooterAccordionParams): Footer
         (cwExpanded ? cwOverhead : cwHeaderH + boxPaddingY);
       const availableForLists = Math.max(0, footerH - overheadTotal);
 
-      // Per-side independent allocation. Each list shows up to
-      // PER_ACCORDION_MAX_ROWS rows (or fewer if there genuinely
-      // isn't space). Allocations don't depend on the other side's
-      // expand state — that's deliberate, so toggling one accordion
-      // never reshuffles the other and the cluster never reflows.
-      // Extra space ends up above the cluster (justify-end empty
-      // strip), which is exactly what the user asked for.
-      const allocateOneSide = (
-        wantsExpand: boolean,
-        rows: number[],
-        rowCost: (i: number) => number,
-        itemCount: number,
-        rowGap: number,
-        budget: number,
-      ): number => {
-        if (!wantsExpand) return 0;
-        const cap = Math.min(itemCount, PER_ACCORDION_MAX_ROWS);
-        let n = 0;
-        let remaining = budget;
-        while (n < cap) {
-          const cost = rowCost(n);
-          if (cost > remaining) break;
-          remaining -= cost;
-          n += 1;
-        }
-        if (cap > 0 && n === 0) n = 1; // never zero when there's at least one item
-        return heightForFirstN(rows, n, rowGap);
-      };
-
-      // Half the available height is each side's max budget — even
-      // alone, an accordion never takes more than its half, so the
-      // top "gap above the cluster" requirement is preserved when
-      // one side is collapsed.
-      const halfBudget = Math.max(0, Math.floor(availableForLists / 2));
-      const friendsTarget = allocateOneSide(
-        friendsExpanded,
-        friendsRows,
-        friendsRowCost,
-        friendsItemCount,
-        friendsGap,
-        halfBudget,
-      );
-      const cwTarget = allocateOneSide(
-        cwExpanded,
-        cwRows,
-        cwRowCost,
-        cwItemCount,
-        cwGap,
-        halfBudget,
-      );
+      // Round-robin row allocation when both expanded — alternate
+      // giving one row to whichever side has fewer rows so far,
+      // capped at PER_ACCORDION_MAX_ROWS per side. Splitting pixels
+      // 50/50 starves the side with taller rows (CW rows are
+      // ~80px, Friends rows ~60px → equal pixels = visibly
+      // unbalanced row counts). Counting rows instead keeps the
+      // counts within 1 of each other.
+      //
+      // CW wins ties (cwN <= fN), so when the budget is odd CW
+      // gets the extra row — small priority bump for "what I'm
+      // watching right now" without starving Friends entirely.
+      // When only one side is expanded it gets the full budget up
+      // to its cap.
+      const fCap = friendsExpanded
+        ? Math.min(friendsItemCount, PER_ACCORDION_MAX_ROWS)
+        : 0;
+      const cwCap = cwExpanded
+        ? Math.min(cwItemCount, PER_ACCORDION_MAX_ROWS)
+        : 0;
+      let fN = 0;
+      let cwN = 0;
+      let usedPx = 0;
+      while (fN < fCap || cwN < cwCap) {
+        let growCw: boolean;
+        if (fN >= fCap) growCw = true;
+        else if (cwN >= cwCap) growCw = false;
+        else growCw = cwN <= fN; // CW wins ties
+        const cost = growCw ? cwRowCost(cwN) : friendsRowCost(fN);
+        if (usedPx + cost > availableForLists) break;
+        usedPx += cost;
+        if (growCw) cwN += 1;
+        else fN += 1;
+      }
+      // Never render zero rows when there's at least one item — show
+      // the first row even if the pixel budget technically rejects
+      // it (better UX than an empty expanded box).
+      if (fCap > 0 && fN === 0) fN = 1;
+      if (cwCap > 0 && cwN === 0) cwN = 1;
+      const friendsTarget = heightForFirstN(friendsRows, fN, friendsGap);
+      const cwTarget = heightForFirstN(cwRows, cwN, cwGap);
 
       setHeights({
         friendsListMaxHeight: friendsExpanded ? friendsTarget : null,

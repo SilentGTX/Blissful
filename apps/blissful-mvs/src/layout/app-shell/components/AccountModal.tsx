@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Avatar, Button } from '@heroui/react';
+import { BlissAvatar, BlissButton } from '../../../components/base';
 import type { CompatUser } from '../../../context/AuthProvider';
 import { renderProfileAvatar } from '../../../lib/profileAvatars';
 
@@ -71,20 +71,20 @@ export function AccountModal({
         style={{ top: 'calc(var(--horizontal-nav-bar-size) + var(--horizontal-nav-margin) * 2 + env(safe-area-inset-top) + 0.25rem)' }}
       >
         <div className="flex items-center gap-3">
-          <Avatar
-            className="h-12 w-12 cursor-pointer bg-transparent rounded-none"
+          <BlissAvatar
+            className="h-12 w-12 cursor-pointer"
             onClick={() => {
               onOpenChange(false);
               onOpenProfiles();
             }}
           >
             {avatarView.kind === 'image' ? (
-              <Avatar.Image alt={displayName} src={avatarView.value} className="object-contain" />
+              <BlissAvatar.Image alt={displayName} src={avatarView.value} />
             ) : null}
-            <Avatar.Fallback className="border-none bg-transparent text-2xl leading-none">
+            <BlissAvatar.Fallback className="text-2xl leading-none">
               {avatarView.kind === 'image' ? displayName.slice(0, 1).toUpperCase() : avatarView.value}
-            </Avatar.Fallback>
-          </Avatar>
+            </BlissAvatar.Fallback>
+          </BlissAvatar>
           <div className="min-w-0">
             <div className="truncate text-base font-semibold">
               {displayName || user?.username || user?.email || user?._id || 'Guest'}
@@ -95,32 +95,32 @@ export function AccountModal({
 
         <div className="mt-4 flex gap-2">
           {user ? (
-            <Button
+            <BlissButton
               size="sm"
-              className="rounded-full bg-white text-black"
+              tone="solid"
               onPress={() => {
                 onLogout();
                 onOpenChange(false);
               }}
             >
               Logout
-            </Button>
+            </BlissButton>
           ) : (
-            <Button
+            <BlissButton
               size="sm"
-              className="rounded-full bg-white text-black"
+              tone="solid"
               onPress={() => {
                 onOpenChange(false);
                 onLogin();
               }}
             >
               Login
-            </Button>
+            </BlissButton>
           )}
         </div>
 
         <div className="mt-6 space-y-2">
-          <Button
+          <BlissButton
             variant="ghost"
             className="w-full justify-start rounded-2xl bg-white/20"
             onPress={() => {
@@ -129,8 +129,8 @@ export function AccountModal({
             }}
           >
             <span style={{ color: 'var(--bliss-accent)' }}>{isFullscreen ? 'Exit full screen mode' : 'Enter full screen mode'}</span>
-          </Button>
-          <Button
+          </BlissButton>
+          <BlissButton
             variant="ghost"
             className="w-full justify-start rounded-2xl bg-white/20"
             onPress={() => {
@@ -139,8 +139,8 @@ export function AccountModal({
             }}
           >
             Settings
-          </Button>
-          <Button
+          </BlissButton>
+          <BlissButton
             variant="ghost"
             className="w-full justify-start rounded-2xl bg-white/20"
             onPress={() => {
@@ -149,7 +149,7 @@ export function AccountModal({
             }}
           >
             Customize Home
-          </Button>
+          </BlissButton>
         </div>
       </div>
     </div>

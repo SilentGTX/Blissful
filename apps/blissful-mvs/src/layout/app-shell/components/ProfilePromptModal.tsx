@@ -1,14 +1,16 @@
-import { Button, Input, Modal } from '@heroui/react';
 import { useState } from 'react';
+import { BlissButton, BlissInput, BlissModal } from '../../../components/base';
 import { PRESET_PROFILE_AVATARS, renderProfileAvatar } from '../../../lib/profileAvatars';
 
 type ProfilePromptModalProps = {
   isOpen: boolean;
   initialName: string;
   onSave: (profile: { displayName: string; avatar?: string }) => Promise<void>;
+  /** Dismiss without saving — leaves the existing profile untouched. */
+  onCancel?: () => void;
 };
 
-export function ProfilePromptModal({ isOpen, initialName, onSave }: ProfilePromptModalProps) {
+export function ProfilePromptModal({ isOpen, initialName, onSave, onCancel }: ProfilePromptModalProps) {
   const [displayName, setDisplayName] = useState(initialName);
   const [avatar, setAvatar] = useState<string | undefined>(PRESET_PROFILE_AVATARS[0]);
   const [saving, setSaving] = useState(false);
@@ -16,24 +18,24 @@ export function ProfilePromptModal({ isOpen, initialName, onSave }: ProfilePromp
   if (!isOpen) return null;
 
   return (
-    <Modal>
-      <Modal.Backdrop isOpen={isOpen} variant="blur" className="bg-black/55" onOpenChange={() => {}}>
-        <Modal.Container placement="center" size="lg">
-          <Modal.Dialog className="bg-transparent shadow-none">
-            <Modal.Header className="sr-only">
-              <Modal.Heading>Profile setup</Modal.Heading>
-            </Modal.Header>
-            <Modal.Body className="px-0">
+    <BlissModal>
+      <BlissModal.Backdrop isOpen={isOpen} className="bg-black/55" onOpenChange={() => {}}>
+        <BlissModal.Container size="lg">
+          <BlissModal.Dialog>
+            <BlissModal.Header className="sr-only">
+              <BlissModal.Heading>Profile setup</BlissModal.Heading>
+            </BlissModal.Header>
+            <BlissModal.Body className="px-0">
               <div className="solid-surface mx-auto w-full max-w-xl rounded-[28px] bg-white/10 p-6">
-                <div className="font-[Fraunces] text-3xl font-semibold">Who's watching?</div>
+                <div className="font-[Instrument_Serif] text-3xl font-semibold">Who's watching?</div>
                 <div className="mt-1 text-sm text-foreground/70">Set your display name and avatar.</div>
 
                 <div className="mt-4">
                   <label className="text-sm text-foreground/70">Username</label>
-                  <Input
+                  <BlissInput
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
-                    className="mt-1 w-full rounded-xl bg-white/10 px-4 py-2 focus-within:!border-[var(--bliss-accent)] focus-within:!ring-1 focus-within:!ring-[var(--bliss-accent)]"
+                    className="mt-1 w-full focus-within:!border-[var(--bliss-accent)] focus-within:!ring-1 focus-within:!ring-[var(--bliss-accent)]"
                     placeholder="Your profile name"
                   />
                 </div>
@@ -46,7 +48,7 @@ export function ProfilePromptModal({ isOpen, initialName, onSave }: ProfilePromp
                       className={
                         'relative grid h-14 w-14 place-items-center overflow-hidden rounded-lg text-2xl transition ' +
                         (avatar === entry
-                          ? 'scale-105 ring-2 ring-[#19f7d2] ring-offset-1 ring-offset-black/40'
+                          ? 'scale-105 ring-2 ring-[var(--bliss-accent)] ring-offset-1 ring-offset-black/40'
                           : 'opacity-90 hover:opacity-100')
                       }
                       onClick={() => setAvatar(entry)}
@@ -57,7 +59,7 @@ export function ProfilePromptModal({ isOpen, initialName, onSave }: ProfilePromp
                         entry
                       )}
                       {avatar === entry ? (
-                        <span className="absolute right-0.5 top-0.5 grid h-3.5 w-3.5 place-items-center rounded-full bg-[#19f7d2] text-[9px] font-bold text-black">
+                        <span className="absolute right-0.5 top-0.5 grid h-3.5 w-3.5 place-items-center rounded-full bg-[var(--bliss-accent)] text-[9px] font-bold text-black">
                           ✓
                         </span>
                       ) : null}
@@ -65,9 +67,19 @@ export function ProfilePromptModal({ isOpen, initialName, onSave }: ProfilePromp
                   ))}
                 </div>
 
-                <div className="mt-6">
-                  <Button
-                    className="rounded-full bg-white text-black"
+                <div className="mt-6 flex items-center justify-end gap-2">
+                  {onCancel ? (
+                    <BlissButton
+                      variant="ghost"
+                      className="rounded-full bg-white/10 text-white hover:bg-white/15"
+                      isDisabled={saving}
+                      onPress={onCancel}
+                    >
+                      Cancel
+                    </BlissButton>
+                  ) : null}
+                  <BlissButton
+                    tone="solid"
                     isPending={saving}
                     onPress={async () => {
                       const name = displayName.trim();
@@ -81,13 +93,13 @@ export function ProfilePromptModal({ isOpen, initialName, onSave }: ProfilePromp
                     }}
                   >
                     Continue
-                  </Button>
+                  </BlissButton>
                 </div>
               </div>
-            </Modal.Body>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
-    </Modal>
+            </BlissModal.Body>
+          </BlissModal.Dialog>
+        </BlissModal.Container>
+      </BlissModal.Backdrop>
+    </BlissModal>
   );
 }

@@ -4,6 +4,7 @@ import { LibraryActionButton } from '../../../components/LibraryActionButton';
 import StremioIcon from '../../../components/StremioIcon';
 import type { StremioMetaDetail } from '../../../lib/stremioAddon';
 import { normalizeStremioImage } from '../../../lib/mediaTypes';
+import { proxiedImage } from '../../../lib/imageProxy';
 import { GenreChips } from '../../detail/components/GenreChips';
 
 type NowPopularProps = {
@@ -107,7 +108,7 @@ export function NowPopular({
       <div className="relative w-full min-h-[280px] @md:min-h-[360px] @xl:min-h-[420px] @xl:h-[50dvh]">
         {hasBg ? (
           <img
-            src={lockedBg}
+            src={proxiedImage(lockedBg)}
             alt=""
             className="now-popular-bg-motion absolute inset-0 h-full w-full object-cover"
           />

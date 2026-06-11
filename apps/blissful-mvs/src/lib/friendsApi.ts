@@ -1,10 +1,18 @@
+// REST client for the friends graph stored in blissful-storage.
+// Mirrors the shape returned by the server: pending/outgoing/incoming
+// requests, plus accepted friendships.
+
 import { STORAGE_URL } from './storageBaseUrl';
 
 export type FriendRecord = {
   id: string;
   userId: string;
+  /** What the viewer sees — nickname when set, otherwise realName. */
   displayName: string;
+  /** Friend's actual displayName (from the users record). Used by
+   *  the nickname editor as the "real name" reference. */
   realName?: string | null;
+  /** Viewer's local override; null when no override is set. */
   nickname?: string | null;
   status: 'pending' | 'accepted';
   direction: 'incoming' | 'outgoing';
@@ -59,9 +67,13 @@ export async function acceptFriendRequest(authKey: string, id: string): Promise<
 }
 
 export async function removeFriend(authKey: string, id: string): Promise<void> {
+  // Same endpoint used for: decline incoming, cancel outgoing, unfriend accepted.
   await request(`/friends/${id}`, authKey, { method: 'DELETE' });
 }
 
+/** Set/update or clear the viewer's per-friend nickname. Pass `null`
+ *  (or empty string) to clear. Server stores it on the friend edge
+ *  in a `nicknames` map keyed by the viewer's userId. */
 export async function setFriendNickname(
   authKey: string,
   id: string,

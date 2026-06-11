@@ -1,6 +1,7 @@
-import { Skeleton } from '@heroui/react';
+import { SkeletonBox, SkeletonText } from '../../../components/Skeleton';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Rating } from '../../../components/Rating';
+import { proxiedImage } from '../../../lib/imageProxy';
 import { GenreChips } from './GenreChips';
 
 type MetaPanelProps = {
@@ -73,14 +74,14 @@ export function MetaPanel({
             <AnimatePresence mode="wait" initial={false}>
               {isLoading ? (
                 <motion.div key="logo-skeleton" {...fadeProps}>
-                  <Skeleton className="h-36 w-80 rounded-2xl" />
+                  <SkeletonBox className="h-36 w-80" />
                 </motion.div>
               ) : logo && !logoFailed ? (
                 <motion.img
                   key="logo-img"
                   title={logoTitle}
                   className="logo-X3hTV"
-                  src={logo}
+                  src={proxiedImage(logo)}
                   alt=" "
                   loading="lazy"
                   onError={onLogoError}
@@ -97,9 +98,9 @@ export function MetaPanel({
                 className="runtime-release-info-container-9tY8q"
                 {...fadeProps}
               >
-                <Skeleton className="h-5 w-20 rounded-lg" />
-                <Skeleton className="h-5 w-28 rounded-lg" />
-                <Skeleton className="h-5 w-14 rounded-lg" />
+                <SkeletonText width="5rem" height="1.25rem" />
+                <SkeletonText width="7rem" height="1.25rem" />
+                <SkeletonText width="3.5rem" height="1.25rem" />
               </motion.div>
             ) : (
               <motion.div

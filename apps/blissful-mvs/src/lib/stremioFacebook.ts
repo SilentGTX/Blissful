@@ -1,12 +1,12 @@
 // Stremio's "Sign in with Facebook" handshake. Two-step:
 //
-//   1. prepareFacebookFlow() -- generate a random state token and the
+//   1. prepareFacebookFlow() — generate a random state token and the
 //      Stremio URL to navigate to. The popup (or current window) is
 //      then navigated to `${STREMIO_URL}/login-fb/<state>` so the user
 //      sees strem.io in the URL bar and does FB login on Stremio's
 //      actual page.
 //
-//   2. pollFacebookCredentials(state) -- poll
+//   2. pollFacebookCredentials(state) — poll
 //      `${STREMIO_URL}/login-fb-get-acc/<state>` until Stremio writes
 //      the resulting FB credentials to that state slot. The caller
 //      then exchanges those creds for a Stremio authKey via
@@ -69,19 +69,9 @@ export async function pollFacebookCredentials(
     try {
       return await getCredentials(state);
     } catch {
-      // No credentials at this state slot yet -- keep polling.
+      // No credentials at this state slot yet — keep polling.
     }
     await new Promise<void>((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
   }
   throw new Error('Facebook sign-in timed out');
-}
-
-/** Legacy one-shot helper used by LoginModal. Opens the FB popup and
- *  polls until Stremio writes the credentials. Kept for backward
- *  compatibility; new code should use prepareFacebookFlow() +
- *  pollFacebookCredentials() separately. */
-export async function loginWithFacebookPopup(): Promise<FacebookCredentials> {
-  const { state, stremioUrl } = prepareFacebookFlow();
-  window.open(stremioUrl, '_blank', 'noopener,noreferrer');
-  return pollFacebookCredentials(state);
 }

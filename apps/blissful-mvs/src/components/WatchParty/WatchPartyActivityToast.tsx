@@ -42,27 +42,27 @@ function describeActivity(item: WatchPartyActivity): { icon: string; text: strin
   switch (item.kind) {
     case 'pause':
       return {
-        icon: '||',
+        icon: '⏸',
         text: `${who} paused${item.currentTime != null ? ` at ${formatTime(item.currentTime)}` : ''}`,
       };
     case 'play':
-      return { icon: '>', text: `${who} resumed playback` };
+      return { icon: '▶', text: `${who} resumed playback` };
     case 'seek':
-      return { icon: '>>', text: `${who} jumped to ${formatTime(item.currentTime)}` };
+      return { icon: '⤳', text: `${who} jumped to ${formatTime(item.currentTime)}` };
     case 'joined':
-      return { icon: '+', text: `${who} joined the party` };
+      return { icon: '👋', text: `${who} joined the party` };
     case 'left':
-      return { icon: '-', text: `${who} left the party` };
+      return { icon: '🚪', text: `${who} left the party` };
     case 'host-changed':
-      return { icon: '*', text: `${who} is now the host` };
+      return { icon: '★', text: `${who} is now the host` };
     default:
-      return { icon: '*', text: who };
+      return { icon: '★', text: who };
   }
 }
 
 function truncate(text: string, max: number): string {
   if (text.length <= max) return text;
-  return text.slice(0, max - 1).trimEnd() + '...';
+  return text.slice(0, max - 1).trimEnd() + '…';
 }
 
 function activityShouldShow(item: WatchPartyActivity, selfUserId: string | null): boolean {
@@ -94,7 +94,7 @@ export function WatchPartyActivityToast({
   const lastChatKeyRef = useRef<string | null>(null);
   const chatInitRef = useRef(false);
 
-  // Activity -> queue.
+  // Activity → queue.
   useEffect(() => {
     if (activity.length === 0) return;
     const latest = activity[activity.length - 1]!;
@@ -108,7 +108,7 @@ export function WatchPartyActivityToast({
     );
   }, [activity, selfUserId, queue]);
 
-  // Chat -> queue (skip our own messages — we know what we sent).
+  // Chat → queue (skip our own messages — we know what we sent).
   useEffect(() => {
     if (chat.length === 0) return;
     const latest = chat[chat.length - 1]!;
@@ -127,7 +127,7 @@ export function WatchPartyActivityToast({
     const author = latest.from.displayName || 'Someone';
     queue.add(
       {
-        icon: 'chat',
+        icon: '💬',
         text: (
           <>
             <span className="font-semibold">{author}:</span>{' '}

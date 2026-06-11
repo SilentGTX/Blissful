@@ -1,6 +1,6 @@
 // Compact relative-time formatter for "last seen N ago" labels.
 //
-// Outputs are intentionally short -- the sidebar row is narrow and
+// Outputs are intentionally short — the sidebar row is narrow and
 // crammed with name + status + icons, so we collapse to a handful of
 // buckets instead of trying to be perfectly grammatical.
 

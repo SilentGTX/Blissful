@@ -3,6 +3,7 @@ import { UserIcon } from '../../icons/UserIcon';
 import { ChevronDownIcon } from '../../icons/ChevronDownIcon';
 import { SearchIcon } from '../../icons/SearchIcon';
 import type { StremioMetaPreview } from '../../lib/stremioAddon';
+import { proxiedImage } from '../../lib/imageProxy';
 
 type NetflixNavItem = {
   key: string;
@@ -154,7 +155,7 @@ export function NetflixTopBar({
                         >
                           {result.poster ? (
                             <img
-                              src={result.poster.startsWith('//') ? `https:${result.poster}` : result.poster}
+                              src={proxiedImage(result.poster.startsWith('//') ? `https:${result.poster}` : result.poster)}
                               alt=""
                               className="h-12 w-8 flex-shrink-0 rounded-md object-cover"
                               loading="lazy"

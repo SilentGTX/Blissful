@@ -1,5 +1,5 @@
-import type { LibraryItem } from '../../lib/stremioApi';
-import { normalizeStremioImage } from '../../lib/stremioApi';
+import type { LibraryItem } from '../../lib/mediaTypes';
+import { normalizeStremioImage } from '../../lib/mediaTypes';
 import type { MediaItem } from '../../types/media';
 
 export function isMobile(): boolean {

@@ -6,24 +6,25 @@ import {
   exchangeStremioCredentialsForAuthKey,
   fetchStremioLinkStatus,
   linkStremioWithToken,
+  setStremioLinked,
   syncStremioNow,
   unlinkStremioAccount,
   type StremioLinkStatus,
 } from '../lib/stremioLinkApi';
 
-// "Linked Accounts -> Stremio" panel for the Settings page. Backed by
+// "Linked Accounts → Stremio" panel for the Settings page. Backed by
 // /stremio/{link-token,unlink,status,sync} on blissful-storage; the server
-// runs a 15-min cron that mirrors Stremio's library <-> Blissful's library
+// runs a 15-min cron that mirrors Stremio's library ↔ Blissful's library
 // so progress from the official Stremio app shows up in Continue
 // Watching, and vice versa.
 //
 // Sign-in flow: opens /link-stremio in a popup. Two paths from there:
 //
-//   - Email/password -- the popup runs the exchange itself, posts the
+//   - Email/password — the popup runs the exchange itself, posts the
 //     resulting authKey to /stremio/link-token, postMessages us
 //     `bliss:stremio-linked` and auto-closes.
 //
-//   - Facebook -- the popup postMessages us `bliss:fb-init` with a state
+//   - Facebook — the popup postMessages us `bliss:fb-init` with a state
 //     token, then navigates ITSELF to www.strem.io/login-fb/<state>
 //     (URL bar shows strem.io). We poll Stremio from this tab, convert
 //     the FB token to a Stremio authKey via api.strem.io/api/login
@@ -63,6 +64,7 @@ export function SettingsStremioPanel() {
     try {
       const next = await fetchStremioLinkStatus(authKey);
       setStatus(next);
+      setStremioLinked(next.linked);
     } catch {
       setStatus(null);
     } finally {
@@ -83,10 +85,10 @@ export function SettingsStremioPanel() {
       if (!authKey) return;
       setBusy(true);
       setActionError(null);
-      setActionInfo('Waiting for you to finish on Stremio...');
+      setActionInfo('Waiting for you to finish on Stremio…');
       // If the user closes the popup mid-flow, abort polling instead of
       // waiting out the ~2-min timeout. We can read popupRef.current.closed
-      // even across origins (after the popup navigates to strem.io) -- it's
+      // even across origins (after the popup navigates to strem.io) — it's
       // one of the few cross-origin Window properties browsers allow.
       const controller = new AbortController();
       const closedTicker = window.setInterval(() => {
@@ -121,8 +123,8 @@ export function SettingsStremioPanel() {
   // Listen for the popup's messages. Same-origin check is critical: without
   // it, any other tab on the web could postMessage us and trigger a false
   // "linked" state.
-  //   `bliss:stremio-linked`  -- email/password path finished in the popup
-  //   `bliss:fb-init`         -- popup is about to navigate to strem.io;
+  //   `bliss:stremio-linked`  — email/password path finished in the popup
+  //   `bliss:fb-init`         — popup is about to navigate to strem.io;
   //                              we drive the rest from here
   useEffect(() => {
     function onMessage(event: MessageEvent) {
@@ -211,7 +213,7 @@ export function SettingsStremioPanel() {
     }
   };
 
-  // Dark glassy pill button -- matches the linked-accounts row mockup
+  // Dark glassy pill button — matches the linked-accounts row mockup
   // (subtle border, no Blissful accent). Keeps the row reading as
   // "service + action" rather than a Blissful CTA.
   const pillBtnClass =
@@ -231,7 +233,7 @@ export function SettingsStremioPanel() {
 
   // Compact single-row layout:
   //   [logo] Stremio Sync                     [Authenticate]      (unlinked)
-  //   [logo] Stremio Sync . foo@bar . 2m ago  [Sync now] [Unlink] (linked)
+  //   [logo] Stremio Sync · foo@bar · 2m ago  [Sync now] [Unlink] (linked)
   // Errors / info banners drop below the row.
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
@@ -240,7 +242,7 @@ export function SettingsStremioPanel() {
         <div className="flex flex-col min-w-0">
           <div className="text-sm font-medium leading-tight">Stremio Sync</div>
           {loadingStatus ? (
-            <div className="text-xs text-foreground/50">Loading...</div>
+            <div className="text-xs text-foreground/50">Loading…</div>
           ) : status?.linked ? (
             <div className="text-xs text-foreground/55 truncate">
               {status.email ?? 'unknown'} · last sync: {relativeTime(status.lastSyncAt)}
@@ -260,7 +262,7 @@ export function SettingsStremioPanel() {
                 title={syncOnCooldown ? `Try again in ${syncCooldownSecondsLeft}s` : undefined}
               >
                 {busy
-                  ? 'Working...'
+                  ? 'Working…'
                   : syncOnCooldown
                     ? `Wait ${syncCooldownSecondsLeft}s`
                     : 'Sync now'}

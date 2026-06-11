@@ -50,7 +50,7 @@ export type LibraryItem = {
    *  from a Stremio pull. Cleared whenever Blissful's player writes new
    *  progress. Continue Watching badges items as Stremio-sourced based
    *  on this; stripped from the payload before pushing back to Stremio. */
-  _blissProgressSource?: 'stremio' | null;
+  _blissProgressSource?: 'stremio' | 'web' | 'app' | null;
 };
 
 export type AddonDescriptor = {

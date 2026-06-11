@@ -2,8 +2,9 @@ import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { resolveProgress, formatTimecode } from '../../../lib/progress';
 import type { StreamRow } from '../streams';
+import { isIos } from '../utils';
 import { PlayCircleIcon } from '../../../icons/PlayCircleIcon';
-import { Accordion, Separator } from '@heroui/react';
+import { BlissAccordion, BlissSeparator } from '../../../components/base';
 import { ResumeOrStartOverModal } from '../../../components/ResumeOrStartOverModal';
 
 const rowsStagger = {
@@ -35,6 +36,13 @@ function bucketOf(row: StreamRow): ResolutionBucket {
   return 'Other';
 }
 
+type ExternalOpenPrompt = {
+  title: string;
+  url: string;
+  reason: string;
+  internalPlayerLink: string | null;
+};
+
 type StreamListProps = {
   rows: StreamRow[];
   variant: 'mobile' | 'desktop';
@@ -44,6 +52,7 @@ type StreamListProps = {
   metaName: string | null;
   metaPoster?: string | null;
   episodeLabel?: string | null;
+  onlyTorrentioRdResolve: boolean;
   // Merged progress source (local progressStore + Stremio library state).
   // The sidebar Continue Watching uses Stremio library state directly —
   // localStorage often hasn't been populated yet for series episodes, so
@@ -57,6 +66,7 @@ type StreamListProps = {
     durationSeconds: number;
   };
   onNavigate: (playerLink: string) => void;
+  onOpenExternalPrompt: (prompt: ExternalOpenPrompt) => void;
 };
 
 export function StreamList({
@@ -68,8 +78,10 @@ export function StreamList({
   metaName,
   metaPoster,
   episodeLabel,
+  onlyTorrentioRdResolve,
   getEpisodeProgressInfo,
   onNavigate,
+  onOpenExternalPrompt,
 }: StreamListProps) {
   const isMobile = variant === 'mobile';
   const displayRows = rows;
@@ -164,6 +176,11 @@ export function StreamList({
           metaSeeders,
           metaSize,
           metaProvider,
+          effectiveUrl,
+          externalStreaming,
+          externalWeb,
+          likelyPlayableInBrowser,
+          unplayableReason,
         } = row;
         const deepLinks = (stream as any).deepLinks as
           | {
@@ -195,6 +212,19 @@ export function StreamList({
             disabled={isDisabled}
             onClick={() => {
               if (!playerLink) return;
+
+              if (!isIos() && !onlyTorrentioRdResolve && !likelyPlayableInBrowser) {
+                const bestExternal = externalStreaming ?? externalWeb ?? effectiveUrl;
+                if (bestExternal) {
+                  onOpenExternalPrompt({
+                    title: rightTitle,
+                    url: bestExternal,
+                    reason: unplayableReason ?? 'This stream may not work in the web player.',
+                    internalPlayerLink: playerLink,
+                  });
+                  return;
+                }
+              }
 
               // Continue Watching row → pop the resume/start-over modal
               // first. For non-resume rows just open as usual.
@@ -267,7 +297,7 @@ export function StreamList({
               ) : null}
             </div>
             </button>
-             {idx < displayRows.length - 1 ? <Separator className="my-1 bg-white/10" /> : null}
+             {idx < displayRows.length - 1 ? <BlissSeparator /> : null}
            </motion.div>
          );
   };
@@ -346,7 +376,7 @@ export function StreamList({
         onClose={() => setResumePromptRow(null)}
       />
       {bucketsToRender.length > 0 ? (
-        <Accordion
+        <BlissAccordion
           expandedKeys={expandedKeys}
           onExpandedChange={(keys) => {
             setExpandedKeys(new Set(Array.from(keys, String)));
@@ -356,29 +386,29 @@ export function StreamList({
           {bucketsToRender.map((bucket) => {
             const rows = filteredBuckets[bucket];
             return (
-              <Accordion.Item key={bucket} id={bucket}>
-                <Accordion.Heading>
-                  <Accordion.Trigger className="px-3 py-2 hover:bg-white/5">
+              <BlissAccordion.Item key={bucket} id={bucket}>
+                <BlissAccordion.Heading>
+                  <BlissAccordion.Trigger>
                     <div className="mr-auto flex items-center gap-2">
                       <span className="text-sm font-semibold text-white/90">{bucket}</span>
                       <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/60">
                         {rows.length}
                       </span>
                     </div>
-                    <Accordion.Indicator className="ml-auto" />
-                  </Accordion.Trigger>
-                </Accordion.Heading>
-                <Accordion.Panel>
-                  <Accordion.Body className="px-0 pb-2 pt-1">
+                    <BlissAccordion.Indicator />
+                  </BlissAccordion.Trigger>
+                </BlissAccordion.Heading>
+                <BlissAccordion.Panel>
+                  <BlissAccordion.Body className="px-0 pb-2 pt-1">
                     <motion.div className="space-y-1" variants={rowsStagger} initial="hidden" animate="show">
                       {rows.map((row) => renderRow(row, indexOfRow.get(row) ?? 0))}
                     </motion.div>
-                  </Accordion.Body>
-                </Accordion.Panel>
-              </Accordion.Item>
+                  </BlissAccordion.Body>
+                </BlissAccordion.Panel>
+              </BlissAccordion.Item>
             );
           })}
-        </Accordion>
+        </BlissAccordion>
       ) : null}
     </div>
   );

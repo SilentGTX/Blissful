@@ -1,6 +1,7 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Rating } from '../../../components/Rating';
 import { SkeletonBox } from '../../../components/Skeleton';
+import { proxiedImage } from '../../../lib/imageProxy';
 
 // Episode-card artwork with a graceful loading state. Tries the real
 // episode images in order — metahub thumbnail, then the TMDB still — and
@@ -27,10 +28,12 @@ function EpisodeThumb({
   );
   const [idx, setIdx] = useState(0);
   const [loaded, setLoaded] = useState(false);
-  // No reset effect: the parent keys this component by `thumb`, so a
-  // card reused for a different episode remounts with fresh state. A
-  // late-arriving TMDB still keeps the same `thumb` key, so it does NOT
-  // remount — it just extends the candidate list.
+  // Reset only when the primary thumbnail changes (card reused for a
+  // different episode). A late-arriving TMDB still must NOT reset us.
+  useEffect(() => {
+    setIdx(0);
+    setLoaded(false);
+  }, [thumb]);
 
   const current = idx < candidates.length ? candidates[idx] : null;
   const exhausted = idx >= candidates.length;
@@ -42,7 +45,7 @@ function EpisodeThumb({
       {current != null ? (
         <img
           key={current}
-          src={current}
+          src={proxiedImage(current)}
           alt=""
           className={
             'absolute inset-0 h-full w-full object-cover transition-opacity duration-200 ' +
@@ -59,7 +62,7 @@ function EpisodeThumb({
       ) : null}
       {showPoster ? (
         <img
-          src={poster as string}
+          src={proxiedImage(poster as string)}
           alt=""
           className="absolute inset-0 h-full w-full object-cover"
           loading="lazy"
@@ -186,7 +189,6 @@ export function EpisodePanel({
                   style={{ aspectRatio: '16 / 9' }}
                 >
                   <EpisodeThumb
-                    key={thumb ?? 'no-thumb'}
                     thumb={thumb}
                     still={episodeNumber != null ? episodeStills?.[episodeNumber] ?? null : null}
                     poster={fallbackPoster}

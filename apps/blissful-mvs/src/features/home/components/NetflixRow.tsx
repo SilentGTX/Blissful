@@ -1,4 +1,4 @@
-import { Modal } from '@heroui/react';
+import { BlissModal } from '../../../components/base';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { MediaItem } from '../../../types/media';
@@ -9,6 +9,7 @@ import { ChevronRightIcon } from '../../../icons/ChevronRightIcon';
 import { Rating } from '../../../components/Rating';
 import { InfoIcon } from '../../../icons/InfoIcon';
 import { PlayIcon } from '../../../icons/PlayIcon';
+import { proxiedImage } from '../../../lib/imageProxy';
 
 type NetflixRowProps = {
   title: string;
@@ -158,7 +159,7 @@ export function NetflixRow({ title, items, progressById, onItemPress }: NetflixR
               >
                 <div className="netflix-landscape-frame">
                   {item.posterUrl ? (
-                    <img src={item.posterUrl} alt="" className="netflix-landscape-img" />
+                    <img src={proxiedImage(item.posterUrl)} alt="" className="netflix-landscape-img" />
                   ) : (
                     <div className="netflix-landscape-fallback">{item.title.slice(0, 1)}</div>
                   )}
@@ -263,19 +264,18 @@ export function NetflixRow({ title, items, progressById, onItemPress }: NetflixR
         </div>
       ) : null}
 
-      <Modal>
-        <Modal.Backdrop
+      <BlissModal>
+        <BlissModal.Backdrop
           isOpen={Boolean(trailerOpenId)}
           onOpenChange={(open) => {
             if (!open) setTrailerOpenId(null);
           }}
-          variant="blur"
           className="bg-black/60"
         >
-          <Modal.Container placement="center" size="cover">
-            <Modal.Dialog className="bg-transparent shadow-none">
-              <Modal.Header className="sr-only"><Modal.Heading>Trailer</Modal.Heading></Modal.Header>
-              <Modal.Body className="px-0">
+          <BlissModal.Container size="cover">
+            <BlissModal.Dialog>
+              <BlissModal.Header className="sr-only"><BlissModal.Heading>Trailer</BlissModal.Heading></BlissModal.Header>
+              <BlissModal.Body className="px-0">
                 <div className="overflow-hidden rounded-[28px] bg-black">
                   {trailerOpenId ? (
                     <iframe
@@ -287,11 +287,11 @@ export function NetflixRow({ title, items, progressById, onItemPress }: NetflixR
                     />
                   ) : null}
                 </div>
-              </Modal.Body>
-            </Modal.Dialog>
-          </Modal.Container>
-        </Modal.Backdrop>
-      </Modal>
+              </BlissModal.Body>
+            </BlissModal.Dialog>
+          </BlissModal.Container>
+        </BlissModal.Backdrop>
+      </BlissModal>
     </section>
   );
 }

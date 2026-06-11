@@ -1,4 +1,4 @@
-import { Modal } from '@heroui/react';
+import { BlissModal } from '../../../components/base';
 import { HomeSettingsModal } from './HomeSettingsModal';
 
 type HomeSettingsDialogProps = {
@@ -9,22 +9,21 @@ type HomeSettingsDialogProps = {
 
 export function HomeSettingsDialog({ isOpen, onOpenChange, settingsKey }: HomeSettingsDialogProps) {
   return (
-    <Modal>
-      <Modal.Backdrop
+    <BlissModal>
+      <BlissModal.Backdrop
         isOpen={isOpen}
         onOpenChange={onOpenChange}
-        variant="blur"
         className="bg-black/40"
       >
-        <Modal.Container placement="center">
-          <Modal.Dialog className="bg-transparent shadow-none">
-            <Modal.Header className="sr-only"><Modal.Heading>Customize Home</Modal.Heading></Modal.Header>
-            <Modal.Body className="px-0">
+        <BlissModal.Container>
+          <BlissModal.Dialog>
+            <BlissModal.Header className="sr-only"><BlissModal.Heading>Customize Home</BlissModal.Heading></BlissModal.Header>
+            <BlissModal.Body className="px-0">
               <HomeSettingsModal key={settingsKey} onClose={() => onOpenChange(false)} />
-            </Modal.Body>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
-    </Modal>
+            </BlissModal.Body>
+          </BlissModal.Dialog>
+        </BlissModal.Container>
+      </BlissModal.Backdrop>
+    </BlissModal>
   );
 }

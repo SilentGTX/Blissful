@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { MediaItem, MediaType } from '../../../types/media';
-import type { AddonDescriptor } from '../../../lib/stremioApi';
+import type { AddonDescriptor } from '../../../lib/mediaTypes';
 import { buildAddonRowId } from '../../../lib/homeRows';
 import { mapTransportUrl, parseRating } from '../utils';
 

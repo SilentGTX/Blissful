@@ -3,10 +3,11 @@
 // items and the stream picker's Continue Watching row, so the resume
 // behavior is consistent across the app.
 
-import { Modal } from '@heroui/react';
+import { BlissModal } from './base';
 import { motion, type PanInfo } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { formatTimecode } from '../lib/progress';
+import { proxiedImage } from '../lib/imageProxy';
 import { CloseIcon } from '../icons/CloseIcon';
 
 export type ResumeOrStartOverModalProps = {
@@ -61,7 +62,7 @@ export function ResumeOrStartOverModal({
         <>
           <div
             className="pointer-events-none absolute inset-0 bg-cover bg-center"
-            style={{ backgroundImage: `url(${poster})` }}
+            style={{ backgroundImage: `url(${proxiedImage(poster)})` }}
           />
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/35 via-black/75 to-[#101116]" />
         </>
@@ -151,28 +152,27 @@ export function ResumeOrStartOverModal({
   }
 
   return (
-    <Modal>
-      <Modal.Backdrop
+    <BlissModal>
+      <BlissModal.Backdrop
         isOpen={isOpen}
-        variant="blur"
         className="bg-black/55"
         onOpenChange={(open) => {
           if (!open) onClose();
         }}
       >
-        <Modal.Container placement="center" size="sm">
-          <Modal.Dialog className="bg-transparent shadow-none">
-            <Modal.Header className="sr-only">
-              <Modal.Heading>Continue watching</Modal.Heading>
-            </Modal.Header>
-            <Modal.Body className="px-0">
+        <BlissModal.Container size="sm">
+          <BlissModal.Dialog>
+            <BlissModal.Header className="sr-only">
+              <BlissModal.Heading>Continue watching</BlissModal.Heading>
+            </BlissModal.Header>
+            <BlissModal.Body className="px-0">
               <div className="solid-surface relative mx-auto max-h-[90vh] w-full max-w-[420px] overflow-hidden rounded-[20px] bg-[#101116]">
                 {bodyContent}
               </div>
-            </Modal.Body>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
-    </Modal>
+            </BlissModal.Body>
+          </BlissModal.Dialog>
+        </BlissModal.Container>
+      </BlissModal.Backdrop>
+    </BlissModal>
   );
 }

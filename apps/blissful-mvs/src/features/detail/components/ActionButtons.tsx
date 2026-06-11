@@ -7,7 +7,11 @@ type ActionButtonsProps = {
   onToggleLibrary: () => void;
   onOpenTrailer: () => void;
   onShare: () => void;
+  /** When provided, renders a primary accent Play button in the row.
+   *  Hidden otherwise (iOS, where the stream picker is the expected UX). */
   onPlay?: (() => void) | null;
+  /** Library is per-user; for guests the button has nowhere to write.
+   *  Hidden entirely (not just disabled) when not logged in. */
   isLoggedIn?: boolean;
 };
 
@@ -107,7 +111,9 @@ export function DesktopActionButtons({
           </button>
         ) : null}
 
-        {isLoggedIn ? <LibraryActionButton inLibrary={inLibrary} onToggleLibrary={onToggleLibrary} /> : null}
+        {isLoggedIn ? (
+          <LibraryActionButton inLibrary={inLibrary} onToggleLibrary={onToggleLibrary} />
+        ) : null}
 
         <button
           type="button"

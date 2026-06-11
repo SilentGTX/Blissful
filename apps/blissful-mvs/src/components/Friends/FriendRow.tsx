@@ -1,5 +1,5 @@
 // One row in the sidebar Friends list. Renders avatar (with online
-// dot), name, and a status line -- either "watching <title>" when the
+// dot), name, and a status line — either "watching <title>" when the
 // friend has an active player session, "online" when they're around
 // but idle, or "last seen N ago" when they're away.
 //
@@ -75,7 +75,7 @@ export function FriendRow({ record, presence, unread, onOpenChat, onAccept, onRe
     // @container scopes container queries to the row's own width.
     // Narrow rows (e.g., inside the sidebar drawer) get tight
     // circular icon-only action buttons; wider rows show the text
-    // labels. The breakpoint @sm (>=384px) is a comfortable cutoff
+    // labels. The breakpoint @sm (≥384px) is a comfortable cutoff
     // between "sidebar drawer" and "settings/full-width" surfaces.
     <div className="@container flex w-full items-center gap-2 rounded-xl bg-white/5 px-2 py-1.5">
       <div className="flex min-w-0 flex-1 items-center gap-2">{body}</div>

@@ -1,4 +1,4 @@
-import { Button, ListBox, Select } from '@heroui/react';
+import { BlissButton, BlissSelect } from '../../../components/base';
 import { ArrowLeftIcon } from '../../../icons/ArrowLeftIcon';
 import { ArrowRightIcon } from '../../../icons/ArrowRightIcon';
 import { ChevronLeftIcon } from '../../../icons/ChevronLeftIcon';
@@ -96,7 +96,7 @@ export function SeasonHeader({
             </label>
           ) : null}
 
-          <Button
+          <BlissButton
             isIconOnly
             size="sm"
             variant="ghost"
@@ -106,35 +106,22 @@ export function SeasonHeader({
             aria-label="Previous season"
           >
             <ChevronLeftIcon className="h-[18px] w-[18px]" />
-          </Button>
+          </BlissButton>
 
           <div className="flex-1">
-            <Select
-              aria-label="Season"
+            <BlissSelect
+              ariaLabel="Season"
               selectedKey={season === null ? undefined : String(season)}
               onSelectionChange={(key) => {
                 if (key === null) return;
                 const n = Number.parseInt(String(key), 10);
                 if (Number.isFinite(n)) onSeasonChange(n);
               }}
-            >
-              <Select.Trigger className="bg-white/10 border border-white/10 rounded-full">
-                <Select.Value />
-                <Select.Indicator />
-              </Select.Trigger>
-              <Select.Popover>
-                <ListBox>
-                  {seasonSelectItems.map((item) => (
-                    <ListBox.Item key={item.key} id={item.key} textValue={item.label}>
-                      {item.label}
-                    </ListBox.Item>
-                  ))}
-                </ListBox>
-              </Select.Popover>
-            </Select>
+              items={seasonSelectItems}
+            />
           </div>
 
-          <Button
+          <BlissButton
             isIconOnly
             size="sm"
             variant="ghost"
@@ -144,7 +131,7 @@ export function SeasonHeader({
             aria-label="Next season"
           >
             <ChevronRightIcon className="h-[18px] w-[18px]" />
-          </Button>
+          </BlissButton>
         </div>
       )}
     </div>

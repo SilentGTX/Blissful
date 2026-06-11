@@ -1,6 +1,6 @@
 import type { StremioStream } from '../../lib/stremioAddon';
 import type { StreamDeepLinks } from '../../lib/deepLinks';
-import { buildStreamMetaLine, parseStreamDescription } from './utils';
+import { buildStreamMetaLine, isIos, parseStreamDescription } from './utils';
 
 /** A stream enriched with deep links and progress data by useMetaDetails. */
 export type EnrichedStream = StremioStream & { deepLinks: StreamDeepLinks; progress: number };
@@ -26,6 +26,8 @@ export type StreamRow = {
   externalWeb: string | null;
   externalStreaming: string | null;
   lastPlayedMatchScore: number;
+  likelyPlayableInBrowser: boolean;
+  unplayableReason: string | null;
 };
 
 type StreamBuildResult = {
@@ -36,8 +38,16 @@ type StreamBuildResult = {
 
 export type StreamBuildOptions = {
   selectedAddon: string;
+  onlyTorrentioRdResolve: boolean;
   streamSortKey: string;
   lastStreamUrl: string | null;
+  /** Web-only "instant playback" filter: keep only ONE release whose
+   *  title explicitly says H.264 video AND doesn't say anything that
+   *  hints at non-AAC audio (EAC3/DDP/TrueHD/Atmos/DTS) or HEVC video.
+   *  Goal: the visible row direct-plays in Chrome with no ffmpeg
+   *  cold-start, no silent audio. Falls back to the unfiltered list
+   *  if no row matches (so the picker is never empty). */
+  webInstantOnly?: boolean;
 };
 
 const parseSizeBytes = (value: string | null): number | null => {
@@ -94,6 +104,56 @@ const extractUrlParamFromPlayerLink = (playerLink?: string | null): string | nul
   }
 };
 
+const isTorrentioRdResolveUrl = (value: string | null): boolean => {
+  if (!value) return false;
+  const re = /torrentio\.strem\.fun\/resolve\/realdebrid\//i;
+  if (re.test(value)) return true;
+  try {
+    const decoded = decodeURIComponent(value);
+    return re.test(decoded);
+  } catch {
+    // ignore
+  }
+  try {
+    const decoded2 = decodeURIComponent(decodeURIComponent(value));
+    return re.test(decoded2);
+  } catch {
+    // ignore
+  }
+  return false;
+};
+
+const matchesRdResolve = (
+  row: Pick<StreamRow, 'effectiveUrl' | 'playerLink' | 'externalWeb' | 'externalStreaming'>
+) => {
+  return (
+    isTorrentioRdResolveUrl(row.effectiveUrl) ||
+    isTorrentioRdResolveUrl(row.externalWeb) ||
+    isTorrentioRdResolveUrl(row.externalStreaming) ||
+    isTorrentioRdResolveUrl(row.playerLink)
+  );
+};
+
+const hasLikelyUnsupportedBrowserAudio = (row: Pick<StreamRow, 'leftLabel' | 'rightTitle' | 'metaLine' | 'effectiveUrl'>): boolean => {
+  const hay = `${row.leftLabel} ${row.rightTitle} ${row.metaLine} ${row.effectiveUrl ?? ''}`;
+  if (/\b(eac3|e-ac-3|ec-3|truehd|atmos|dtshd|dts-hd|dts)\b|\bddp(?=\d|\b|[ ._-])|\bdd\+(?=\d|\b|[ ._-])/i.test(hay)) {
+    return true;
+  }
+
+  const isMkv = /\.mkv(\b|$)/i.test(hay);
+  const is4k = /\b(2160p|4k)\b/i.test(hay);
+  const isHdr = /\b(hdr10\+|hdr10plus|hdr10|hdr)\b/i.test(hay);
+  const isDv = /\b(dolby\s*vision|\bdv\b)\b/i.test(hay);
+  const is10Bit = /\b10bit\b/i.test(hay);
+  const isHevc = /\b(x265|h265|hevc)\b/i.test(hay);
+
+  if (isMkv && (is4k || isHdr || isDv) && (isHevc || is10Bit || is4k) && (isHdr || isDv)) {
+    return true;
+  }
+
+  return false;
+};
+
 const getLastPlayedMatchScore = (
   lastStreamUrl: string | null,
   row: Pick<StreamRow, 'effectiveUrl' | 'playerLink' | 'externalWeb' | 'externalStreaming'>
@@ -127,7 +187,7 @@ export function buildStreamsView(
   streamsByAddon: StreamsByAddon,
   options: StreamBuildOptions
 ): StreamBuildResult {
-  const { selectedAddon, streamSortKey, lastStreamUrl } = options;
+  const { selectedAddon, onlyTorrentioRdResolve, streamSortKey, lastStreamUrl } = options;
   const groups = Object.entries(streamsByAddon);
   const filtered = selectedAddon === 'ALL' ? groups : groups.filter(([k]) => k === selectedAddon);
 
@@ -173,6 +233,33 @@ export function buildStreamsView(
           externalWeb ??
           null;
 
+        const badAudio = hasLikelyUnsupportedBrowserAudio({
+          leftLabel,
+          rightTitle,
+          metaLine,
+          effectiveUrl,
+        });
+        const likelyPlayableInBrowser = isHttpUrl(effectiveUrl) && (isHls || isMp4) && !isMkv && !badAudio;
+        const unplayableReason = !likelyPlayableInBrowser
+          ? !isHttpUrl(effectiveUrl)
+            ? 'No direct HTTP stream URL'
+            : badAudio
+              ? isIos()
+                ? 'May require an external player (VLC)'
+                : 'No audio in web player (EAC3/DDP/DTS/TrueHD/Atmos)'
+              : isMkv
+                ? isIos()
+                  ? 'May require an external player (VLC)'
+                  : 'No video/audio in web player (MKV)'
+                : isHevc
+                  ? isIos()
+                    ? 'May require an external player (VLC)'
+                    : 'May fail in the web player (HEVC/x265)'
+                  : isIos()
+                    ? 'May require an external player (VLC)'
+                    : 'May fail in the web player'
+          : null;
+
         const lastPlayedMatchScore = getLastPlayedMatchScore(lastStreamUrl, {
           effectiveUrl,
           playerLink,
@@ -199,6 +286,8 @@ export function buildStreamsView(
           externalWeb,
           externalStreaming,
           lastPlayedMatchScore,
+          likelyPlayableInBrowser,
+          unplayableReason,
         };
       })
     )
@@ -218,49 +307,114 @@ export function buildStreamsView(
     }
   }
 
-  const withLastPlayed = (() => {
-    if (!lastPlayedRow) return rows;
+  const rdResolveFiltered = onlyTorrentioRdResolve
+    ? rows.filter((row) => matchesRdResolve(row) && !hasLikelyUnsupportedBrowserAudio(row))
+    : rows;
 
-    const isAlreadyIncluded = rows.some(
+  const withLastPlayed = (() => {
+    if (!lastPlayedRow) return rdResolveFiltered;
+
+    const isAlreadyIncluded = rdResolveFiltered.some(
       (r) => r.stream.url === lastPlayedRow?.stream.url && r.stream.infoHash === lastPlayedRow?.stream.infoHash
     );
 
     if (isAlreadyIncluded) {
-      return rows.map((r) =>
+      return rdResolveFiltered.map((r) =>
         r.stream.url === lastPlayedRow?.stream.url && r.stream.infoHash === lastPlayedRow?.stream.infoHash
           ? { ...r, isLastPlayed: true }
           : r
       );
     }
 
-    return [{ ...lastPlayedRow, isLastPlayed: true }, ...rows];
+    return [{ ...lastPlayedRow, isLastPlayed: true }, ...rdResolveFiltered];
   })();
 
-  // Score: seeders / (sizeGB + 1) — smaller files rank higher because
-  // they start faster and use less bandwidth for equivalent quality
-  // (h265 encodes are typically half the size of h264 at the same
-  // resolution). Linear size penalty instead of sqrt so a 10GB file
-  // scores ~2x higher than a 23GB file at equal seeders.
+  // Single global score: seeders/sqrt(sizeGB + 1) — favors high-seeder
+  // streams while still rewarding smaller files (~sqrt penalty so 4K
+  // streams aren't fully crushed, just nudged). Streams with no
+  // seeders/size metadata fall back to 0. The `streamSortKey` param is
+  // retained for API compatibility but ignored — the UI no longer offers
+  // a sort dropdown.
   const score = (r: typeof withLastPlayed[number]): number => {
     const seeds = r.seedersNum ?? 0;
     const sizeGb = r.sizeBytes != null ? r.sizeBytes / 1_073_741_824 : 0;
-    return seeds / (sizeGb + 1);
+    return seeds / Math.sqrt(sizeGb + 1);
   };
   void streamSortKey;
-  const isRd = (r: typeof withLastPlayed[number]): boolean =>
-    r.addonName === 'Torrentio RD' || /realdebrid/i.test(r.transportUrl);
   const sorted = withLastPlayed.slice().sort((a, b) => {
     if (a.isLastPlayed !== b.isLastPlayed) return a.isLastPlayed ? -1 : 1;
-    // RD-resolved streams first — they play instantly via debrid CDN.
-    const aRd = isRd(a);
-    const bRd = isRd(b);
-    if (aRd !== bRd) return aRd ? -1 : 1;
     const sb = score(b);
     const sa = score(a);
     if (sb !== sa) return sb - sa;
     if (b.browserRank !== a.browserRank) return b.browserRank - a.browserRank;
     return a.rightTitle.localeCompare(b.rightTitle);
   });
+
+  // Web-only "instant playback" filter — keep one row at most.
+  // Pass rules (title-based, no probes):
+  //   1. Stream has a real HTTPS URL we can hand to <video>.
+  //   2. Title says H.264 / x264 / AVC (video plays in Chrome).
+  //   3. Title does NOT say HEVC / x265 / h265 (Chrome HEVC is unreliable).
+  //   4. Title does NOT say EAC3 / DDP / DD+ / DTS / TrueHD / Atmos
+  //      (silent audio in Chrome). Releases that don't mention audio
+  //      codec are allowed — WEB-DLs are AAC by default.
+  // We intentionally DO NOT require r.likelyPlayableInBrowser because
+  // that flag rejects MKV containers, but MKV+H.264+AAC plays fine in
+  // Chrome. Always preserves the last-played row so Continue Watching
+  // resumes hit the same stream. Falls back to unfiltered if no match.
+  if (options.webInstantOnly) {
+    const HEVC_RE = /\b(x265|h\.?265|hevc)\b/i;
+    const H264_RE = /\b(x264|h\.?264|avc)\b/i;
+    const BAD_AUDIO_RE =
+      /\b(eac3|e-ac-3|ec-3|truehd|atmos|dtshd|dts-hd|dts)\b|\bddp(?=\d|\b|[ ._-])|\bdd\+(?=\d|\b|[ ._-])/i;
+    // Resolution preference: known resolution beats untagged "Other".
+    // 1080p is the sweet spot for browser playback (Chrome handles 4K
+    // H.264 inconsistently and HEVC 4K is filtered out anyway).
+    const resolutionScore = (text: string): number => {
+      const t = text.toLowerCase();
+      if (/\b1080p\b/.test(t)) return 4;
+      if (/\b720p\b/.test(t)) return 3;
+      if (/\b(2160p|4k|uhd)\b/.test(t)) return 2;
+      if (/\b(480p|sd)\b/.test(t)) return 1;
+      return 0;
+    };
+    const matches = sorted.filter((r) => {
+      if (!isHttpUrl(r.effectiveUrl)) return false;
+      const text = `${r.leftLabel} ${r.rightTitle} ${r.metaLine}`;
+      if (HEVC_RE.test(text)) return false;
+      if (BAD_AUDIO_RE.test(text)) return false;
+      if (!H264_RE.test(text)) return false;
+      return true;
+    });
+    if (matches.length > 0) {
+      // Re-sort among matches: resolution first (so a tagged 1080p
+      // beats an "Other" no-resolution release), then keep the
+      // existing seeders/browserRank order as tiebreaker.
+      const ranked = matches.slice().sort((a, b) => {
+        const aText = `${a.leftLabel} ${a.rightTitle} ${a.metaLine}`;
+        const bText = `${b.leftLabel} ${b.rightTitle} ${b.metaLine}`;
+        const ra = resolutionScore(aText);
+        const rb = resolutionScore(bText);
+        if (rb !== ra) return rb - ra;
+        if (b.browserRank !== a.browserRank) return b.browserRank - a.browserRank;
+        const sa = (a.seedersNum ?? 0) / Math.sqrt((a.sizeBytes ?? 0) / 1_073_741_824 + 1);
+        const sb = (b.seedersNum ?? 0) / Math.sqrt((b.sizeBytes ?? 0) / 1_073_741_824 + 1);
+        return sb - sa;
+      });
+      const lastPlayed = sorted.find((r) => r.isLastPlayed);
+      const picked: typeof sorted = [ranked[0]];
+      if (lastPlayed && lastPlayed !== ranked[0]) {
+        picked.unshift(lastPlayed);
+      }
+      return {
+        rows: picked,
+        totalCount: picked.length,
+        rdCount: picked.length,
+      };
+    }
+    // No strict match — fall through to unfiltered list so the picker
+    // isn't empty.
+  }
 
   return {
     rows: sorted,

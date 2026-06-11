@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { proxiedImage } from '../../../lib/imageProxy';
 
 type MobileHeroProps = {
   heroPoster: string | null;
@@ -23,13 +24,13 @@ export function MobileHero({
     <div className="relative -mx-4 lg:hidden">
       <div
         className="relative h-[55dvh] bg-cover bg-center bg-no-repeat"
-        style={{ backgroundImage: `url(${heroPoster})` }}
+        style={{ backgroundImage: `url(${proxiedImage(heroPoster)})` }}
       >
         <div className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/80 via-black/30 to-transparent" />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[22rem] bg-gradient-to-t from-[#0b0f14] via-[#0b0f14]/80 to-transparent" />
 
         {/* flex justify-center keeps the title logo centred regardless
-            of viewport -- the legacy .logo-X3hTV is display:block, which
+            of viewport — the legacy .logo-X3hTV is display:block, which
             would otherwise leave wide logos (OBSESSION etc.) flush left
             at medium widths. */}
         <div className="absolute inset-x-0 bottom-0 z-20 flex justify-center px-4">
@@ -37,7 +38,7 @@ export function MobileHero({
             <img
               title={logoTitle}
               className="logo-X3hTV"
-              src={logo}
+              src={proxiedImage(logo)}
               alt=" "
               loading="lazy"
               onError={onLogoError}

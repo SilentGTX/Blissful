@@ -7,8 +7,16 @@
 // or blob: URLs, already-proxied paths) is returned unchanged, so this is safe
 // to apply at every `<img>` / backgroundImage call-site. Keep the RAW url in
 // app logic (e.g. metahubPosterToBackdrop derivation) and only wrap at render.
+//
+// Desktop: the shell's local origin has no `/img` route (only /addon-proxy,
+// /storage, /stremio), so rewriting would 404 every still. The native app
+// fetches artwork directly — return the raw URL untouched.
+
+import { isNativeShell } from './desktop';
+
 export function proxiedImage(src: string | null | undefined): string {
   if (!src) return src ?? '';
+  if (isNativeShell()) return src;
   if (
     src.startsWith('/img?') ||
     src.startsWith('/addon-proxy') ||

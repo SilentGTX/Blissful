@@ -18,6 +18,7 @@ import {
 } from '../lib/watchParty';
 import { fetchMeta, type StremioMetaDetail } from '../lib/stremioAddon';
 import { normalizeStremioImage } from '../lib/mediaTypes';
+import { proxiedImage } from '../lib/imageProxy';
 import { parseSeriesInfo } from '../lib/playerEnv';
 import type { MediaType } from '../types/media';
 
@@ -127,7 +128,7 @@ export default function InvitePage() {
           the foreground content stays readable. */}
       {background ? (
         <img
-          src={background}
+          src={proxiedImage(background)}
           alt=""
           className="absolute inset-0 h-full w-full object-cover opacity-50"
           draggable={false}
@@ -138,7 +139,7 @@ export default function InvitePage() {
       <div className="relative flex h-full w-full items-center justify-center p-6">
         <div className="w-full max-w-xl">
           {state.kind === 'loading' ? (
-            <div className="text-center text-white/70">Loading invite...</div>
+            <div className="text-center text-white/70">Loading invite…</div>
           ) : state.kind === 'not-found' ? (
             <div className="rounded-3xl border border-white/15 bg-black/65 p-8 text-center backdrop-blur-xl">
               <div className="text-2xl font-semibold">Room not found</div>
@@ -163,7 +164,7 @@ export default function InvitePage() {
               <div className="mt-4 flex items-start gap-4">
                 {poster ? (
                   <img
-                    src={poster}
+                    src={proxiedImage(poster)}
                     alt=""
                     className="h-32 w-22 shrink-0 rounded-2xl object-cover shadow-[0_8px_24px_-6px_rgba(0,0,0,0.55)] md:h-40 md:w-28"
                     draggable={false}
@@ -172,7 +173,7 @@ export default function InvitePage() {
                 <div className="min-w-0 flex-1">
                   {logo ? (
                     <img
-                      src={logo}
+                      src={proxiedImage(logo)}
                       alt={titleText ?? ''}
                       className="mb-2 max-h-12 w-auto object-contain drop-shadow md:max-h-16"
                       draggable={false}
@@ -185,7 +186,7 @@ export default function InvitePage() {
                   {episodeInfo ? (
                     <div className="text-sm text-white/80">
                       {episodeInfo.label}
-                      {episodeInfo.title ? <> - {episodeInfo.title}</> : null}
+                      {episodeInfo.title ? <> · {episodeInfo.title}</> : null}
                     </div>
                   ) : null}
                   <div className="mt-2 flex items-center gap-2 text-xs text-white/55">
@@ -193,9 +194,9 @@ export default function InvitePage() {
                       Room <span className="font-mono uppercase tracking-wider text-white/85">{room!.code}</span>
                     </span>
                     {room!.hasPassword ? (
-                      <span title="Password protected" aria-label="Password protected">[locked]</span>
+                      <span title="Password protected" aria-label="Password protected">🔒</span>
                     ) : null}
-                    <span>-</span>
+                    <span>·</span>
                     <span>
                       {room!.participantCount}
                       {' '}
@@ -249,11 +250,19 @@ export default function InvitePage() {
                 type="button"
                 onClick={() => void handleJoin()}
                 disabled={joining}
+                // Hover stays on the same accent color — just nudges
+                // brightness with `brightness-95` so the feedback is
+                // a subtle dim, not a different colour. The old
+                // `hover:bg-[#14dbb8]` shifted to a noticeably
+                // different teal which felt off.
                 className="mt-6 w-full cursor-pointer rounded-full bg-[var(--bliss-accent)] px-6 py-3 text-base font-semibold text-black shadow-[0_8px_24px_-6px_rgba(0,0,0,0.55)] transition hover:brightness-95 disabled:opacity-60"
               >
-                {joining ? 'Joining...' : 'Continue'}
+                {joining ? 'Joining…' : 'Continue'}
               </button>
 
+              {/* Same height + padding as Continue so the two CTAs
+                  read as a paired stack; the secondary action stays
+                  visually quieter via colour + weight, not size. */}
               <button
                 type="button"
                 onClick={() => navigate('/')}

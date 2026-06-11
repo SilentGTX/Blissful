@@ -60,7 +60,7 @@ export function WatchPartyButton({
         type="button"
         onClick={onClick}
         className="pointer-events-auto relative flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-2 text-sm font-semibold text-white backdrop-blur shadow-[0_8px_24px_-6px_rgba(0,0,0,0.55)] hover:bg-white/15"
-        aria-label={`Watch party -- ${list.length} participant${list.length === 1 ? '' : 's'}${unread > 0 ? `, ${unread} unread message${unread === 1 ? '' : 's'}` : ''}`}
+        aria-label={`Watch party — ${list.length} participant${list.length === 1 ? '' : 's'}${unread > 0 ? `, ${unread} unread message${unread === 1 ? '' : 's'}` : ''}`}
       >
         {unread > 0 ? (
           <span
@@ -72,7 +72,7 @@ export function WatchPartyButton({
         ) : null}
         <span
           className={
-            'h-2 w-2 rounded-full ' + (connected ? 'bg-[var(--bliss-accent)]' : 'bg-amber-400')
+            'h-2 w-2 rounded-full ' + (connected ? 'bg-emerald-400' : 'bg-amber-400')
           }
           aria-hidden
         />
@@ -97,7 +97,7 @@ export function WatchPartyButton({
         ) : null}
         <span className="font-mono text-xs uppercase tracking-wide text-white/70">{roomCode}</span>
         {hasPassword ? (
-          <span className="text-xs text-white/70" aria-label="Password protected">[locked]</span>
+          <span className="text-xs text-white/70" aria-label="Password protected">🔒</span>
         ) : null}
       </button>
     );
@@ -111,7 +111,8 @@ export function WatchPartyButton({
       className="pointer-events-auto flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-2 text-sm font-semibold text-white backdrop-blur shadow-[0_8px_24px_-6px_rgba(0,0,0,0.55)] hover:bg-white/15 disabled:opacity-50"
       aria-label="Watch party"
     >
-      <span aria-hidden>Watch Party</span>
+      <span aria-hidden>👥</span>
+      <span>{busy ? 'Starting…' : 'Watch Party'}</span>
     </button>
   );
 }

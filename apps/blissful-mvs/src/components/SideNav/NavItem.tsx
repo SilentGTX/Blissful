@@ -1,6 +1,6 @@
-import { Tooltip } from '@heroui/react';
 import { motion } from 'framer-motion';
 import { useState } from 'react';
+import { BlissTooltip } from '../base/BlissTooltip';
 import { ContinueIcon } from '../../icons/ContinueIcon';
 import { FriendsIcon } from '../../icons/FriendsIcon';
 import { StrokeIcon } from '../../icons/StrokeIcon';
@@ -15,7 +15,6 @@ type NavItemProps = {
 };
 
 export function NavItem(props: NavItemProps) {
-  const [isTooltipOpen, setIsTooltipOpen] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
   const displayLabel = useGlitchText(props.label, isHovering && !props.active);
 
@@ -23,38 +22,22 @@ export function NavItem(props: NavItemProps) {
     <button
       type="button"
       onClick={props.onPress}
-      onMouseEnter={() => {
-        setIsHovering(true);
-        if (props.collapsed) setIsTooltipOpen(true);
-      }}
-      onMouseLeave={() => {
-        setIsHovering(false);
-        setIsTooltipOpen(false);
-      }}
-      onFocus={() => {
-        setIsHovering(true);
-        if (props.collapsed) setIsTooltipOpen(true);
-      }}
-      onBlur={() => {
-        setIsHovering(false);
-        setIsTooltipOpen(false);
-      }}
+      onMouseEnter={() => setIsHovering(true)}
+      onMouseLeave={() => setIsHovering(false)}
+      onFocus={() => setIsHovering(true)}
+      onBlur={() => setIsHovering(false)}
       className={
         // Height clamps with the larger of viewport-height (3vh)
         // and viewport-width (1.6vw) factors — scales on both tall
         // monitors and 4K TVs while staying tight enough that the
-        // active pill hugs the icon vertically. Ceiling caps at
-        // 3.25rem so even at 4K the row doesn't grow taller than
-        // needed.
+        // active pill hugs the icon vertically (no oversized top/
+        // bottom gap). Ceiling caps at 3.25rem so even at 4K the
+        // row doesn't grow taller than needed.
         'bliss-sidebar-link relative cursor-pointer mx-4 flex h-[clamp(2rem,max(3vh,1.6vw),3.25rem)] w-[calc(100%-2rem)] items-center rounded-2xl transition-colors duration-300' +
         (props.active ? ' is-active' : '')
       }
       aria-label={props.label}
     >
-      {/* Active-state pill. Framer Motion's `layoutId` shares the
-          element across all NavItems so when `active` flips from one
-          row to another the pill slides between them with a spring,
-          rather than the active background instant-cutting. */}
       {props.active ? (
         <motion.div
           layoutId="nav-active-desktop"
@@ -68,8 +51,7 @@ export function NavItem(props: NavItemProps) {
           with viewport: 20px on a laptop → up to 32px on a 4K TV.
           Since the icon is `justify-center`'d in the slot, scaling
           its size just grows the icon symmetrically around the same
-          center — no horizontal jump during collapse/expand.
-          `relative z-10` keeps the icon ABOVE the motion pill. */}
+          center — no horizontal jump during collapse/expand. */}
       <div className="nav-icon-slot relative z-10 flex h-full shrink-0 items-center justify-center">
         <StrokeIcon path={props.icon} className="h-[clamp(1.25rem,1.1vw,2rem)] w-[clamp(1.25rem,1.1vw,2rem)]" />
       </div>
@@ -83,18 +65,9 @@ export function NavItem(props: NavItemProps) {
   return (
     <li className="relative">
       {props.collapsed ? (
-        <Tooltip isOpen={isTooltipOpen} delay={0} closeDelay={0}>
-          <Tooltip.Trigger>
-            {button}
-          </Tooltip.Trigger>
-          <Tooltip.Content
-            placement="right"
-            UNSTABLE_portalContainer={document.body}
-            className="bg-white/10 text-white px-3 py-2 rounded-xl text-sm font-medium backdrop-blur-md"
-          >
-            {props.label}
-          </Tooltip.Content>
-        </Tooltip>
+        <BlissTooltip content={props.label} placement="right">
+          {button}
+        </BlissTooltip>
       ) : (
         button
       )}

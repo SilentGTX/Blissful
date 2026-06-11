@@ -97,7 +97,7 @@ export function WatchPartyPasswordPrompt({
               disabled={busy || !password.trim()}
               className="flex-1 rounded-full bg-white px-4 py-2 text-sm font-semibold text-black disabled:opacity-50"
             >
-              {busy ? 'Verifying...' : 'Join'}
+              {busy ? 'Verifying…' : 'Join'}
             </button>
             <button
               type="button"
