@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.budinoff.blissful-backup</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/budinoff/home-lab/Blissful/infra/scripts/blissful-backup.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>3</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Volumes/2TB/NAS/blissful/logs/ops/backup-stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Volumes/2TB/NAS/blissful/logs/ops/backup-stderr.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>BLISSFUL_NAS_ROOT</key>
+    <string>/Volumes/2TB/NAS/blissful</string>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+  </dict>
+</dict>
+</plist>

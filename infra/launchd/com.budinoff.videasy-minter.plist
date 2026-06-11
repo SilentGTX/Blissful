@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.budinoff.videasy-minter</string>
+
+  <!-- Mints a Videasy session token in a real Chrome (undetected-chromedriver
+       passes Cloudflare Turnstile where headless/Playwright cannot) and POSTs
+       it to the addon-proxy. MUST run in the GUI (Aqua) session for headed
+       Chrome: load with `launchctl bootstrap gui/$(id -u) <plist>`. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>/Users/budinoff/home-lab/Blissful/infra/scripts/videasy-minter.py</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <!-- Token lifetime is ~hours; refresh well inside that. -->
+  <key>StartInterval</key>
+  <integer>2400</integer>
+
+  <!-- Home-dir logs: the launchd GUI context hits macOS TCC (EPERM) writing to
+       the external /Volumes/2TB volume. -->
+  <key>StandardOutPath</key>
+  <string>/Users/budinoff/Library/Logs/videasy-minter.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/budinoff/Library/Logs/videasy-minter.err</string>
+</dict>
+</plist>

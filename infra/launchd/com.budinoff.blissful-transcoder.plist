@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.budinoff.blissful-transcoder</string>
+
+  <!-- Native macOS ffmpeg transcode service. The addon-proxy (in Docker's Linux
+       VM) can't reach Apple Silicon's hardware H.264 encoder, so it offloads
+       the per-segment encode to this host service which uses h264_videotoolbox
+       (~6x less CPU, no thermal throttling). Run in the GUI (Aqua) session so
+       the VideoToolbox media engine is reliably available:
+       `launchctl bootstrap gui/$(id -u) <plist>`. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>/Users/budinoff/home-lab/Blissful/infra/scripts/blissful-transcoder.py</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- /opt/homebrew/bin so the service finds Homebrew's ffmpeg (with
+         videotoolbox). -->
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>FFMPEG_BIN</key>
+    <string>/opt/homebrew/bin/ffmpeg</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <key>StandardOutPath</key>
+  <string>/Users/budinoff/Library/Logs/blissful-transcoder.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/budinoff/Library/Logs/blissful-transcoder.err</string>
+</dict>
+</plist>

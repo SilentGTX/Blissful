@@ -1,0 +1,117 @@
+# Blissful production stack — runs on the Mac (mac-budinoff) from
+# ~/home-lab/Blissful. Moved here from OpenCode's compose (Phase 5 of
+# docs/MONOREPO-MIGRATION-PLAN.md); container names, host ports, and NAS
+# bind mounts are IDENTICAL to the old stack so the Cloudflare-Tunnel /
+# Traefik routing (which still lives with the shared proxy in OpenCode)
+# keeps working unchanged. Secrets come from ./.env (not committed):
+# BLISSFUL_JWT_SECRET, TMDB_API_KEY, RD_FALLBACK_KEY, VIDEASY_TOKEN_SECRET,
+# ADDON_PROXY_EXTRA_DOMAINS, BLISSFUL_MONGO_DB (optional).
+#
+# Deploy: git pull && (UI only: npm run build in apps/blissful-mvs — live
+# instantly) || (services: docker compose up -d).
+
+x-nas-root: &nas-root /Volumes/2TB/NAS/blissful
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
+
+services:
+  blissful:
+    image: node:20-alpine
+    container_name: blissful
+    restart: unless-stopped
+    logging: *default-logging
+    working_dir: /app
+    volumes:
+      - ./apps/blissful-mvs/dist:/app/dist:ro
+      - /Volumes/2TB/NAS/blissful/logs/blissful:/app/logs
+    command: >
+      sh -c "npm install -g serve && serve -s dist -l 8080"
+    ports:
+      - "127.0.0.1:18080:8080"
+
+  blissful-storage:
+    image: node:20-alpine
+    container_name: blissful-storage
+    restart: unless-stopped
+    logging: *default-logging
+    working_dir: /app
+    environment:
+      - PORT=8787
+      - STORAGE_DIR=/data
+      - BLISSFUL_NAS_ROOT=/nas
+      - MONGODB_URI=mongodb://blissful-mongodb:27017/${BLISSFUL_MONGO_DB:-blissful}
+      - MONGODB_DB=${BLISSFUL_MONGO_DB:-blissful}
+      - STATE_DB_FILE=/data/blissful-storage.sqlite
+      - BLISSFUL_JWT_SECRET=${BLISSFUL_JWT_SECRET}
+    volumes:
+      - ./apps/blissful-storage:/app
+      - /Volumes/2TB/NAS/blissful/state/blissful-storage:/data
+      - /Volumes/2TB/NAS/blissful/logs/blissful-storage:/app/logs
+      - /Volumes/2TB/NAS/blissful:/nas:ro
+    command: >
+      sh -c "npm install && node server.js"
+    ports:
+      - "127.0.0.1:18787:8787"
+    depends_on:
+      - blissful-mongodb
+
+  blissful-mongodb:
+    image: mongo:7
+    container_name: blissful-mongodb
+    restart: unless-stopped
+    logging: *default-logging
+    volumes:
+      - /Volumes/2TB/NAS/blissful/state/mongodb:/data/db
+      - /Volumes/2TB/NAS/blissful/logs/mongodb:/var/log/mongodb
+    command: >
+      bash -c "find /data/db -name '._*' -delete 2>/dev/null; exec mongod --bind_ip_all"
+    ports:
+      - "0.0.0.0:27017:27017"
+
+  stremio-service:
+    image: stremio/server:latest
+    container_name: stremio-service
+    restart: unless-stopped
+    logging: *default-logging
+    volumes:
+      - /Volumes/2TB/NAS/blissful/state/stremio:/root/.stremio-server
+      - /Volumes/2TB/NAS/blissful/logs/stremio:/var/log/stremio
+    ports:
+      - "127.0.0.1:11470:11470"
+      - "127.0.0.1:12470:12470"
+
+  blissful-proxy:
+    image: node:20-alpine
+    container_name: blissful-proxy
+    restart: unless-stopped
+    logging: *default-logging
+    working_dir: /app
+    environment:
+      - PORT=3000
+      - STREMIO_AUTH_BASE=https://www.strem.io
+      - ADDON_PROXY_EXTRA_DOMAINS=${ADDON_PROXY_EXTRA_DOMAINS:-}
+      - BLISSFUL_NAS_ROOT=/nas
+      - CACHE_DIR=/cache
+      - TMDB_API_KEY=${TMDB_API_KEY:-}
+      - RD_FALLBACK_KEY=${RD_FALLBACK_KEY:-}
+      - VIDEASY_TOKEN_SECRET=${VIDEASY_TOKEN_SECRET:-}
+      - VIDEASY_RESOLVER_URL=${VIDEASY_RESOLVER_URL:-http://host.docker.internal:13099}
+      # Host-side hardware transcoder (native macOS ffmpeg + VideoToolbox).
+      # Offloads /transcode-seg encodes off the Linux container's CPU.
+      - TRANSCODE_HOST_URL=${TRANSCODE_HOST_URL:-http://host.docker.internal:13098}
+      - TRANSCODE_HOST_SECRET=${TRANSCODE_HOST_SECRET:-${VIDEASY_TOKEN_SECRET:-}}
+    volumes:
+      - ./apps/addon-proxy:/app
+      - /Volumes/2TB/NAS/blissful/cache/addon:/cache
+      - /Volumes/2TB/NAS/blissful/cache/posters:/poster-cache
+      - /Volumes/2TB/NAS/blissful/cache/json:/json-cache
+      - /Volumes/2TB/NAS/blissful/logs/addon-proxy:/app/logs
+      - /Volumes/2TB/NAS/blissful:/nas:ro
+    command: >
+      sh -c "apk add --no-cache ffmpeg >/dev/null && npm install --no-package-lock --no-save --silent crypto-js >/dev/null 2>&1 && node server.js"
+    ports:
+      - "127.0.0.1:13000:3000"

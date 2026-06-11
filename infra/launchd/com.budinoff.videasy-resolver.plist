@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.budinoff.videasy-resolver</string>
+
+  <!-- Long-running resolver: a warm undetected-Chrome that harvests decrypted
+       Videasy sources from their own player (passes Turnstile, immune to the
+       v2 response cipher) and serves them to the addon-proxy over localhost.
+       MUST run in the GUI (Aqua) session for headed Chrome:
+       `launchctl bootstrap gui/$(id -u) <plist>`. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>/Users/budinoff/home-lab/Blissful/infra/scripts/videasy-resolver.py</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <!-- Restart if the process exits (browser crash, OOM, etc.). -->
+  <key>KeepAlive</key>
+  <true/>
+  <!-- Don't hammer-restart on a crash loop. -->
+  <key>ThrottleInterval</key>
+  <integer>15</integer>
+
+  <key>StandardOutPath</key>
+  <string>/Users/budinoff/Library/Logs/videasy-resolver.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/budinoff/Library/Logs/videasy-resolver.err</string>
+</dict>
+</plist>
