@@ -8,15 +8,20 @@
 // to apply at every `<img>` / backgroundImage call-site. Keep the RAW url in
 // app logic (e.g. metahubPosterToBackdrop derivation) and only wrap at render.
 //
-// Desktop: the shell's local origin has no `/img` route (only /addon-proxy,
-// /storage, /stremio), so rewriting would 404 every still. The native app
-// fetches artwork directly — return the raw URL untouched.
+// Desktop: the shell's local origin has no `/img` route, so the RELATIVE
+// rewrite would 404 — instead, route through the backend's absolute `/img`
+// (NAS-cached 30d + Cloudflare edge). This shields desktop from metahub's
+// edge-latency swings and outright outages (2026-06-11: metahub down, every
+// cold logo hung ~20s = "black veil, no logo" on Continue Watching resume).
+// Cache misses during a metahub outage still fail, but anything ever viewed
+// on either platform serves from the shared cache.
 
 import { isNativeShell } from './desktop';
 
+const ABSOLUTE_IMG_BASE = 'https://blissful.budinoff.com/img';
+
 export function proxiedImage(src: string | null | undefined): string {
   if (!src) return src ?? '';
-  if (isNativeShell()) return src;
   if (
     src.startsWith('/img?') ||
     src.startsWith('/addon-proxy') ||
@@ -31,7 +36,10 @@ export function proxiedImage(src: string | null | undefined): string {
   try {
     const host = new URL(abs).hostname;
     if (/(^|\.)metahub\.space$/i.test(host) || host === 'image.tmdb.org') {
-      return `/img?url=${encodeURIComponent(abs)}`;
+      // Web: same-origin relative (Traefik routes /img to the addon-proxy).
+      // Desktop shell: absolute to the backend — the local origin has no /img.
+      const base = isNativeShell() ? `${ABSOLUTE_IMG_BASE}?url=` : '/img?url=';
+      return `${base}${encodeURIComponent(abs)}`;
     }
   } catch {
     /* not a parseable URL — leave as-is */
