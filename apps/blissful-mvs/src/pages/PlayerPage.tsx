@@ -8,7 +8,8 @@ import { isNativeShell } from '../lib/desktop';
 import type { PlayerSettings } from '../lib/playerSettings';
 import { useMetaDetails } from '../models/useMetaDetails';
 import { parseStreamDescription } from '../features/detail/utils';
-import { fetchStreams } from '../lib/stremioAddon';
+import { fetchStreams, type StremioStream } from '../lib/stremioAddon';
+import { buildMagnetUrl } from '../lib/deepLinks';
 import type { ReleaseOption } from '../components/NativeMpvPlayer/SettingsPanel';
 
 export type NextEpisodeInfo = {
@@ -191,10 +192,14 @@ export default function PlayerPage() {
     const streamId = type === 'series' && videoId ? videoId : id;
     let cancelled = false;
 
-    // Map a raw stream {name,title|description,url} → ReleaseOption.
-    const toRelease = (s: { name?: string; title?: string; description?: string; url?: string }): ReleaseOption | null => {
-      const url = s.url;
-      if (!url || !/^https?:\/\//i.test(url)) return null;
+    // Map a raw stream → ReleaseOption. Prefer a direct http(s) URL; for
+    // infoHash-only (P2P) torrents fall back to a magnet URL — the same shape
+    // the detail page offers and that the native player resolves via the
+    // streaming server — so the picker lists every torrent the detail page does.
+    const toRelease = (s: StremioStream): ReleaseOption | null => {
+      const directUrl = typeof s.url === 'string' && /^https?:\/\//i.test(s.url) ? s.url : null;
+      const url = directUrl ?? buildMagnetUrl(s, s.title ?? s.name ?? 'Torrent');
+      if (!url) return null;
       const description = s.description ?? s.title ?? '';
       const parsed = parseStreamDescription(description);
       const hay = `${s.name ?? ''} ${description}`;
@@ -210,7 +215,7 @@ export default function PlayerPage() {
     };
 
     const seen = new Set<string>();
-    const merge = (list: Array<{ name?: string; title?: string; description?: string; url?: string }>) => {
+    const merge = (list: StremioStream[]) => {
       if (cancelled || list.length === 0) return;
       let added = false;
       setReleases((prev) => {

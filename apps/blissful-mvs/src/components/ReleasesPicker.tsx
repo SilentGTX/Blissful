@@ -47,6 +47,25 @@ function isUncachedRelease(r: ReleaseOption): boolean {
   return /\[?\s*RD\s*download\s*\]?/i.test(r.name);
 }
 
+// The 40-hex BitTorrent infohash uniquely identifies a torrent regardless of
+// the URL shape it arrives in — addon stream URL, RD resolve URL, magnet link,
+// or the resolved streaming-server URL (http://127.0.0.1:11470/<infohash>/…).
+// Used both to dedup the same torrent coming back from several trackers and to
+// line the "now playing" URL up with its release row even when the two differ
+// in query params / encoding.
+function releaseInfohash(url: string): string | null {
+  // magnet (xt=urn:btih:<hash>), else a delimited path segment — the same
+  // proven shape the dedup has always used, just also covering magnet links.
+  const m = url.match(/btih:([a-f0-9]{40})/i) ?? url.match(/[/:]([a-f0-9]{40})(?:[/:]|$)/i);
+  return m ? m[1].toLowerCase() : null;
+}
+function sameRelease(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const ha = releaseInfohash(a);
+  return ha != null && ha === releaseInfohash(b);
+}
+
 export function ReleasesPicker({
   releases,
   selectedReleaseUrl,
@@ -79,10 +98,10 @@ export function ReleasesPicker({
     // list vs the desktop app). Falls back to normalized-name + size.
     const seen = new Set<string>();
     const list = sorted.filter((r) => {
-      const ih = r.url.match(/[/:]([a-f0-9]{40})(?:[/:]|$)/i);
+      const ih = releaseInfohash(r.url);
       let key: string;
       if (ih) {
-        key = 'ih:' + ih[1].toLowerCase();
+        key = 'ih:' + ih;
       } else {
         const base = (r.torrentName || r.name || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
         key = (base || r.url) + '|' + (r.size || '');
@@ -114,7 +133,7 @@ export function ReleasesPicker({
   if (!releaseBuckets) return null;
 
   const renderReleaseRow = (r: ReleaseOption, key: string) => {
-    const isSelected = !!selectedReleaseUrl && r.url === selectedReleaseUrl;
+    const isSelected = sameRelease(r.url, selectedReleaseUrl);
     const uncached = isUncachedRelease(r);
     const leftLabel = r.name.replace(/\s*\n\s*/g, ' ').trim();
     const title = r.torrentName || leftLabel;
@@ -168,7 +187,7 @@ export function ReleasesPicker({
   // the top; pull it out of Top picks + the accordions so it never appears (or
   // ticks) twice — mirrors the desktop app.
   const allRows = RELEASE_BUCKET_ORDER.flatMap((b) => releaseBuckets[b]);
-  const nowPlaying = selectedReleaseUrl ? allRows.find((r) => r.url === selectedReleaseUrl) ?? null : null;
+  const nowPlaying = selectedReleaseUrl ? allRows.find((r) => sameRelease(r.url, selectedReleaseUrl)) ?? null : null;
   const visibleTopPicks = nowPlaying ? releaseTopPicks.filter((r) => r.url !== nowPlaying.url) : releaseTopPicks;
   const hideUrls = new Set<string>(visibleTopPicks.map((r) => r.url));
   if (nowPlaying) hideUrls.add(nowPlaying.url);

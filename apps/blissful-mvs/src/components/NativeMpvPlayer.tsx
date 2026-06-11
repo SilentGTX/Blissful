@@ -266,6 +266,8 @@ interface NativeMpvPlayerProps {
   videos?: Array<{
     id: string;
     title?: string;
+    /** Cinemeta stores the episode title here; some addons use `title`. */
+    name?: string;
     season?: number;
     episode?: number;
     thumbnail?: string;
@@ -3100,7 +3102,10 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     if (!props.videos?.length) return [];
     return props.videos.map((v) => ({
       id: v.id,
-      title: v.title ?? null,
+      // Cinemeta uses `name` for episode titles; some addons use `title`.
+      // Mirror the web player (PlayerPageWeb) so the pause overlay shows the
+      // episode title to the left of the IMDb rating.
+      title: v.title ?? v.name ?? null,
       season: v.season ?? null,
       episode: v.episode ?? null,
       thumbnail: v.thumbnail ?? null,

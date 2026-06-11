@@ -116,7 +116,7 @@ function normalizePlaybackUrl(url: string): string {
   return url;
 }
 
-function buildMagnetUrl(stream: StremioStream, fallbackName: string): string | null {
+export function buildMagnetUrl(stream: StremioStream, fallbackName: string): string | null {
   if (typeof stream.infoHash !== 'string' || stream.infoHash.length === 0) return null;
 
   const qs = new URLSearchParams();

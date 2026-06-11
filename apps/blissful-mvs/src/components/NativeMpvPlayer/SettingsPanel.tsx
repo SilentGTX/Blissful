@@ -9,10 +9,11 @@
 //   color, delay.
 
 import { AnimatePresence, motion } from 'framer-motion';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { PlayerControlIcon as StremioIcon, type StremioIconName } from '../PlayerControlIcons';
 import type { MpvTrack } from '../../lib/desktop';
 import { subtitleLangLabel } from './subtitleHelpers';
+import { ReleasesPicker } from '../ReleasesPicker';
 import {
   writeStoredPlayerSettings,
   type PlayerSettings,
@@ -30,43 +31,6 @@ export type ReleaseOption = {
   seeders: string | null;
   url: string;
 };
-
-// -- Release (Real-Debrid torrent) helpers -- mirror features/detail/streams.ts
-// so the player's "Releases" picker sorts + buckets exactly like the detail
-// page stream list.
-function releaseSizeBytes(value: string | null): number | null {
-  if (!value) return null;
-  const m = value.trim().match(/^([0-9]+(?:\.[0-9]+)?)\s*(GB|MB|GiB|MiB)$/i);
-  if (!m) return null;
-  const n = Number.parseFloat(m[1]);
-  if (!Number.isFinite(n)) return null;
-  const unit = m[2].toUpperCase();
-  const base = unit.endsWith('IB') ? 1024 : 1000;
-  return unit.startsWith('G') ? Math.round(n * base * base * base) : Math.round(n * base * base);
-}
-// seeders / sqrt(sizeGB + 1) -- favors high-seeder streams while nudging
-// toward smaller files. Same global score the detail page uses.
-function releaseScore(r: ReleaseOption): number {
-  const seeds = r.seeders ? Number.parseInt(r.seeders, 10) || 0 : 0;
-  const sizeGb = (releaseSizeBytes(r.size) ?? 0) / 1_073_741_824;
-  return seeds / Math.sqrt(sizeGb + 1);
-}
-type ReleaseBucket = '4K' | '1080p' | '720p' | 'SD' | 'Other';
-const RELEASE_BUCKET_ORDER: ReleaseBucket[] = ['4K', '1080p', '720p', 'SD', 'Other'];
-function releaseBucket(r: ReleaseOption): ReleaseBucket {
-  const hay = `${r.name} ${r.torrentName ?? ''} ${r.quality ?? ''}`.toLowerCase();
-  if (/\b(2160p|4k|uhd)\b/.test(hay)) return '4K';
-  if (/\b(1440p|2k|1080p|fhd|full ?hd)\b/.test(hay)) return '1080p';
-  if (/\b(720p|hd)\b/.test(hay)) return '720p';
-  if (/\b(480p|360p|sd)\b/.test(hay)) return 'SD';
-  return 'Other';
-}
-// Torrentio marks not-yet-cached RD torrents "[RD download]" -- selecting one
-// plays the green "Torrent is being downloaded to debrid..." placeholder, so we
-// drop them from the picker (cached "[RD+]" only).
-function isUncachedRelease(r: ReleaseOption): boolean {
-  return /\[?\s*RD\s*download\s*\]?/i.test(r.name);
-}
 
 type SubtitleVariant = {
   key: string;
@@ -166,43 +130,6 @@ export function SettingsPanel(props: SettingsPanelProps) {
   const [subtitlesView, setSubtitlesView] = useState<SubtitlesView>('list');
   // Which language the subtitle list is "drilled into"
   const [drilledLang, setDrilledLang] = useState<string | null>(null);
-
-  // Filter out not-yet-cached torrents, sort by the detail-page score, and
-  // bucket by resolution -- same shape as the detail stream list.
-  const releaseBuckets = useMemo(() => {
-    if (!releases || releases.length === 0) return null;
-    const cached = releases.filter((r) => !isUncachedRelease(r));
-    const sorted = (cached.length ? cached : releases).slice().sort((a, b) => releaseScore(b) - releaseScore(a));
-    // Dedup -- the same torrent comes back from several installed addons + the
-    // house RD fallback. Keep the highest-scored instance (already sorted).
-    const seen = new Set<string>();
-    const list = sorted.filter((r) => {
-      const key = `${(r.torrentName || r.name || '').toLowerCase().replace(/\s+/g, ' ').trim()}|${r.size || ''}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-    const buckets: Record<ReleaseBucket, ReleaseOption[]> = { '4K': [], '1080p': [], '720p': [], SD: [], Other: [] };
-    for (const r of list) buckets[releaseBucket(r)].push(r);
-    return buckets;
-  }, [releases]);
-  // Always-visible "Top picks": the single best 4K + best 1080p release (the
-  // first of each bucket, already score-sorted), so the user sees one of each
-  // resolution without expanding an accordion -- mirrors the detail page.
-  const releaseTopPicks = useMemo(() => {
-    if (!releaseBuckets) return [] as ReleaseOption[];
-    return [releaseBuckets['4K'][0], releaseBuckets['1080p'][0]].filter(Boolean) as ReleaseOption[];
-  }, [releaseBuckets]);
-  // Which release quality accordions are expanded. Default: all collapsed --
-  // Top picks above carry the common case; the accordions are for browsing.
-  const [openReleaseBuckets, setOpenReleaseBuckets] = useState<Set<ReleaseBucket>>(new Set());
-  const toggleReleaseBucket = (b: ReleaseBucket) =>
-    setOpenReleaseBuckets((prev) => {
-      const next = new Set(prev);
-      if (next.has(b)) next.delete(b);
-      else next.add(b);
-      return next;
-    });
 
   const audioTracks = tracks.filter((t) => t.kind === 'audio');
 
@@ -463,95 +390,18 @@ export function SettingsPanel(props: SettingsPanelProps) {
                   )
                 ) : null}
 
-                {/* RELEASES -- Real-Debrid "change torrent" picker */}
-                {tab === 'releases' && releaseBuckets ? (() => {
-                  // Shared row renderer -- used by both Top picks and the
-                  // per-quality accordions. Shows the addon's left label
-                  // ("[RD+] Torrentio 4k"), the torrent name, an RD badge, and
-                  // size / seeders. Selecting one swaps the played torrent.
-                  const renderReleaseRow = (r: ReleaseOption, key: string) => {
-                    const isSelected = !!selectedReleaseUrl && r.url === selectedReleaseUrl;
-                    const leftLabel = r.name.replace(/\s*\n\s*/g, ' ').trim();
-                    const title = r.torrentName || leftLabel;
-                    const isRdStream = /\[RD\+?\]|realdebrid|real-?debrid/i.test(`${r.name} ${r.url}`);
-                    const meta = [
-                      r.size ? `💾 ${r.size}` : null,
-                      r.seeders ? `👤 ${r.seeders}` : null,
-                    ].filter(Boolean).join('   ');
-                    return (
-                      <button
-                        key={key}
-                        type="button"
-                        className={
-                          'flex items-start justify-between gap-3 rounded-xl px-3 py-2.5 text-left transition ' +
-                          (isSelected
-                            ? 'cursor-pointer bg-[var(--bliss-accent)]/15 text-[var(--bliss-accent)]'
-                            : 'cursor-pointer bg-white/[0.04] text-white/85 hover:bg-white/10')
-                        }
-                        onClick={() => {
-                          if (!isSelected) onSelectRelease?.(r.url);
-                          onClose();
-                        }}
-                      >
-                        <div className="min-w-0">
-                          {leftLabel && leftLabel.toLowerCase() !== title.toLowerCase() ? (
-                            <div className="mb-0.5 truncate text-[11px] font-semibold text-[var(--bliss-accent)]/90" title={leftLabel}>{leftLabel}</div>
-                          ) : null}
-                          <div className="line-clamp-2 break-words text-sm font-medium leading-snug" title={title}>{title}</div>
-                          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-white/55">
-                            {isRdStream ? (
-                              <span className="rounded bg-[var(--bliss-accent)]/20 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[var(--bliss-accent)]">RD</span>
-                            ) : null}
-                            {meta ? <span className="truncate">{meta}</span> : null}
-                          </div>
-                        </div>
-                        {isSelected ? (
-                          <StremioIcon name={'check' as StremioIconName} className="mt-0.5 h-5 w-5 shrink-0 text-[var(--bliss-accent)]" />
-                        ) : null}
-                      </button>
-                    );
-                  };
-                  return (
-                    <div className="flex flex-col gap-3">
-                      {releaseTopPicks.length ? (
-                        <div className="flex flex-col gap-1">
-                          <div className="px-1 pt-1 pb-0.5 text-[11px] font-semibold uppercase tracking-wider text-white/50">
-                            Top picks
-                          </div>
-                          {releaseTopPicks.map((r, i) => renderReleaseRow(r, `pick-${i}-${r.url}`))}
-                        </div>
-                      ) : null}
-                      {RELEASE_BUCKET_ORDER.filter((b) => releaseBuckets[b].length > 0).map((bucket) => {
-                        const isOpen = openReleaseBuckets.has(bucket);
-                        return (
-                          <div key={bucket} className="flex flex-col">
-                            <button
-                              type="button"
-                              onClick={() => toggleReleaseBucket(bucket)}
-                              className="flex items-center gap-2 rounded-lg px-1 py-1.5 text-left transition hover:bg-white/5"
-                            >
-                              <span className="text-sm font-semibold text-white/90">{bucket}</span>
-                              <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/60">
-                                {releaseBuckets[bucket].length}
-                              </span>
-                              <svg
-                                className={'ml-auto h-4 w-4 shrink-0 text-white/50 transition-transform ' + (isOpen ? 'rotate-180' : '')}
-                                viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                              >
-                                <path d="M6 9l6 6 6-6" />
-                              </svg>
-                            </button>
-                            {isOpen ? (
-                              <div className="flex flex-col gap-1 pt-1">
-                                {releaseBuckets[bucket].map((r, i) => renderReleaseRow(r, `${bucket}-${i}-${r.url}`))}
-                              </div>
-                            ) : null}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })() : null}
+                {/* RELEASES -- Real-Debrid "change torrent" picker. Shared
+                    ReleasesPicker so the native drawer matches the web player
+                    1:1: a "Continue watching" pin for the playing release,
+                    infohash dedup, and uncached ("[RD download]") handling. */}
+                {tab === 'releases' && releases && releases.length > 0 ? (
+                  <ReleasesPicker
+                    releases={releases}
+                    selectedReleaseUrl={selectedReleaseUrl}
+                    onSelectRelease={onSelectRelease}
+                    onClose={onClose}
+                  />
+                ) : null}
 
                 {/* SUBTITLES -- customize appearance sub-screen */}
                 {tab === 'subtitles' && subtitlesView === 'appearance' ? (
