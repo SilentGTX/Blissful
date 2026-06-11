@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { normalizeStremioImage } from '../../../lib/mediaTypes';
+import type { LibraryItem } from '../../../lib/mediaTypes';
 import {
-  addToLibraryItem,
-  datastoreGetLibraryItemById,
-  normalizeStremioImage,
-  removeFromLibraryItem,
-} from '../../../lib/stremioApi';
-import type { LibraryItem } from '../../../lib/stremioApi';
+  fetchBlissfulLibrary,
+  putBlissfulLibraryItem,
+} from '../../../lib/blissfulAuthApi';
 import { resolveProgress } from '../../../lib/progress';
 import { isInLibrary as isInLibraryStored, toggleLibrary } from '../../../lib/libraryStore';
 
@@ -16,6 +15,15 @@ type UseLibraryStateParams = {
   metaName: string | null;
   metaPoster: string | null;
 };
+
+// The /library endpoint returns the whole list. For a detail page we
+// only need one item, so the cheapest API surface is a client-side
+// filter on the fetched list — small enough that this isn't worth a
+// dedicated GET /library/:id endpoint.
+async function fetchOneLibraryItem(authKey: string, id: string): Promise<LibraryItem | null> {
+  const all = await fetchBlissfulLibrary<LibraryItem>(authKey);
+  return all.find((it) => it._id === id) ?? null;
+}
 
 export function useLibraryState({ authKey, id, type, metaName, metaPoster }: UseLibraryStateParams) {
   const [stremioLibraryItem, setStremioLibraryItem] = useState<LibraryItem | null>(null);
@@ -28,20 +36,16 @@ export function useLibraryState({ authKey, id, type, metaName, metaPoster }: Use
     }
     let cancelled = false;
     const refetch = () => {
-      datastoreGetLibraryItemById({ authKey, id })
+      fetchOneLibraryItem(authKey, id)
         .then((item) => {
           if (cancelled) return;
-          setStremioLibraryItem(item as LibraryItem | null);
+          setStremioLibraryItem(item);
         })
         .catch(() => {
           if (cancelled) return;
         });
     };
     refetch();
-    // Re-fetch when the player saves progress (NativeMpvPlayer +
-    // SimplePlayer dispatch this event after each periodic save). Without
-    // this, the detail page's Continue Watching time stays frozen at
-    // whatever value was current on first mount.
     const onProgress = () => {
       refetch();
     };
@@ -70,9 +74,6 @@ export function useLibraryState({ authKey, id, type, metaName, metaPoster }: Use
         videoId,
         libraryItem: stremioLibraryItem,
       });
-      // `watched` here can also flip true on the cloud-state `watched`
-      // token even if no progress was saved (Stremio marks fully-watched
-      // episodes with a comma-separated list of video ids).
       const watched = watchedVideoIds.has(videoId) || resolved.watched;
       return { ...resolved, watched };
     },
@@ -96,28 +97,34 @@ export function useLibraryState({ authKey, id, type, metaName, metaPoster }: Use
     }
 
     const nextInLibrary = !inLibrary;
+    const poster = metaPoster ? normalizeStremioImage(metaPoster) ?? null : null;
+
+    // `temp: true` keeps the row visible in Continue Watching even
+    // when `removed: true` — so removing from Library doesn't wipe
+    // its CW entry. Adding to library clears the flag (real bookmark
+    // again).
     setStremioLibraryItem((prev: any) => {
-      if (!prev) return { _id: id, removed: !nextInLibrary, state: {} } as LibraryItem;
-      return { ...prev, removed: !nextInLibrary } as LibraryItem;
+      if (!prev) return { _id: id, removed: !nextInLibrary, temp: !nextInLibrary, state: {} } as LibraryItem;
+      return { ...prev, removed: !nextInLibrary, temp: !nextInLibrary } as LibraryItem;
     });
 
-    if (nextInLibrary) {
-      const poster = metaPoster ? normalizeStremioImage(metaPoster) ?? null : null;
-      void addToLibraryItem({ authKey, id, type: type as any, name: metaName, poster })
-        .then(() => datastoreGetLibraryItemById({ authKey, id }))
-        .then((fresh) => setStremioLibraryItem(fresh as LibraryItem | null))
-        .catch(() => {
-          // ignore
-        });
-    } else {
-      void removeFromLibraryItem({ authKey, id })
-        .then(() => datastoreGetLibraryItemById({ authKey, id }))
-        .then((fresh) => setStremioLibraryItem(fresh as LibraryItem | null))
-        .catch(() => {
-          // ignore
-        });
-    }
-  }, [authKey, id, inLibrary, metaName, metaPoster, type]);
+    // Build the upserted doc — preserve existing state (timeOffset etc),
+    // toggle `removed` + `temp`. The server replaces the row, so we
+    // must send the full shape we want stored.
+    const base: Partial<LibraryItem> & { _id: string } = stremioLibraryItem
+      ? { ...(stremioLibraryItem as any) }
+      : ({ _id: id, type, name: metaName, poster, state: {} } as any);
+    base._id = id;
+    (base as any).removed = !nextInLibrary;
+    (base as any).temp = !nextInLibrary;
+
+    void putBlissfulLibraryItem(authKey, id, base)
+      .then(() => fetchOneLibraryItem(authKey, id))
+      .then((fresh) => setStremioLibraryItem(fresh))
+      .catch(() => {
+        // ignore
+      });
+  }, [authKey, id, inLibrary, metaName, metaPoster, stremioLibraryItem, type]);
 
   return {
     stremioLibraryItem,

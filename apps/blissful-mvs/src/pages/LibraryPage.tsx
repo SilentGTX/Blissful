@@ -1,15 +1,15 @@
-import { Button, ListBox, Select, Spinner } from '@heroui/react';
+import { BlissButton, BlissSelect, BlissSpinner } from '../components/base';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import MediaCard from '../components/MediaCard';
 import { useAuth } from '../context/AuthProvider';
 import { useModals } from '../context/ModalsProvider';
 import { CloseIcon } from '../icons/CloseIcon';
+import { normalizeStremioImage, type LibraryItem } from '../lib/mediaTypes';
 import {
-  normalizeStremioImage,
-  type LibraryItem,
-} from '../lib/stremioApi';
-import { fetchBlissfulLibrary, putBlissfulLibraryItem } from '../lib/blissfulAuthApi';
+  fetchBlissfulLibrary,
+  putBlissfulLibraryItem,
+} from '../lib/blissfulAuthApi';
 import { useErrorToast } from '../lib/useErrorToast';
 import type { MediaItem } from '../types/media';
 
@@ -79,7 +79,7 @@ export default function LibraryPage() {
       const showLoading = !hasLoadedOnceRef.current;
       if (showLoading) setLoading(true);
       setError(null);
-      fetchBlissfulLibrary<LibraryItem>(authKey!)
+      fetchBlissfulLibrary<LibraryItem>(authKey)
         .then((result) => {
           if (cancelled) return;
           const next = result.filter((it) => !it.removed);
@@ -167,12 +167,12 @@ export default function LibraryPage() {
     return (
       <div className="mt-4">
         <div className="solid-surface rounded-[28px] bg-white/6 p-6">
-          <div className="font-[Fraunces] text-2xl font-semibold">Library</div>
+          <div className="font-[Instrument_Serif] text-2xl font-semibold">Library</div>
           <div className="mt-1 text-sm text-foreground/60">Login to see your Stremio library.</div>
           <div className="mt-5">
-            <Button className="rounded-full bg-white text-black" onPress={openLogin}>
+            <BlissButton tone="solid" onPress={openLogin}>
               Login
-            </Button>
+            </BlissButton>
           </div>
         </div>
       </div>
@@ -183,28 +183,16 @@ export default function LibraryPage() {
     <div className="mt-4 space-y-6">
       <div className="mt-5 flex flex-nowrap items-center gap-3 overflow-x-auto hide-scrollbar">
         <div className="flex-none">
-          <Select
-            aria-label="Type"
+          <BlissSelect
+            ariaLabel="Type"
             selectedKey={typeFilter}
             onSelectionChange={(key) => {
               if (typeof key === 'string') setTypeFilter(key);
             }}
+            items={typeOptions.map((t) => ({ key: t, label: t === 'all' ? 'All' : typeLabel(t) }))}
             className="w-[160px]"
-          >
-            <Select.Trigger className="bg-white/6 border border-white/10 rounded-full h-11 text-foreground">
-              <Select.Value />
-              <Select.Indicator />
-            </Select.Trigger>
-            <Select.Popover>
-              <ListBox>
-                {typeOptions.map((t) => (
-                  <ListBox.Item key={t} id={t} textValue={t === 'all' ? 'All' : typeLabel(t)}>
-                    {t === 'all' ? 'All' : typeLabel(t)}
-                  </ListBox.Item>
-                ))}
-              </ListBox>
-            </Select.Popover>
-          </Select>
+            triggerClassName="bg-white/6 h-11 text-foreground"
+          />
         </div>
 
         <div className="flex flex-nowrap gap-2">
@@ -248,11 +236,7 @@ export default function LibraryPage() {
 
       {loading ? (
         <div className="mt-8 flex w-full items-center justify-center text-foreground/70">
-          <Spinner
-            size="lg"
-            color="current"
-            className="text-[var(--bliss-accent)] drop-shadow-[0_0_12px_var(--bliss-accent-glow)]"
-          />
+          <BlissSpinner size="lg" />
         </div>
       ) : null}
 
@@ -285,6 +269,9 @@ export default function LibraryPage() {
                   e.stopPropagation();
                   if (!authKey) return;
                   setItems((prev) => prev.filter((x) => x._id !== item._id));
+                  // PUT with `removed: true` (matches Stremio's soft-delete
+                  // shape) so progress survives in case the user re-adds
+                  // the title later. A full DELETE would lose timeOffset.
                   void putBlissfulLibraryItem(authKey, item._id, { ...item, removed: true }).catch(() => {
                     // ignore
                   });

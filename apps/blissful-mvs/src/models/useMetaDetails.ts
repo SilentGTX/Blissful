@@ -5,7 +5,7 @@ import {
   type StremioMetaDetail,
   type StremioStream,
 } from '../lib/stremioAddon';
-import { getAddonDisplayName, type AddonDescriptor } from '../lib/stremioApi';
+import { getAddonDisplayName, type AddonDescriptor } from '../lib/mediaTypes';
 import type { MediaType } from '../types/media';
 import { buildStreamDeepLinks } from '../lib/deepLinks';
 import { getProgressPercent, getProgress } from '../lib/progressStore';
@@ -59,7 +59,11 @@ export function useMetaDetails(params: {
   const isSeriesLike = type === 'series' || type === 'anime';
 
   const [meta, setMeta] = useState<StremioMetaDetail | null>(null);
-  const [metaLoading, setMetaLoading] = useState(false);
+  // Start in the loading state when we have an id to fetch — the fetch
+  // itself only flips this true inside an effect (post-paint), so a
+  // `false` initial value makes DetailPage flash its "Title unavailable"
+  // card for one frame on a cold load before the request even starts.
+  const [metaLoading, setMetaLoading] = useState<boolean>(() => Boolean(id));
 
   const [streamsByAddon, setStreamsByAddon] = useState<StreamsByAddon>({});
   const [streamsLoading, setStreamsLoading] = useState(false);

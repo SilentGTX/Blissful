@@ -47,7 +47,7 @@ export function hexToRgb(hex: string): { r: number; g: number; b: number } {
 }
 
 // Volume slider fill color: linearly interpolate the rainbow stops
-// (white -> yellow -> orange -> red) and return the RGB at the current
+// (white → yellow → orange → red) and return the RGB at the current
 // volume position. The volume bar's filled region is painted as one
 // solid color of this value, so the color "behind the thumb" matches
 // the thumb's place on the scale instead of revealing a gradient.

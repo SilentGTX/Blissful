@@ -15,7 +15,8 @@ import {
   type ReactNode,
 } from 'react';
 import { useAuth } from './AuthProvider';
-import { STORAGE_WS_URL } from '../lib/storageBaseUrl';
+import { STORAGE_URL, STORAGE_WS_URL } from '../lib/storageBaseUrl';
+import { isNativeShell } from '../lib/desktop';
 
 export type PartyInviteRequest = {
   from: { userId: string; displayName: string };
@@ -67,7 +68,13 @@ export function useUserSocketEvent<E extends EventName>(event: E, handler: Handl
 }
 
 function buildWsUrl(): string {
-  return `${STORAGE_WS_URL}/ws/user`;
+  if (isNativeShell()) {
+    // Desktop: direct WS URL — the shell's HTTP proxy doesn't handle
+    // WebSocket upgrades.
+    return `${STORAGE_WS_URL}/ws/user`;
+  }
+  // Web: derive ws(s) from the storage base; Traefik forwards upgrades.
+  return `${STORAGE_URL.replace(/^http/, 'ws')}/ws/user`;
 }
 
 export function UserSocketProvider({ children }: { children: ReactNode }) {

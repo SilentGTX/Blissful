@@ -120,7 +120,7 @@ export function PartyInviteListener() {
               disabled={busy}
               className="cursor-pointer rounded-full bg-[var(--bliss-accent)] px-3 py-1 text-xs font-semibold text-black hover:brightness-95 disabled:opacity-50"
             >
-              {busy ? '...' : 'Accept'}
+              {busy ? '…' : 'Accept'}
             </button>
             <button
               type="button"
@@ -128,7 +128,7 @@ export function PartyInviteListener() {
               className="cursor-pointer rounded-full bg-white/10 px-2 py-1 text-xs text-white/70 hover:bg-white/20"
               aria-label="Dismiss"
             >
-              X
+              ✕
             </button>
           </div>
         </div>
@@ -158,7 +158,7 @@ export function PartyInviteListener() {
               className="cursor-pointer rounded-full bg-white/10 px-2 py-1 text-xs text-white/70 hover:bg-white/20"
               aria-label="Dismiss"
             >
-              X
+              ✕
             </button>
           </div>
         </div>

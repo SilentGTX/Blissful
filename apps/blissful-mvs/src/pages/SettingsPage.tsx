@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ListBox, ScrollShadow, Select } from '@heroui/react';
+import { ScrollShadow } from '@heroui/react';
+import { BlissSelect } from '../components/base';
 import { ChromePicker, type ColorResult } from 'react-color';
 import { useAuth } from '../context/AuthProvider';
 import { useStorage } from '../context/StorageProvider';
@@ -19,8 +20,6 @@ import {
 } from '../lib/playerSettings';
 
 const USERNAME_RE = /^[a-z0-9_-]{3,50}$/;
-
-const triggerClassName = 'bg-white/10 border border-white/10 rounded-full h-9 text-white';
 
 export default function SettingsPage() {
   const { uiStyle, setUiStyle } = useUI();
@@ -61,7 +60,7 @@ export default function SettingsPage() {
   };
 
   // Display name edit. Free-form (anything goes), capped at 60 chars
-  // server-side. No uniqueness -- two users can share a display name.
+  // server-side. No uniqueness — two users can share a display name.
   const currentDisplayName = user?.displayName ?? '';
   const [displayNameDraft, setDisplayNameDraft] = useState(currentDisplayName);
   const [displayNameError, setDisplayNameError] = useState<string | null>(null);
@@ -178,7 +177,7 @@ export default function SettingsPage() {
     if (key === 'text') updateSettings({ subtitlesTextColor: rgba });
     if (key === 'bg') updateSettings({ subtitlesBackgroundColor: rgba });
     if (key === 'outline') updateSettings({ subtitlesOutlineColor: rgba });
-    // Accent is intentionally hex-only (no alpha) -- applying a
+    // Accent is intentionally hex-only (no alpha) — applying a
     // semi-transparent --bliss-accent would dim every chip / focus ring
     // on the site, which isn't what the user wants when they pick a
     // new accent. The picker still shows an alpha slider for parity
@@ -260,7 +259,7 @@ export default function SettingsPage() {
                   <div>
                     <div className="text-sm font-semibold">Site accent</div>
                     <div className="mt-1 text-xs text-foreground/60">
-                      Used by progress bars, focus rings, badges, the loading spinner -- anywhere the
+                      Used by progress bars, focus rings, badges, the loading spinner — anywhere the
                       default teal shows up. Syncs to your account.
                     </div>
                   </div>
@@ -292,51 +291,27 @@ export default function SettingsPage() {
                   <div className="grid gap-4 md:grid-cols-2">
                     <div>
                       <div className="text-xs text-foreground/60 mb-2">Language</div>
-                      <Select
-                        aria-label="Subtitles language"
+                      <BlissSelect
+                        ariaLabel="Subtitles language"
                         selectedKey={playerSettings.subtitlesLanguage ?? 'none'}
                         onSelectionChange={(key) => {
                           updateSettings({ subtitlesLanguage: key === 'none' ? null : String(key) });
                         }}
-                      >
-                        <Select.Trigger className={triggerClassName}>
-                          <Select.Value />
-                          <Select.Indicator />
-                        </Select.Trigger>
-                        <Select.Popover>
-                          <ListBox>
-                            {languageItems.map((item) => (
-                              <ListBox.Item key={item.key} id={item.key} textValue={item.label}>
-                                {item.label}
-                              </ListBox.Item>
-                            ))}
-                          </ListBox>
-                        </Select.Popover>
-                      </Select>
+                        items={languageItems}
+                        triggerClassName="h-9"
+                      />
                     </div>
                     <div>
                       <div className="text-xs text-foreground/60 mb-2">Size</div>
-                      <Select
-                        aria-label="Subtitles size"
+                      <BlissSelect
+                        ariaLabel="Subtitles size"
                         selectedKey={String(playerSettings.subtitlesSizePx)}
                         onSelectionChange={(key) => {
                           updateSettings({ subtitlesSizePx: Number.parseInt(String(key), 10) });
                         }}
-                      >
-                        <Select.Trigger className={triggerClassName}>
-                          <Select.Value />
-                          <Select.Indicator />
-                        </Select.Trigger>
-                        <Select.Popover>
-                          <ListBox>
-                            {sizeItems.map((item) => (
-                              <ListBox.Item key={item.key} id={item.key} textValue={item.label}>
-                                {item.label}
-                              </ListBox.Item>
-                            ))}
-                          </ListBox>
-                        </Select.Popover>
-                      </Select>
+                        items={sizeItems}
+                        triggerClassName="h-9"
+                      />
                     </div>
                     <div>
                       <div className="text-xs text-foreground/60 mb-2">Text color</div>
@@ -398,27 +373,15 @@ export default function SettingsPage() {
                   <div className="grid gap-4 md:grid-cols-2">
                     <div>
                       <div className="text-xs text-foreground/60 mb-2">Default audio track</div>
-                      <Select
-                        aria-label="Audio language"
+                      <BlissSelect
+                        ariaLabel="Audio language"
                         selectedKey={playerSettings.audioLanguage ?? 'none'}
                         onSelectionChange={(key) => {
                           updateSettings({ audioLanguage: key === 'none' ? null : String(key) });
                         }}
-                      >
-                        <Select.Trigger className={triggerClassName}>
-                          <Select.Value />
-                          <Select.Indicator />
-                        </Select.Trigger>
-                        <Select.Popover>
-                          <ListBox>
-                            {languageItems.map((item) => (
-                              <ListBox.Item key={item.key} id={item.key} textValue={item.label}>
-                                {item.label}
-                              </ListBox.Item>
-                            ))}
-                          </ListBox>
-                        </Select.Popover>
-                      </Select>
+                        items={languageItems}
+                        triggerClassName="h-9"
+                      />
                     </div>
 
                   </div>
@@ -429,51 +392,27 @@ export default function SettingsPage() {
                   <div className="grid gap-4 md:grid-cols-2">
                     <div>
                       <div className="text-xs text-foreground/60 mb-2">Seek key</div>
-                      <Select
-                        aria-label="Seek key"
+                      <BlissSelect
+                        ariaLabel="Seek key"
                         selectedKey={String(playerSettings.seekTimeDurationMs)}
                         onSelectionChange={(key) => {
                           updateSettings({ seekTimeDurationMs: Number.parseInt(String(key), 10) });
                         }}
-                      >
-                        <Select.Trigger className={triggerClassName}>
-                          <Select.Value />
-                          <Select.Indicator />
-                        </Select.Trigger>
-                        <Select.Popover>
-                          <ListBox>
-                            {seekItems.map((item) => (
-                              <ListBox.Item key={item.key} id={item.key} textValue={item.label}>
-                                {item.label}
-                              </ListBox.Item>
-                            ))}
-                          </ListBox>
-                        </Select.Popover>
-                      </Select>
+                        items={seekItems}
+                        triggerClassName="h-9"
+                      />
                     </div>
                     <div>
                       <div className="text-xs text-foreground/60 mb-2">Seek key + Shift</div>
-                      <Select
-                        aria-label="Seek key shift"
+                      <BlissSelect
+                        ariaLabel="Seek key shift"
                         selectedKey={String(playerSettings.seekShortTimeDurationMs)}
                         onSelectionChange={(key) => {
                           updateSettings({ seekShortTimeDurationMs: Number.parseInt(String(key), 10) });
                         }}
-                      >
-                        <Select.Trigger className={triggerClassName}>
-                          <Select.Value />
-                          <Select.Indicator />
-                        </Select.Trigger>
-                        <Select.Popover>
-                          <ListBox>
-                            {seekShiftItems.map((item) => (
-                              <ListBox.Item key={item.key} id={item.key} textValue={item.label}>
-                                {item.label}
-                              </ListBox.Item>
-                            ))}
-                          </ListBox>
-                        </Select.Popover>
-                      </Select>
+                        items={seekShiftItems}
+                        triggerClassName="h-9"
+                      />
                     </div>
 
                   </div>
@@ -483,7 +422,7 @@ export default function SettingsPage() {
                   <div className="text-sm font-semibold mb-3">Auto Play</div>
 
                   {/* Master enable/disable. Drives the "Auto next" toggle
-                      inside the player's episode drawer too -- both
+                      inside the player's episode drawer too — both
                       surfaces read/write this same field. When off, the
                       Up Next overlay never surfaces and playback ends
                       cleanly without rolling into the next episode. */}
@@ -530,8 +469,8 @@ export default function SettingsPage() {
                     }
                   >
                     <div className="text-xs text-foreground/60 mb-2">Next video popup</div>
-                    <Select
-                      aria-label="Next video popup"
+                    <BlissSelect
+                      ariaLabel="Next video popup"
                       isDisabled={!playerSettings.bingeWatching}
                       selectedKey={String(playerSettings.nextVideoNotificationDurationMs)}
                       onSelectionChange={(key) => {
@@ -539,21 +478,9 @@ export default function SettingsPage() {
                           nextVideoNotificationDurationMs: Number.parseInt(String(key), 10),
                         });
                       }}
-                    >
-                      <Select.Trigger className={triggerClassName}>
-                        <Select.Value />
-                        <Select.Indicator />
-                      </Select.Trigger>
-                      <Select.Popover>
-                        <ListBox>
-                          {nextPopupItems.map((item) => (
-                            <ListBox.Item key={item.key} id={item.key} textValue={item.label}>
-                              {item.label}
-                            </ListBox.Item>
-                          ))}
-                        </ListBox>
-                      </Select.Popover>
-                    </Select>
+                      items={nextPopupItems}
+                      triggerClassName="h-9"
+                    />
                   </div>
                 </div>
 
@@ -562,8 +489,8 @@ export default function SettingsPage() {
                   <div className="grid gap-4 md:grid-cols-2">
                     <div>
                       <div className="text-xs text-foreground/60 mb-2">Cache size</div>
-                      <Select
-                        aria-label="Cache size"
+                      <BlissSelect
+                        ariaLabel="Cache size"
                         selectedKey={
                           playerSettings.streamingServerCacheSizeBytes === null
                             ? 'unlimited'
@@ -579,21 +506,9 @@ export default function SettingsPage() {
                               key === 'unlimited' ? null : (next as number),
                           });
                         }}
-                      >
-                        <Select.Trigger className={triggerClassName}>
-                          <Select.Value />
-                          <Select.Indicator />
-                        </Select.Trigger>
-                        <Select.Popover>
-                          <ListBox>
-                            {cacheSizeItems.map((item) => (
-                              <ListBox.Item key={item.key} id={item.key} textValue={item.label}>
-                                {item.label}
-                              </ListBox.Item>
-                            ))}
-                          </ListBox>
-                        </Select.Popover>
-                      </Select>
+                        items={cacheSizeItems}
+                        triggerClassName="h-9"
+                      />
                       <div className="mt-2 text-xs text-foreground/50">
                         Maximum disk space the torrent cache may grow to.
                         Only fills as you stream. Larger values reduce
@@ -608,27 +523,15 @@ export default function SettingsPage() {
                   <div className="grid gap-4 md:grid-cols-2">
                     <div>
                       <div className="text-xs text-foreground/60 mb-2">Play in external player</div>
-                      <Select
-                        aria-label="External player"
+                      <BlissSelect
+                        ariaLabel="External player"
                         selectedKey={playerSettings.playInExternalPlayer}
                         onSelectionChange={(key) => {
                           if (typeof key === 'string') updateSettings({ playInExternalPlayer: key });
                         }}
-                      >
-                        <Select.Trigger className={triggerClassName}>
-                          <Select.Value />
-                          <Select.Indicator />
-                        </Select.Trigger>
-                        <Select.Popover>
-                          <ListBox>
-                            {externalPlayerItems.map((item) => (
-                              <ListBox.Item key={item.key} id={item.key} textValue={item.label}>
-                                {item.label}
-                              </ListBox.Item>
-                            ))}
-                          </ListBox>
-                        </Select.Popover>
-                      </Select>
+                        items={externalPlayerItems}
+                        triggerClassName="h-9"
+                      />
                     </div>
 
                     <div className="md:col-span-2">
@@ -731,7 +634,7 @@ export default function SettingsPage() {
                                 : 'cursor-pointer bg-white text-black hover:bg-white/90')
                             }
                           >
-                            {usernameSaving ? 'Saving...' : 'Save'}
+                            {usernameSaving ? 'Saving…' : 'Save'}
                           </button>
                         </div>
                         <div className="mt-2 text-xs text-foreground/50">
@@ -742,7 +645,7 @@ export default function SettingsPage() {
                               : <>
                                   Used to log in to Blissful and as your public handle
                                   (<span className="text-foreground/80">@{currentUsername || 'unset'}</span>)
-                                  -- friends find you by it. Display name is separate and
+                                  — friends find you by it. Display name is separate and
                                   can be anything.
                                 </>}
                         </div>
@@ -779,7 +682,7 @@ export default function SettingsPage() {
                                 : 'cursor-pointer bg-white text-black hover:bg-white/90')
                             }
                           >
-                            {displayNameSaving ? 'Saving...' : 'Save'}
+                            {displayNameSaving ? 'Saving…' : 'Save'}
                           </button>
                         </div>
                         <div className="mt-2 text-xs text-foreground/50">
@@ -787,7 +690,7 @@ export default function SettingsPage() {
                             ? <span className="text-danger">{displayNameError}</span>
                             : <>
                                 Shown in friends, chat, and watch parties. Can be anything
-                                -- spaces, emoji, capitals all fine. Up to 60 characters.
+                                — spaces, emoji, capitals all fine. Up to 60 characters.
                               </>}
                         </div>
                       </div>

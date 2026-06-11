@@ -17,6 +17,9 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     --poster-shape-ratio: 1.464;
+    /* Default accent — also re-applied at runtime from
+       playerSettings.accentColor by StorageProvider, so users can
+       change the site hue from the Settings page. */
     --bliss-accent: #95a2ff;
     --bliss-accent-glow: rgba(149, 162, 255, 0.55);
   }
@@ -28,7 +31,25 @@
 
   body {
     margin: 0;
-    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-family: "Inter", system-ui, sans-serif;
+    /* Stable dark base so the brief gap between route transitions
+       (especially navigating into /player while its chunk loads)
+       doesn't flash the browser's default white background. */
+    background-color: #000;
+  }
+
+  /* Tailwind v4's preflight no longer sets `cursor: pointer` on
+     <button>/role="button" elements. Restore the expected pointer cursor
+     so interactive UI (action buttons, back buttons, action chips) is
+     clearly clickable on hover. Disabled buttons keep the default
+     not-allowed cursor. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
+  html:not(.dark) body {
+    background-color: #ffffff;
   }
 
   :root {
@@ -89,6 +110,32 @@
     }
   }
 
+  @keyframes bliss-player-enter {
+    from {
+      opacity: 0;
+      transform: scale(0.55);
+      border-radius: 36px;
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+      border-radius: 0;
+    }
+  }
+  /* "Expand from center" entry for the player root. Pairs with the
+     body's dark base so the area outside the growing player stays
+     consistently dark instead of flashing the body default.
+     `animation-fill-mode: both` applies the from-state (scale 0.55,
+     opacity 0, border-radius 36px) *before* the animation starts —
+     otherwise the element renders at its default scale(1) for one
+     frame before the animation engine kicks in, which reads as a
+     fullscreen black flash. */
+  .bliss-player-enter {
+    animation: bliss-player-enter 0.5s cubic-bezier(0.4, 0, 0.2, 1) both;
+    transform-origin: center center;
+    will-change: transform, opacity;
+  }
+
   .solid-surface {
     background-color: #2c2c2c;
     border: 0px;
@@ -100,7 +147,12 @@
 
   .bliss-shell {
     position: relative;
-    height: 100vh;
+    /* `dvh` (dynamic viewport height) instead of `vh` so the shell tracks
+       the actual visible area as the iOS address bar collapses/expands —
+       otherwise 100vh stays bigger than the visible viewport and the
+       whole document becomes scrollable, including the absolute-
+       positioned top nav. */
+    height: 100dvh;
     width: 100%;
     overflow: clip;
     --horizontal-nav-margin: 1rem;
@@ -142,7 +194,7 @@
 
   .bliss-top-nav .bliss-nav-input:focus-within {
     border-color: var(--bliss-accent);
-    box-shadow: 0 0 0 1px rgba(25, 247, 210, 0.55);
+    box-shadow: 0 0 0 1px var(--bliss-accent-glow);
   }
 
   .bliss-top-nav .bliss-nav-input input:focus,
@@ -199,6 +251,28 @@
   }
 
   @media (max-width: 768px) {
+    .bliss-top-nav {
+      left: 0;
+    }
+
+    .bliss-vertical-nav {
+      left: 0;
+      width: 0;
+      padding: 0;
+    }
+
+    .bliss-content {
+      left: 0;
+    }
+  }
+
+  /* Mirror the mobile-width overrides for short viewports — at
+     <=370px tall the desktop sidebar is force-hidden and the mobile
+     bottom-nav takes over, so the content + top-nav need to reclaim
+     the left strip that the sidebar would normally occupy. Without
+     this the content gets pushed right by --content-left-offset and
+     a large empty column is left behind. */
+  @media (max-height: 370px) {
     .bliss-top-nav {
       left: 0;
     }
@@ -420,6 +494,81 @@ html:not(.dark) .bliss-sidebar-link:hover {
   border-color: transparent;
 }
 
+/* ── Retro "glitch" hover (port of hermes-agent.nousresearch.com) ────
+   The "glitch" feel is created by three pieces working together:
+   1. The dithered blinking terminal cursor that appears next to the
+      label on hover (see .bliss-sidebar-glitch-cursor below).
+   2. The pixel font (.bliss-sidebar-label-text uses VT323).
+   3. This asymmetric bg flash — slightly inset from the link edges (to
+      match hermes' `inset-1` = 0.25rem) and only ever at ~5% opacity.
+      Hover-in snaps to opacity instantly (`transition-duration: 0`);
+      hover-out fades over 250ms — the "instant on / slow phosphor
+      decay" timing is what reads as retro CRT rather than smooth
+      modern hover. */
+
+/* Dithered terminal cursor — exact port of the technique from
+   hermes-agent.nousresearch.com. The `repeating-conic-gradient(... 0 0 /
+   2px 2px)` is a 2×2 px checkerboard tile painted with the inherited
+   text color; `step-end` blink makes it cut on/off hard (no fade) like a
+   tty. Hidden by default, expands to its natural width inline on hover.
+   Suppressed for the active item — the active state has its own teal
+   color + sliding pill already. */
+/* Hermes' exact spec: `hidden group-hover:inline-block dither blink ml-1
+   w-[1.2ch] -mb-[0.15em] h-[1.1em]`. We mirror that 1:1: `display: none`
+   off-hover → `display: inline-block` on-hover (no width/opacity
+   transition — a hard pop, which is what reads as terminal). The
+   `repeating-conic-gradient` is the dither pattern straight from their
+   `.dither` rule. */
+.bliss-sidebar-glitch-cursor {
+  display: none;
+  width: 0.6em;
+  height: 0.9em;
+  margin-left: 0.35em;
+  margin-bottom: 0;
+  vertical-align: middle;
+  background: repeating-conic-gradient(currentColor 0% 25%, transparent 0% 50%) 0 0 / 3px 3px;
+  color: var(--bliss-accent);
+  animation: bliss-glitch-cursor-blink 1s step-end infinite;
+}
+.bliss-sidebar-link:hover .bliss-sidebar-glitch-cursor,
+.bliss-sidebar-link:focus-visible .bliss-sidebar-glitch-cursor {
+  display: inline-block;
+}
+.bliss-sidebar-link.is-active .bliss-sidebar-glitch-cursor {
+  display: none !important;
+}
+
+@keyframes bliss-glitch-cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Scoped Mondwest for the sidebar labels — same role it plays in the
+   hermes-agent nav. Falls back to VT323, then Courier. Mondwest carries
+   most of the "retro/glitch" personality; without it the dither cursor
+   + flash alone don't read the same. Tracking matches hermes' nav links
+   (`tracking-[0.1875rem]` ≈ 0.1875rem = 3px). */
+.bliss-sidebar-label-text {
+  display: inline-block;
+  white-space: nowrap;
+  font-family: 'Mondwest', 'VT323', 'Courier New', monospace;
+  /* Font scales with the larger of viewport-height or viewport-
+     width so the nav label is readable on short laptop screens
+     AND on 4K TVs from across the room. Floor keeps it legible
+     on phones; ceiling tuned so a 1920×1080 desktop lands ~17px
+     (vs the old ~24px that looked oversized). */
+  font-size: clamp(0.875rem, max(1.4vh, 0.85vw), 1.375rem);
+  letter-spacing: clamp(0.09375rem, max(0.25vh, 0.12vw), 0.25rem);
+  font-weight: 400;
+  line-height: 1;
+}
+
+/* Range sliders (scrub bar + volume): the fill is a background-image
+   sized to `--bliss-track-fill` (set inline from JS). The base layer
+   is a dim white track, so the right-of-thumb portion always shows
+   through behind it. Progress is solid teal; volume uses a multi-stop
+   gradient that goes white for the safe range, then yellow → orange
+   → red so the bar visibly warns past half-volume. */
 .bliss-player-range,
 .bliss-player-volume {
   border-radius: 999px;
@@ -427,12 +576,19 @@ html:not(.dark) .bliss-sidebar-link:hover {
   background-repeat: no-repeat;
 }
 
+/* Progress: solid teal fill on a dim white track. */
 .bliss-player-range {
   background-color: rgba(255, 255, 255, 0.25);
   background-image: linear-gradient(to right, var(--bliss-accent), var(--bliss-accent));
   background-size: var(--bliss-track-fill, 0%) 100%;
 }
 
+/* Volume: filled region is a single solid color picked from the
+   thumb's position on the white→yellow→orange→red scale (set by JS
+   via `--bliss-volume-fill`). The dim rainbow underneath spans the
+   full track and hints at the colors the slider will travel into,
+   but doesn't show a gradient WITHIN the fill — that's the part the
+   user found distracting (colors appearing to scroll with the thumb). */
 .bliss-player-volume {
   background-color: transparent;
   background-image:
@@ -448,6 +604,9 @@ html:not(.dark) .bliss-sidebar-link:hover {
   background-size: var(--bliss-track-fill, 0%) 100%, 100% 100%;
 }
 
+/* Firefox would otherwise paint ::-moz-range-progress on top of the
+   background-size fill — render it transparent so our gradient shows
+   through. */
 .bliss-player-range::-moz-range-progress,
 .bliss-player-volume::-moz-range-progress {
   background: transparent;
@@ -502,25 +661,12 @@ html:not(.dark) .bliss-sidebar-link:hover {
   animation: bliss-buffer-fade 2s infinite;
 }
 
-.bliss-buffering-fallback {
-  width: 120px;
-  height: 120px;
-  border-radius: 999px;
-  border: 2px solid rgba(255, 255, 255, 0.2);
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(12px);
-  animation: bliss-buffer-fade 2s infinite;
-  display: grid;
-  place-items: center;
-  font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.7);
-}
-
 .bliss-player-icon-btn {
   color: rgba(255, 255, 255, 0.85);
   background: transparent;
   border: none;
   transition: color 140ms ease;
+  cursor: pointer;
 }
 
 .bliss-player-icon-btn:hover {
@@ -529,56 +675,37 @@ html:not(.dark) .bliss-sidebar-link:hover {
 
 .bliss-player-icon-btn:disabled {
   opacity: 0.4;
+  cursor: not-allowed;
 }
 
-@keyframes bliss-player-enter {
-  from { opacity: 0; transform: scale(0.55); border-radius: 36px; }
-  to { opacity: 1; transform: scale(1); border-radius: 0; }
-}
-.bliss-player-enter {
-  animation: bliss-player-enter 0.5s cubic-bezier(0.4, 0, 0.2, 1) both;
-  transform-origin: center center;
-  will-change: transform, opacity;
-}
-
-@keyframes bliss-player-top-slide-in {
-  from { transform: translateY(-100%); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
-@keyframes bliss-player-bottom-slide-in {
-  from { transform: translateY(100%); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
-.bliss-player-top-slide-in {
-  animation: bliss-player-top-slide-in 360ms cubic-bezier(0.4, 0, 0.2, 1) both;
-}
-.bliss-player-bottom-slide-in {
-  animation: bliss-player-bottom-slide-in 360ms cubic-bezier(0.4, 0, 0.2, 1) both;
+/* Episode card hover — cards are dimmed via `filter: brightness()`
+ * inline based on distance from the focused episode; on hover
+ * we reset the filter so the user can preview the card at full
+ * brightness. `!important` is needed to override the React
+ * inline style. */
+.bliss-episode-card:hover {
+  filter: brightness(1) !important;
 }
 
-@keyframes bliss-route-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
+/* Buffering pulse — starts at full opacity so the logo is visible the
+   moment the element mounts (previously started at 0.2, which made the
+   buffering screen look like a "black screen for half a second" before
+   the pulse cycled up to full opacity around t=1s). */
 @keyframes bliss-buffer-fade {
   0% {
-    opacity: 0.2;
-  }
-  50% {
     opacity: 1;
   }
+  50% {
+    opacity: 0.35;
+  }
   100% {
-    opacity: 0.2;
+    opacity: 1;
   }
 }
 
-/* Autoplay redirect veil: mounts on top of DetailPage while the
-   auto-pick effect resolves streams and forwards to /player. Fades
-   from transparent to solid black so the torrent picker dissolves
-   into a black screen, after which the player mounts with its own
-   buffering loader at the same exact center — no jump cut. */
-@keyframes bliss-autoplay-enter {
+/* BlissTooltip pop-in — quick fade + slight settle. Pure CSS so the
+   portal node needs no animation library. */
+@keyframes bliss-tooltip-in {
   from {
     opacity: 0;
   }
@@ -587,8 +714,8 @@ html:not(.dark) .bliss-sidebar-link:hover {
   }
 }
 
-.bliss-autoplay-enter {
-  animation: bliss-autoplay-enter 260ms ease-out both;
+.bliss-tooltip-pop {
+  animation: bliss-tooltip-in 120ms ease-out;
 }
 
 .dark .bliss-sidebar-link.is-active {
@@ -601,49 +728,6 @@ html:not(.dark) .bliss-sidebar-link.is-active {
   background: transparent;
   color: var(--bliss-accent);
   border-color: transparent;
-}
-
-/* Dithered terminal cursor — the `repeating-conic-gradient(... 0 0 /
-   3px 3px)` is a 3×3 px checkerboard tile painted with the inherited
-   `currentColor`, which is `--bliss-accent` on the link. The cursor
-   blinks with a 1s step-end animation so it looks like a retro CRT
-   block cursor rather than a smooth pulse. */
-.bliss-sidebar-glitch-cursor {
-  display: none;
-  width: 0.6em;
-  height: 0.9em;
-  margin-left: 0.35em;
-  margin-bottom: 0;
-  vertical-align: middle;
-  background: repeating-conic-gradient(currentColor 0% 25%, transparent 0% 50%) 0 0 / 3px 3px;
-  color: var(--bliss-accent);
-  animation: bliss-glitch-cursor-blink 1s step-end infinite;
-}
-.bliss-sidebar-link:hover .bliss-sidebar-glitch-cursor,
-.bliss-sidebar-link:focus-visible .bliss-sidebar-glitch-cursor {
-  display: inline-block;
-}
-.bliss-sidebar-link.is-active .bliss-sidebar-glitch-cursor {
-  display: none !important;
-}
-
-@keyframes bliss-glitch-cursor-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
-
-/* Scoped Mondwest for the sidebar labels — falls back to VT323, then
-   Courier. Mondwest carries the pixel-grid aesthetic that makes the
-   scramble glitch look like noisy decryption rather than random
-   garbage in a modern typeface. */
-.bliss-sidebar-label-text {
-  display: inline-block;
-  white-space: nowrap;
-  font-family: 'Mondwest', 'VT323', 'Courier New', monospace;
-  font-size: clamp(0.875rem, max(1.4vh, 0.85vw), 1.375rem);
-  letter-spacing: clamp(0.09375rem, max(0.25vh, 0.12vw), 0.25rem);
-  font-weight: 400;
-  line-height: 1;
 }
 
 .bliss-sidebar-label {
@@ -665,12 +749,17 @@ html:not(.dark) .bliss-sidebar-link.is-active {
   margin-left: 0;
 }
 
-/* Fixed-width icon "slot" used by NavItem rows. The width is the
-   SAME expression as the collapsed-sidebar button's INNER (content-
-   box) width: collapsed_sidebar - 2.5rem sidebar padding - 2rem
-   button mx - 2px button border. Without subtracting the border
-   the slot would be 2px wider than the content area, pushing the
-   centered icon 1px off-center. */
+/* Fixed-width icon "slot" used by NavItem rows, the logo bar, and
+   the collapsed-footer Friends/CW buttons. The width is the SAME
+   expression as the collapsed-sidebar button's INNER (content-box)
+   width: collapsed_sidebar - 2.5rem sidebar padding - 2rem button
+   mx - 2px button border. That last -2px matters: the button has
+   `border: 1px solid` via .bliss-sidebar-link, and with
+   `box-sizing: border-box` the active pill (`absolute inset-0`)
+   covers the CONTENT area (2px narrower than the outer width).
+   Without subtracting the border the slot was 2px wider than the
+   content area, overflowing 1px past each side and pushing the
+   centered icon 1px to the right of the pill's center. */
 .nav-icon-slot {
   width: calc(clamp(128px, 7vw, 200px) - 4.5rem - 2px);
 }
@@ -692,40 +781,6 @@ html:not(.dark) .bliss-sidebar-link.is-active {
   -webkit-backdrop-filter: blur(12px);
 }
 
-.account-skeleton-shimmer {
-  position: relative;
-  overflow: hidden;
-}
-
-.account-skeleton-shimmer::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  transform: translateX(-120%);
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
-  animation: bliss-shimmer 1.35s linear infinite;
-}
-
-@keyframes bliss-shimmer {
-  100% {
-    transform: translateX(120%);
-  }
-}
-
-/* BlissTooltip pop-in — quick fade. Pure CSS so the portal node needs
-   no animation library. */
-@keyframes bliss-tooltip-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.bliss-tooltip-pop {
-  animation: bliss-tooltip-in 120ms ease-out;
-}
 
 @keyframes detail-drawer-enter {
   0% {
@@ -829,13 +884,23 @@ html:not(.dark) .bliss-sidebar .toggle {
   height: 100%;
   object-fit: cover;
   object-position: top left;
+  /* Dim-in animation: starts at full brightness (opacity 1), then
+     gradually dims to its resting 0.3 opacity over 1.2s. `both` fill
+     mode applies the `from` state immediately on mount and keeps the
+     `to` state after — so the final visible opacity is the keyframe's
+     end (0.3), and the static `opacity: 0.3` above is just a fallback
+     for environments where the animation is suppressed. */
   opacity: 0.3;
   animation: detail-backdrop-dim 1.2s ease-out both;
 }
 
 @keyframes detail-backdrop-dim {
-  from { opacity: 1; }
-  to { opacity: 0.3; }
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.3;
+  }
 }
 
 /* Meta preview (stremio-custom-like) */
@@ -859,21 +924,12 @@ html:not(.dark) .bliss-sidebar .toggle {
 }
 
 .meta-info-container-ub8AH {
-  /* No internal scroll -- content flows naturally and the OUTER
+  /* No internal scroll — content flows naturally and the OUTER
      MetaContent wrapper (overflow-auto) becomes the single scroll
      viewport. Two nested scroll areas previously hid the bottom of
      the Summary paragraph behind the action-buttons row. */
   flex: 1;
   align-self: stretch;
-}
-
-.meta-info-container-ub8AH:not(:hover) {
-  scrollbar-color: transparent transparent;
-}
-
-.meta-info-container-ub8AH:not(:hover)::-webkit-scrollbar-thumb,
-.meta-info-container-ub8AH:not(:hover)::-webkit-scrollbar-track {
-  background-color: transparent;
 }
 
 .logo-X3hTV {
@@ -913,21 +969,23 @@ html:not(.dark) .bliss-sidebar .toggle {
   flex-direction: row;
   align-items: center;
   border-radius: 0.5rem;
-  padding: 0rem 0.5rem;
+  padding: 0rem 0.25rem 0rem 0.5rem;
 }
 
-.imdb-button-container-hTq0g .label {
+.imdb-button-container-hTq0g .bliss-rating-value {
   flex: 0 1 auto;
-  margin-right: 1rem;
-  font-size: 1.25rem;
+  margin-right: 0.35rem;
+  font-size: clamp(0.875rem, 1.4vw, 1.25rem);
   font-weight: 600;
   color: #fff;
 }
 
 .imdb-button-container-hTq0g .icon-N_uIU {
   flex: none;
-  width: 3rem;
-  height: 3rem;
+  /* Fluid IMDb badge — was a chunky 3rem (48px) on every viewport;
+     now scales from 1.5rem on phones to 3rem only at 1500px+. */
+  width: clamp(1.5rem, 2.5vw, 3rem);
+  height: clamp(1.5rem, 2.5vw, 3rem);
   color: #f5c518;
 }
 
@@ -938,7 +996,9 @@ html:not(.dark) .bliss-sidebar .toggle {
   flex-direction: row;
   align-items: flex-end;
   flex-wrap: wrap;
-  padding-top: 3.5rem;
+  /* Tighter pad-top — the old 3.5rem above the row pushed the
+     Summary paragraph above into the scroll-clipped region. */
+  padding-top: clamp(0.75rem, 1.5vw, 1.5rem);
   overflow: visible;
 }
 
@@ -958,23 +1018,26 @@ html:not(.dark) .bliss-sidebar .toggle {
 }
 
 .action-button-Pn4hZ {
-  height: 4rem;
+  /* Fluid pill — used to be a fixed 4rem (64px) tall regardless of
+     viewport, dominating the detail page on medium screens. Now
+     scales 2.5rem → 4rem with padding/gap shrinking in lockstep. */
+  height: clamp(2.5rem, 4.5vw, 4rem);
   border-radius: 4rem;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.08);
   color: #fff;
   display: inline-flex;
   align-items: center;
-  gap: 0.85rem;
-  padding: 0 1.5rem;
-  margin-bottom: 1rem;
+  gap: clamp(0.4rem, 0.8vw, 0.85rem);
+  padding: 0 clamp(0.75rem, 1.5vw, 1.5rem);
+  margin-bottom: clamp(0.5rem, 1vw, 1rem);
   transition:
     background 140ms ease,
     transform 140ms ease;
 }
 
 .action-button-Pn4hZ:not(:last-child) {
-  margin-right: 1rem;
+  margin-right: clamp(0.4rem, 1vw, 1rem);
 }
 
 .action-button-Pn4hZ:hover {
@@ -991,16 +1054,44 @@ html:not(.dark) .bliss-sidebar .toggle {
 }
 
 .action-button-Pn4hZ .icon {
-  width: 2.2rem;
-  height: 2.2rem;
+  width: clamp(1.125rem, 1.8vw, 2.2rem);
+  height: clamp(1.125rem, 1.8vw, 2.2rem);
 }
 
 .action-button-Pn4hZ .text {
-  font-size: 1rem;
+  font-size: clamp(0.8125rem, 1.1vw, 1rem);
   font-weight: 600;
   letter-spacing: -0.01em;
   color: #fff;
   white-space: nowrap;
+}
+
+/* Primary "Play" CTA variant — bright off-white pill with dark icon
+   + label. On hover the pill goes pure white and lifts with a soft
+   glow; on press it scales down 2% for a tactile feel. */
+.action-button-Pn4hZ.is-play {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(255, 255, 255, 0.95);
+  transition:
+    background 200ms ease,
+    box-shadow 200ms ease,
+    transform 200ms ease,
+    border-color 200ms ease;
+}
+
+.action-button-Pn4hZ.is-play .icon,
+.action-button-Pn4hZ.is-play .text {
+  color: #05070a;
+}
+
+.action-button-Pn4hZ.is-play:hover {
+  background: #fff;
+  border-color: #fff;
+  box-shadow: 0 0 24px rgba(255, 255, 255, 0.35);
+}
+
+.action-button-Pn4hZ.is-play:active {
+  transform: scale(0.98);
 }
 
 .animation-fade-in {
@@ -1018,18 +1109,39 @@ html:not(.dark) .bliss-sidebar .toggle {
   }
 }
 
-@media only screen and (max-width: 640px) {
-  .meta-preview-ES0h3 {
-    padding: 0 1.5rem 2rem;
-  }
+/* Route-level fade-in used by `RouteTransition`. Opacity only — no
+   transform — so it doesn't interfere with layoutId FLIP morphs from
+   MediaCard into DetailPage. */
+@keyframes bliss-route-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
 
+/* Player controls slide-in on mount: top bar drops from above, bottom
+   bar rises from below. Runs once when BlissfulPlayer mounts. Subsequent
+   show/hide cycles are handled by the inline transition-opacity +
+   translate classes on the overlays. */
+@keyframes bliss-player-top-slide-in {
+  from { transform: translateY(-100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@keyframes bliss-player-bottom-slide-in {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.bliss-player-top-slide-in {
+  animation: bliss-player-top-slide-in 360ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+.bliss-player-bottom-slide-in {
+  animation: bliss-player-bottom-slide-in 360ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+/* Phone-only override (≤ 640px) — centre the logo above the meta
+   info inside MobileHero. clamp()-based scaling above already
+   handles all the font/icon/button sizing fluidly. */
+@media only screen and (max-width: 640px) {
   .logo-X3hTV {
     margin: 2rem auto;
-  }
-
-  .runtime-label-ywyh7,
-  .release-info-label-ywyh7 {
-    margin-right: 1rem;
   }
 }
 
@@ -1136,7 +1248,7 @@ html:not(.dark) .bliss-sidebar .toggle {
 }
 
 .netflix-hero-title {
-  font-family: "Fraunces", serif;
+  font-family: "Instrument Serif", serif;
   font-size: clamp(3rem, 4.6vw, 5.2rem);
   line-height: 1.02;
   color: #fff;
@@ -1398,7 +1510,7 @@ html:not(.dark) .bliss-sidebar .toggle {
 
 /* Netflix UI mode */
 html[data-ui="netflix"] body {
-  font-family: "IBM Plex Sans", sans-serif;
+  font-family: "Inter", sans-serif;
   color: #e6e6e6;
   background: #0b0b0b;
 }
@@ -1766,7 +1878,7 @@ html[data-ui="netflix"] .netflix-detail .action-button-Pn4hZ.is-active {
 }
 
 .netflix-overlay-title {
-  font-family: "Fraunces", serif;
+  font-family: "Instrument Serif", serif;
   font-size: clamp(0.95rem, 0.35vw + 0.8rem, 1.25rem);
   font-weight: 600;
   letter-spacing: 0.01em;
@@ -1914,8 +2026,8 @@ html[data-ui="netflix"] .netflix-detail .action-button-Pn4hZ.is-active {
 .netflix-imdb {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.2rem 0.65rem;
+  gap: 0.25rem;
+  padding: 0.15rem 0.55rem 0.15rem 0.65rem;
   border-radius: 999px;
   background: rgba(245, 197, 24, 0.18);
   border: 1px solid rgba(245, 197, 24, 0.5);
@@ -1924,13 +2036,8 @@ html[data-ui="netflix"] .netflix-detail .action-button-Pn4hZ.is-active {
 }
 
 .netflix-imdb-icon {
-  width: 2.6rem;
-  height: 1.4rem;
-}
-
-.netflix-imdb-score {
-  font-size: 0.95rem;
-  color: #fff;
+  width: 2rem;
+  height: 2rem;
 }
 
 @keyframes netflix-overlay-in {
@@ -2011,36 +2118,27 @@ html[data-ui="netflix"] .netflix-detail .action-button-Pn4hZ.is-active {
   }
 }
 
-/* Liquid drop-in animation for notification toasts (top placement).
-   The toast slides down from above with a slight overshoot + settle
-   curve that reads as a fluid "drop" rather than a mechanical slide. */
-@keyframes bliss-toast-drop-in {
-  0% {
-    opacity: 0;
-    transform: translateY(-100%) scaleY(0.85);
-  }
-  50% {
-    opacity: 1;
-    transform: translateY(6px) scaleY(1.02);
-  }
-  70% {
-    transform: translateY(-2px) scaleY(0.99);
-  }
+/* ---------------------------------------------------------------------------
+   Desktop-kept rules — used by NativeMpvPlayer/SimplePlayer (which the web
+   variant deleted) and the shared Skeleton shimmer. Appended during the
+   web/desktop unification; see docs/MONOREPO-MIGRATION-PLAN.md. */
+
+.bliss-buffering-fallback {
+  width: 120px;
+  height: 120px;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(12px);
+  animation: bliss-buffer-fade 2s infinite;
+  display: grid;
+  place-items: center;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+@keyframes bliss-shimmer {
   100% {
-    opacity: 1;
-    transform: translateY(0) scaleY(1);
-  }
-}
-
-/* HeroUI Toast.Provider uses `[data-placement="top"]` on the toast
-   region. Target individual toast items inside it. */
-[data-placement="top"] [data-toast] {
-  animation: bliss-toast-drop-in 420ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
-  transform-origin: top center;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  [data-placement="top"] [data-toast] {
-    animation: none;
+    transform: translateX(120%);
   }
 }

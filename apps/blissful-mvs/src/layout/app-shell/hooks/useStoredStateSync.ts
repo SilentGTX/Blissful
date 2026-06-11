@@ -7,7 +7,6 @@ import {
   type PlayerSettings,
 } from '../../../lib/playerSettings';
 import { fetchStoredState, saveStoredState, type BlissfulStorageState } from '../../../lib/storageApi';
-import { isElectronDesktopApp } from '../../../lib/platform';
 import type { UiStyle } from '../types';
 import { applyGradient } from '../utils';
 import { HOME_PREFS_KEY } from '../constants';
@@ -66,8 +65,9 @@ export function useStoredStateSync({
       if (!state) {
         console.warn('[storage-sync] state is null — nothing to apply');
         setStorageState(null);
-        // No server state yet. Avoid overwriting a user's account from Electron defaults.
-        if (!isElectronDesktopApp() && !isDefault) {
+        // No server state yet — bootstrap from local player settings if
+        // they've been customised.
+        if (!isDefault) {
           void saveStoredState(authKey, { playerSettings: local }).catch(() => {
             // ignore
           });
@@ -80,8 +80,9 @@ export function useStoredStateSync({
         setIsDark(state.theme === 'dark');
       }
       if (state.uiStyle) {
-        setUiStyle(state.uiStyle === 'netflix' ? 'netflix' : 'classic');
-        localStorage.setItem('uiStyle', state.uiStyle);
+        const normalized = state.uiStyle === 'netflix' || state.uiStyle === 'modern' ? state.uiStyle : 'classic';
+        setUiStyle(normalized);
+        localStorage.setItem('uiStyle', normalized);
       }
       if (state.homeRowPrefs) {
         setHomeRowPrefs(state.homeRowPrefs);
@@ -103,9 +104,8 @@ export function useStoredStateSync({
         }
       } else {
         // If the user customized settings while logged out (localStorage only),
-        // bootstrap the server state on first sync so other devices (and Electron)
-        // can pick it up.
-        if (!isElectronDesktopApp() && !isDefault) {
+        // bootstrap the server state on first sync so other devices can pick it up.
+        if (!isDefault) {
           void saveStoredState(authKey, { ...state, playerSettings: local }).catch(() => {
             // ignore
           });
