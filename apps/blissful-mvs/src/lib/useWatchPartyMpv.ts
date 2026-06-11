@@ -35,6 +35,9 @@ export type UseWatchPartyMpvOptions = {
   password?: string | null;
   /** Callback fired on guests when the host changes the current episode. */
   onHostEpisodeChange?: (videoId: string | null) => void;
+  /** Callback fired on guests when the host changes subtitle language (or null
+   *  = off) so they match it. Also fired on join with the room's current value. */
+  onHostSubsChange?: (lang: string | null) => void;
   /** Ref that tracks the latest paused state from mpv. Read by the
    *  host tick interval to avoid re-rendering on every tick. */
   pausedRef: React.RefObject<boolean>;
@@ -51,6 +54,9 @@ export type UseWatchPartyMpvResult = {
   typingNames: string[];
   reactions: ReactionMap;
   error: string | null;
+  /** The last error's machine code (e.g. 'no-room', 'password-incorrect') so
+   *  callers can react precisely without string-matching the message. */
+  errorCode: string | null;
   sendChat: (text: string) => void;
   toggleReaction: (messageKey: string, emoji: string) => void;
   broadcastSeek: (currentTime: number) => void;
@@ -58,6 +64,12 @@ export type UseWatchPartyMpvResult = {
   broadcastPause: () => void;
   sendTyping: () => void;
   announceEpisode: (videoId: string | null) => void;
+  /** Host-only: announce the selected subtitle language (or null = off). */
+  announceSubs: (lang: string | null) => void;
+  /** "Buffer until everybody loads" gate — true while any member is buffering. */
+  partyWaiting: boolean;
+  /** Report our own buffering state into the gate. */
+  sendBuffering: (waiting: boolean) => void;
   transferHost: (targetUserId: string) => void;
   leave: () => void;
 };
@@ -73,6 +85,7 @@ export function useWatchPartyMpv({
   displayName,
   password,
   onHostEpisodeChange,
+  onHostSubsChange,
   pausedRef,
 }: UseWatchPartyMpvOptions): UseWatchPartyMpvResult {
   const [connected, setConnected] = useState(false);
@@ -84,6 +97,13 @@ export function useWatchPartyMpv({
   const [typingMap, setTypingMap] = useState<Map<string, { displayName: string; at: number }>>(() => new Map());
   const [reactions, setReactions] = useState<ReactionMap>({});
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
+  // "Buffer until everybody loads" gate — true while some member (us or
+  // another) is still buffering, so the player holds. We report our own
+  // buffering via sendBuffering(); the server aggregates + broadcasts `gate`.
+  const [partyWaiting, setPartyWaiting] = useState(false);
+  const partyWaitingRef = useRef(false);
+  partyWaitingRef.current = partyWaiting;
 
   const wsRef = useRef<WebSocket | null>(null);
   const tickTimerRef = useRef<number | null>(null);
@@ -99,6 +119,8 @@ export function useWatchPartyMpv({
   const connectedAtRef = useRef(0);
   const onHostEpisodeChangeRef = useRef(onHostEpisodeChange);
   onHostEpisodeChangeRef.current = onHostEpisodeChange;
+  const onHostSubsChangeRef = useRef(onHostSubsChange);
+  onHostSubsChangeRef.current = onHostSubsChange;
 
   const pushActivity = useCallback((item: WatchPartyActivity) => {
     setActivity((prev) => [...prev.slice(-19), item]);
@@ -115,6 +137,14 @@ export function useWatchPartyMpv({
       // Socket may have closed between the readyState check and send.
     }
   }, []);
+
+  // De-duped buffering report for the "buffer until everybody loads" gate.
+  const lastBufferingSentRef = useRef<boolean | null>(null);
+  const sendBuffering = useCallback((waiting: boolean) => {
+    if (lastBufferingSentRef.current === waiting) return;
+    lastBufferingSentRef.current = waiting;
+    send({ t: 'buffering', waiting });
+  }, [send]);
 
   const sendChat = useCallback(
     (text: string) => {
@@ -191,6 +221,13 @@ export function useWatchPartyMpv({
     [send]
   );
 
+  const announceSubs = useCallback(
+    (lang: string | null) => {
+      send({ t: 'host:subs', lang });
+    },
+    [send]
+  );
+
   const transferHost = useCallback(
     (targetUserId: string) => {
       send({ t: 'host:transfer', targetUserId });
@@ -243,6 +280,17 @@ export function useWatchPartyMpv({
   const applyHostTick = useCallback(
     (currentTime: number, isPlaying: boolean, latencyMs: number) => {
       if (Date.now() - lastLocalActionAtRef.current < 1500) return;
+      // Buffer-until-everybody gate takes precedence: while waiting, hold
+      // paused and ignore the tick's play state. A buffering host is STALLED
+      // (not paused) so it still broadcasts isPlaying=true — without this a
+      // loaded member would keep being told to play behind the buffering veil.
+      if (partyWaitingRef.current) {
+        if (!pausedRef.current) {
+          applyingRemoteAtRef.current = Date.now();
+          desktop.pause().catch(() => {});
+        }
+        return;
+      }
       const expected = isPlaying ? currentTime + latencyMs / 1000 : currentTime;
       const current = playbackClock.get();
       const drift = Math.abs(current - expected);
@@ -272,6 +320,7 @@ export function useWatchPartyMpv({
       setParticipants([]);
       setChat([]);
       setError(null);
+      setErrorCode(null);
       return;
     }
 
@@ -311,6 +360,8 @@ export function useWatchPartyMpv({
           connectedAtRef.current = Date.now();
           setConnected(true);
           setError(null);
+          setErrorCode(null);
+          lastBufferingSentRef.current = null; // re-report buffering on (re)connect
           if (Array.isArray(msg.chat)) {
             setChat(msg.chat.slice(-99));
           } else {
@@ -328,6 +379,10 @@ export function useWatchPartyMpv({
               msg.lastTick.isPlaying,
               Date.now() - msg.lastTick.at
             );
+          }
+          // Late joiner: match the host's current subtitle language.
+          if (msg.self.userId !== msg.hostUserId && msg.subtitleLang) {
+            onHostSubsChangeRef.current?.(msg.subtitleLang);
           }
         } else if (msg.t === 'presence') {
           if (msg.kind === 'joined') {
@@ -391,6 +446,12 @@ export function useWatchPartyMpv({
           });
         } else if (msg.t === 'episode') {
           onHostEpisodeChangeRef.current?.(msg.videoId);
+        } else if (msg.t === 'subs') {
+          // Host changed subtitle language — guests match it.
+          onHostSubsChangeRef.current?.(msg.lang);
+        } else if (msg.t === 'gate') {
+          // Buffer-until-everybody-loads gate flipped.
+          setPartyWaiting(msg.waiting);
         } else if (msg.t === 'chat') {
           setChat((prev) => [...prev.slice(-99), { from: msg.from, text: msg.text, at: msg.at }]);
         } else if (msg.t === 'reaction') {
@@ -414,6 +475,7 @@ export function useWatchPartyMpv({
           });
         } else if (msg.t === 'error') {
           setError(msg.message);
+          setErrorCode(msg.code ?? null);
           if (
             msg.code === 'no-room'
             || msg.code === 'auth'
@@ -489,6 +551,25 @@ export function useWatchPartyMpv({
     };
   }, [connected, isHost, send, pausedRef]);
 
+  // Gate hold: while ANY member is buffering, pause our playback (without
+  // broadcasting — echo-suppressed via applyingRemoteAtRef). When the gate
+  // opens, resume if we were playing, so the whole party starts together
+  // instead of the first-loaded member ping-ponging at the seek point.
+  const wasPlayingBeforeGateRef = useRef(false);
+  useEffect(() => {
+    if (!connected) return;
+    if (partyWaiting) {
+      wasPlayingBeforeGateRef.current = !pausedRef.current;
+      if (!pausedRef.current) {
+        applyingRemoteAtRef.current = Date.now();
+        desktop.pause().catch(() => {});
+      }
+    } else if (wasPlayingBeforeGateRef.current && pausedRef.current) {
+      applyingRemoteAtRef.current = Date.now();
+      desktop.play().catch(() => {});
+    }
+  }, [partyWaiting, connected, pausedRef]);
+
   // Sweep stale typing entries every second.
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -526,6 +607,7 @@ export function useWatchPartyMpv({
     typingNames,
     reactions,
     error,
+    errorCode,
     sendChat,
     sendTyping,
     broadcastSeek,
@@ -533,6 +615,9 @@ export function useWatchPartyMpv({
     broadcastPause,
     toggleReaction,
     announceEpisode,
+    announceSubs,
+    partyWaiting,
+    sendBuffering,
     transferHost,
     leave,
   };

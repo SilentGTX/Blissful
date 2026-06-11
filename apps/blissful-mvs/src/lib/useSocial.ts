@@ -1,7 +1,4 @@
-// Stubbed user-search + presence-lookup hooks.
-// The desktop app does not have a live social backend, so these
-// return empty results. The hooks keep their signatures so the
-// Friends UI compiles.
+// User-search + presence-lookup hooks.
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthProvider';
@@ -12,7 +9,10 @@ import {
   type UserSearchResult,
 } from './blissfulAuthApi';
 
-const PRESENCE_POLL_MS = 30 * 1000;
+// 12s so a friend starting/stopping a stream shows up quickly in the sidebar
+// (the watcher now publishes activity changes immediately, so this poll is the
+// only remaining latency). Small payload — just the friend IDs' presence.
+const PRESENCE_POLL_MS = 12 * 1000;
 
 /** Debounced people search across all Blissful users (excludes self). */
 export function useUserSearch(query: string) {
@@ -52,7 +52,7 @@ export function useUserSearch(query: string) {
   return { results, loading };
 }
 
-/** Presence for a stable set of userIds. Polls every 30s so "online"
+/** Presence for a stable set of userIds. Polls every 12s so "online"
  *  toggles within a heartbeat. Returns a Map keyed by userId. */
 export function usePresenceLookup(userIds: string[]): Map<string, PresenceRecord> {
   const { authKey } = useAuth();
@@ -81,9 +81,17 @@ export function usePresenceLookup(userIds: string[]): Map<string, PresenceRecord
     };
     refresh();
     const id = window.setInterval(refresh, PRESENCE_POLL_MS);
+    // Refresh the moment the user returns to the tab / focuses the window, so
+    // presence is current when they go to send an invite (no waiting for the
+    // next poll tick, no "refresh the page 50 times").
+    const onFocus = () => { if (document.visibilityState === 'visible') refresh(); };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authKey, key]);

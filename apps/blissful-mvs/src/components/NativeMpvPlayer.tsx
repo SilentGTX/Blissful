@@ -44,6 +44,7 @@ import {
 import type { WatchPartyDrawerTab } from './WatchParty/WatchPartyDrawer';
 import { BufferingOverlay } from './NativeMpvPlayer/BufferingOverlay';
 import { usePlayerReady } from '../context/PlayerReadyProvider';
+import { useActiveParties } from '../context/ActivePartiesProvider';
 import { triggerStremioItemSync } from '../lib/stremioLinkApi';
 import { UpNextOverlay } from './NativeMpvPlayer/UpNextOverlay';
 import { SettingsPanel, type SettingsTab, type ReleaseOption } from './NativeMpvPlayer/SettingsPanel';
@@ -73,7 +74,7 @@ import {
   getOrCreateGuestUserId,
   getStoredGuestName,
   getWatchPartyPassword,
-  getWatchPartyRoom,
+  getWatchPartyRoomStatus,
   setStoredGuestName,
   stashWatchPartyPassword,
   clearWatchPartyPassword,
@@ -565,6 +566,11 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   const [selectedSubLang, setSelectedSubLang] = useState<string | null>(null);
   // `embedded:<id>` for in-torrent tracks, `addon:<key>` for fetched, `off` for none.
   const [selectedSubKey, setSelectedSubKey] = useState<string>('off');
+  // Watch-party guests: the subtitle language the host last asked us to match
+  // (null = off, undefined = host hasn't shared one). Recorded here by the
+  // hook's onHostSubsChange callback (which runs before the subtitle apply
+  // logic is defined); a later effect applies it once a matching track exists.
+  const [hostWantSubLang, setHostWantSubLang] = useState<string | null | undefined>(undefined);
   const [subtitleDelay, setSubtitleDelay] = useState(0);
   // Maps addon-track key -> mpv sub-track id assigned by `sub-add`. We
   // remember these so re-selecting an addon track doesn't re-download.
@@ -846,6 +852,11 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   const [guestId] = useState<string>(() => getOrCreateGuestUserId());
 
   const [roomInfo, setRoomInfo] = useState<{ hasPassword: boolean } | null>(null);
+  // Clears a dead room's stale "Join party" cache entry; the ref makes the
+  // bail-out fire once per code (the REST-404 effect + the WS no-room effect
+  // both use it).
+  const { clearByCode: clearActiveParty } = useActiveParties();
+  const handledNoRoomRef = useRef<string | null>(null);
   const [partyPassword, setPartyPassword] = useState<string | null>(() =>
     props.roomCode ? getWatchPartyPassword(props.roomCode) : null
   );
@@ -853,20 +864,34 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     setPartyPassword(props.roomCode ? getWatchPartyPassword(props.roomCode) : null);
   }, [props.roomCode]);
 
-  // Fetch room info to know if password is required.
+  // Fetch room info to know if a password is required — and bail out of a
+  // dead room (404) instead of sitting on "Connecting…" forever loading a
+  // stale title. A 404 means the room is gone (host left / reaped): its
+  // "Join party" cache entry was stale, so purge it, tell the user, leave.
   useEffect(() => {
-    if (!props.roomCode) {
+    const code = props.roomCode;
+    if (!code) {
       setRoomInfo(null);
       return;
     }
     let cancelled = false;
     (async () => {
-      const info = await getWatchPartyRoom(props.roomCode!);
+      const result = await getWatchPartyRoomStatus(code);
       if (cancelled) return;
-      setRoomInfo(info ? { hasPassword: info.hasPassword } : null);
+      if (result.status === 'gone') {
+        if (handledNoRoomRef.current !== code) {
+          handledNoRoomRef.current = code;
+          clearActiveParty(code);
+          notifyError('Watch party ended', 'That party is no longer active.');
+          navigate('/', { replace: true });
+        }
+        setRoomInfo(null);
+        return;
+      }
+      setRoomInfo(result.status === 'exists' ? { hasPassword: result.info.hasPassword } : null);
     })();
     return () => { cancelled = true; };
-  }, [props.roomCode]);
+  }, [props.roomCode, clearActiveParty, navigate]);
 
   const handleHostEpisodeChange = useCallback(
     (videoId: string | null) => {
@@ -880,6 +905,14 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     },
     [navigate]
   );
+
+  // Watch-party guests: record the host's chosen subtitle language. Just stash
+  // it — the apply effect (defined with the other subtitle logic below) matches
+  // it to a local track once one is available. Stashing rather than applying
+  // here keeps this callback above the subtitle-apply definitions.
+  const handleHostSubsChange = useCallback((lang: string | null) => {
+    setHostWantSubLang(lang);
+  }, []);
 
   // Gate: only connect when room info loaded, password supplied if
   // needed, and display name chosen.
@@ -896,8 +929,14 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     displayName: watchPartyDisplayName ?? '',
     password: partyPassword,
     onHostEpisodeChange: handleHostEpisodeChange,
+    onHostSubsChange: handleHostSubsChange,
     pausedRef: wpPausedRef,
   });
+
+  // Party guests mirror the host — hide the Releases + Audio pickers so they
+  // can't drift onto a different torrent/track. Subtitles stay: the host
+  // shares its subtitle language and guests match it.
+  const partyNonHost = watchParty.connected && !watchParty.isHost;
 
   // Clear stale password on error.
   useEffect(() => {
@@ -906,6 +945,26 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       setPartyPassword(null);
     }
   }, [watchParty.error, props.roomCode]);
+
+  // Belt-and-suspenders: if the room dies WHILE we're connected (host leaves,
+  // reaper fires), the WS sends a no-room error — same cleanup as the REST 404
+  // path above.
+  useEffect(() => {
+    if (watchParty.errorCode !== 'no-room' || !props.roomCode) return;
+    if (handledNoRoomRef.current === props.roomCode) return;
+    handledNoRoomRef.current = props.roomCode;
+    clearActiveParty(props.roomCode);
+    notifyError('Watch party ended', 'That party is no longer active.');
+    navigate('/', { replace: true });
+  }, [watchParty.errorCode, props.roomCode, clearActiveParty, navigate]);
+
+  // Watch party "buffer until everybody loads": report our buffering state into
+  // the gate so the room holds until every member is ready. `buffering` is the
+  // same mpv paused-for-cache/seeking signal that drives the buffering veil.
+  useEffect(() => {
+    if (!watchParty.connected) return;
+    watchParty.sendBuffering(buffering);
+  }, [watchParty.connected, watchParty.sendBuffering, buffering]);
 
   // Host broadcasts episode changes.
   const lastAnnouncedVideoIdRef = useRef<string | null>(props.videoId);
@@ -2784,6 +2843,55 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     applySubtitleSelection,
   ]);
 
+  // ── Watch party: share the host's subtitle language ──────────────────
+  // Host: broadcast the canonical language of the subtitle actually on screen
+  // (or null = off) whenever it changes, so guests can match it.
+  const lastAnnouncedSubLangRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!watchParty.isHost) return;
+    const lang = activeSubLang ? subtitleLangLabel(activeSubLang) : null;
+    if (lastAnnouncedSubLangRef.current === lang) return;
+    lastAnnouncedSubLangRef.current = lang;
+    watchParty.announceSubs(lang);
+  }, [watchParty.isHost, watchParty.announceSubs, activeSubLang]);
+
+  // Guest: apply the host's chosen subtitle language. Prefers an embedded
+  // track, else the highest-scored addon sub in that language; null = off. The
+  // effect re-runs as tracks/addonSubs load, so a sub fetched after we joined
+  // still gets matched — and once applied for a given host value it stops, so
+  // the guest can still change subtitles manually afterwards.
+  const appliedHostSubRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (watchParty.isHost) return;
+    if (hostWantSubLang === undefined) return;
+    if (appliedHostSubRef.current === hostWantSubLang) return;
+    if (!hostWantSubLang) {
+      appliedHostSubRef.current = hostWantSubLang;
+      void applySubtitleSelection('off');
+      return;
+    }
+    const canon = subtitleLangLabel(hostWantSubLang);
+    const sameCanon = (l: string | null | undefined) =>
+      Boolean(l) && subtitleLangLabel(l as string) === canon;
+    const embedded = tracks.find((t) => t.kind === 'sub' && sameCanon(t.lang ?? 'unknown'));
+    if (embedded) {
+      appliedHostSubRef.current = hostWantSubLang;
+      setSelectedSubLang(hostWantSubLang);
+      void applySubtitleSelection(`embedded:${embedded.id}`);
+      return;
+    }
+    const addon = addonSubs
+      .filter((t) => sameCanon(t.lang))
+      .slice()
+      .sort((a, b) => scoreSubtitleTrack(b) - scoreSubtitleTrack(a))[0];
+    if (addon) {
+      appliedHostSubRef.current = hostWantSubLang;
+      setSelectedSubLang(hostWantSubLang);
+      void applySubtitleSelection(`addon:${addon.key}`);
+    }
+    // else: no matching track yet — wait for tracks/addonSubs to update.
+  }, [watchParty.isHost, hostWantSubLang, tracks, addonSubs, applySubtitleSelection]);
+
   // Update subtitle size live + persist. The size setting only
   // affects the HTML overlay used for addon subtitles; embedded
   // (mpv-rendered) subs are pinned to 16 px in the main styling
@@ -3088,12 +3196,15 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         rightSlot={watchPartySlot}
       />
 
-      <BufferingOverlay visible={buffering} logo={props.logo} />
+      <BufferingOverlay visible={buffering || watchParty.partyWaiting} logo={props.logo} />
 
       {/* Pause overlay -- cinematic metadata card when paused. Shows
           title/logo + runtime info in the bottom-left. */}
       <PauseOverlay
-        isPlaying={!paused}
+        // The watch-party buffer gate pauses under the hood; treat the
+        // gate-hold as playing so this reads as buffering (just the spinner),
+        // not the paused title/meta card flashing on every buffer.
+        isPlaying={!paused || watchParty.partyWaiting}
         hasPlayedOnce={hasVideo}
         metaTitle={props.metaTitle ?? null}
         title={props.title ?? null}
@@ -3127,7 +3238,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         onClose={() => setSettingsPanelOpen(false)}
         tab={settingsTab}
         onTabChange={setSettingsTab}
-        tracks={tracks}
+        tracks={partyNonHost ? tracks.filter((t) => t.kind !== 'audio') : tracks}
         audioId={audioId}
         selectAudio={selectAudio}
         selectedSubKey={selectedSubKey}
@@ -3144,7 +3255,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         onSubtitleColorChange={(c) => updateColor('text', c, 1)}
         subtitleDelay={subtitleDelay}
         onSubtitleDelayChange={setSubtitleDelay}
-        releases={props.releases}
+        releases={partyNonHost ? undefined : props.releases}
         selectedReleaseUrl={props.url}
         onSelectRelease={onSelectRelease}
         playerSettings={props.playerSettings}
@@ -3343,7 +3454,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         openSettings={openSettings}
         isSeriesLike={props.type === 'series'}
         toggleEpisodes={toggleEpisodes}
-        hasReleases={(props.releases?.length ?? 0) > 0}
+        hasReleases={!partyNonHost && (props.releases?.length ?? 0) > 0}
       />
     </div>
   );

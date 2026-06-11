@@ -39,6 +39,9 @@ export type WatchPartyRoomSnapshot = {
   type: 'movie' | 'series';
   imdbId: string;
   videoId: string | null;
+  /** Host's selected subtitle language (canonical label) or null = off, so a
+   *  late joiner matches the host's subtitle. */
+  subtitleLang?: string | null;
   hasPassword: boolean;
   participants: WatchPartyParticipant[];
   lastTick: { currentTime: number; isPlaying: boolean; at: number } | null;
@@ -70,11 +73,18 @@ export type WatchPartyClientMessage =
     }
   | { t: 'host:tick'; currentTime: number; isPlaying: boolean }
   | { t: 'host:episode'; videoId: string | null }
+  /** Host announces its selected subtitle language (canonical label, e.g.
+   *  "English") or null for off, so guests match the same subtitle. */
+  | { t: 'host:subs'; lang: string | null }
   | { t: 'host:transfer'; targetUserId: string }
   /** Anyone in the room can broadcast a discrete play/pause/seek —
    *  the server stamps `from` on the relay so clients can attribute
    *  the action in the UI. */
   | { t: 'event'; kind: 'play' | 'pause' | 'seek'; currentTime: number }
+  /** Readiness for the "buffer until everybody loads" gate: a member reports
+   *  it's buffering (true) or ready (false). The server gates play until no one
+   *  is buffering. */
+  | { t: 'buffering'; waiting: boolean }
   /** Lightweight "I'm typing in chat" ping; server relays it with
    *  `from` to other participants. Send debounced (~3s). */
   | { t: 'typing' }
@@ -96,6 +106,11 @@ export type WatchPartyServerMessage =
       from: { userId: string; displayName: string };
     }
   | { t: 'episode'; videoId: string | null }
+  /** Relay of the host's subtitle language (or null = off) — guests match it. */
+  | { t: 'subs'; lang: string | null }
+  /** The "buffer until everybody loads" gate: true = at least one member is
+   *  still buffering, so everyone should hold; false = all ready, resume. */
+  | { t: 'gate'; waiting: boolean }
   | { t: 'typing'; from: { userId: string; displayName: string } }
   | ({ t: 'chat' } & WatchPartyChatMessage)
   | {
@@ -367,6 +382,23 @@ export async function getWatchPartyRoom(code: string): Promise<WatchPartyRoomInf
     return (await res.json()) as WatchPartyRoomInfo;
   } catch {
     return null;
+  }
+}
+
+/** Like getWatchPartyRoom but distinguishes a CONFIRMED-gone room (404 — host
+ *  left / room reaped) from a transient network error, so the player can bail
+ *  out of a dead room (clear the stale "Join party" cache) without false-firing
+ *  on a blip. */
+export async function getWatchPartyRoomStatus(
+  code: string,
+): Promise<{ status: 'exists'; info: WatchPartyRoomInfo } | { status: 'gone' } | { status: 'error' }> {
+  try {
+    const res = await fetch(`${STORAGE_URL}/watch-party/${encodeURIComponent(code)}`);
+    if (res.status === 404) return { status: 'gone' };
+    if (!res.ok) return { status: 'error' };
+    return { status: 'exists', info: (await res.json()) as WatchPartyRoomInfo };
+  } catch {
+    return { status: 'error' };
   }
 }
 

@@ -17,11 +17,13 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
 import { useAuth } from './AuthProvider';
 import { useUserSocketEvent } from './UserSocketProvider';
+import { getWatchPartyRoomStatus } from '../lib/watchParty';
 
 export type ActiveParty = {
   code: string;
@@ -116,6 +118,30 @@ export function ActivePartiesProvider({ children }: { children: ReactNode }) {
       return next;
     });
   }, []);
+
+  // Validate cached parties against the server so a dead/stale room never shows
+  // "Join party". The cache is only cleared by a room-closed push to the
+  // ORIGINAL invitee, so other friends kept stale entries forever — and clicking
+  // one joined a dead room that span "Connecting…" on a wrong title. Drop any
+  // room the server reports as 404 (gone); leave it on transient errors. Runs on
+  // mount and every 60s while signed in.
+  const byHostRef = useRef(byHost);
+  useEffect(() => { byHostRef.current = byHost; }, [byHost]);
+  useEffect(() => {
+    if (!authKey) return;
+    let cancelled = false;
+    const validate = async () => {
+      const entries = Object.values(byHostRef.current);
+      for (const party of entries) {
+        const result = await getWatchPartyRoomStatus(party.code);
+        if (cancelled) return;
+        if (result.status === 'gone') clearByCode(party.code);
+      }
+    };
+    const t = window.setTimeout(validate, 1500);
+    const interval = window.setInterval(validate, 60_000);
+    return () => { cancelled = true; window.clearTimeout(t); window.clearInterval(interval); };
+  }, [authKey, clearByCode]);
 
   const getByHost = useCallback(
     (hostUserId: string) => byHost[hostUserId] ?? null,
