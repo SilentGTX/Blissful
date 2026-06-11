@@ -211,15 +211,21 @@ non-native player). Keep both players in lazy chunks.
 
 ### Phase 3 — Deploy cutover
 
-1. Web: point the Mac compose `blissful` volume at this repo's `apps/blissful-mvs/dist`
-   (or copy the service def here); build from this repo. **This must land first** — it is the
-   thin-shell activation gate.
-2. Verify the deployed site in a browser AND via `BLISSFUL_UI_URL=https://blissful.budinoff.com`
-   in a dev shell (desktop personality must render: mpv playback, addon rows, version badge).
-3. Desktop: tag a release — `release.yml` needs zero changes. From this release on, installs
-   load the deployed UI (thin shell); subsequent UI changes need web deploys only.
-4. Freeze OpenCode's `apps/blissful-mvs`: README pointer "UI moved to Blissful". All UI work
-   happens here from this point; OpenCode is backend-services-only.
+1. ~~Web cutover~~ **DONE 2026-06-11**: `~/home-lab/Blissful` cloned on the Mac, unified UI
+   built there, compose `blissful` volume repointed at its dist (backup:
+   `docker-compose.yml.bak-thinshell`). blissful.budinoff.com serves the unified bundle;
+   storage + proxy containers restarted on current code (gate/subs handlers + /imdb-rating
+   verified live). **Deploy flow now:** ssh Mac → `git pull` + `npm run build` in
+   `~/home-lab/Blissful/apps/blissful-mvs` — live instantly, no restart.
+2. ~~Verification~~ **DONE**: desktop shell launched with
+   `BLISSFUL_UI_URL=https://blissful.budinoff.com` — navigation pinned+allowed, bridge alive,
+   desktop personality rendered from the live site.
+3. **REMAINING — Desktop release tag** (Ivan's call): gated on his visual pass + ideally
+   Phase 2. `release.yml` needs zero changes. From that release on, installs load the deployed
+   UI (thin shell); subsequent UI changes need web deploys only.
+4. **REMAINING — Freeze OpenCode's `apps/blissful-mvs`**: README pointer "UI moved to
+   Blissful". All UI work happens in Blissful now; OpenCode is backend-services-only.
+   (De facto already true — the deployed site no longer builds from OpenCode.)
 
 ### Phase 4 — Shared core growth (DEFERRED)
 
