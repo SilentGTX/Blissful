@@ -44,7 +44,7 @@ export type PlayerSettings = {
 };
 
 export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
-  subtitlesLanguage: 'English',
+  subtitlesLanguage: null,
   subtitlesSizePx: 28,
   subtitlesTextColor: 'rgba(255, 255, 255, 1)',
   subtitlesBackgroundColor: 'rgba(0, 0, 0, 0)',

@@ -41,9 +41,16 @@ export type UseWatchPartyOptions = {
   password?: string | null;
   /** Callback fired on guests when the host changes the current episode. */
   onHostEpisodeChange?: (videoId: string | null) => void;
+  /** Callback fired on guests when the host's Real-Debrid fallback URL changes
+   *  (set when the host falls back to RD, null when back on Vidking) — the guest
+   *  loads the same torrent. Also fired on join with the room's current value. */
+  onHostStreamChange?: (streamUrl: string | null) => void;
+  /** Callback fired on guests when the host changes subtitle language (or null =
+   *  off) so they match it. Also fired on join with the room's current value. */
+  onHostSubsChange?: (lang: string | null) => void;
 };
 
-/** Reactions per chat message. messageKey -> emoji -> array of
+/** Reactions per chat message. messageKey → emoji → array of
  *  userIds who reacted with that emoji. Plain object (not Map) so
  *  React identity-compare on setState works naturally. */
 export type ReactionMap = Record<string, Record<string, string[]>>;
@@ -85,6 +92,9 @@ export type UseWatchPartyResult = {
    *  what the chat UI uses to key bubbles. */
   reactions: ReactionMap;
   error: string | null;
+  /** The last error's machine code (e.g. 'no-room', 'password-incorrect') so
+   *  callers can react precisely without string-matching the message. */
+  errorCode: string | null;
   sendChat: (text: string) => void;
   /** Toggle the current user's reaction with `emoji` on the given
    *  message. Optimistically updates local state + broadcasts. */
@@ -103,6 +113,15 @@ export type UseWatchPartyResult = {
   sendTyping: () => void;
   /** Host-only: tell the room the current episode changed. */
   announceEpisode: (videoId: string | null) => void;
+  /** Host-only: announce the current Real-Debrid fallback URL (or null when
+   *  back on Vidking) so guests load the same torrent. */
+  announceStream: (streamUrl: string | null) => void;
+  /** Host-only: announce the selected subtitle language (or null = off). */
+  announceSubs: (lang: string | null) => void;
+  /** "Buffer until everybody loads" gate — true while any member is buffering. */
+  partyWaiting: boolean;
+  /** Report our own buffering state into the gate. */
+  sendBuffering: (waiting: boolean) => void;
   /** Host-only: hand the crown to another participant. Server
    *  enforces both sender == current host and target in room. */
   transferHost: (targetUserId: string) => void;
@@ -128,6 +147,8 @@ export function useWatchParty({
   displayName,
   password,
   onHostEpisodeChange,
+  onHostStreamChange,
+  onHostSubsChange,
 }: UseWatchPartyOptions): UseWatchPartyResult {
   const [connected, setConnected] = useState(false);
   const [hostUserId, setHostUserId] = useState<string | null>(null);
@@ -138,6 +159,7 @@ export function useWatchParty({
   const [typingMap, setTypingMap] = useState<Map<string, { displayName: string; at: number }>>(() => new Map());
   const [reactions, setReactions] = useState<ReactionMap>({});
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const tickTimerRef = useRef<number | null>(null);
@@ -169,6 +191,10 @@ export function useWatchParty({
   const connectedAtRef = useRef(0);
   const onHostEpisodeChangeRef = useRef(onHostEpisodeChange);
   onHostEpisodeChangeRef.current = onHostEpisodeChange;
+  const onHostStreamChangeRef = useRef(onHostStreamChange);
+  onHostStreamChangeRef.current = onHostStreamChange;
+  const onHostSubsChangeRef = useRef(onHostSubsChange);
+  onHostSubsChangeRef.current = onHostSubsChange;
 
   const pushActivity = useCallback((item: WatchPartyActivity) => {
     setActivity((prev) => [...prev.slice(-19), item]);
@@ -185,6 +211,20 @@ export function useWatchParty({
       // Socket may have closed between the readyState check and the send.
     }
   }, []);
+
+  // "Buffer until everybody loads" gate. `partyWaiting` = some member (us or
+  // another) is still buffering, so the player should hold. We report our own
+  // buffering via sendBuffering(); the server aggregates and broadcasts `gate`.
+  const [partyWaiting, setPartyWaiting] = useState(false);
+  // Ref mirror so applyHostTick (a stable useCallback) reads the live value.
+  const partyWaitingRef = useRef(false);
+  partyWaitingRef.current = partyWaiting;
+  const lastBufferingSentRef = useRef<boolean | null>(null);
+  const sendBuffering = useCallback((waiting: boolean) => {
+    if (lastBufferingSentRef.current === waiting) return; // de-dupe
+    lastBufferingSentRef.current = waiting;
+    send({ t: 'buffering', waiting });
+  }, [send]);
 
   const sendChat = useCallback(
     (text: string) => {
@@ -245,6 +285,20 @@ export function useWatchParty({
   const announceEpisode = useCallback(
     (videoId: string | null) => {
       send({ t: 'host:episode', videoId });
+    },
+    [send]
+  );
+
+  const announceStream = useCallback(
+    (streamUrl: string | null) => {
+      send({ t: 'host:stream', streamUrl });
+    },
+    [send]
+  );
+
+  const announceSubs = useCallback(
+    (lang: string | null) => {
+      send({ t: 'host:subs', lang });
     },
     [send]
   );
@@ -331,6 +385,17 @@ export function useWatchParty({
       // then the host has applied our event and is broadcasting
       // ticks that match the new position.
       if (Date.now() - lastLocalActionAtRef.current < 1500) return;
+      // Buffer-until-everybody gate takes precedence: while waiting, hold paused
+      // and ignore the tick's play state. A buffering host is STALLED (not
+      // paused), so it broadcasts isPlaying=true — without this, a loaded member
+      // would keep getting told to play behind the buffering overlay.
+      if (partyWaitingRef.current) {
+        if (!video.paused) {
+          applyingRemoteAtRef.current = Date.now();
+          video.pause();
+        }
+        return;
+      }
       // IMPORTANT: do NOT pre-stamp applyingRemoteAtRef here. Ticks
       // arrive every 500ms; pre-stamping made every no-op tick
       // suppress the user's own play/pause broadcasts for the next
@@ -414,6 +479,7 @@ export function useWatchParty({
           connectedAtRef.current = Date.now();
           setConnected(true);
           setError(null);
+          setErrorCode(null);
           // Seed persistent room state from the snapshot — chat
           // history + reactions survive both a tab refresh and a
           // storage container restart (server persists to Mongo).
@@ -435,6 +501,15 @@ export function useWatchParty({
               msg.lastTick.isPlaying,
               Date.now() - msg.lastTick.at
             );
+          }
+          // Late joiner: if the host is already on an RD fallback, load that same
+          // torrent (guest only — the host already has it).
+          if (msg.self.userId !== msg.hostUserId && msg.streamUrl) {
+            onHostStreamChangeRef.current?.(msg.streamUrl);
+          }
+          // Late joiner: match the host's current subtitle language.
+          if (msg.self.userId !== msg.hostUserId && msg.subtitleLang) {
+            onHostSubsChangeRef.current?.(msg.subtitleLang);
           }
         } else if (msg.t === 'presence') {
           if (msg.kind === 'joined') {
@@ -490,8 +565,8 @@ export function useWatchParty({
             // a guest's stray autoplay-triggered event must not
             // override the host's authoritative position. Belt-
             // and-suspenders against the guest-side 2s suppression.
-            const isHostNow = !!(selfIdRef.current && selfIdRef.current === hostIdRef.current);
-            const settling = isHostNow && Date.now() - connectedAtRef.current < 3000;
+            const isHost = !!(selfIdRef.current && selfIdRef.current === hostIdRef.current);
+            const settling = isHost && Date.now() - connectedAtRef.current < 3000;
             if (!settling) {
               applyHostEvent(msg.kind, msg.currentTime, Date.now() - msg.sentAt);
             }
@@ -512,6 +587,15 @@ export function useWatchParty({
           });
         } else if (msg.t === 'episode') {
           onHostEpisodeChangeRef.current?.(msg.videoId);
+        } else if (msg.t === 'stream') {
+          // Host fell back to RD (or returned to Vidking) — guests follow.
+          onHostStreamChangeRef.current?.(msg.streamUrl);
+        } else if (msg.t === 'subs') {
+          // Host changed subtitle language — guests match it.
+          onHostSubsChangeRef.current?.(msg.lang);
+        } else if (msg.t === 'gate') {
+          // Buffer-until-everybody-loads gate flipped.
+          setPartyWaiting(msg.waiting);
         } else if (msg.t === 'chat') {
           setChat((prev) => [...prev.slice(-99), { from: msg.from, text: msg.text, at: msg.at }]);
         } else if (msg.t === 'reaction') {
@@ -535,6 +619,7 @@ export function useWatchParty({
           });
         } else if (msg.t === 'error') {
           setError(msg.message);
+          setErrorCode(msg.code ?? null);
           // Hard failures: don't reconnect. Bad-password rooms get
           // re-tried by the user via the in-player prompt (which
           // re-renders the hook with a fresh password prop).
@@ -622,8 +707,8 @@ export function useWatchParty({
     // when a seek is user-initiated.
     const broadcast = (kind: 'play' | 'pause') => {
       if (Date.now() - applyingRemoteAtRef.current < 600) return;
-      const isHostNow = !!(selfIdRef.current && selfIdRef.current === hostIdRef.current);
-      if (!isHostNow && Date.now() - connectedAtRef.current < 2000) return;
+      const isHost = !!(selfIdRef.current && selfIdRef.current === hostIdRef.current);
+      if (!isHost && Date.now() - connectedAtRef.current < 2000) return;
       lastLocalActionAtRef.current = Date.now();
       send({ t: 'event', kind, currentTime: video.currentTime });
     };
@@ -637,6 +722,44 @@ export function useWatchParty({
       video.removeEventListener('pause', onPause);
     };
   }, [connected, videoRef, send]);
+
+  // "Buffer until everybody loads" — report OUR buffering state into the gate.
+  // `readyState < HAVE_FUTURE_DATA` (can't play smoothly) = buffering. The server
+  // aggregates everyone and flips `partyWaiting`.
+  useEffect(() => {
+    if (!connected) return;
+    const video = videoRef.current;
+    if (!video) return;
+    const report = () => sendBuffering(video.readyState < video.HAVE_FUTURE_DATA);
+    const evts = ['waiting', 'stalled', 'playing', 'canplay', 'canplaythrough', 'seeked', 'loadeddata', 'emptied'];
+    evts.forEach((e) => video.addEventListener(e, report));
+    report();
+    return () => {
+      evts.forEach((e) => video.removeEventListener(e, report));
+      sendBuffering(false); // leaving the player / disconnecting → clear our wait
+    };
+  }, [connected, videoRef, sendBuffering]);
+
+  // Gate hold: while ANY member is buffering, pause our video (without
+  // broadcasting it — echo-suppressed). When the gate opens, resume if we were
+  // playing, so the whole party starts together instead of the first-loaded
+  // member ping-ponging at the seek point.
+  const wasPlayingBeforeGateRef = useRef(false);
+  useEffect(() => {
+    if (!connected) return;
+    const video = videoRef.current;
+    if (!video) return;
+    if (partyWaiting) {
+      wasPlayingBeforeGateRef.current = !video.paused;
+      if (!video.paused) {
+        applyingRemoteAtRef.current = Date.now();
+        video.pause();
+      }
+    } else if (wasPlayingBeforeGateRef.current && video.paused) {
+      applyingRemoteAtRef.current = Date.now();
+      video.play().catch(() => {});
+    }
+  }, [partyWaiting, connected, videoRef]);
 
   // The host owns the periodic drift-correction tick. Splitting this
   // off keeps `host:tick` single-source-of-truth even though
@@ -699,11 +822,16 @@ export function useWatchParty({
     typingNames,
     reactions,
     error,
+    errorCode,
     sendChat,
     sendTyping,
     broadcastSeek,
     toggleReaction,
     announceEpisode,
+    announceStream,
+    announceSubs,
+    partyWaiting,
+    sendBuffering,
     transferHost,
     leave,
   };

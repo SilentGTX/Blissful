@@ -11,6 +11,7 @@
 // playback stays in lock-step.
 
 import { STORAGE_URL, STORAGE_WS_URL } from './storageBaseUrl';
+import { isNativeShell } from './desktop';
 
 // ---------- Constants ----------------------------------------------------
 
@@ -39,6 +40,12 @@ export type WatchPartyRoomSnapshot = {
   type: 'movie' | 'series';
   imdbId: string;
   videoId: string | null;
+  /** Host's exact playback URL when it has fallen back to a Real-Debrid stream
+   *  (a `/transcode.m3u8?url=…` URL). null when the host is on Vidking (guests
+   *  then resolve their own source). Lets a guest load the SAME RD torrent as
+   *  the host instead of independently resolving a possibly-different one.
+   *  Web-player concept; the desktop's mpv player ignores it. */
+  streamUrl?: string | null;
   /** Host's selected subtitle language (canonical label) or null = off, so a
    *  late joiner matches the host's subtitle. */
   subtitleLang?: string | null;
@@ -73,6 +80,9 @@ export type WatchPartyClientMessage =
     }
   | { t: 'host:tick'; currentTime: number; isPlaying: boolean }
   | { t: 'host:episode'; videoId: string | null }
+  /** Host announces its current Real-Debrid fallback URL (or null when back on
+   *  Vidking) so guests can load the same torrent. Web-player concept. */
+  | { t: 'host:stream'; streamUrl: string | null }
   /** Host announces its selected subtitle language (canonical label, e.g.
    *  "English") or null for off, so guests match the same subtitle. */
   | { t: 'host:subs'; lang: string | null }
@@ -106,6 +116,8 @@ export type WatchPartyServerMessage =
       from: { userId: string; displayName: string };
     }
   | { t: 'episode'; videoId: string | null }
+  /** Relay of the host's Real-Debrid fallback URL (or null) — guests load it. */
+  | { t: 'stream'; streamUrl: string | null }
   /** Relay of the host's subtitle language (or null = off) — guests match it. */
   | { t: 'subs'; lang: string | null }
   /** The "buffer until everybody loads" gate: true = at least one member is
@@ -142,39 +154,74 @@ export type WatchPartyRoomTarget = {
   type: 'movie' | 'series';
   imdbId: string;
   videoId?: string | null;
+  /** Host's RD fallback URL, when the room already has one — the web player
+   *  joins straight onto it instead of vidking:placeholder. */
+  streamUrl?: string | null;
 };
 
 export async function buildRoomPlayerUrl(room: WatchPartyRoomTarget): Promise<string> {
-  // Desktop app: look up the last stream we played for this content.
-  // If found, play it directly. If not, route to the detail page so
-  // the user picks a torrent — the room code carries through.
-  const { getLastStreamSelection } = await import('./streamHistory');
-  const stored = getLastStreamSelection({
-    authKey: null,
-    type: room.type,
-    id: room.imdbId,
-    videoId: room.videoId ?? null,
-  });
-
-  if (!stored?.url) {
-    // No stored stream — send to detail page to pick a torrent.
-    // The room code passes through so after picking, the player
-    // joins the party automatically.
-    const qs = new URLSearchParams();
-    if (room.videoId) qs.set('videoId', room.videoId);
-    qs.set('autoplay', '1');
-    qs.set('room', room.code);
-    return `/detail/${encodeURIComponent(room.type)}/${encodeURIComponent(room.imdbId)}?${qs.toString()}`;
-  }
-
   const params = new URLSearchParams();
   params.set('type', room.type);
   params.set('id', room.imdbId);
-  if (room.videoId) params.set('videoId', room.videoId);
-  params.set('url', stored.url);
-  if (stored.title) params.set('title', stored.title);
+
+  if (isNativeShell()) {
+    // Desktop: look up the last stream we played for this content.
+    // If found, play it directly. If not, route to the detail page so
+    // the user picks a torrent — the room code carries through.
+    const { getLastStreamSelection } = await import('./streamHistory');
+    const stored = getLastStreamSelection({
+      authKey: null,
+      type: room.type,
+      id: room.imdbId,
+      videoId: room.videoId ?? null,
+    });
+
+    if (!stored?.url) {
+      // No stored stream — send to detail page to pick a torrent.
+      // The room code passes through so after picking, the player
+      // joins the party automatically.
+      const qs = new URLSearchParams();
+      if (room.videoId) qs.set('videoId', room.videoId);
+      qs.set('autoplay', '1');
+      qs.set('room', room.code);
+      return `/detail/${encodeURIComponent(room.type)}/${encodeURIComponent(room.imdbId)}?${qs.toString()}`;
+    }
+
+    if (room.videoId) params.set('videoId', room.videoId);
+    params.set('url', stored.url);
+    if (stored.title) params.set('title', stored.title);
+  } else {
+    // Web: fetch the room's LIVE state so we join straight onto the host's
+    // current stream + episode — the cached ActiveParty data the caller has
+    // may be stale, and crucially it lacks streamUrl. Without this, a guest
+    // joining an RD party first loads vidking:placeholder, tries Vidking, and
+    // flashes "Vidking unavailable" before the WS sync swaps it. Best-effort.
+    let streamUrl = room.streamUrl ?? null;
+    let videoId = room.videoId ?? null;
+    try {
+      const live = await getWatchPartyRoom(room.code);
+      if (live) {
+        streamUrl = live.streamUrl ?? streamUrl;
+        videoId = live.videoId ?? videoId;
+      }
+    } catch { /* keep the passed-in values */ }
+    if (videoId) params.set('videoId', videoId);
+    // If the host is already on an RD fallback, join straight onto that exact
+    // stream (rdsel=1 skips the guest's own Vidking resolution); otherwise use
+    // the placeholder so the guest resolves the same Vidking source the host
+    // has.
+    if (streamUrl) {
+      params.set('url', streamUrl);
+      params.set('rdsel', '1');
+    } else {
+      params.set('url', 'vidking:placeholder');
+    }
+  }
   params.set('room', room.code);
 
+  // Cinemeta lookup is best-effort: a flaky network shouldn't block
+  // the user from joining the party. On failure we just navigate
+  // without the meta params (player loads its own meta async).
   try {
     const result = await fetchMeta({ type: room.type as MediaType, id: room.imdbId });
     const meta = result?.meta;
@@ -196,9 +243,15 @@ export async function buildRoomPlayerUrl(room: WatchPartyRoomTarget): Promise<st
 // ---------- URL builders -------------------------------------------------
 
 export function watchPartyWsUrl(): string {
-  // Use the direct WebSocket URL — the desktop shell's HTTP proxy
-  // does not handle WebSocket upgrade requests.
-  return `${STORAGE_WS_URL}/ws/room`;
+  if (isNativeShell()) {
+    // Desktop: use the direct WebSocket URL — the shell's HTTP proxy
+    // does not handle WebSocket upgrade requests.
+    return `${STORAGE_WS_URL}/ws/room`;
+  }
+  // Web: STORAGE_URL is http(s); convert to ws(s) and append the WS path.
+  // The Traefik route at /storage forwards both HTTP and WS upgrades.
+  const base = STORAGE_URL.replace(/^http/, 'ws');
+  return `${base}/ws/room`;
 }
 
 // ---------- Code input helpers -------------------------------------------
@@ -369,6 +422,8 @@ export type WatchPartyRoomInfo = {
   type: 'movie' | 'series';
   imdbId: string;
   videoId: string | null;
+  /** Host's current RD fallback URL (or null when on Vidking). Web concept. */
+  streamUrl?: string | null;
   hasPassword: boolean;
   participantCount: number;
 };
