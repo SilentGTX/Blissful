@@ -3,6 +3,7 @@
 // per-account Stremio session are no longer used.
 
 import { STORAGE_URL } from './storageBaseUrl';
+import { isNativeShell } from './desktop';
 
 export type BlissfulUser = {
   id: string;
@@ -261,6 +262,43 @@ export async function searchUsers(token: string, query: string): Promise<UserSea
   return result.users ?? [];
 }
 
+// --- Friend profile -----------------------------------------------------
+
+/** One row of a friend's recent watch history (their library entries
+ *  that have playback progress). Times are epoch ms; offsets/durations
+ *  are ms (Stremio's units). */
+export type WatchHistoryEntry = {
+  id: string;
+  type: string | null;
+  name: string | null;
+  poster: string | null;
+  /** Stremio video id for series (`<imdb>:<season>:<episode>`). */
+  videoId: string | null;
+  lastWatched: number | null;
+  timeOffset: number;
+  duration: number;
+};
+
+export type FriendProfileResponse = {
+  profile: {
+    id: string;
+    displayName: string;
+    username: string | null;
+    avatar: string | null;
+    createdAt: number | null;
+  };
+  online: boolean;
+  lastSeenAt: number | null;
+  currentActivity: (PresenceActivity & { at: number }) | null;
+  history: WatchHistoryEntry[];
+};
+
+/** Fetch a friend's profile + recent watch history. The server gates
+ *  this to accepted friends (or self) and 403s otherwise. */
+export async function fetchUserProfile(token: string, userId: string): Promise<FriendProfileResponse> {
+  return request<FriendProfileResponse>(`/users/${encodeURIComponent(userId)}/profile`, {}, token);
+}
+
 // Convenience: read the whole library, find the item, write back with
 // the updated progress fields. Same get-then-put dance the Stremio
 // helper used to do — fine at this scale (typical libraries are <200
@@ -272,17 +310,26 @@ export async function updateBlissfulLibraryProgress(token: string, params: {
   videoId?: string | null;
   timeSeconds: number;
   durationSeconds?: number;
+  /** Identity fields used ONLY when creating a brand-new ghost row
+   *  (the no-existing-bookmark branch). Subsequent progress writes
+   *  go through the "merge into existing" branch which preserves
+   *  whatever name/poster are already on the doc and ignores these.
+   *  Safe to pass on every call. */
   name?: string | null;
   poster?: string | null;
+  /** Desktop only: the exact torrent URL/title being played, so
+   *  Continue Watching can resume the same stream. The web player
+   *  doesn't pass these (its URLs aren't replayable on desktop). */
   streamUrl?: string | null;
   streamTitle?: string | null;
 }): Promise<void> {
   const all = await fetchBlissfulLibrary<Record<string, unknown> & { _id: string }>(token);
   const existing = all.find((it) => it._id === params.id);
   if (!existing) {
-    // Auto-create a minimal entry so Continue Watching picks it up.
-    // This is NOT the same as "Add to library" — that's an explicit
-    // user action. This just tracks playback progress.
+    // No bookmark yet → create a "ghost" row (removed: true, temp: true)
+    // so Continue Watching picks up the progress without the title
+    // appearing on the Library page. Adding to library later just flips
+    // removed/temp; the saved progress is preserved across that toggle.
     const nowIso = new Date().toISOString();
     const normalizedType = params.type === 'anime' ? 'series' : params.type;
     const timeOffset = Math.max(0, Math.round(params.timeSeconds * 1000));
@@ -290,12 +337,21 @@ export async function updateBlissfulLibraryProgress(token: string, params: {
       typeof params.durationSeconds === 'number' && Number.isFinite(params.durationSeconds) && params.durationSeconds > 0
         ? Math.max(0, Math.round(params.durationSeconds * 1000))
         : 0;
-    await putBlissfulLibraryItem(token, params.id, {
+    const ghost: Record<string, unknown> = {
       _id: params.id,
       type: normalizedType,
+      // Identity fields so the row renders properly in Continue
+      // Watching. Optional — fall back to the id for name so the row
+      // never displays as a blank tile.
       name: params.name ?? params.id,
       poster: params.poster ?? null,
-      posterShape: 'poster',
+      removed: true,
+      temp: true,
+      // Stremio's CW filter rejects entries with an empty/missing
+      // _ctime — they look like malformed library docs. Seed it to
+      // the same timestamp as _mtime so newly-pushed ghosts get a
+      // valid creation time on the Stremio side.
+      _ctime: nowIso,
       _mtime: nowIso,
       _blissStreamUrl: params.streamUrl ?? null,
       _blissStreamTitle: params.streamTitle ?? null,
@@ -305,7 +361,8 @@ export async function updateBlissfulLibraryProgress(token: string, params: {
         duration,
         video_id: normalizedType === 'series' ? (params.videoId ?? null) : null,
       },
-    });
+    };
+    await putBlissfulLibraryItem(token, params.id, ghost);
     return;
   }
   const nowIso = new Date().toISOString();
@@ -315,9 +372,42 @@ export async function updateBlissfulLibraryProgress(token: string, params: {
     typeof params.durationSeconds === 'number' && Number.isFinite(params.durationSeconds) && params.durationSeconds > 0
       ? Math.max(0, Math.round(params.durationSeconds * 1000))
       : 0;
+  // Backfill identity fields if they're missing on the existing
+  // row — old ghost rows created before we threaded name/poster
+  // into updateBlissfulLibraryProgress have empty name/poster and
+  // render as blank tiles in Continue Watching. Once they're set
+  // we keep whatever the row already has (the user may have edited
+  // them, or it was a Stremio-sync'd entry with a different name).
+  //
+  // The literal string "undefined" is also treated as missing — a
+  // bug in earlier code passed `undefined` through URLSearchParams
+  // which stringified it to that exact value, then round-tripped it
+  // into the row on every subsequent progress write.
+  const existingTyped = existing as { name?: string | null; poster?: string | null };
+  const isMeaningful = (v: string | null | undefined) =>
+    typeof v === 'string' && v.trim().length > 0 && v !== 'undefined' && v !== 'null';
+  const incomingName = isMeaningful(params.name) ? params.name! : null;
+  const incomingPoster = isMeaningful(params.poster) ? params.poster! : null;
+  const backfilledName = isMeaningful(existingTyped.name) ? existingTyped.name! : incomingName;
+  const backfilledPoster = isMeaningful(existingTyped.poster) ? existingTyped.poster! : incomingPoster;
+
+  // Stremio's CW filter ignores entries without a valid _ctime —
+  // older ghost rows we created before this fix have _ctime: '' so
+  // they push to Stremio but don't surface in their Continue
+  // Watching list. Backfill to nowIso on the first progress write
+  // after the bug is fixed.
+  const existingCtime = (existing as { _ctime?: string | null })._ctime;
+  const backfilledCtime =
+    typeof existingCtime === 'string' && existingCtime.trim().length > 0
+      ? existingCtime
+      : nowIso;
+
   const next: Record<string, unknown> = {
     ...existing,
+    name: backfilledName,
+    poster: backfilledPoster,
     type: normalizedType,
+    _ctime: backfilledCtime,
     _mtime: nowIso,
     state: {
       ...((existing as { state?: Record<string, unknown> }).state ?? {}),
@@ -327,7 +417,11 @@ export async function updateBlissfulLibraryProgress(token: string, params: {
       video_id: normalizedType === 'series' ? (params.videoId ?? null) : null,
     },
   };
-  next._blissProgressSource = 'app';
+  // Tag where this progress came from. Desktop ('app') progress carries a
+  // replayable torrent URL; web ('web') progress doesn't — desktop's CW
+  // opens the detail page to pick a torrent for web-sourced entries
+  // instead of trying to play the browser stream URL.
+  next._blissProgressSource = isNativeShell() ? 'app' : 'web';
   if (params.streamUrl) next._blissStreamUrl = params.streamUrl;
   if (params.streamTitle) next._blissStreamTitle = params.streamTitle;
   await putBlissfulLibraryItem(token, params.id, next);

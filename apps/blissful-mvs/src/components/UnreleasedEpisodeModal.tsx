@@ -1,4 +1,4 @@
-// Shared modal -- surfaced when the user tries to play an episode that
+// Shared modal — surfaced when the user tries to play an episode that
 // hasn't aired yet. Used by the in-player Episodes drawer
 // (BlissfulPlayer) and (in the future) the detail page's episode
 // panel, so the "episode isn't out yet" message is consistent across
@@ -8,16 +8,18 @@
 // behind a solid card on desktop, slide-up sheet on mobile) so the
 // player surface has a cohesive look across all action modals.
 
-import { Modal } from '@heroui/react';
+import { BlissModal } from './base';
 import { motion, type PanInfo } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { CloseIcon } from '../icons/CloseIcon';
+import { proxiedImage } from '../lib/imageProxy';
+import { ReleasesPicker, type ReleaseOption } from './ReleasesPicker';
 
 export type UnreleasedEpisodeModalProps = {
   isOpen: boolean;
-  /** Show title -- e.g., "From". */
+  /** Show title — e.g., "From". */
   title: string;
-  /** Episode label like "S04E11 - Title of Episode" -- optional. */
+  /** Episode label like "S04E11 · Title of Episode" — optional. */
   episodeLabel?: string | null;
   /** Episode thumbnail (or show backdrop) used as the modal's blurred
    *  hero image. */
@@ -25,6 +27,15 @@ export type UnreleasedEpisodeModalProps = {
   /** ISO date string when the episode is scheduled to release. When
    *  omitted, the modal still surfaces but the date row is hidden. */
   releaseDate?: string | null;
+  /** RD/torrent releases found for this episode: null = still checking,
+   *  [] = none, [...] = available. An episode can be officially "not aired" yet
+   *  while early/leaked torrents already exist — in that case "Play with
+   *  RealDebrid" opens an in-modal torrent selector (the same Top-picks +
+   *  per-quality accordions as the in-player Releases picker). */
+  releases?: ReleaseOption[] | null;
+  /** Invoked when the user picks a torrent in the selector — the caller
+   *  navigates straight to the player (fallback mode, no Videasy) playing it. */
+  onPickTorrent?: (url: string) => void;
   onClose: () => void;
 };
 
@@ -61,12 +72,22 @@ export function UnreleasedEpisodeModal({
   episodeLabel,
   poster,
   releaseDate,
+  releases,
+  onPickTorrent,
   onClose,
 }: UnreleasedEpisodeModalProps) {
   const isMobile = useIsMobile();
+  const [selecting, setSelecting] = useState(false);
+  // Reset to the info view each time the modal (re)opens.
+  useEffect(() => {
+    if (!isOpen) setSelecting(false);
+  }, [isOpen]);
   if (!isOpen) return null;
 
   const releaseLabel = formatReleaseDate(releaseDate);
+  const streams = releases ?? [];
+  const checking = releases === null;
+  const hasStreams = streams.length > 0;
 
   const bodyContent = (
     <>
@@ -74,7 +95,7 @@ export function UnreleasedEpisodeModal({
         <>
           <div
             className="pointer-events-none absolute inset-0 bg-cover bg-center"
-            style={{ backgroundImage: `url(${poster})` }}
+            style={{ backgroundImage: `url(${proxiedImage(poster)})` }}
           />
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/35 via-black/75 to-[#101116]" />
         </>
@@ -92,34 +113,70 @@ export function UnreleasedEpisodeModal({
       <div className="relative h-32" />
 
       <div className="relative px-5 pb-5">
-        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--bliss-accent)]/90">
-          Not yet released
-        </div>
-        <div className="mt-1 line-clamp-2 text-2xl font-semibold leading-tight text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)]">
-          {title}
-        </div>
-        {episodeLabel ? (
-          <div className="mt-1 text-sm font-medium text-white/75">{episodeLabel}</div>
-        ) : null}
-        {releaseLabel ? (
-          <div className="mt-2 text-[12px] text-white/65">
-            Airs {releaseLabel}
-          </div>
+        {selecting ? (
+          <>
+            <div className="mb-3 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSelecting(false)}
+                aria-label="Back"
+                className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-white/10 text-lg leading-none text-white/80 hover:bg-white/15"
+              >
+                ‹
+              </button>
+              <div className="text-sm font-semibold text-white/90">Choose a release</div>
+              <span className="ml-auto rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/55">
+                {streams.length}
+              </span>
+            </div>
+            <div className="-mx-1 max-h-[52vh] overflow-y-auto px-1">
+              <ReleasesPicker
+                releases={streams}
+                onSelectRelease={(url) => onPickTorrent?.(url)}
+              />
+            </div>
+          </>
         ) : (
-          <div className="mt-2 text-[12px] text-white/55">
-            This episode hasn't aired yet.
-          </div>
-        )}
+          <>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--bliss-accent)]/90">
+              Not yet released
+            </div>
+            <div className="mt-1 line-clamp-2 text-2xl font-semibold leading-tight text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)]">
+              {title}
+            </div>
+            {episodeLabel ? (
+              <div className="mt-1 text-sm font-medium text-white/75">{episodeLabel}</div>
+            ) : null}
+            {releaseLabel ? (
+              <div className="mt-2 text-[12px] text-white/65">Airs {releaseLabel}</div>
+            ) : (
+              <div className="mt-2 text-[12px] text-white/55">This episode hasn’t aired yet.</div>
+            )}
 
-        <div className="mt-5">
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-full cursor-pointer rounded-xl bg-white/10 px-4 py-3 text-sm font-semibold text-white/85 ring-1 ring-white/10 transition hover:bg-white/15"
-          >
-            Got it
-          </button>
-        </div>
+            <div className="mt-5 flex flex-col gap-2">
+              {checking ? (
+                <div className="w-full rounded-xl bg-white/5 px-4 py-3 text-center text-sm text-white/60 ring-1 ring-white/10">
+                  Checking for available releases…
+                </div>
+              ) : hasStreams ? (
+                <button
+                  type="button"
+                  onClick={() => setSelecting(true)}
+                  className="w-full cursor-pointer rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black transition hover:bg-white/90"
+                >
+                  Play with RealDebrid
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-full cursor-pointer rounded-xl bg-white/10 px-4 py-3 text-sm font-semibold text-white/85 ring-1 ring-white/10 transition hover:bg-white/15"
+              >
+                {hasStreams ? 'Not now' : 'Got it'}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </>
   );
@@ -154,28 +211,27 @@ export function UnreleasedEpisodeModal({
   }
 
   return (
-    <Modal>
-      <Modal.Backdrop
+    <BlissModal>
+      <BlissModal.Backdrop
         isOpen={isOpen}
-        variant="blur"
         className="bg-black/55"
         onOpenChange={(open) => {
           if (!open) onClose();
         }}
       >
-        <Modal.Container placement="center" size="sm">
-          <Modal.Dialog className="bg-transparent shadow-none">
-            <Modal.Header className="sr-only">
-              <Modal.Heading>Episode not released yet</Modal.Heading>
-            </Modal.Header>
-            <Modal.Body className="px-0">
+        <BlissModal.Container size="sm">
+          <BlissModal.Dialog>
+            <BlissModal.Header className="sr-only">
+              <BlissModal.Heading>Episode not released yet</BlissModal.Heading>
+            </BlissModal.Header>
+            <BlissModal.Body className="px-0">
               <div className="solid-surface relative mx-auto max-h-[90vh] w-full max-w-[420px] overflow-hidden rounded-[20px] bg-[#101116]">
                 {bodyContent}
               </div>
-            </Modal.Body>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
-    </Modal>
+            </BlissModal.Body>
+          </BlissModal.Dialog>
+        </BlissModal.Container>
+      </BlissModal.Backdrop>
+    </BlissModal>
   );
 }
