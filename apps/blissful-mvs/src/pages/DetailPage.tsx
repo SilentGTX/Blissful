@@ -830,14 +830,20 @@ export default function DetailPage() {
   // that frame entirely. All hooks above keep running so the auto-pick
   // effect still fires.
   if (autoplayFlag === '1') {
+    // Prefer the meta logo; until the meta fetch resolves, fall back to a
+    // `?logo=` hint passed by the Continue-Watching handler (which already
+    // resolved it before navigating here). Without the hint, the veil is
+    // plain black for the meta-fetch duration — the visible "black screen,
+    // no logo" gap in the CW resume chain.
+    const veilLogo = logo ?? searchParams.get('logo');
     return (
       <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black">
         {/* Logo only, no fallback — titles without a meta logo paint
             a clean black backdrop while the auto-pick effect resolves
             and the player loads. */}
-        {logo ? (
+        {veilLogo ? (
           <div className="bliss-buffering-panel">
-            <img className="bliss-buffering-loader" src={proxiedImage(logo)} alt=" " />
+            <img className="bliss-buffering-loader" src={proxiedImage(veilLogo)} alt=" " />
           </div>
         ) : null}
       </div>

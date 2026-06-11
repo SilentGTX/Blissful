@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react';
 import type { NavigateFunction } from 'react-router-dom';
 import type { LibraryItem } from '../../../lib/mediaTypes';
+import type { MediaType } from '../../../types/media';
 import { normalizeStremioImage } from '../../../lib/mediaTypes';
 import { putBlissfulLibraryItem } from '../../../lib/blissfulAuthApi';
 import { getLastStreamSelection } from '../../../lib/streamHistory';
@@ -60,12 +61,27 @@ export function useContinueWatchingActions({
       }));
 
     if (isWebProgress) {
+      // Progress came from the web player or Stremio — the saved URL (if
+      // any) can't play in mpv, so hand off to the detail page's AUTO-PICK
+      // flow: it fetches addon streams, picks the top-ranked torrent, and
+      // resumes at the saved offset. The logo is resolved here (best-effort,
+      // covered by the black pending veil) and passed as a `?logo=` hint so
+      // the detail autoplay veil paints the title's logo immediately —
+      // without it the veil sits plain black for the meta-fetch duration
+      // and the CW→player loading chain visibly breaks.
       const base = `/detail/${encodeURIComponent(item.type)}/${encodeURIComponent(item._id)}`;
       const qs = new URLSearchParams();
       if (item.type === 'series' && typeof videoId === 'string') qs.set('videoId', videoId);
+      qs.set('autoplay', '1');
       if (resumeSeconds && resumeSeconds > 0) qs.set('t', String(Math.floor(resumeSeconds)));
-      const query = qs.toString();
-      navigate(query ? `${base}?${query}` : base);
+      try {
+        const meta = await fetchMeta({ type: item.type as MediaType, id: item._id });
+        const logo = normalizeStremioImage(meta.meta.logo ?? null);
+        if (logo) qs.set('logo', logo);
+      } catch {
+        // best-effort — the veil just stays black until detail's own meta loads
+      }
+      navigate(`${base}?${qs.toString()}`);
       return;
     }
 
