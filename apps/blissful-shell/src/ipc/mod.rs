@@ -95,7 +95,16 @@ pub const JS_SHIM: &str = r#"
       if (i >= 0) arr.splice(i, 1);
     };
   }
-  window.blissfulDesktop = { runtime: 'native', call, on };
+  window.blissfulDesktop = { runtime: 'native', localServerBase: '__BLISSFUL_LOCAL_BASE__', call, on };
   console.log('blissfulDesktop shim installed');
 })();
 "#;
+
+/// JS_SHIM with the local UI-server origin substituted in. When the document
+/// is loaded from the remote web deployment (thin-shell mode), the renderer
+/// uses `localServerBase` to reach routes that must hit THIS machine's shell
+/// (`/resolve-url`, `/addon-proxy` wraps of the local stremio-service) rather
+/// than the remote server's equivalents.
+pub fn js_shim() -> String {
+    JS_SHIM.replace("__BLISSFUL_LOCAL_BASE__", &crate::ui_server::ui_server_url())
+}

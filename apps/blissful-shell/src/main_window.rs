@@ -31,6 +31,12 @@ use crate::state::{install_outgoing_channel, is_webview_ready, post_outgoing, SH
 use crate::tray::Tray;
 use crate::webview::{NavTarget, WebView};
 
+/// Thin-shell document origin: release builds load the deployed web UI from
+/// here, so a web deploy updates every install instantly without a desktop
+/// release. The local UI server still runs underneath (bundled fallback +
+/// the loopback-only routes the renderer reaches via `localServerBase`).
+const REMOTE_UI_URL: &str = "https://blissful.budinoff.com";
+
 pub struct SpikeWindow {
     pub window: nwg::Window,
     webview: RefCell<Option<WebView>>,
@@ -210,10 +216,26 @@ pub fn run_spike(test_file: &str) -> Result<()> {
     {
         Some("inline") => NavTarget::InlineHtml,
         Some(url) if !url.is_empty() => NavTarget::Url(url.to_string()),
-        // Default points at our local UI server (Phase 3b). It serves the
-        // React app (proxied to Vite in dev, from disk in prod) and all
-        // the relative routes the renderer expects on the same origin.
-        _ => NavTarget::Url(format!("{}/", crate::ui_server::ui_server_url())),
+        _ => match std::env::var("BLISSFUL_UI_URL").ok().filter(|s| !s.is_empty()) {
+            // Explicit override — point the shell at any UI origin (a
+            // staging deploy, a vite preview, the local server, ...).
+            Some(url) => NavTarget::Url(url),
+            // Dev builds: the local UI server (Vite proxy when :5173 is up,
+            // the built dist otherwise) — same-origin for all relative
+            // routes, hot-reload via `npm run dev`.
+            None if cfg!(debug_assertions) => {
+                NavTarget::Url(format!("{}/", crate::ui_server::ui_server_url()))
+            }
+            // Release builds: thin shell. Load the deployed web UI so web
+            // deploys update every install instantly — no UI releases. The
+            // renderer detects the shell via the injected bridge and uses
+            // `localServerBase` for routes that must hit THIS machine
+            // (/resolve-url, local stremio-service wraps). If this
+            // navigation fails (server down, fresh install offline), the
+            // webview falls back once to the bundled UI on the local
+            // server — see webview.rs.
+            None => NavTarget::Url(format!("{REMOTE_UI_URL}/")),
+        },
     };
     info!(?nav, "webview navigation target");
 

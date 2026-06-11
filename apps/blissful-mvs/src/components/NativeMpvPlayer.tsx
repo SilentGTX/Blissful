@@ -55,7 +55,7 @@ import { subtitleLangLabel } from './NativeMpvPlayer/subtitleHelpers';
 import { EpisodesDrawer, type EpisodeVideo, type DrawerSeasonInfo } from './NativeMpvPlayer/EpisodesDrawer';
 import { useNavigate } from 'react-router-dom';
 import { ChromePicker, type ColorResult } from 'react-color';
-import { desktop, type MpvTrack } from '../lib/desktop';
+import { desktop, shellOrigin, type MpvTrack } from '../lib/desktop';
 import type { StremioIconName } from './PlayerControlIcons';
 import type { AddonDescriptor } from '../lib/stremioApi';
 import { setProgress } from '../lib/progressStore';
@@ -1235,7 +1235,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         if (/^https:\/\//i.test(resolved)) {
           try {
             const probe = await fetch(
-              `/resolve-url?url=${encodeURIComponent(resolved)}`,
+              `${shellOrigin()}/resolve-url?url=${encodeURIComponent(resolved)}`,
               { signal: ac.signal },
             );
             if (probe.ok) {

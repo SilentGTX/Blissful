@@ -10,6 +10,12 @@
 
 interface BlissfulDesktopBridge {
   runtime: 'native';
+  /** Origin of the shell's local HTTP server (e.g. `http://127.0.0.1:5175`).
+   *  In thin-shell mode the document is served from the remote web deploy,
+   *  so routes that must hit THIS machine's shell (/resolve-url, local
+   *  stremio-service wraps) are prefixed with this instead of staying
+   *  relative. Absent on older shells — callers fall back to same-origin. */
+  localServerBase?: string;
   call: <T = unknown>(command: string, args?: unknown) => Promise<T>;
   on: <T = unknown>(event: string, cb: (data: T) => void) => () => void;
 }
@@ -47,6 +53,15 @@ function bridge(): BlissfulDesktopBridge | null {
 
 export function isNativeShell(): boolean {
   return bridge()?.runtime === 'native';
+}
+
+/** Base URL for routes that must reach the LOCAL shell server (not the
+ *  remote web deploy the document may have been loaded from): `/resolve-url`
+ *  and `/addon-proxy` wraps of the local stremio-service. Empty string when
+ *  the document is already served by the shell (or in a plain browser) —
+ *  callers just prepend it, so same-origin behavior is preserved. */
+export function shellOrigin(): string {
+  return bridge()?.localServerBase ?? '';
 }
 
 async function call<T>(command: string, args?: unknown): Promise<T> {

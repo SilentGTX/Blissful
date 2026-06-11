@@ -39,6 +39,15 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff,woff2}'],
+        // Take over from the previous SW the moment the new one
+        // installs, and start serving the new bundle to every open
+        // tab immediately (no need to close them). Without these
+        // flags, a `registerType: 'autoUpdate'` SW sits in "waiting"
+        // until every client closes — which means hard-refreshing a
+        // tab still loads the previous build's JS via the old SW.
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
         runtimeCaching: [
           {
             // Cache-first for static assets (hashed filenames)
@@ -50,8 +59,12 @@ export default defineConfig({
             },
           },
           {
-            // Network-first for API calls with 10s timeout fallback
-            urlPattern: /\/(addon-proxy|storage|stremio)\/.*/,
+            // Network-first for API calls with 10s timeout fallback.
+            // /addon-proxy is deliberately excluded: HLS playback funnels
+            // every TS segment through it, and Workbox's clone-to-cache
+            // pipeline mangles binary streams (showed up as black-screen
+            // 4K HEVC — audio + subs OK, video frame never decoded).
+            urlPattern: /\/(storage|stremio)\/.*/,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-cache',

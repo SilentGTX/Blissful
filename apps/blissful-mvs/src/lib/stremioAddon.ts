@@ -1,4 +1,5 @@
 import type { MediaType } from '../types/media';
+import { shellOrigin } from './desktop';
 
 export type StremioAddonManifest = {
   id: string;
@@ -168,7 +169,14 @@ export function normalizeAddonBaseUrl(baseUrl: string): string {
   return next.replace(/\/$/, '');
 }
 
-const resolveAddonFetchUrl = (targetUrl: string) => `/addon-proxy?url=${encodeURIComponent(targetUrl)}`;
+// Loopback targets (the bundled stremio-service on this machine) must be
+// proxied by the LOCAL shell server — in thin-shell mode a relative
+// /addon-proxy goes to the remote web server, which can't reach the user's
+// 127.0.0.1. shellOrigin() is '' outside the shell, preserving same-origin.
+const isLoopbackTarget = (targetUrl: string) =>
+  /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])[:/]/i.test(targetUrl);
+const resolveAddonFetchUrl = (targetUrl: string) =>
+  `${isLoopbackTarget(targetUrl) ? shellOrigin() : ''}/addon-proxy?url=${encodeURIComponent(targetUrl)}`;
 
 function getCacheKey(baseUrl: string, parts: Array<string>) {
   return [baseUrl.replace(/\/$/, ''), ...parts].join('|');

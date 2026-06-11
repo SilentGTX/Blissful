@@ -56,6 +56,19 @@ impl WebView {
         R: Fn() + 'static,
     {
         let on_message: Rc<dyn Fn(String)> = Rc::new(on_message);
+        // Record the document origin the shell is allowed to host. In
+        // thin-shell mode this is the remote web deployment; in local mode
+        // it's the UI server (which is separately always allowed).
+        if let NavTarget::Url(u) = &nav {
+            if let Ok(parsed) = url::Url::parse(u) {
+                let origin = (
+                    parsed.scheme().to_string(),
+                    parsed.host_str().unwrap_or_default().to_string(),
+                    parsed.port_or_known_default(),
+                );
+                let _ = ALLOWED_UI_ORIGIN.set(origin);
+            }
+        }
         // on_ready may be called multiple times if the user navigates
         // around — wrap in a Cell so we can fire it ONCE then drop it,
         // matching the "splash on first paint" intent.
@@ -134,7 +147,7 @@ impl WebView {
                     // Inject the blissfulDesktop JS shim BEFORE any page
                     // loads — runs on every NavigationCompleted'd document.
                     let _ = webview.add_script_to_execute_on_document_created(
-                        ipc::JS_SHIM,
+                        &ipc::js_shim(),
                         |_| Ok(()),
                     );
 
@@ -200,8 +213,34 @@ impl WebView {
                     // page navigation finishes. main_window uses that to
                     // un-hide the parent window after the page has
                     // rendered, hiding the empty-NWG-window flash.
+                    //
+                    // Thin-shell safety net: if the initial navigation to the
+                    // remote web deployment FAILS (server down, no network,
+                    // DNS), fall back once to the bundled UI on the local
+                    // server so the user gets a working app instead of a
+                    // WebView error page. A successfully-registered service
+                    // worker normally absorbs short outages before this ever
+                    // triggers.
                     let on_ready_for_nav = Rc::clone(&on_ready_for_ctrl);
-                    let _ = webview.add_navigation_completed(move |_w, _args| {
+                    let fell_back: Rc<std::cell::Cell<bool>> = Rc::new(std::cell::Cell::new(false));
+                    let fell_back_for_nav = Rc::clone(&fell_back);
+                    let _ = webview.add_navigation_completed(move |w, args| {
+                        let success = args.get_is_success().unwrap_or(false);
+                        if !success && !fell_back_for_nav.get() {
+                            let local = format!("{}/", crate::ui_server::ui_server_url());
+                            let remote_configured = ALLOWED_UI_ORIGIN
+                                .get()
+                                .map(|(_, host, _)| host != "127.0.0.1")
+                                .unwrap_or(false);
+                            if remote_configured {
+                                fell_back_for_nav.set(true);
+                                tracing::warn!(
+                                    "initial navigation failed; falling back to bundled UI at {local}"
+                                );
+                                let _ = w.navigate(&local);
+                                return Ok(());
+                            }
+                        }
                         if let Some(cb) = on_ready_for_nav.borrow_mut().take() {
                             cb();
                         }
@@ -305,10 +344,17 @@ impl WebView {
     }
 }
 
+/// The (scheme, host, port) of the configured UI document origin —
+/// `blissful.budinoff.com` in thin-shell mode, or whatever
+/// BLISSFUL_UI_URL points at. Set once at WebView creation.
+static ALLOWED_UI_ORIGIN: once_cell::sync::OnceCell<(String, String, Option<u16>)> =
+    once_cell::sync::OnceCell::new();
+
 /// True if the URI is one the shell allows to load inside the WebView2
 /// frame. Everything else is routed to the OS default browser (or
-/// dropped). The match is on (scheme, host, port) — `127.0.0.1` on the
-/// UI server's bound port is the only legitimate document origin; we
+/// dropped). Two legitimate document origins exist: the local UI server
+/// (`http://127.0.0.1:<bound port>` — bundled fallback + dev), and the
+/// configured UI origin (the deployed web app in thin-shell mode). We
 /// also keep WebView2's own internal `about:blank` so DevTools and the
 /// initial empty document are allowed through.
 fn is_allowed_internal_uri(uri: &str) -> bool {
@@ -318,17 +364,23 @@ fn is_allowed_internal_uri(uri: &str) -> bool {
     let Ok(parsed) = url::Url::parse(uri) else {
         return false;
     };
-    if parsed.scheme() != "http" {
-        return false;
+    // Local UI server (bundled UI / dev proxy).
+    if parsed.scheme() == "http"
+        && parsed.host_str() == Some("127.0.0.1")
+        && parsed.port() == Some(crate::ui_server::ui_server_port())
+    {
+        return true;
     }
-    let Some(host) = parsed.host_str() else {
-        return false;
-    };
-    if host != "127.0.0.1" {
-        return false;
+    // Configured UI origin (thin-shell remote, or BLISSFUL_UI_URL).
+    if let Some((scheme, host, port)) = ALLOWED_UI_ORIGIN.get() {
+        if parsed.scheme() == scheme
+            && parsed.host_str() == Some(host.as_str())
+            && parsed.port_or_known_default() == *port
+        {
+            return true;
+        }
     }
-    let bound = crate::ui_server::ui_server_port();
-    parsed.port() == Some(bound)
+    false
 }
 
 /// Hand off http/https URIs to the OS default browser via the same

@@ -6,6 +6,7 @@ import { putBlissfulLibraryItem } from '../../../lib/blissfulAuthApi';
 import { getLastStreamSelection } from '../../../lib/streamHistory';
 import { getResumeSeconds } from '../utils';
 import { fetchMeta } from '../../../lib/stremioAddon';
+import { shellOrigin } from '../../../lib/desktop';
 
 type UseContinueWatchingActionsParams = {
   authKey: string | null;
@@ -123,7 +124,7 @@ export function useContinueWatchingActions({
       if (/^https:\/\//i.test(stored.url)) {
         try {
           const probe = await fetch(
-            `/resolve-url?url=${encodeURIComponent(stored.url)}`,
+            `${shellOrigin()}/resolve-url?url=${encodeURIComponent(stored.url)}`,
           );
           if (probe.ok) {
             const data = (await probe.json()) as { contentLength?: number };
