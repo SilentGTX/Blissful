@@ -62,6 +62,7 @@ import { setProgress } from '../lib/progressStore';
 import { updateBlissfulLibraryProgress } from '../lib/blissfulAuthApi';
 import { fetchSubtitles, fetchOpenSubHash } from '../lib/stremioAddon';
 import { getLastStreamSelection, setLastStreamSelection } from '../lib/streamHistory';
+import { setCurrentActivity, clearCurrentActivity } from '../lib/usePresenceHeartbeat';
 import { notifyError, notifyInfo, notifySuccess } from '../lib/toastQueues';
 import {
   writeStoredPlayerSettings,
@@ -3095,6 +3096,29 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   // During initial buffering the scrub bar shows --:-- and the
   // auto-hide timer causes rapid flash cycling.
   const controlsOpacity = controlsVisible ? 'opacity-100' : 'opacity-0';
+
+  // Publish "currently watching" to the presence heartbeat so friends see
+  // "watching <title>" instead of just "online" while this player is mounted.
+  // Mirrors the web player (BlissfulPlayer); the heartbeat loop lives in
+  // AppShell and reads this module-level activity on each tick.
+  useEffect(() => {
+    if (!props.id || !props.type) return;
+    const baseName =
+      (props.metaTitle && props.metaTitle.trim().length > 0
+        ? props.metaTitle
+        : props.title && props.title.trim().length > 0
+          ? props.title.split('\n')[0]
+          : null) ?? props.id;
+    setCurrentActivity({
+      type: props.type,
+      id: props.id,
+      name: baseName,
+      videoId: props.videoId ?? null,
+    });
+    return () => {
+      clearCurrentActivity();
+    };
+  }, [props.id, props.type, props.videoId, props.metaTitle, props.title]);
 
   // Map props.videos to the PauseOverlayVideo shape for the enriched
   // pause overlay (season/episode/title/description/rating per episode).
