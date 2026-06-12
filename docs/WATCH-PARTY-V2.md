@@ -64,9 +64,17 @@ clear), `apps/addon-proxy/server.js` (`/rd-by-hash`), `apps/blissful-shell/src/u
 onHostSourceChange), `BlissfulPlayer/index.tsx` + `NativeMpvPlayer.tsx` (announce + resolve),
 `pages/PlayerPage.tsx`/`PlayerPageWeb.tsx` (thread the resolved source into the player).
 
-**Release dependency:** desktop *announce* + *resolve* + the `/rd-by-hash` shell forward ship in
-the next desktop release (v0.1.8). Web parts deploy instantly. Until v0.1.8 is out, a desktop
-host just doesn't announce a source (web guest uses today's fallback — no regression).
+**Release dependency (revised):** because the thin shell loads the remote UI, the desktop
+*announce* + *resolve* code runs inside the WebView the moment a web deploy lands — so the whole
+of Layer A reaches **every v0.1.7+ (thin-shell) desktop via a web deploy, no release needed**. A
+desktop guest's torrent resolve hits `127.0.0.1:11470` (its own stremio-service, same as a normal
+torrent play) and `/rd-by-hash` via the public route. The `/rd-by-hash` shell forward in
+`ui_server.rs` only matters for **dev / local-origin** builds; it ships with the next release
+whenever one is cut. Installed shells ≤ v0.1.6 still serve their bundled UI until they update to
+v0.1.7.
+
+**Status — Layer A SHIPPED 2026-06-12 (deployed, unit-validated; 2-device behavioral test
+pending).**
 
 ---
 
@@ -116,12 +124,19 @@ Web guest(s): https://blissful.budinoff.com/party-relay/{room}/index.m3u8
 ---
 
 ## Phasing / validation
-- **A1** protocol + storage relay → validate with the WS protocol harness (a desktop-host /
-  web-guest pair against the deployed storage: assert `host:source` relays + snapshot carries it).
-- **A2** `/rd-by-hash` → curl a known cached infohash, expect a direct link.
-- **A3** players resolve → manual: desktop-host + web-guest on a torrent → web plays the same
-  release; web-host-RD + desktop-guest → mpv plays the raw RD link.
-- **B** behind A; the tunnel gets its own harness + a real 2-device test before release.
+- **A1** protocol + storage relay → **DONE** (commit a9f1c78, storage deployed). Validated with
+  a WS harness against deployed storage: `host:source` relays with all fields, bad infoHash →
+  null, late-joiner snapshot carries `source`, episode change clears it. "ALL CHECKS PASSED".
+- **A2** `/rd-by-hash` → **DONE** (commit d868eed, proxy deployed; Traefik route in OpenCode
+  fd982845). Validated: a cached Dark Knight infoHash → 200 + a real `*.download.real-debrid.com`
+  link; bad input → 400; uncached hash → 404 (bounded ~10s, self-cleans the RD torrent).
+- **A3** players announce/resolve → **DONE** (commit a529505, web-deployed). `tsc -b` clean, 28
+  unit tests (19 new for `watchPartySource`). **Still owed: the real 2-device behavioral test** —
+  desktop-host torrent + web-guest plays the same release; web-host-RD + desktop-guest plays the
+  raw RD link; readiness-gate interplay across the swap. Logic is sound + unit-tested but the
+  live cross-device sync hasn't been exercised.
+- **B** behind A; the tunnel gets its own harness + a real 2-device test before release. **Needs
+  a desktop release** (the outbound WS tunnel lives in the Rust shell).
 
 Standing rule: each protocol message is additive + feature-detected so older installed shells
 keep working (same discipline as the thin-shell IPC).
