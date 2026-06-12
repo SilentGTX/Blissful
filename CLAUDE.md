@@ -23,8 +23,6 @@ web and Windows desktop; the backend lives here too:
   tmdb-season-info, transcode endpoints, videasy). Both deploy on the Mac
   (`~/home-lab/Blissful`) via the root `docker-compose.yml`; blissful infra scripts/launchd
   live in `infra/`.
-- Android TV lives on the `react-native-blissful` branch — **never merged into main, never
-  touched** (standing rule).
 
 ## Web + Desktop: one UI, the thin shell
 
