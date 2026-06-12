@@ -627,10 +627,16 @@ function ActiveRoomView(props: WatchPartyDrawerProps) {
     // Invite link points to /invite/<code> — a short, readable URL
     // that opens a landing page (poster, title, episode, Continue).
     // The Continue click is the user gesture autoplay needs.
+    // Invite links are for sharing EXTERNALLY, so they must point at the public
+    // host — never a dev localhost or the desktop shell's loopback port. In
+    // prod `window.location.origin` already IS the public host; in dev it's
+    // 127.0.0.1:<port>, which nobody else can reach (and the shell's loopback
+    // can't upgrade the watch-party WebSocket). Fall back to the canonical host.
+    const inviteOrigin = import.meta.env.DEV ? 'https://blissful.budinoff.com' : window.location.origin;
     const text =
       kind === 'code'
         ? roomCode.toUpperCase()
-        : `${window.location.origin}/invite/${roomCode}`;
+        : `${inviteOrigin}/invite/${roomCode}`;
     try {
       await navigator.clipboard.writeText(text);
       setCopied(kind);
