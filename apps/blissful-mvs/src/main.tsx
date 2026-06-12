@@ -32,11 +32,21 @@ window.addEventListener('load', () => {
 
 if ('serviceWorker' in navigator) {
   const hadInitialController = !!navigator.serviceWorker.controller;
+  let sawFirstControllerChange = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (hadInitialController) window.location.reload();
+    // Reload on a genuine SW upgrade. When the page loads with no controller
+    // (first visit on this origin — common in a fresh desktop WebView), the
+    // FIRST controllerchange is that initial install; the page already shows
+    // the current bundle, so skip it. Any later change in the same session —
+    // or any change when a controller was already present at load — is a real
+    // upgrade, so reload to run the new code. (Previously this only reloaded
+    // when hadInitialController was true, so a deploy during a first session
+    // was silently missed until the next launch.)
+    if (hadInitialController || sawFirstControllerChange) window.location.reload();
+    sawFirstControllerChange = true;
   });
   // The browser only re-checks the SW every ~24h on its own, so we drive the
-  // check ourselves. A fresh sw.js (served no-store) → new SW installs →
+  // check ourselves. A fresh sw.js (served no-cache) → new SW installs →
   // skip-waits/claims → the controllerchange above auto-reloads the tab. We
   // check on a periodic timer (so a tab left open in the FOREGROUND still picks
   // up deploys — visibilitychange alone never fires for it), whenever the tab
