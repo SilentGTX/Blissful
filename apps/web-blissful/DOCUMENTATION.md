@@ -38,6 +38,28 @@ npm --prefix apps\web-blissful test
 `noUnusedLocals: true` — local validation must use `tsc -b` (or `npm run build`) or it will
 miss dead-identifier errors that fail CI.
 
+### Dev testing against the PROD backend (test before you deploy)
+
+The Vite dev server normally only proxies `/stremio`, so a plain dev tab can't reach storage or
+the resolution endpoints (`/rd-by-hash`, `/transcode`, …) and prod storage CORS-blocks localhost.
+To run a **real watch party / torrent resolution from a local UI without deploying**, opt in:
+
+```
+# apps/web-blissful/.env.local   (gitignored)
+VITE_BACKEND_PROD=1
+```
+
+Then `npm run dev` as usual. With the flag set, `vite.config.ts` same-origin-proxies the Blissful
+backend routes (storage incl. the `/ws/room` + `/ws/user` WebSockets, `/rd-by-hash`, `/transcode`,
+`/rd-fallback`, ratings, subs, …) to `https://blissful.budinoff.com`, and `storageBaseUrl.ts`
+routes `/storage` through it — so the dev tab joins the **same prod room** the desktop shell
+already uses. A dev web tab + the (dev or installed) desktop app can then share a party against
+the live backend. Unset = the original local-storage dev flow; the flag is inert in prod builds.
+
+Caveat: the desktop shell builds its invite link from its own origin (`127.0.0.1:5175` in dev), so
+across different origins join by **room code** rather than the link. Two dev web tabs on the same
+port can use the invite link directly.
+
 ## Thin shell — how the desktop gets this UI
 
 The WebView2 navigation target is resolved in the shell's `main_window.rs`:

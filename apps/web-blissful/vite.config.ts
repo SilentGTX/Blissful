@@ -1,10 +1,46 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  // Opt-in dev mode: proxy the Blissful backend routes to PRODUCTION so a local
+  // dev UI can run a real watch party / resolve torrents WITHOUT a prod deploy.
+  // Enable by putting `VITE_BACKEND_PROD=1` in apps/web-blissful/.env.local (or
+  // as a shell env var). Unset = the original local-storage dev flow, untouched.
+  // Prod storage CORS-blocks localhost, so these MUST be same-origin proxied
+  // here; storageBaseUrl.ts routes /storage through this when the flag is set.
+  // /addon-proxy is excluded (its own middleware below); /stremio stays pointed
+  // at strem.io (Facebook-login helper).
+  const env = loadEnv(mode, process.cwd(), '');
+  const backendProd = env.VITE_BACKEND_PROD === '1' || env.VITE_BACKEND_PROD === 'true';
+  const PROD_BACKEND = 'https://blissful.budinoff.com';
+  const PROD_ROUTES = [
+    '/storage', '/rd-by-hash', '/rd-fallback', '/transcode', '/imdb-rating',
+    '/tmdb-find', '/tmdb-episode-rating', '/tmdb-season-info', '/skip-times',
+    '/opensubs', '/resolve-url', '/probe-streams', '/extract-subtitle.vtt',
+    '/videasy-sources', '/hls-master', '/player-log', '/img',
+  ];
+  const prodProxy = backendProd
+    ? Object.fromEntries(
+        PROD_ROUTES.map((p) => [
+          p,
+          {
+            target: PROD_BACKEND,
+            changeOrigin: true,
+            secure: true,
+            // Storage carries the watch-party WebSockets (/ws/room, /ws/user).
+            ...(p === '/storage' ? { ws: true } : {}),
+            // Make the server-side request look same-origin so any Origin
+            // allowlist on the backend passes (the browser already sees a
+            // same-origin localhost request, so there's no CORS preflight).
+            headers: { origin: PROD_BACKEND, referer: `${PROD_BACKEND}/` },
+          },
+        ]),
+      )
+    : {};
+  return {
   plugins: [
     react(),
     tailwindcss(),
@@ -208,6 +244,9 @@ export default defineConfig({
         secure: true,
         rewrite: (path) => path.replace(/^\/stremio/, ''),
       },
+      // Backend routes → prod, only when VITE_BACKEND_PROD is set (see top).
+      ...prodProxy,
     },
   },
+  };
 })
