@@ -25,6 +25,7 @@ with generated `android/`): not part of main; never stage them (`git add` explic
 ## Quickstart (detail in each DOCUMENTATION.md)
 
 ```powershell
+npm run dev                                       # opens the Dev Launcher GUI (start/stop web / desktop / android); CLI bypass: npm run dev desktop
 npm --prefix apps\web-blissful run dev            # web UI on :5173 (+ desktop shell)
 cd apps\desktop-blissful; cargo run --features spike0a   # desktop shell alone
 cd apps\android-blissful; npx expo start --port 8081     # Android TV (Metro; see its docs)

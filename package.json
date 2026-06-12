@@ -1,9 +1,9 @@
 {
   "name": "blissful",
   "private": true,
-  "description": "Thin proxy for repo-root npm scripts. Each one delegates to apps/web-blissful (which owns the actual deps + concurrently runner).",
+  "description": "Thin proxy for repo-root npm scripts. `dev` opens the Dev Launcher GUI (scripts/dev-launcher/, self-contained deps) or runs an app directly when given as an arg (web/desktop/android); the rest delegate to apps/web-blissful (which owns the actual deps + concurrently runner).",
   "scripts": {
-    "dev": "npm run --prefix apps/web-blissful dev",
+    "dev": "node scripts/dev.cjs",
     "dev:vite": "npm run --prefix apps/web-blissful dev:vite",
     "dev:shell": "npm run --prefix apps/web-blissful dev:shell",
     "build": "npm run --prefix apps/web-blissful build",

@@ -1,0 +1,17 @@
+{
+  "name": "blissful-dev-launcher",
+  "private": true,
+  "version": "0.1.0",
+  "description": "GUI behind the repo-root `npm run dev`: start/stop the web, desktop and Android TV dev environments with live port status and log tails. Lives in its own folder so Electron never becomes a root dependency.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "smoke": "node test/manager-smoke.cjs"
+  },
+  "dependencies": {
+    "@fontsource/fraunces": "^5.0.0",
+    "@fontsource/ibm-plex-mono": "^5.0.0",
+    "@fontsource/ibm-plex-sans": "^5.0.0",
+    "electron": "^35.0.0"
+  }
+}

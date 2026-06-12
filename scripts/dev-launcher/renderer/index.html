@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self' data:; script-src 'self'"
+    />
+    <title>Blissful Dev</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="atmosphere" aria-hidden="true">
+      <div class="glow glow-teal"></div>
+      <div class="glow glow-lavender"></div>
+    </div>
+
+    <header class="titlebar">
+      <div class="wordmark">
+        <h1 class="brand">Blissful</h1>
+        <span class="brand-sub">Dev Launcher</span>
+      </div>
+      <div class="fleet" id="fleetSummary"></div>
+    </header>
+
+    <main class="deck" id="deck"></main>
+
+    <template id="cardTemplate">
+      <section class="card">
+        <div class="card-head">
+          <div class="sigil" aria-hidden="true"></div>
+          <div class="card-id">
+            <h2 class="card-title"></h2>
+            <p class="card-tagline"></p>
+          </div>
+        </div>
+        <div class="card-status">
+          <span class="dot" aria-hidden="true"></span>
+          <span class="phase"></span>
+          <span class="detail"></span>
+        </div>
+        <div class="card-foot">
+          <button class="chip chip-port" type="button"></button>
+          <div class="card-actions">
+            <button class="btn btn-start" type="button">Start</button>
+            <button class="btn btn-stop" type="button">Stop</button>
+          </div>
+        </div>
+        <div class="logwell">
+          <pre class="log" tabindex="0"></pre>
+          <span class="log-empty">no output yet</span>
+        </div>
+      </section>
+    </template>
+
+    <div class="modal-veil" id="modalVeil" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <h3 class="modal-title" id="modalTitle">Stop the web server?</h3>
+        <p class="modal-body">
+          The desktop shell is riding on :5173. It will keep running, but its UI breaks the
+          moment it reloads without Vite underneath.
+        </p>
+        <div class="modal-actions">
+          <button class="btn btn-stop" id="modalCancel" type="button">Keep it running</button>
+          <button class="btn btn-danger" id="modalConfirm" type="button">Stop web anyway</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="grain" aria-hidden="true"></div>
+    <script src="./renderer.js"></script>
+  </body>
+</html>

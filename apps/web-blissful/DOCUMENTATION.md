@@ -23,6 +23,7 @@ once and gating the platform-specific bits inside it.
 npm --prefix apps\web-blissful install
 npm --prefix apps\web-blissful run dev      # vite + the Rust shell, concurrently
 npm --prefix apps\web-blissful run dev:vite # vite only
+# (repo-root `npm run dev` opens the Dev Launcher GUI that delegates here; `npm run dev web|desktop` is the CLI bypass)
 
 # Type-check (strict; what CI runs):
 npx --prefix apps\web-blissful tsc -b

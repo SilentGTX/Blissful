@@ -14,6 +14,10 @@ A native Windows Stremio client.
 ## Dev quickstart
 
 ```powershell
+# Opens the Dev Launcher GUI — web / desktop / android cards with live status
+# (first run installs its deps; CLI bypass: npm run dev desktop)
+npm run dev
+
 # UI (port 5173)
 npm --prefix apps\web-blissful install
 npm --prefix apps\web-blissful run dev
