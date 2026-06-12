@@ -58,8 +58,8 @@ House RD key, returns a key-free direct link (reuses `/rd-fallback` internals). 
 doesn't have the hash cached → guest falls back.
 
 ### Files
-`lib/watchParty.ts` (types), `apps/blissful-storage/server.js` (relay + snapshot + episode
-clear), `apps/addon-proxy/server.js` (`/rd-by-hash`), `apps/blissful-shell/src/ui_server.rs`
+`lib/watchParty.ts` (types), `apps/shared/blissful-storage/server.js` (relay + snapshot + episode
+clear), `apps/shared/addon-proxy/server.js` (`/rd-by-hash`), `apps/desktop-blissful/src/ui_server.rs`
 (forward `/rd-by-hash`), `useWatchParty.ts` + `useWatchPartyMpv.ts` (announceSource /
 onHostSourceChange), `BlissfulPlayer/index.tsx` + `NativeMpvPlayer.tsx` (announce + resolve),
 `pages/PlayerPage.tsx`/`PlayerPageWeb.tsx` (thread the resolved source into the player).
@@ -115,8 +115,8 @@ Web guest(s): https://blissful.budinoff.com/party-relay/{room}/index.m3u8
   everything else. Needs a shell release.
 
 ### Files (on top of A)
-`apps/blissful-shell/` (outbound tunnel from the shell or renderer; consent IPC + toast),
-`apps/addon-proxy/server.js` (`/party-relay/{room}/*` pull-through cache + tunnel endpoint),
+`apps/desktop-blissful/` (outbound tunnel from the shell or renderer; consent IPC + toast),
+`apps/shared/addon-proxy/server.js` (`/party-relay/{room}/*` pull-through cache + tunnel endpoint),
 `components/WatchParty/WatchPartyDrawer.tsx` (button), watchParty protocol
 (`party:request-host-stream` / `party:host-stream-offer` / decline), `playerSettings.ts`
 (`autoShareHostStream`), the Vidking-off auto-trigger in `PlayerPageWeb`.

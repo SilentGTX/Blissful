@@ -2,7 +2,7 @@
 
 **Branch:** `react-native-blissful` · **Status:** PLAN ONLY — no implementation yet
 **Target device:** Philips 65PUS7354/12 (2019, **Android 9 / API 28**, MediaTek MT5887 Cortex-A53, Mali-G31, ~1.5–2 GB RAM) and similar low-end panels
-**Produced from:** a 12-agent codebase inventory (every subsystem of `apps/blissful-mvs` + `apps/blissful-tv-shell`), 3 web-research passes (audio codecs, RN-TV stack, platform questions), a completeness critic, an adversarial plan review, and a 3-fact verification pass.
+**Produced from:** a 12-agent codebase inventory (every subsystem of `apps/web-blissful` + `apps/blissful-tv-shell`), 3 web-research passes (audio codecs, RN-TV stack, platform questions), a completeness critic, an adversarial plan review, and a 3-fact verification pass.
 
 ### v2 changelog (what an adversarial review + fact-check changed)
 - **Verified the 3 plan-shaping facts** (§0). minSdk is *not* a blocker (API 24 floor); the RN-TV focus New-Arch regression is real → **JS navigator stack** mitigation; API-28 passthrough detection is weak → **decode-by-default + init-failure guard**.
@@ -36,7 +36,7 @@
 | G3 | **4K HEVC RD streams play without crashing** | Hardware decode engaged; bounded buffers; no OOM during 4K |
 | G4 | **Production OTA updates** — UI changes ship without APK pushes | One EAS Update cycle proven end-to-end on the TV, with rollback |
 | G5 | **Feature parity** with the current Tauri TV app (incl. watch party — §11 q1) | The parity matrix in §7 fully dispositioned |
-| G6 | Desktop/web app **behavior unchanged** | `apps/blissful-mvs` + `apps/blissful-shell` keep **`tsc -b` + `vitest` green and behavior unchanged** after importing `blissful-core` (not "byte-identical" — the shared package changes imports) |
+| G6 | Desktop/web app **behavior unchanged** | `apps/web-blissful` + `apps/desktop-blissful` keep **`tsc -b` + `vitest` green and behavior unchanged** after importing `blissful-core` (not "byte-identical" — the shared package changes imports) |
 
 Non-goals v1: on-device torrent engine (RD-only), DMs UI, Facebook login, netflix/modern UI styles, iOS/tvOS, APK self-install (§11 q4).
 
@@ -51,7 +51,7 @@ Non-goals v1: on-device torrent engine (RD-only), DMs UI, Facebook login, netfli
 | D3 | **Bespoke thin native Kotlin Media3/ExoPlayer module ("BlissPlayer")**, not react-native-video | RN-video can't enable the ffmpeg audio extension (no RenderersFactory hook); we need custom surface, mpv-shaped events, exact seek, `probeUrl`, MediaSession, wake lock anyway |
 | D4 | **Media3 ffmpeg *audio* decoder extension** | The audio fix (§3) |
 | D5 | **Video on MediaCodec hardware decode** (never a software video path) | 4K HEVC is easy for the SoC |
-| D6 | **Monorepo**: `apps/blissful-tv-rn` + extracted `packages/blissful-core` | Reuse the TS brain; avoid OpenCode-style copy-drift |
+| D6 | **Monorepo**: `apps/android-blissful` + extracted `apps/shared/blissful-core` | Reuse the TS brain; avoid OpenCode-style copy-drift |
 | D7 | **react-native-mmkv** for persistence (synchronous), AsyncStorage only for one-time migration reads | progressStore/playerSettings/streamHistory need sync reads; progress writes can't hit the bridge |
 | D8 | **No proxy server. Per-platform *injected* fetch base/adapter** (`identity` on RN, `proxyUrl` on web) — **do NOT hard-delete proxy wrapping from `blissful-core`** | RN has no CORS, but the *shared* web build still needs the proxy under its origin. Same injected pattern for storage base, Trakt base, addon-fetch base |
 | D9 | **Backend helper endpoints stay** (`/img`, `/imdb-rating`, `/tmdb-find`, `/tmdb-season-info`) — called directly via the injected base | They carry server caching + API keys |
@@ -154,7 +154,7 @@ Thin Kotlin TurboModule + Fabric view over Media3 ExoPlayer that **re-emits the 
 
 Surface lifecycle: RN owns the view hierarchy → the entire `MpvSurface.kt` transparent-WebView compositing + FORTIFY teardown hardening **disappears**; still verify background→foreground resume on the real panel.
 
-### 5.3 `packages/blissful-core` — extraction (reused by web + RN)
+### 5.3 `apps/shared/blissful-core` — extraction (reused by web + RN)
 Reuse with **injected platform adapters** (storage, AppState, event emitter, **fetch-base/proxy resolver**):
 - Protocol/data: `stremioAddon` (**inject the fetch-URL resolver** — `proxyUrl` on web, identity on RN; do NOT hard-strip it), `blissfulAuthApi`, `storageApi`, `friendsApi`, `stremioLinkApi`, `mediaTypes`, `homeRows`
 - **Auth (corrected — the old story was stale)**: `BlissfulAuthProvider` is canonical (JWT in **`bliss:authToken`**, `/auth/me` validation on mount). The `AuthProvider` compat shim's multi-account API is dead — **DROP `savedAccounts`, `useUserSession`, `savedAccounts.ts`, and `stremioApi` auth/datastore** (superseded). RN consumes `blissfulAuthApi` directly. RD QR/device-code pairing (D21) is new auth UX.

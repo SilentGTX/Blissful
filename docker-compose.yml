@@ -7,7 +7,7 @@
 # BLISSFUL_JWT_SECRET, TMDB_API_KEY, RD_FALLBACK_KEY, VIDEASY_TOKEN_SECRET,
 # ADDON_PROXY_EXTRA_DOMAINS, BLISSFUL_MONGO_DB (optional).
 #
-# Deploy: git pull && (UI only: npm run build in apps/blissful-mvs — live
+# Deploy: git pull && (UI only: npm run build in apps/web-blissful — live
 # instantly) || (services: docker compose up -d).
 
 x-nas-root: &nas-root /Volumes/2TB/NAS/blissful
@@ -26,7 +26,7 @@ services:
     logging: *default-logging
     working_dir: /app
     volumes:
-      - ./apps/blissful-mvs/dist:/app/dist:ro
+      - ./apps/web-blissful/dist:/app/dist:ro
       - /Volumes/2TB/NAS/blissful/logs/blissful:/app/logs
     command: >
       sh -c "npm install -g serve && serve -s dist -l 8080"
@@ -48,7 +48,7 @@ services:
       - STATE_DB_FILE=/data/blissful-storage.sqlite
       - BLISSFUL_JWT_SECRET=${BLISSFUL_JWT_SECRET}
     volumes:
-      - ./apps/blissful-storage:/app
+      - ./apps/shared/blissful-storage:/app
       - /Volumes/2TB/NAS/blissful/state/blissful-storage:/data
       - /Volumes/2TB/NAS/blissful/logs/blissful-storage:/app/logs
       - /Volumes/2TB/NAS/blissful:/nas:ro
@@ -105,7 +105,7 @@ services:
       - TRANSCODE_HOST_URL=${TRANSCODE_HOST_URL:-http://host.docker.internal:13098}
       - TRANSCODE_HOST_SECRET=${TRANSCODE_HOST_SECRET:-${VIDEASY_TOKEN_SECRET:-}}
     volumes:
-      - ./apps/addon-proxy:/app
+      - ./apps/shared/addon-proxy:/app
       - /Volumes/2TB/NAS/blissful/cache/addon:/cache
       - /Volumes/2TB/NAS/blissful/cache/posters:/poster-cache
       - /Volumes/2TB/NAS/blissful/cache/json:/json-cache

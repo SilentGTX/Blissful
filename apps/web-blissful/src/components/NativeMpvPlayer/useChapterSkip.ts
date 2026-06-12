@@ -1,0 +1,206 @@
+// Skip-Intro / Skip-Recap / Skip-Outro detection driven by the mpv
+// `chapter-list` and the live `chapter` property.
+//
+// How it works:
+//   1. On the player's `FileLoaded` lifecycle event we fetch the
+//      file's chapter list once (`desktop.mpv.getChapters()`). The
+//      list never changes within a single loadfile so we cache it.
+//   2. mpv's `chapter` property is observed shell-side and forwarded
+//      to the renderer as an `mpv-prop-change` event. On every change
+//      we look up the new chapter's title in the cache.
+//   3. The title is classified against the intro / recap / outro
+//      regex set (see `classifyChapter` below — derived from
+//      intro-skipper's defaults + scene survey across anime BD rips,
+//      Western TV WEB-DLs, anime sims).
+//   4. If the title matches, the hook surfaces a `{ kind, endTime,
+//      label, onSkip }` payload to the parent so the floating button
+//      can render. `endTime` is `chapters[idx + 1]?.time` (falling
+//      back to `duration` for the rare last-chapter intro), so a
+//      skip lands precisely at the start of the next chapter.
+//   5. Skip click issues an absolute seek via the existing
+//      `desktop.seek()` IPC (which the shell extends to `seek <t>
+//      absolute+exact` so we hit the precise frame, not the prior
+//      keyframe — see `apps/desktop-blissful/src/ipc/commands.rs`).
+//
+// Coverage note: anime BD rips have explicit chapter markers ~80% of
+// the time, and most use one of the strings we match below
+// (`OP`/`Opening`/`Ending`/`ED`/`Preview` etc.). Anime simulcasts and
+// Western TV are spottier. Files without markers silently get no skip
+// button — no failure mode, just feature-absent.
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { desktop, type MpvChapter } from '../../lib/desktop';
+
+export type ChapterSkipKind = 'intro' | 'recap' | 'outro';
+
+export type ChapterSkipState = {
+  kind: ChapterSkipKind;
+  label: string;
+  endTime: number;
+  onSkip: () => void;
+};
+
+// Patterns adapted from jellyfin's intro-skipper plugin defaults
+// (PluginConfiguration.cs lines 278-305) plus additions from the
+// scene survey: `Main Titles` / `Title Sequence` / `Cold Open`
+// (Western TV), `Vorspann` / `Abspann` (German anime BDs),
+// `Opening Credits` / `Closing Credits` / `End Credits` (Western TV
+// disc-authoring convention). Each pattern is anchored at the start
+// of the title (`^`) with a trailing boundary `(\s|:|$)` so we don't
+// match `Opening Day` or `Recap And Review`. The `(?!\s+end)`
+// lookahead suppresses tags like `Opening End` that some tools emit
+// at chapter boundaries.
+const INTRO_RE =
+  /^(intro|introduction|op|opening( credits| theme)?|main titles|title sequence|cold open|vorspann)(?!\s+end)(\s|:|$)/i;
+const RECAP_RE =
+  /^(re-?cap|sum{1,2}ary|prev(ious(ly)?)?( on)?|last (time|episode)|earlier|catch[- ]?up)(?!\s+end)(\s|:|$)/i;
+const OUTRO_RE =
+  /^(ed|ending( credits| theme)?|credits?|outro|end credits|closing( credits| titles)?|abspann)(?!\s+end)(\s|:|$)/i;
+
+function classifyChapter(title: string | null | undefined): ChapterSkipKind | null {
+  if (!title) return null;
+  const t = title.trim();
+  if (!t) return null;
+  if (INTRO_RE.test(t)) return 'intro';
+  if (RECAP_RE.test(t)) return 'recap';
+  if (OUTRO_RE.test(t)) return 'outro';
+  return null;
+}
+
+const LABELS: Record<ChapterSkipKind, string> = {
+  intro: 'Skip Intro',
+  recap: 'Skip Recap',
+  outro: 'Skip Credits',
+};
+
+/**
+ * Detect the current chapter as intro/recap/outro and expose a skip
+ * action that seeks to the end of that chapter.
+ *
+ * @param duration  current mpv `duration` (used to bound the skip when
+ *                  the matched chapter is the last in the file)
+ * @returns `null` when no skippable chapter is active, otherwise a
+ *          payload the parent renders as a floating button.
+ */
+export function useChapterSkip(duration: number): ChapterSkipState | null {
+  const [chapters, setChapters] = useState<MpvChapter[]>([]);
+  const [currentIdx, setCurrentIdx] = useState<number>(-1);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    // Diagnostic helper. Lands in %APPDATA%/Blissful/player.log so we
+    // can see what mpv actually reported for files where the Skip
+    // Intro button doesn't appear when the user expected it to. Cheap
+    // — fires at most a few times per file load.
+    const log = (line: string) => {
+      desktop.log(`[chapter-skip] ${line}`).catch(() => {});
+    };
+
+    const refreshChapters = async () => {
+      try {
+        const list = await desktop.mpv.getChapters();
+        if (cancelled) return;
+        const arr = Array.isArray(list) ? list : [];
+        setChapters(arr);
+        if (arr.length === 0) {
+          log('chapters: file has no chapter markers');
+        } else {
+          log(
+            `chapters: ${arr.length} found -> ` +
+              arr
+                .map(
+                  (c, i) =>
+                    `${i}:"${c.title ?? '(untitled)'}"@${c.time.toFixed(1)}s`,
+                )
+                .join(', '),
+          );
+        }
+      } catch (err: unknown) {
+        if (cancelled) return;
+        setChapters([]);
+        log(`chapters: getChapters() threw ${String(err)}`);
+      }
+    };
+
+    const unsubLifecycle = desktop.onMpvEvent((e) => {
+      if (e.type === 'FileLoaded') {
+        setCurrentIdx(-1);
+        void refreshChapters();
+      }
+    });
+
+    const unsubProp = desktop.onMpvPropChange((e) => {
+      if (e.name !== 'chapter') return;
+      const v = e.value;
+      if (typeof v === 'number') {
+        const idx = Math.floor(v);
+        setCurrentIdx(idx);
+        log(`chapter prop -> ${idx}`);
+      }
+    });
+
+    // Initial fetch in case FileLoaded already fired before this mount.
+    void refreshChapters();
+
+    return () => {
+      cancelled = true;
+      unsubLifecycle();
+      unsubProp();
+    };
+  }, []);
+
+  const onSkip = useCallback((endTime: number) => {
+    // Absolute seek; the shell's `seek` IPC handler appends `+exact`
+    // so we land on the precise frame at chapter start, not the prior
+    // keyframe (matters for long-GOP encodes where keyframes can be
+    // 10+ s apart). No sticky dismissal — seeking back into the intro
+    // chapter shows the button again.
+    desktop.seek(endTime, 'absolute').catch(() => {});
+  }, []);
+
+  const state = useMemo<ChapterSkipState | null>(() => {
+    if (currentIdx < 0 || currentIdx >= chapters.length) return null;
+    const current = chapters[currentIdx];
+    const kind = classifyChapter(current?.title);
+    if (!kind) return null;
+
+    // End-of-skip target: start of the NEXT chapter, or the file's
+    // duration if this is the last chapter (rare for intros — comes
+    // up for outros that run until EOF on some BD authoring).
+    const next = chapters[currentIdx + 1];
+    const endTime =
+      next && Number.isFinite(next.time)
+        ? next.time
+        : Number.isFinite(duration)
+          ? duration
+          : current.time + 1; // hard fallback so we never seek to NaN
+
+    return {
+      kind,
+      label: LABELS[kind],
+      endTime,
+      onSkip: () => onSkip(endTime),
+    };
+  }, [chapters, currentIdx, duration, onSkip]);
+
+  // Log the resolution decision so when a user reports "I expected
+  // Skip Intro on this episode and didn't see it", we can read back
+  // what mpv reported for the current chapter title and why the
+  // classifier rejected it. Only fires on the actual index/title
+  // boundary, not on every render.
+  useEffect(() => {
+    if (currentIdx < 0 || chapters.length === 0) return;
+    const current = chapters[currentIdx];
+    const title = current?.title ?? '(untitled)';
+    const kind = classifyChapter(current?.title);
+    const verdict = kind
+      ? `classified=${kind}, button=${state ? 'shown' : 'dismissed'}`
+      : 'no match (button hidden)';
+    desktop
+      .log(`[chapter-skip] idx=${currentIdx} title="${title}" -> ${verdict}`)
+      .catch(() => {});
+  }, [chapters, currentIdx, state]);
+
+  return state;
+}

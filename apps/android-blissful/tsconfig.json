@@ -1,0 +1,10 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "paths": {
+      "@blissful/core": ["../../apps/shared/blissful-core/src/index.ts"],
+      "@blissful/core/*": ["../../apps/shared/blissful-core/src/*"]
+    }
+  }
+}

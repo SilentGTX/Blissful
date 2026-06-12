@@ -8,30 +8,30 @@ A native Windows Stremio client.
 
 ## Repo layout
 
-- `apps/blissful-shell/` — Rust + WebView2 shell. Hosts the local HTTP server (`/addon-proxy`, `/storage/*`, `/stremio/*`, `/subtitles.vtt`, `/opensubHash`), spawns + supervises the bundled streaming server, drives libmpv, ships the auto-updater.
-- `apps/blissful-mvs/` — React UI. Built into `dist/` and served by the shell at startup. Runs against the standalone Vite dev server on `:5173` when developing.
+- `apps/desktop-blissful/` — Rust + WebView2 shell. Hosts the local HTTP server (`/addon-proxy`, `/storage/*`, `/stremio/*`, `/subtitles.vtt`, `/opensubHash`), spawns + supervises the bundled streaming server, drives libmpv, ships the auto-updater.
+- `apps/web-blissful/` — React UI. Built into `dist/` and served by the shell at startup. Runs against the standalone Vite dev server on `:5173` when developing.
 
 ## Dev quickstart
 
 ```powershell
 # UI (port 5173)
-npm --prefix apps\blissful-mvs install
-npm --prefix apps\blissful-mvs run dev
+npm --prefix apps\web-blissful install
+npm --prefix apps\web-blissful run dev
 
 # Shell (port 5175+)
-cd apps\blissful-shell
+cd apps\desktop-blissful
 cargo run --features spike0a
 ```
 
-The shell auto-detects whether a Vite dev server is up on 5173 and proxies UI requests to it; otherwise it serves the prebuilt `apps/blissful-mvs/dist/`.
+The shell auto-detects whether a Vite dev server is up on 5173 and proxies UI requests to it; otherwise it serves the prebuilt `apps/web-blissful/dist/`.
 
 ## Prerequisites
 
-Runtime DLLs (libmpv, ffmpeg) and the bundled `stremio-service.zip` are gitignored — for local dev you stage them yourself under `apps/blissful-shell/resources/`. For CI builds the release workflow fetches them from the `vendor-binaries-v1` GitHub release at build time.
+Runtime DLLs (libmpv, ffmpeg) and the bundled `stremio-service.zip` are gitignored — for local dev you stage them yourself under `apps/desktop-blissful/resources/`. For CI builds the release workflow fetches them from the `vendor-binaries-v1` GitHub release at build time.
 
 ## Releasing
 
-`apps/blissful-shell/installer/` contains the WiX scaffolding. The GitHub Actions release workflow builds the MSI on tag push and publishes it to the **Releases** tab of this repo. The auto-updater in the shell polls `api.github.com/repos/SilentGTX/Blissful/releases/latest`.
+`apps/desktop-blissful/installer/` contains the WiX scaffolding. The GitHub Actions release workflow builds the MSI on tag push and publishes it to the **Releases** tab of this repo. The auto-updater in the shell polls `api.github.com/repos/SilentGTX/Blissful/releases/latest`.
 
 ## License
 

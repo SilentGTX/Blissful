@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Canonical web / thin-shell UI deploy (run on the Mac).
 #
-# Builds apps/blissful-mvs and purges the CDN cache for the PWA control
+# Builds apps/web-blissful and purges the CDN cache for the PWA control
 # files. The purge is REQUIRED, not optional: Cloudflare's zone Browser-Cache-
 # TTL (4h) rewrites Cache-Control on sw.js even though the origin sends
 # no-cache (public/serve.json), so without a purge the service worker stays
@@ -20,8 +20,8 @@ cd "$REPO"
 echo "==> git pull"
 git pull --ff-only
 echo "==> build"
-npm --prefix apps/blissful-mvs run build >/dev/null
-echo "    built: $(grep -oE 'index-[A-Za-z0-9_-]+\.js' apps/blissful-mvs/dist/index.html | head -1)"
+npm --prefix apps/web-blissful run build >/dev/null
+echo "    built: $(grep -oE 'index-[A-Za-z0-9_-]+\.js' apps/web-blissful/dist/index.html | head -1)"
 
 TOKEN=$(grep -E '^CLOUDFLARE_API_TOKEN=' "$REPO/.env" 2>/dev/null | head -1 \
   | sed -E 's/^CLOUDFLARE_API_TOKEN=//; s/^["'"'"']//; s/["'"'"']$//; s/\r$//')

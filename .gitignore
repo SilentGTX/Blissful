@@ -4,28 +4,28 @@ npm-debug.log*
 .npm/
 
 # Build outputs
-apps/blissful-mvs/dist/
-apps/blissful-mvs/dev-dist/
-apps/blissful-shell/target/
+apps/web-blissful/dist/
+apps/web-blissful/dev-dist/
+apps/desktop-blissful/target/
 
 # Bundled runtime binaries (downloaded by setup script, not committed)
-apps/blissful-shell/resources/mpv-x64/
-apps/blissful-shell/resources/ffmpeg-dlls/
-apps/blissful-shell/resources/test-media/
-apps/blissful-shell/resources/stremio-service.zip
-apps/blissful-shell/resources/stremio-service/
+apps/desktop-blissful/resources/mpv-x64/
+apps/desktop-blissful/resources/ffmpeg-dlls/
+apps/desktop-blissful/resources/test-media/
+apps/desktop-blissful/resources/stremio-service.zip
+apps/desktop-blissful/resources/stremio-service/
 # vcruntime DLLs are MSVC redistributables — staged per-dev / fetched by
 # the CI workflow at build time, never tracked in git.
-apps/blissful-shell/resources/vcruntime/*.dll
+apps/desktop-blissful/resources/vcruntime/*.dll
 
 # Installer output + WiX intermediates left behind by local builds
-apps/blissful-shell/installer/build/
-apps/blissful-shell/installer/dist/
-apps/blissful-shell/installer/obj/
-apps/blissful-shell/installer/staging/
-apps/blissful-shell/installer/staging-files.wxs
-apps/blissful-shell/installer/*.msi
-apps/blissful-shell/installer/*.exe
+apps/desktop-blissful/installer/build/
+apps/desktop-blissful/installer/dist/
+apps/desktop-blissful/installer/obj/
+apps/desktop-blissful/installer/staging/
+apps/desktop-blissful/installer/staging-files.wxs
+apps/desktop-blissful/installer/*.msi
+apps/desktop-blissful/installer/*.exe
 
 # Local-only zips packaged for vendor-binaries-* GitHub release uploads
 vendor-binaries/

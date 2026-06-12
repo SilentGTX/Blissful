@@ -6,7 +6,7 @@
 # Produces a `BlissfulSetup-<version>.exe` Burn-bundled WiX installer and
 # attaches it to a *draft* GitHub release. The release is left in draft so
 # you can sanity-check before publishing — when you publish, the in-app
-# updater (apps/blissful-shell/src/updater.rs) starts notifying users.
+# updater (apps/desktop-blissful/src/updater.rs) starts notifying users.
 #
 # -----------------------------------------------------------------------------
 # REQUIRED ONE-TIME SETUP (before the first run)
@@ -15,7 +15,7 @@
 # The shell bundles non-redistributable runtime DLLs (LGPL libmpv + ffmpeg)
 # and the Stremio streaming server. These are gitignored — too large for
 # git, and the libmpv build needs to be LGPL-compliant (see
-# apps/blissful-shell/PREREQUISITES.md section 2). The workflow fetches
+# apps/desktop-blissful/PREREQUISITES.md section 2). The workflow fetches
 # them at build time from URLs you configure as **repository variables**
 # under Settings -> Secrets and variables -> Actions -> Variables tab:
 #
@@ -92,7 +92,7 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          $line = Select-String -Path 'apps/blissful-shell/Cargo.toml' `
+          $line = Select-String -Path 'apps/desktop-blissful/Cargo.toml' `
             -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1
           if (-not $line) { throw 'Could not parse version from Cargo.toml' }
           $ver = $line.Matches.Groups[1].Value
@@ -107,14 +107,14 @@ jobs:
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: apps/blissful-shell
+          workspaces: apps/desktop-blissful
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: npm
-          cache-dependency-path: apps/blissful-mvs/package-lock.json
+          cache-dependency-path: apps/web-blissful/package-lock.json
 
       - name: Verify WiX 3.x is on PATH
         shell: pwsh
@@ -172,7 +172,7 @@ jobs:
             Write-Host "    $Label SHA-256 verified: $actual"
           }
 
-          $resources = 'apps/blissful-shell/resources'
+          $resources = 'apps/desktop-blissful/resources'
           New-Item -ItemType Directory -Force -Path "$resources/mpv-x64" | Out-Null
           New-Item -ItemType Directory -Force -Path "$resources/ffmpeg-dlls" | Out-Null
           New-Item -ItemType Directory -Force -Path "$resources/vcruntime" | Out-Null
@@ -196,14 +196,14 @@ jobs:
 
       - name: Build installer
         shell: pwsh
-        working-directory: apps/blissful-shell
+        working-directory: apps/desktop-blissful
         run: ./installer/build.ps1 -SkipSign
 
       - name: Locate built installer
         id: installer
         shell: pwsh
         run: |
-          $exe = Get-ChildItem 'apps/blissful-shell/installer/dist/BlissfulSetup-*.exe' |
+          $exe = Get-ChildItem 'apps/desktop-blissful/installer/dist/BlissfulSetup-*.exe' |
                  Select-Object -First 1
           if (-not $exe) { throw 'No installer found in installer/dist/' }
           "path=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
@@ -214,7 +214,7 @@ jobs:
         id: installer-sha
         shell: pwsh
         run: |
-          # The in-app updater (apps/blissful-shell/src/updater.rs) fetches
+          # The in-app updater (apps/desktop-blissful/src/updater.rs) fetches
           # this sidecar before downloading the installer and refuses to
           # spawn the installer on a SHA mismatch. The sidecar lives next
           # to the installer asset on the GitHub release and follows the

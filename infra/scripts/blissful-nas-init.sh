@@ -30,4 +30,4 @@ done
 echo ""
 echo "NAS directory tree ready."
 echo "Next: copy existing state data:"
-echo "  cp -a apps/blissful-storage/data/* $NAS_ROOT/state/blissful-storage/"
+echo "  cp -a apps/shared/blissful-storage/data/* $NAS_ROOT/state/blissful-storage/"

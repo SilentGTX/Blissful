@@ -1,0 +1,239 @@
+# Phase 7 -- Blissful native shell installer build pipeline.
+#
+# What this does:
+#   1. Builds the React app (apps/web-blissful).
+#   2. Builds the Rust shell in release mode.
+#   3. Stages every file the installer needs under installer/staging/.
+#   4. Runs WiX (heat -> candle -> light) to produce an MSI.
+#   5. Optionally signs the MSI (call installer/sign.ps1 -Path ...).
+#
+# Prerequisites (one-time, on the machine running this script):
+#   - Rust toolchain (rustup + MSVC build tools)
+#   - Node + npm
+#   - WiX Toolset 3.x installed and on PATH (heat.exe, candle.exe, light.exe)
+#     https://github.com/wixtoolset/wix3/releases
+#   - signtool.exe on PATH if you intend to sign -- comes with the Windows SDK
+#   - resources/mpv-x64/libmpv-2.dll present per PREREQUISITES.md section 2
+#   - resources/stremio-service.zip present per PREREQUISITES.md section 3
+#
+# Run from anywhere; paths are computed relative to this script.
+
+param(
+  [switch]$SkipSign,
+  [string]$CertPath = $env:BLISSFUL_CERT_PATH,
+  [string]$CertPassword = $env:BLISSFUL_CERT_PASSWORD,
+  [string]$TimestampUrl = 'http://timestamp.digicert.com'
+)
+
+$ErrorActionPreference = 'Stop'
+
+$installerDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+$shellDir = Split-Path -Parent $installerDir
+$repoRoot = Split-Path -Parent (Split-Path -Parent $shellDir)
+$mvsDir = Join-Path $repoRoot 'apps\web-blissful'
+$stagingDir = Join-Path $installerDir 'staging'
+$distDir = Join-Path $installerDir 'dist'
+
+# Read version from Cargo.toml so the MSI version matches the binary.
+$cargoToml = Get-Content (Join-Path $shellDir 'Cargo.toml') -Raw
+if ($cargoToml -notmatch '(?m)^version\s*=\s*"([^"]+)"') {
+  throw 'could not parse version from Cargo.toml'
+}
+$rawVersion = $matches[1]
+# WiX wants 4-part numeric; strip pre-release suffix.
+$msiVersion = $rawVersion -replace '-.*$', ''
+if ($msiVersion -notmatch '^\d+\.\d+\.\d+$') {
+  throw "version '$rawVersion' -> '$msiVersion' isn't a 3-part numeric version"
+}
+$msiVersion = "$msiVersion.0"
+Write-Host "Building Blissful $rawVersion (MSI version $msiVersion)" -ForegroundColor Cyan
+
+# --- 1. Build the React app ---
+Write-Host '== building React app (Vite) ==' -ForegroundColor Yellow
+& npm.cmd --prefix $mvsDir ci
+if ($LASTEXITCODE -ne 0) { throw 'npm ci failed' }
+& npm.cmd --prefix $mvsDir run build
+if ($LASTEXITCODE -ne 0) { throw 'npm run build failed' }
+
+# --- 2. Build the Rust shell (release) ---
+# spike0a is the production entry point (legacy naming -- the "spike"
+# graduated to running everything: ui_server, updater, libmpv, tray,
+# webview). Without this feature flag, main.rs prints a help message
+# and exits with code 2, so the installed app would silently fail to
+# launch.
+Write-Host '== building Rust shell (release) ==' -ForegroundColor Yellow
+& cargo build --manifest-path (Join-Path $shellDir 'Cargo.toml') --release --features spike0a
+if ($LASTEXITCODE -ne 0) { throw 'cargo build --release failed' }
+$shellExe = Join-Path $shellDir 'target\release\blissful-shell.exe'
+if (-not (Test-Path $shellExe)) { throw "shell exe not found at $shellExe" }
+
+# Optional EXE signing -- separately useful so we can validate the binary
+# before bundling it.
+if (-not $SkipSign -and $CertPath -and (Test-Path $CertPath)) {
+  Write-Host '== signing blissful-shell.exe ==' -ForegroundColor Yellow
+  & (Join-Path $installerDir 'sign.ps1') `
+    -Path $shellExe `
+    -CertPath $CertPath `
+    -CertPassword $CertPassword `
+    -TimestampUrl $TimestampUrl
+}
+
+# --- 3. Stage installer payload ---
+Write-Host '== staging installer payload ==' -ForegroundColor Yellow
+if (Test-Path $stagingDir) { Remove-Item $stagingDir -Recurse -Force }
+New-Item -ItemType Directory -Path $stagingDir | Out-Null
+
+# Required payload:
+Copy-Item $shellExe (Join-Path $stagingDir 'blissful-shell.exe')
+Copy-Item (Join-Path $shellDir 'resources\mpv-x64\libmpv-2.dll') $stagingDir
+$ffmpegDir = Join-Path $shellDir 'resources\ffmpeg-dlls'
+if (Test-Path $ffmpegDir) {
+  Get-ChildItem $ffmpegDir -Filter '*.dll' | ForEach-Object {
+    Copy-Item $_.FullName $stagingDir
+  }
+}
+Copy-Item (Join-Path $shellDir 'resources\stremio-service.zip') $stagingDir
+Copy-Item (Join-Path $shellDir 'resources\icon.ico') $stagingDir
+
+# VC++ runtime DLLs. Rust release builds dynamic-link `vcruntime140.dll`
+# and `msvcp140.dll`; on machines without VC++ Redistributable installed
+# the EXE exits silently before drawing a window. Bundling these
+# alongside blissful-shell.exe lets Windows resolve them locally first.
+$vcrtDir = Join-Path $shellDir 'resources\vcruntime'
+if (Test-Path $vcrtDir) {
+  Get-ChildItem $vcrtDir -Filter '*.dll' | ForEach-Object {
+    Copy-Item $_.FullName $stagingDir
+  }
+} else {
+  Write-Host "NOTE: $vcrtDir missing -- VC++ runtime DLLs not bundled. App will require VC++ Redist on target machines." -ForegroundColor DarkYellow
+}
+
+# React build:
+$uiSrc = Join-Path $mvsDir 'dist'
+$uiDst = Join-Path $stagingDir 'blissful-ui'
+New-Item -ItemType Directory -Path $uiDst | Out-Null
+Copy-Item "$uiSrc\*" $uiDst -Recurse
+
+# WebView2 bootstrapper. Download once + cache locally; the bootstrapper
+# is a tiny .exe (~150KB) that no-op's if WebView2 is already installed.
+$wv2Boot = Join-Path $installerDir 'MicrosoftEdgeWebview2Setup.exe'
+if (-not (Test-Path $wv2Boot)) {
+  Write-Host '== downloading WebView2 evergreen bootstrapper ==' -ForegroundColor Yellow
+  Invoke-WebRequest `
+    -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' `
+    -OutFile $wv2Boot
+}
+Copy-Item $wv2Boot (Join-Path $stagingDir 'MicrosoftEdgeWebview2Setup.exe')
+
+# --- 4. WiX: heat -> candle -> light ---
+$generatedWxs = Join-Path $installerDir 'staging-files.wxs'
+Write-Host '== WiX heat: harvesting staging payload ==' -ForegroundColor Yellow
+& heat.exe dir $stagingDir `
+  -cg MainFiles `
+  -gg `
+  -srd `
+  -sreg `
+  -dr INSTALLDIR `
+  -var var.StagingDir `
+  -out $generatedWxs
+if ($LASTEXITCODE -ne 0) { throw 'heat.exe failed' }
+
+# Also surface the WebView2 bootstrapper under a stable FileKey so the
+# WiX <CustomAction FileKey="WebView2BootstrapperFile"> resolves. The
+# auto-generated component IDs aren't stable, so we REPLACE heat's
+# generated File Id with our well-known one (NOT append; appending
+# leaves two Id= attributes on the same element, which candle rejects
+# with CNDL0104 "duplicate attribute name").
+$wxsText = Get-Content $generatedWxs -Raw
+$wxsText = $wxsText -replace `
+  '<File Id="fil[A-Fa-f0-9]+"([^/]*Source="\$\(var\.StagingDir\)\\MicrosoftEdgeWebview2Setup\.exe"[^/]*)/>', `
+  '<File Id="WebView2BootstrapperFile"$1/>'
+Set-Content $generatedWxs $wxsText -Encoding UTF8
+
+Write-Host '== WiX candle: compiling ==' -ForegroundColor Yellow
+$resourcesDir = Join-Path $shellDir 'installer'
+$wxsMain = Join-Path $installerDir 'blissful.wxs'
+# -arch x64: emit 64-bit components so they install into the 64-bit
+# Program Files tree without ICE80 ("32BitComponent uses 64BitDirectory")
+# light validation errors. Blissful is x64-only; libmpv-2.dll, the
+# ffmpeg DLLs, and the Rust shell are all built for x86_64-pc-windows-msvc.
+& candle.exe -nologo `
+  -arch x64 `
+  "-dProductVersion=$msiVersion" `
+  "-dResourcesDir=$resourcesDir" `
+  "-dStagingDir=$stagingDir" `
+  -ext WixUIExtension `
+  -ext WixUtilExtension `
+  -out (Join-Path $installerDir 'obj\') `
+  $wxsMain $generatedWxs
+if ($LASTEXITCODE -ne 0) { throw 'candle.exe failed' }
+
+Write-Host '== WiX light: linking MSI ==' -ForegroundColor Yellow
+if (-not (Test-Path $distDir)) { New-Item -ItemType Directory -Path $distDir | Out-Null }
+$msiPath = Join-Path $distDir "Blissful-Setup-$rawVersion.msi"
+& light.exe -nologo `
+  -ext WixUIExtension `
+  -ext WixUtilExtension `
+  -out $msiPath `
+  (Join-Path $installerDir 'obj\blissful.wixobj') `
+  (Join-Path $installerDir 'obj\staging-files.wixobj')
+if ($LASTEXITCODE -ne 0) { throw 'light.exe failed' }
+Write-Host "MSI produced: $msiPath" -ForegroundColor Green
+
+# Patch the @VERSION@ placeholder in theme.wxl with the actual version
+# from Cargo.toml so the title bar reads "Setup - Blissful version X.Y.Z"
+# (Stremio-style). We restore the placeholder afterwards so the working
+# tree stays template-shaped.
+$themeWxlPath = Join-Path $installerDir 'theme.wxl'
+# Explicit UTF-8 round-trip: PowerShell 5.1's Get-Content defaults to
+# the system codepage (CP1252 on en-US), which mojibakes non-ASCII
+# bytes when the file was saved as UTF-8. Reading + writing with
+# -Encoding UTF8 keeps the bytes intact.
+$themeWxlOriginal = [System.IO.File]::ReadAllText($themeWxlPath, [System.Text.UTF8Encoding]::new($false))
+$themeWxlPatched = $themeWxlOriginal -replace '@VERSION@', $rawVersion
+[System.IO.File]::WriteAllText($themeWxlPath, $themeWxlPatched, [System.Text.UTF8Encoding]::new($false))
+try {
+
+# --- 4.5. WiX Burn bundle: wrap MSI into Setup.exe ---
+# Produces a self-contained Setup.exe with the Blissful icon. The MSI
+# is embedded as a payload; running the exe shows the Burn wizard and
+# then chains the MSI install.
+Write-Host '== WiX Burn: wrapping MSI into Setup.exe ==' -ForegroundColor Yellow
+$bundleWxs = Join-Path $installerDir 'bundle.wxs'
+$bundleObj = Join-Path $installerDir 'obj\bundle.wixobj'
+& candle.exe -nologo `
+  "-dProductVersion=$msiVersion" `
+  "-dResourcesDir=$resourcesDir" `
+  "-dMsiPath=$msiPath" `
+  -ext WixBalExtension `
+  -out (Join-Path $installerDir 'obj\') `
+  $bundleWxs
+if ($LASTEXITCODE -ne 0) { throw 'candle.exe (bundle) failed' }
+$exePath = Join-Path $distDir "BlissfulSetup-$rawVersion.exe"
+& light.exe -nologo `
+  -ext WixBalExtension `
+  -out $exePath `
+  $bundleObj
+if ($LASTEXITCODE -ne 0) { throw 'light.exe (bundle) failed' }
+Write-Host "Bundle EXE produced: $exePath" -ForegroundColor Green
+
+} finally {
+  # Restore theme.wxl to its template-shaped form so the working tree
+  # doesn't carry a build-stamped version. WriteAllText with explicit
+  # UTF-8 (no BOM) keeps the file byte-identical to the source.
+  [System.IO.File]::WriteAllText($themeWxlPath, $themeWxlOriginal, [System.Text.UTF8Encoding]::new($false))
+}
+
+# --- 5. Sign the MSI ---
+if (-not $SkipSign -and $CertPath -and (Test-Path $CertPath)) {
+  Write-Host '== signing MSI ==' -ForegroundColor Yellow
+  & (Join-Path $installerDir 'sign.ps1') `
+    -Path $msiPath `
+    -CertPath $CertPath `
+    -CertPassword $CertPassword `
+    -TimestampUrl $TimestampUrl
+} else {
+  Write-Host 'NOTE: MSI not signed. Pass -CertPath or set BLISSFUL_CERT_PATH to sign.' -ForegroundColor DarkYellow
+}
+
+Write-Host "Done. Output: $msiPath" -ForegroundColor Green

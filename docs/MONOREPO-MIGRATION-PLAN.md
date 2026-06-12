@@ -11,10 +11,10 @@ That covers, concretely:
 - the `react-native-blissful` branch (never merged into main, never rebased/cherry-picked onto,
   never modified),
 - the old `android-tv` branch (not deleted, not modified),
-- the untracked Android working-tree dirs on disk (`apps/blissful-tv-rn/`,
+- the untracked Android working-tree dirs on disk (`apps/android-blissful/`,
   `apps/blissful-tv-shell/`, `tools/`, `.tmp-shots/`) — never staged, committed, edited, or
   cleaned,
-- `packages/blissful-core` (lives on the RN branch; no parallel copy is created on main).
+- `apps/shared/blissful-core` (lives on the RN branch; no parallel copy is created on main).
 
 Operational discipline that enforces this: **migration commits stage explicit paths only —
 never `git add -A` / `git add .` from the repo root** — so the untracked Android dirs can never
@@ -53,9 +53,9 @@ There are **three divergent copies** of `blissful-mvs` and they must converge in
 
 | Copy | Where | What it is |
 |---|---|---|
-| Desktop | `main` @ `apps/blissful-mvs` | Production Windows UI. NativeMpvPlayer + SimplePlayer fallback. Includes v0.1.6 work + the (uncommitted) 2026-06-11 watch-party port. |
-| Multi-target | branch `react-native-blissful` @ `apps/blissful-mvs` | Desktop UI + PWA (web) + Tauri TV-WebView targets, gated by `TAURI_ENV_PLATFORM`; consumes `packages/blissful-core` via Vite alias; has `PlayerPageLazy`. 113 commits ahead of main, +18.9k lines in the UI. No OpenCode web player. **Stays on its branch — NOT merged; useful scaffolding is lifted per-file only.** |
-| Web | `D:\JS\OpenCode` @ `apps/blissful-mvs` (HEAD `15ce2f0a`) | Most feature-advanced. `BlissfulPlayer` (`<video>`/HLS/RD/Vidking) + resolve pipeline, `components/base/` design system, mini-player/PiP, latest watch-party hardening. **Zero native-shell code** (fully scrubbed). |
+| Desktop | `main` @ `apps/web-blissful` | Production Windows UI. NativeMpvPlayer + SimplePlayer fallback. Includes v0.1.6 work + the (uncommitted) 2026-06-11 watch-party port. |
+| Multi-target | branch `react-native-blissful` @ `apps/web-blissful` | Desktop UI + PWA (web) + Tauri TV-WebView targets, gated by `TAURI_ENV_PLATFORM`; consumes `apps/shared/blissful-core` via Vite alias; has `PlayerPageLazy`. 113 commits ahead of main, +18.9k lines in the UI. No OpenCode web player. **Stays on its branch — NOT merged; useful scaffolding is lifted per-file only.** |
+| Web | `D:\JS\OpenCode` @ `apps/web-blissful` (HEAD `15ce2f0a`) | Most feature-advanced. `BlissfulPlayer` (`<video>`/HLS/RD/Vidking) + resolve pipeline, `components/base/` design system, mini-player/PiP, latest watch-party hardening. **Zero native-shell code** (fully scrubbed). |
 
 Other measured facts that shape the plan:
 
@@ -66,7 +66,7 @@ Other measured facts that shape the plan:
   `SideNav/DesktopNav` (347), `AppShell` (320). Since the RN branch stays unmerged, this audit
   is current — the convergence is purely main ↔ OpenCode.
 - **Web deployment today**: Mac `docker-compose.yml` in OpenCode; the `blissful` service is just
-  `serve -s dist` over a volume-mounted `apps/blissful-mvs/dist`, behind `blissful.budinoff.com`.
+  `serve -s dist` over a volume-mounted `apps/web-blissful/dist`, behind `blissful.budinoff.com`.
   Cutover is "point the volume at this repo's dist".
 - **Auth divergence**: OpenCode dropped `lib/stremioApi.ts` (web is Blissful-account-first with
   optional Stremio link via `StremioLinkPopupPage`); desktop keeps full Stremio accounts
@@ -91,9 +91,9 @@ main branch (this migration's scope):
     MONOREPO-MIGRATION-PLAN.md   # this file
 
 react-native-blissful branch (deliberately unmerged - the Android TV line; NOT touched):
-  apps/blissful-tv-rn/      # native Android TV app (own RN UI)
+  apps/android-blissful/      # native Android TV app (own RN UI)
   apps/blissful-tv-shell/   # legacy Tauri TV WebView shell
-  packages/blissful-core/   # shared pure-TS consumed by the TV app
+  apps/shared/blissful-core/   # shared pure-TS consumed by the TV app
   docs/RN-MIGRATION-PLAN.md
 ```
 
@@ -159,7 +159,7 @@ watch party), auth audit step 6 (stremioApi/AccountsPage surface), then Phase 2 
 unification — kept-ours desktop PlayerPage + web's persistent-player model merge).
 
 1. Refresh the divergence audit against OpenCode's then-current HEAD:
-   `git diff --no-index --numstat apps/blissful-mvs/src ../OpenCode/apps/blissful-mvs/src`.
+   `git diff --no-index --numstat apps/web-blissful/src ../OpenCode/apps/web-blissful/src`.
 2. ~~Web-target scaffolding~~ **OBSOLETE** — discovered during execution: main's vite config
    already ships `vite-plugin-pwa` (the build emits `dist/sw.js` + a 36-entry precache), so
    the web build target already exists. `PlayerPageLazy` remains a Phase 2 nicety.
@@ -229,20 +229,20 @@ with a PlayerPageLazy-style split if bundle size starts to matter.
    `docker-compose.yml.bak-thinshell`). blissful.budinoff.com serves the unified bundle;
    storage + proxy containers restarted on current code (gate/subs handlers + /imdb-rating
    verified live). **Deploy flow now:** ssh Mac → `git pull` + `npm run build` in
-   `~/home-lab/Blissful/apps/blissful-mvs` — live instantly, no restart.
+   `~/home-lab/Blissful/apps/web-blissful` — live instantly, no restart.
 2. ~~Verification~~ **DONE**: desktop shell launched with
    `BLISSFUL_UI_URL=https://blissful.budinoff.com` — navigation pinned+allowed, bridge alive,
    desktop personality rendered from the live site.
 3. **REMAINING — Desktop release tag** (Ivan's call): gated on his visual pass + ideally
    Phase 2. `release.yml` needs zero changes. From that release on, installs load the deployed
    UI (thin shell); subsequent UI changes need web deploys only.
-4. **REMAINING — Freeze OpenCode's `apps/blissful-mvs`**: README pointer "UI moved to
+4. **REMAINING — Freeze OpenCode's `apps/web-blissful`**: README pointer "UI moved to
    Blissful". All UI work happens in Blissful now; OpenCode is backend-services-only.
    (De facto already true — the deployed site no longer builds from OpenCode.)
 
 ### Phase 4 — Shared core growth (DEFERRED)
 
-`packages/blissful-core` lives on the `react-native-blissful` branch (consumed by the TV app),
+`apps/shared/blissful-core` lives on the `react-native-blissful` branch (consumed by the TV app),
 and that branch stays unmerged — creating a parallel `blissful-core` on main would just
 manufacture new drift. So protocol definitions (watch-party wire types, storage API client
 types) stay in `blissful-mvs/src/lib` for now. This phase activates only if/when the TV-branch
@@ -251,7 +251,7 @@ manually across main, the RN branch, and the storage server.
 
 ### Phase 5 — Backend services move — **DONE 2026-06-11 (`ff8248b` / OpenCode `eaadcc8f`)**
 
-Moved here: `apps/blissful-storage`, `apps/addon-proxy`, blissful infra scripts + launchd
+Moved here: `apps/shared/blissful-storage`, `apps/shared/addon-proxy`, blissful infra scripts + launchd
 plists (transcoder, videasy resolver/minter, backup, cache-cleanup, health-monitor, nas
 tools, mac-up), stremio-dev compose, and a root `docker-compose.yml` carrying the 5 blissful
 services (identical container names/ports/NAS binds — all state is NAS bind-mounted, so the
@@ -262,7 +262,7 @@ verified). Secrets: `~/home-lab/Blissful/.env` (subset carved from OpenCode's).
 Stayed in OpenCode (per Ivan's scope): `discord-bot`, `mac-monitor`, `monitor`, nextcloud,
 the shared Traefik proxy + ALL its dynamic configs (including `blissful.yml` — routing config
 for the shared proxy), machine-level launchd, MCP/auth scripts. OpenCode's compose now
-carries only `discord-bot`; its README points here; `apps/blissful-mvs` there is frozen
+carries only `discord-bot`; its README points here; `apps/web-blissful` there is frozen
 history. Protocol changes are now single-repo: client types + server handlers in one commit.
 
 ## 5. Risks
