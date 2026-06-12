@@ -1,0 +1,148 @@
+import { Ionicons } from '@expo/vector-icons';
+import { useEffect, useRef, useState } from 'react';
+import { BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { colors, font, radius } from '../theme/colors';
+import { useMetrics } from '../theme/metrics';
+import { FocusTrap } from './FocusTrap';
+import { markContentFocus } from '../lib/focusBus';
+import { useSelfTag } from '../lib/useSelfTag';
+import { useSettingsLeftTarget } from '../lib/settingsLeftTarget';
+
+export type SelectOption = { key: string; label: string };
+type M = ReturnType<typeof useMetrics>;
+
+export type TvSelectSize = 'sm' | 'md';
+// md = the standard filter/season select (height 52, font 20); sm = a denser
+// row. Sizes are 1920-design px scaled by m.s() at render.
+const SELECT_SIZES: Record<TvSelectSize, { height: number; font: number; icon: number; chevron: number; padH: number; gap: number }> = {
+  sm: { height: 44, font: 18, icon: 20, chevron: 18, padH: 14, gap: 8 },
+  md: { height: 52, font: 20, icon: 22, chevron: 20, padH: 18, gap: 10 },
+};
+
+// What the screen needs to host the dropdown overlay at the root level.
+export type DropdownAnchor = {
+  pos: { x: number; y: number; w: number; h: number };
+  options: SelectOption[];
+  value: string;
+  onChange: (key: string) => void;
+  /** Return D-pad focus to the trigger that opened this dropdown (call after the
+   *  overlay closes) so focus doesn't snap to the first focusable on screen. */
+  requestFocus: () => void;
+};
+
+// The trigger button (icon + value + chevron). On press it measures itself and
+// asks the screen to open the overlay (the overlay must render at the screen
+// root, not nested here, so its absolute fill covers the whole screen).
+export function TvSelect({
+  iconName,
+  options,
+  value,
+  onChange,
+  m,
+  minWidth,
+  atRowStart,
+  onOpen,
+  size = 'md',
+}: {
+  iconName: keyof typeof Ionicons.glyphMap;
+  options: SelectOption[];
+  value: string;
+  onChange: (key: string) => void;
+  m: M;
+  minWidth: number;
+  atRowStart?: boolean;
+  onOpen: (anchor: DropdownAnchor) => void;
+  size?: TvSelectSize;
+}) {
+  const sz = SELECT_SIZES[size];
+  const [focused, setFocused] = useState(false);
+  const triggerRef = useRef<View>(null);
+  // Same Left→category / rail-trap routing as useTvFocusable, kept inline because
+  // the trigger needs its own ref for measureInWindow() + requestTVFocus().
+  const leftTarget = useSettingsLeftTarget();
+  const railTrap = leftTarget == null && Boolean(atRowStart);
+  const selfTag = useSelfTag(triggerRef, railTrap);
+  const current = options.find((o) => o.key === value);
+  const open = () =>
+    triggerRef.current?.measureInWindow((x, y, w, h) =>
+      onOpen({
+        pos: { x, y, w, h },
+        options,
+        value,
+        onChange,
+        requestFocus: () => (triggerRef.current as unknown as { requestTVFocus?: () => void } | null)?.requestTVFocus?.(),
+      }),
+    );
+  return (
+    <Pressable
+      ref={triggerRef}
+      nextFocusLeft={Boolean(atRowStart) && leftTarget != null ? leftTarget : selfTag}
+      onFocus={() => { setFocused(true); markContentFocus(railTrap); }}
+      onBlur={() => setFocused(false)}
+      onPress={open}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(sz.gap), minWidth, height: m.s(sz.height), paddingHorizontal: m.s(sz.padH), borderRadius: radius.pill, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: focused ? colors.accent : 'rgba(255,255,255,0.12)' }}
+    >
+      <Ionicons name={iconName} size={m.s(sz.icon)} color={colors.textDim} />
+      {/* Fall back to the raw value (never blank) when it isn't one of the
+          options — e.g. a saved language outside the TV's short preset list. */}
+      <Text numberOfLines={1} style={{ flex: 1, fontFamily: font.bodySemi, fontSize: m.s(sz.font), color: colors.text }}>{current?.label ?? value}</Text>
+      <Ionicons name="chevron-down" size={m.s(sz.chevron)} color={colors.textDim} />
+    </Pressable>
+  );
+}
+
+function Row({ label, selected, autoFocus, m, onPress }: { label: string; selected: boolean; autoFocus: boolean; m: M; onPress: () => void }) {
+  const [f, setF] = useState(false);
+  return (
+    <Pressable
+      hasTVPreferredFocus={autoFocus}
+      onFocus={() => setF(true)}
+      onBlur={() => setF(false)}
+      onPress={onPress}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(10), paddingVertical: m.s(11), paddingHorizontal: m.s(16), borderRadius: m.s(12), backgroundColor: f ? colors.surface10 : 'transparent', borderWidth: 1, borderColor: f ? colors.accent : 'transparent' }}
+    >
+      <Text style={{ flex: 1, fontFamily: font.bodySemi, fontSize: m.s(20), color: selected ? colors.accent : colors.text }}>{label}</Text>
+      {selected ? <Ionicons name="checkmark" size={m.s(20)} color={colors.accent} /> : null}
+    </Pressable>
+  );
+}
+
+// Screen-root overlay: dims the screen, anchors the option list under the
+// trigger. Absolute overlay (not a Modal) so D-pad select fires.
+export function TvSelectOverlay({ anchor, onClose, m }: { anchor: DropdownAnchor; onClose: () => void; m: M }) {
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      onClose();
+      return true;
+    });
+    return () => sub.remove();
+  }, [onClose]);
+  const idx = Math.max(0, anchor.options.findIndex((o) => o.key === anchor.value));
+  // Keep the list on-screen: open DOWN by default, but flip UP when the trigger
+  // sits low (the episode-range selector is near the bottom of the detail page)
+  // so the options never spill off the bottom edge. maxHeight is clamped to the
+  // chosen side's free space; the list scrolls within it.
+  const gap = m.s(6);
+  const margin = m.s(16);
+  const belowSpace = m.height - (anchor.pos.y + anchor.pos.h) - margin;
+  const aboveSpace = anchor.pos.y - margin;
+  const openUp = belowSpace < m.s(360) && aboveSpace > belowSpace;
+  const maxH = Math.min(m.s(420), Math.max(m.s(140), openUp ? aboveSpace : belowSpace));
+  const vstyle = openUp ? { bottom: m.height - anchor.pos.y + gap } : { top: anchor.pos.y + anchor.pos.h + gap };
+  return (
+    <View style={styles.overlay}>
+      <Pressable style={StyleSheet.absoluteFill} focusable={false} onPress={onClose} />
+      <FocusTrap style={{ position: 'absolute', left: anchor.pos.x, ...vstyle, minWidth: Math.max(anchor.pos.w, m.s(220)), maxHeight: maxH, borderRadius: m.s(16), padding: m.s(6), backgroundColor: 'rgba(20,24,33,0.98)', borderWidth: 1, borderColor: colors.hairline, overflow: 'hidden' }}>
+        <ScrollView showsVerticalScrollIndicator={false}>
+          {anchor.options.map((o, i) => (
+            <Row key={o.key} label={o.label} selected={o.key === anchor.value} autoFocus={i === idx} m={m} onPress={() => { anchor.onChange(o.key); onClose(); }} />
+          ))}
+        </ScrollView>
+      </FocusTrap>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 300, backgroundColor: 'rgba(0,0,0,0.35)' },
+});

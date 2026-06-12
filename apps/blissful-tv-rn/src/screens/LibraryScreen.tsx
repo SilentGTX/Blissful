@@ -1,0 +1,433 @@
+import { useIsFocused, useNavigation } from '@react-navigation/native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { BackHandler, FlatList, StyleSheet, Text, useTVEventHandler, View } from 'react-native';
+import { PosterGridSkeleton } from '../components/Skeleton';
+import {
+  fetchBlissfulLibrary,
+  normalizeStremioImage,
+  putBlissfulLibraryItem,
+  type LibraryItem,
+  type MediaType,
+} from '@blissful/core';
+import { colors, font } from '../theme/colors';
+import { useMetrics } from '../theme/metrics';
+import { useContentInert } from '../lib/contentFocus';
+import { openLogin } from '../lib/loginStore';
+import { useAuth } from '../context/AuthContext';
+import { NavRail } from '../components/NavRail';
+import { Backdrop } from '../components/home/HomeHero';
+import { useFocusedMeta } from '../components/home/useFocusedMeta';
+import type { HomeItem } from '../components/home/homeData';
+import { PosterCard, type CardItem, type CardRect } from '../components/PosterCard';
+import { LibraryActionOverlay } from '../components/LibraryActionOverlay';
+import { TvSelect, TvSelectOverlay, type DropdownAnchor, type SelectOption } from '../components/TvSelect';
+import { Chip } from '../components/ui/Chip';
+import { Button } from '../components/ui/Button';
+
+// The Windows app's LibraryPage (same filters, sort/watched chips, type dropdown,
+// progress bars + the soft-remove write), restyled with the immersive Discover
+// language: an ambient full-bleed backdrop of the FOCUSED card behind a heavy dim
+// (the grid stays the star), the Spectral display serif heading inline with the
+// filter pills, no topbar (Search lives in the NavRail). On TV removal is hold-OK
+// on the card (longSelect) → LibraryActionOverlay, mirroring the web TV build.
+
+type SortMode = 'last_watched' | 'az' | 'za' | 'most_watched';
+type WatchedFilter = 'all' | 'watched' | 'not_watched';
+
+const SORT_CHIPS: { key: SortMode; label: string }[] = [
+  { key: 'last_watched', label: 'Last watched' },
+  { key: 'az', label: 'A-Z' },
+  { key: 'za', label: 'Z-A' },
+  { key: 'most_watched', label: 'Most watched' },
+];
+const WATCHED_CHIPS: { key: Exclude<WatchedFilter, 'all'>; label: string }[] = [
+  { key: 'watched', label: 'Watched' },
+  { key: 'not_watched', label: 'Not watched' },
+];
+
+function typeLabel(type: string): string {
+  const raw = type.trim();
+  if (!raw) return 'Other';
+  if (raw === 'movie') return 'Movies';
+  if (raw === 'series') return 'Series';
+  if (raw === 'channel') return 'TV Channels';
+  if (raw === 'tv') return 'TV';
+  return raw.slice(0, 1).toUpperCase() + raw.slice(1);
+}
+
+// percentProgress — same as LibraryPage: a 2% sentinel when duration is unknown.
+function percentProgress(item: LibraryItem): number | null {
+  const offset = typeof item.state?.timeOffset === 'number' ? item.state.timeOffset : null;
+  const duration = typeof item.state?.duration === 'number' ? item.state.duration : null;
+  if (offset === null) return null;
+  if (!Number.isFinite(offset) || offset <= 0) return null;
+  if (duration === null || !Number.isFinite(duration) || duration <= 0) return 2;
+  return Math.min(100, Math.max(0, (offset / duration) * 100));
+}
+
+function isWatched(it: LibraryItem): boolean {
+  const times = typeof it.state?.timesWatched === 'number' ? it.state.timesWatched : 0;
+  const flagged = typeof it.state?.flaggedWatched === 'number' ? it.state.flaggedWatched : 0;
+  const watchedRaw = typeof it.state?.watched === 'string' ? it.state.watched.trim() : '';
+  return times > 0 || flagged > 0 || watchedRaw.length > 0;
+}
+
+function withMtime(it: LibraryItem): number {
+  if (typeof it._mtime === 'number') return it._mtime;
+  const n = Date.parse(String(it._mtime ?? ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+export function LibraryScreen() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const navigation = useNavigation<any>();
+  const m = useMetrics();
+  const railOpen = useContentInert();
+  const { token } = useAuth();
+
+  const [items, setItems] = useState<LibraryItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [sortMode, setSortMode] = useState<SortMode>('last_watched');
+  const [watchedFilter, setWatchedFilter] = useState<WatchedFilter>('all');
+  const [dropdown, setDropdown] = useState<DropdownAnchor | null>(null);
+  const hasLoadedOnceRef = useRef(false);
+
+  // The focused card drives the ambient backdrop (the immersive Home/Discover
+  // model, dimmed way down here). Never null-cleared (nulling = flash).
+  const [focused, setFocused] = useState<HomeItem | null>(null);
+  const focusedMeta = useFocusedMeta(focused, token);
+
+  // Hold-OK quick-action overlay (Remove from library) — mirrors the Continue
+  // Watching tile. `actionRect` is the held card's measured window rect so the
+  // root overlay lands on it. The TV-event hold signal is global, so gate it on
+  // this screen being the active route + a library card actually being focused.
+  const [actionCard, setActionCard] = useState<CardItem | null>(null);
+  const [actionRect, setActionRect] = useState<CardRect | null>(null);
+  const focusedCardRef = useRef<CardItem | null>(null);
+  // Android TV fires longSelect AND the focused view's onPress on release; this
+  // flag (set by longSelect) makes the trailing onPress a no-op so a hold doesn't
+  // ALSO open Detail. Safety-cleared after 1s.
+  const longPressConsumedRef = useRef(false);
+  const longPressClearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isFocused = useIsFocused();
+  const isFocusedRef = useRef(isFocused);
+  isFocusedRef.current = isFocused;
+
+  // Load + 30s refresh, exactly like LibraryPage. There is no window 'focus'
+  // event on RN; the interval covers the same staleness window.
+  useEffect(() => {
+    if (!token) {
+      setItems([]);
+      setLoading(false);
+      setError(null);
+      hasLoadedOnceRef.current = false;
+      return;
+    }
+    let cancelled = false;
+    const refresh = () => {
+      const showLoading = !hasLoadedOnceRef.current;
+      if (showLoading) setLoading(true);
+      setError(null);
+      fetchBlissfulLibrary<LibraryItem>(token)
+        .then((result) => {
+          if (cancelled) return;
+          hasLoadedOnceRef.current = true;
+          setItems(result.filter((it) => !it.removed));
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return;
+          setError(err instanceof Error ? err.message : 'Failed to load library');
+          if (showLoading) setItems([]);
+        })
+        .finally(() => {
+          if (cancelled) return;
+          if (showLoading) setLoading(false);
+        });
+    };
+    refresh();
+    const interval = setInterval(refresh, 30000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [token]);
+
+  const filtered = useMemo(() => {
+    const byType = typeFilter === 'all' ? items : items.filter((it) => it.type === typeFilter);
+    const byWatched =
+      watchedFilter === 'all'
+        ? byType
+        : watchedFilter === 'watched'
+          ? byType.filter(isWatched)
+          : byType.filter((it) => !isWatched(it));
+
+    const withTimesWatched = (it: LibraryItem) => (typeof it.state?.timesWatched === 'number' ? it.state.timesWatched : 0);
+    const withTimeWatched = (it: LibraryItem) => (typeof it.state?.timeWatched === 'number' ? it.state.timeWatched : 0);
+
+    return byWatched.slice().sort((a, b) => {
+      if (sortMode === 'az') return a.name.localeCompare(b.name);
+      if (sortMode === 'za') return b.name.localeCompare(a.name);
+      if (sortMode === 'most_watched') {
+        const dt = withTimesWatched(b) - withTimesWatched(a);
+        if (dt !== 0) return dt;
+        const d2 = withTimeWatched(b) - withTimeWatched(a);
+        if (d2 !== 0) return d2;
+        return withMtime(b) - withMtime(a);
+      }
+      return withMtime(b) - withMtime(a);
+    });
+  }, [items, sortMode, typeFilter, watchedFilter]);
+
+  // type dropdown options (All + each distinct type, known types first).
+  const typeOptions = useMemo<SelectOption[]>(() => {
+    const seen = new Set<string>();
+    for (const it of items) {
+      const t = String(it.type ?? '').trim();
+      if (t) seen.add(t);
+    }
+    const known = ['movie', 'series', 'channel'];
+    const list = Array.from(seen).sort((a, b) => {
+      const ia = known.indexOf(a);
+      const ib = known.indexOf(b);
+      if (ia !== -1 || ib !== -1) return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+      return a.localeCompare(b);
+    });
+    return [{ key: 'all', label: 'All' }, ...list.map((t) => ({ key: t, label: typeLabel(t) }))];
+  }, [items]);
+
+  // Per-item card data (stable identity so memoised PosterCards don't reflow on
+  // a library poll / focus move). Carries the progress bar + the videoId used
+  // for series deep-links.
+  const cells = useMemo(
+    () =>
+      filtered.map((item) => ({
+        item,
+        videoId: item.type === 'series' ? item.state?.video_id ?? null : null,
+        progress: percentProgress(item) ?? undefined,
+        card: {
+          id: item._id,
+          type: item.type,
+          name: item.name,
+          poster: normalizeStremioImage(item.poster) ?? null,
+        } as CardItem,
+      })),
+    [filtered]
+  );
+  const byId = useMemo(() => new Map(cells.map((c) => [c.item._id, c])), [cells]);
+
+  // Seed the ambient backdrop from the first card once (the autoFocused first
+  // card also sets it on mount; this covers the rare case it doesn't grab). Never
+  // re-seeds — the 30s poll rebuilds `cells` but must NOT reset the backdrop.
+  useEffect(() => {
+    if (focused || !cells.length) return;
+    const c = cells[0].card;
+    setFocused({ id: c.id, type: c.type as MediaType, name: c.name, poster: c.poster });
+  }, [cells, focused]);
+
+  const onSelect = useCallback(
+    (card: CardItem) => {
+      // A hold (longSelect) also fires the focused card's onPress on release;
+      // swallow that one trailing press so a hold opens the overlay, not Detail.
+      if (longPressConsumedRef.current) {
+        longPressConsumedRef.current = false;
+        if (longPressClearTimer.current) clearTimeout(longPressClearTimer.current);
+        return;
+      }
+      const cell = byId.get(card.id);
+      if (!cell) return;
+      const type = (cell.item.type === 'series' ? 'series' : cell.item.type === 'channel' ? 'channel' : 'movie') as MediaType;
+      navigation.navigate('Detail', {
+        id: cell.item._id,
+        type,
+        name: cell.item.name,
+        poster: cell.card.poster ?? undefined,
+      });
+    },
+    [byId, navigation]
+  );
+
+  // Card focus drives BOTH the hold-OK target ref and the ambient backdrop.
+  const onFocusCard = useCallback((card: CardItem) => {
+    focusedCardRef.current = card;
+    setFocused({ id: card.id, type: card.type as MediaType, name: card.name, poster: card.poster });
+  }, []);
+  const onBlurCard = useCallback(() => { focusedCardRef.current = null; }, []);
+  const closeActions = useCallback(() => { setActionCard(null); setActionRect(null); }, []);
+
+  // Hold OK → quick-action overlay on the focused card. On Android TV the reliable
+  // hold signal is the `longSelect` TV event (Pressable.onLongPress doesn't fire
+  // for the OK button); arm the consumed flag so the trailing onPress doesn't also
+  // open Detail. Refs only (no render-scoped state) so the global handler is correct
+  // regardless of re-subscription.
+  useTVEventHandler((evt) => {
+    if (evt?.eventType !== 'longSelect') return;
+    if (!isFocusedRef.current) return; // Library not the active route
+    const card = focusedCardRef.current;
+    if (!card) return; // focus is on a chip / dropdown / rail, not a card
+    longPressConsumedRef.current = true;
+    if (longPressClearTimer.current) clearTimeout(longPressClearTimer.current);
+    longPressClearTimer.current = setTimeout(() => { longPressConsumedRef.current = false; }, 1000);
+    setActionCard(card);
+  });
+
+  // Soft-remove (upsert removed:true), optimistically dropping it from the grid.
+  // Same backend write as the detail page; the 30s refresh reconciles failures.
+  const removeItem = useCallback(
+    (card: CardItem) => {
+      if (!token) return;
+      const cell = byId.get(card.id);
+      if (!cell) return;
+      setItems((prev) => prev.filter((x) => x._id !== card.id));
+      void putBlissfulLibraryItem(token, card.id, { ...cell.item, removed: true }).catch(() => {});
+    },
+    [byId, token]
+  );
+
+  // Overlay "Remove from library": close the overlay, then soft-remove.
+  const onRemoveFromLibrary = useCallback((card: CardItem) => {
+    closeActions();
+    removeItem(card);
+  }, [closeActions, removeItem]);
+
+  // Back closes the on-card action overlay (it's not a routed modal, so wire Back here).
+  useEffect(() => {
+    if (!actionCard) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => { closeActions(); return true; });
+    return () => sub.remove();
+  }, [actionCard, closeActions]);
+
+  const padL = m.s(20);
+  const gap = m.s(24);
+  const cols = 4; // landscape cards, 4 per row
+  // Width that fits `cols` landscape cards + (cols-1) gaps across the content area.
+  const posterW = Math.floor((m.width - m.contentLeft - m.safeX - padL - gap * (cols - 1)) / cols);
+
+  // Not logged in: a login prompt panel (web shows the same copy + Login CTA).
+  if (!token) {
+    return (
+      <View style={styles.root}>
+        <NavRail active="Library" />
+        <View
+          isTVSelectable={!railOpen}
+          style={{ position: 'absolute', left: m.contentLeft, top: m.safeY + m.s(14), right: m.safeX, bottom: 0 }}
+        >
+          <View style={[styles.panel, { borderRadius: m.s(28), padding: m.s(28) }]}>
+            <Text style={{ fontFamily: font.spectralBold, fontSize: m.s(52), color: colors.text }}>Library</Text>
+            <Text style={{ fontFamily: font.body, fontSize: m.s(22), color: colors.textFaint, marginTop: m.s(8) }}>
+              Login to see your Stremio library.
+            </Text>
+            <View style={{ marginTop: m.s(22), flexDirection: 'row' }}>
+              <Button label="Login" variant="solid" atRowStart autoFocus onPress={openLogin} />
+            </View>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  const heroMeta = focused && focusedMeta?.key === `${focused.type}:${focused.id}` ? focusedMeta.meta : null;
+
+  return (
+    <View style={styles.root}>
+      {/* Ambient art of the focused card behind a heavy dim — the immersive Home's
+          backdrop as mood lighting, not a hero. The grid stays fully legible. */}
+      <Backdrop item={focused} meta={heroMeta} />
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(7,9,13,0.60)' }]} pointerEvents="none" />
+
+      <NavRail active="Library" />
+      {/* One isTVSelectable flip cascades to the dropdown + chips + grid so an
+          open rail traps focus (per-card flips stall the tvos focus engine). */}
+      <View
+        isTVSelectable={!railOpen}
+        style={{ position: 'absolute', left: m.contentLeft, top: m.safeY + m.s(14), right: m.safeX, bottom: 0 }}
+      >
+        {/* Filter pills row — the screen heading was removed (the NavRail marks the
+            active page); the grid gets the full height. */}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: m.s(12), marginLeft: padL, marginBottom: m.s(20) }}>
+          <TvSelect
+            iconName="albums-outline"
+            options={typeOptions}
+            value={typeFilter}
+            onChange={setTypeFilter}
+            m={m}
+            minWidth={m.s(184)}
+            atRowStart
+            onOpen={setDropdown}
+          />
+          {SORT_CHIPS.map((chip) => (
+            <Chip key={chip.key} label={chip.label} active={sortMode === chip.key} onPress={() => setSortMode(chip.key)} />
+          ))}
+          {WATCHED_CHIPS.map((chip) => (
+            <Chip
+              key={chip.key}
+              label={chip.label}
+              active={watchedFilter === chip.key}
+              onPress={() => setWatchedFilter((prev) => (prev === chip.key ? 'all' : chip.key))}
+            />
+          ))}
+        </View>
+
+        {loading ? (
+          <View style={{ paddingLeft: padL }}>
+            <PosterGridSkeleton width={posterW} cols={cols} gap={gap} rows={3} m={m} variant="landscape" />
+          </View>
+        ) : error ? (
+          <Text style={{ fontFamily: font.body, fontSize: m.s(24), color: colors.danger, marginLeft: padL, marginTop: m.s(40) }}>
+            {error}
+          </Text>
+        ) : cells.length === 0 ? (
+          <Text style={{ fontFamily: font.body, fontSize: m.s(24), color: colors.textFaint, marginLeft: padL, marginTop: m.s(40) }}>
+            No library items found.
+          </Text>
+        ) : (
+          <FlatList
+            data={cells}
+            key={cols}
+            numColumns={cols}
+            // Explicit height, NOT flex:1 — a flex-sized VirtualizedList inside this
+            // absolutely-positioned parent lays out at zero height (mirrors Discover).
+            style={{ height: m.height - m.safeY - m.s(120) }}
+            removeClippedSubviews={false}
+            initialNumToRender={cols * 3}
+            maxToRenderPerBatch={cols * 2}
+            windowSize={5}
+            keyExtractor={(c) => c.item._id}
+            // Re-render cells when the held card changes so `active` propagates
+            // to the card (drives its rect measurement + ring suppression).
+            extraData={actionCard?.id}
+            contentContainerStyle={{ gap: m.s(20), paddingTop: m.s(8), paddingBottom: m.s(40), paddingLeft: padL }}
+            columnWrapperStyle={{ gap: gap }}
+            showsVerticalScrollIndicator={false}
+            renderItem={({ item, index }) => (
+              <PosterCard
+                item={item.card}
+                variant="landscape"
+                width={posterW}
+                progress={item.progress}
+                autoFocus={index === 0}
+                atRowStart={index % cols === 0}
+                active={actionCard?.id === item.card.id}
+                onSelect={onSelect}
+                onFocus={onFocusCard}
+                onBlur={onBlurCard}
+                onActiveRect={setActionRect}
+              />
+            )}
+          />
+        )}
+      </View>
+
+      {dropdown ? <TvSelectOverlay anchor={dropdown} onClose={() => { const r = dropdown.requestFocus; setDropdown(null); setTimeout(() => r(), 50); }} m={m} /> : null}
+
+      <LibraryActionOverlay item={actionCard} rect={actionRect} m={m} onRemove={onRemoveFromLibrary} onClose={closeActions} />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: colors.bg },
+  panel: { backgroundColor: 'rgba(28,33,46,0.97)', borderWidth: 1, borderColor: colors.hairline, alignSelf: 'flex-start' },
+});

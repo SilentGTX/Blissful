@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "Blissful TV",
+    "slug": "blissful-tv-rn",
+    "version": "1.0.0",
+    "orientation": "landscape",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "scheme": "blissful",
+    "android": {
+      "package": "com.blissful.tv.rn",
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      [
+        "@react-native-tvos/config-tv",
+        {
+          "isTV": true,
+          "androidTVRequired": true,
+          "showVerboseWarnings": true
+        }
+      ],
+      "expo-video",
+      "expo-font"
+    ]
+  }
+}
