@@ -1,5 +1,4 @@
 {
-  "$comment": "Read by `serve` (serve-handler) on the Mac's blissful container. The PWA entry points MUST NOT be cached: serve-handler defaults every file to Cache-Control: max-age=14400, and Cloudflare honored that for sw.js — which froze the service worker on an old bundle inside the desktop WebView (the SW update check fetched the stale edge-cached sw.js and never saw a new version). no-cache forces revalidation so a web deploy propagates to thin-shell desktops on the next update tick. Hashed /assets/* stay cacheable (immutable) under the default.",
   "headers": [
     { "source": "sw.js", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
     { "source": "registerSW.js", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
