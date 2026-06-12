@@ -18,10 +18,21 @@ import App from './App';
 // 404s and React renders nothing because there's no Suspense
 // fallback for an error. Vite fires `vite:preloadError` for exactly
 // this case; reload to grab the new index.html + chunk names.
+// A reload triggered by a BACKGROUND update (SW upgrade after a deploy, or
+// stale-chunk recovery) — not a user-initiated open/visit. Flag it so the
+// SplashScreen skips the full-screen logo for this ONE reload: re-playing it
+// every time a deploy lands mid-session is jarring. Genuine launches and new
+// visits have no flag, so the splash still plays on open. The flag survives
+// the reload (same sessionStorage session) and SplashScreen clears it on read.
+function reloadForUpdate() {
+  try { sessionStorage.setItem('bliss:auto-reload', '1'); } catch { /* ignore */ }
+  window.location.reload();
+}
+
 window.addEventListener('vite:preloadError', () => {
   if (sessionStorage.getItem('blissful.preloadErrorRecovery') === '1') return;
   sessionStorage.setItem('blissful.preloadErrorRecovery', '1');
-  window.location.reload();
+  reloadForUpdate();
 });
 // Clear the recovery flag once a navigation succeeds so a future
 // stale-chunk situation can recover again. Bound at `load` so we
@@ -42,7 +53,7 @@ if ('serviceWorker' in navigator) {
     // upgrade, so reload to run the new code. (Previously this only reloaded
     // when hadInitialController was true, so a deploy during a first session
     // was silently missed until the next launch.)
-    if (hadInitialController || sawFirstControllerChange) window.location.reload();
+    if (hadInitialController || sawFirstControllerChange) reloadForUpdate();
     sawFirstControllerChange = true;
   });
   // The browser only re-checks the SW every ~24h on its own, so we drive the

@@ -9,6 +9,17 @@ let splashShown = false;
 
 export function SplashScreen({ children }: { children: React.ReactNode }) {
   const [show, setShow] = useState(() => {
+    // A background auto-reload (SW upgrade after a deploy / stale-chunk
+    // recovery, flagged by main.tsx) is not a fresh open or visit, so skip
+    // the splash for that one reload — re-playing the full-screen logo on
+    // every deploy is jarring mid-session.
+    try {
+      if (sessionStorage.getItem('bliss:auto-reload')) {
+        sessionStorage.removeItem('bliss:auto-reload');
+        splashShown = true;
+        return false;
+      }
+    } catch { /* sessionStorage unavailable — fall through to normal splash */ }
     if (splashShown) return false;
     splashShown = true;
     return true;
