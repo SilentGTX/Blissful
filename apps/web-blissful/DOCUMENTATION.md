@@ -40,25 +40,22 @@ miss dead-identifier errors that fail CI.
 
 ### Dev testing against the PROD backend (test before you deploy)
 
-The Vite dev server normally only proxies `/stremio`, so a plain dev tab can't reach storage or
-the resolution endpoints (`/rd-by-hash`, `/transcode`, …) and prod storage CORS-blocks localhost.
-To run a **real watch party / torrent resolution from a local UI without deploying**, opt in:
+**This works out of the box — clone, `npm run dev`, done.** The dev server proxies the Blissful
+backend routes to production by default, so a local UI runs a **real watch party / resolves
+torrents without a prod deploy**. `vite.config.ts` same-origin-proxies the backend routes (storage
+incl. the `/ws/room` + `/ws/user` WebSockets, `/rd-by-hash`, `/transcode`, `/rd-fallback`, ratings,
+subs, …) to `https://blissful.budinoff.com`, and `storageBaseUrl.ts` routes `/storage` through it
+— so the dev tab joins the **same prod room** the desktop shell already uses (prod storage
+CORS-blocks localhost, hence the same-origin proxy). The proxy is dev-only, so it's inert in prod
+builds.
 
-```
-# apps/web-blissful/.env.local   (gitignored)
-VITE_BACKEND_PROD=1
-```
-
-Then `npm run dev` as usual. With the flag set, `vite.config.ts` same-origin-proxies the Blissful
-backend routes (storage incl. the `/ws/room` + `/ws/user` WebSockets, `/rd-by-hash`, `/transcode`,
-`/rd-fallback`, ratings, subs, …) to `https://blissful.budinoff.com`, and `storageBaseUrl.ts`
-routes `/storage` through it — so the dev tab joins the **same prod room** the desktop shell
-already uses. A dev web tab + the (dev or installed) desktop app can then share a party against
-the live backend. Unset = the original local-storage dev flow; the flag is inert in prod builds.
-
+A dev web tab + the (dev or installed) desktop app can share a party against the live backend.
 Caveat: the desktop shell builds its invite link from its own origin (`127.0.0.1:5175` in dev), so
 across different origins join by **room code** rather than the link. Two dev web tabs on the same
 port can use the invite link directly.
+
+To run against a **local** storage server instead, set `VITE_STORAGE_URL` / `VITE_STORAGE_WS_URL`
+(e.g. `http://localhost:8787` / `ws://localhost:8787`) — e.g. in `apps/web-blissful/.env.local`.
 
 ## Thin shell — how the desktop gets this UI
 

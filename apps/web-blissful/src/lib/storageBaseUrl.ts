@@ -9,14 +9,13 @@
 
 import { isElectronDesktopApp } from './platform';
 
-// Opt-in dev flag (apps/web-blissful/.env.local: VITE_BACKEND_PROD=1): route the
-// dev web tab's storage through the same-origin Vite proxy → prod (see
-// vite.config.ts). Lets a local UI join a REAL prod watch-party room — the same
-// storage the desktop shell always uses — so dev + desktop share a room. Prod
-// storage CORS-blocks localhost, hence the same-origin proxy rather than a
-// direct absolute URL.
-const BACKEND_PROD =
-  import.meta.env.VITE_BACKEND_PROD === '1' || import.meta.env.VITE_BACKEND_PROD === 'true';
+// Dev defaults to the PROD backend so a fresh clone gets a working watch party
+// from `npm run dev` with zero setup: the dev web tab talks to storage through
+// the same-origin Vite proxy → prod (see vite.config.ts), the SAME storage the
+// desktop shell always uses, so dev + desktop share a room. Prod storage
+// CORS-blocks localhost, hence same-origin rather than a direct absolute URL.
+// To run against a LOCAL storage server instead, set VITE_STORAGE_URL /
+// VITE_STORAGE_WS_URL (e.g. http://localhost:8787 / ws://localhost:8787).
 
 // Same-origin WS base for the proxy path: ws://localhost:<port>/storage, which
 // the dev proxy upgrades to wss://blissful.budinoff.com/storage/*.
@@ -26,28 +25,21 @@ function sameOriginStorageWs(): string {
   return `${proto}://${window.location.host}/storage`;
 }
 
-const DEFAULT_STORAGE_URL = import.meta.env.DEV
-  ? 'http://localhost:8787'
-  : 'https://blissful.budinoff.com/storage';
-
 export const STORAGE_URL =
-  isElectronDesktopApp() || BACKEND_PROD
+  import.meta.env.VITE_STORAGE_URL
+  ?? (isElectronDesktopApp() || import.meta.env.DEV
     ? '/storage'
-    : (import.meta.env.VITE_STORAGE_URL ?? DEFAULT_STORAGE_URL);
+    : 'https://blissful.budinoff.com/storage');
 
 // WebSocket URL for direct connections (UserSocket, WatchParty).
-// The desktop shell's HTTP proxy does not handle WebSocket upgrades,
-// so WS connections must go directly to the real storage server
-// rather than through the /storage proxy prefix.
-// Desktop shell: always connect to production WS (the shell's HTTP
-// proxy can't handle WebSocket upgrades). Dev without the shell
-// (rare) falls back to localhost:8787.
+// Desktop shell: connect straight to prod (its HTTP proxy can't handle WS
+// upgrades). Dev web: same-origin → the Vite proxy upgrades it to prod (matches
+// STORAGE_URL above). Prod build: prod. Override with VITE_STORAGE_WS_URL (e.g.
+// ws://localhost:8787) to point at a local storage server.
 const WS_STORAGE_URL = isElectronDesktopApp()
   ? 'wss://blissful.budinoff.com/storage'
-  : BACKEND_PROD
+  : import.meta.env.DEV
     ? sameOriginStorageWs()
-    : import.meta.env.DEV
-      ? 'ws://localhost:8787'
-      : 'wss://blissful.budinoff.com/storage';
+    : 'wss://blissful.budinoff.com/storage';
 
 export const STORAGE_WS_URL = import.meta.env.VITE_STORAGE_WS_URL ?? WS_STORAGE_URL;
