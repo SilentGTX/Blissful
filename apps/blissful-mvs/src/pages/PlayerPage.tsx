@@ -10,6 +10,7 @@ import { useMetaDetails } from '../models/useMetaDetails';
 import { parseStreamDescription } from '../features/detail/utils';
 import { fetchStreams, type StremioStream } from '../lib/stremioAddon';
 import { buildMagnetUrl } from '../lib/deepLinks';
+import { normalizeStremioImage } from '../lib/mediaTypes';
 import type { ReleaseOption } from '../components/NativeMpvPlayer/SettingsPanel';
 
 export type NextEpisodeInfo = {
@@ -118,10 +119,6 @@ export default function PlayerPage() {
   }, [searchParams]);
 
   const title = searchParams.get('title');
-  const poster = searchParams.get('poster');
-  const background = searchParams.get('background');
-  const metaTitle = searchParams.get('metaTitle');
-  const logo = searchParams.get('logo');
 
   const type = searchParams.get('type');
   const id = searchParams.get('id');
@@ -145,6 +142,23 @@ export default function PlayerPage() {
     addons,
     enableStreams: false,
   });
+
+  // Show-level presentation metadata — the wordmark logo, title, poster and
+  // 16:9 backdrop the buffering veil + PauseOverlay paint. These normally ride
+  // in on the `/player?...` query the detail page builds, but not every entry
+  // point threads them through (CW resume edge cases, a hand-built deep link,
+  // a pre-thin-shell shell), which left the buffering veil stuck on the bare
+  // spinner and the PauseOverlay with no wordmark. This page already fetches
+  // the same `meta` (for next-episode + description), so fall back to it and
+  // keep the native player self-sufficient no matter how it was opened.
+  const logo = searchParams.get('logo') ?? normalizeStremioImage(meta?.meta?.logo) ?? null;
+  const metaTitle = searchParams.get('metaTitle') ?? meta?.meta?.name ?? null;
+  const poster = searchParams.get('poster') ?? normalizeStremioImage(meta?.meta?.poster) ?? null;
+  const background =
+    searchParams.get('background')
+    ?? normalizeStremioImage(meta?.meta?.background)
+    ?? normalizeStremioImage(meta?.meta?.poster)
+    ?? null;
 
   // Compute next-episode info from the full episode list when available.
   // Falls back to sessionStorage (written by DetailPage) for the initial play.
