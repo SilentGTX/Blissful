@@ -80,7 +80,9 @@ import {
   stashWatchPartyPassword,
   clearWatchPartyPassword,
   type WatchPartyRoomInfo,
+  type WatchPartySource,
 } from '../lib/watchParty';
+import { desktopPlayingUrlToSource, resolveSourceForDesktop } from '../lib/watchPartySource';
 import { useStorage } from '../context/StorageProvider';
 import type { NextEpisodeInfo } from '../pages/PlayerPage';
 
@@ -917,6 +919,27 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     setHostWantSubLang(lang);
   }, []);
 
+  // Guest (WP v2): the host announced the room's content `source`. Resolve it to
+  // a URL mpv can load the SAME file from (torrent → stremio-service P2P URL, or
+  // a /rd-by-hash direct link when no file index; rd → the raw RD link), then
+  // navigate so the player loads it. vidking / relay / a miss → keep our own
+  // torrent pick (timeline-only sync). Skip if we're already on that URL.
+  const handleHostSourceChange = useCallback(
+    (source: WatchPartySource) => {
+      void (async () => {
+        const loadUrl = await resolveSourceForDesktop(source);
+        if (!loadUrl) return;
+        const params = new URLSearchParams(window.location.search);
+        if ((params.get('url') ?? '') === loadUrl) return; // already on it
+        params.set('url', loadUrl);
+        params.delete('t');
+        params.delete('autoplay');
+        navigate(`/player?${params.toString()}`, { replace: true });
+      })();
+    },
+    [navigate]
+  );
+
   // Gate: only connect when room info loaded, password supplied if
   // needed, and display name chosen.
   const partyShouldConnect =
@@ -933,6 +956,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     password: partyPassword,
     onHostEpisodeChange: handleHostEpisodeChange,
     onHostSubsChange: handleHostSubsChange,
+    onHostSourceChange: handleHostSourceChange,
     pausedRef: wpPausedRef,
   });
 
@@ -978,6 +1002,20 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     watchParty.announceEpisode(props.videoId);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watchParty.isHost, watchParty.announceEpisode, props.videoId]);
+
+  // Host (WP v2): announce the room's content `source` so guests on any platform
+  // land on the SAME file. Parse what mpv is playing: a stremio-service / magnet
+  // torrent → {kind:'torrent', infoHash, fileIdx}; a raw RD link → {kind:'rd'}.
+  // Unshareable URLs announce null (guests keep their own pick, timeline-only).
+  const lastAnnouncedSourceRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!watchParty.isHost) return;
+    const source = desktopPlayingUrlToSource(props.url);
+    const key = JSON.stringify(source);
+    if (lastAnnouncedSourceRef.current === key) return;
+    lastAnnouncedSourceRef.current = key;
+    watchParty.announceSource(source);
+  }, [watchParty.isHost, watchParty.announceSource, props.url]);
 
   const [creatingRoom, setCreatingRoom] = useState(false);
   const [watchPartyOpen, setWatchPartyOpen] = useState(false);

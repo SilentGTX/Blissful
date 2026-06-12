@@ -66,7 +66,9 @@ import {
   setStoredGuestName,
   stashWatchPartyPassword,
   clearWatchPartyPassword,
+  type WatchPartySource,
 } from '../../lib/watchParty';
+import { resolveSourceForWeb, webPlayingToSource } from '../../lib/watchPartySource';
 import { StremioIcon } from '../PlayerControlIcons';
 
 import {
@@ -743,12 +745,19 @@ export default function BlissfulPlayer(props: {
     [navigate]
   );
 
+  // Once we've received a v2 `source` from the host, it's authoritative — the
+  // legacy host:stream relay below becomes a no-op so we don't double-navigate
+  // (a v2 host emits both for one transition cycle). Older hosts that only send
+  // host:stream keep working unchanged.
+  const receivedSourceRef = useRef(false);
+
   // Guest: the host fell back to a Real-Debrid stream — load the SAME torrent
   // (rdsel=1 skips our own Vidking resolution and plays the host's exact URL).
   // When the host returns to Vidking (streamUrl null) we drop back to the
   // placeholder so we resolve the same Vidking source again.
   const handleHostStreamChange = useCallback(
     (streamUrl: string | null) => {
+      if (receivedSourceRef.current) return; // v2 `source` supersedes
       const params = new URLSearchParams(window.location.search);
       const cur = params.get('url') ?? '';
       if (streamUrl) {
@@ -764,6 +773,39 @@ export default function BlissfulPlayer(props: {
         params.delete('autoplay');
         navigate(`/player?${params.toString()}`, { replace: true });
       }
+    },
+    [navigate]
+  );
+
+  // Guest (WP v2): the host announced the room's content `source`. Resolve it to
+  // the SAME file our way (torrent → /rd-by-hash → direct link; rd → reuse the
+  // link), then navigate with rdsel=1 so the page plays that exact URL. vidking
+  // / relay / a cache miss → keep our own resolution (timeline-only sync). Null
+  // source (host back on an unshareable Vidking) → revert to the placeholder if
+  // we were following the host's source.
+  const handleHostSourceChange = useCallback(
+    (source: WatchPartySource) => {
+      receivedSourceRef.current = true;
+      void (async () => {
+        const resolved = await resolveSourceForWeb(source);
+        const params = new URLSearchParams(window.location.search);
+        const cur = params.get('url') ?? '';
+        if (resolved) {
+          if (cur === resolved.url) return; // already on it
+          params.set('url', resolved.url);
+          if (resolved.rdsel) params.set('rdsel', '1');
+          params.delete('autoplay');
+          navigate(`/player?${params.toString()}`, { replace: true });
+        } else if (params.get('rdsel') === '1') {
+          // Source is unshareable now (host back on Vidking, or a torrent we
+          // can't resolve) AND we were following the host's stream — drop back
+          // to our own Vidking (timeline-only sync from here).
+          params.set('url', 'vidking:placeholder');
+          params.delete('rdsel');
+          params.delete('autoplay');
+          navigate(`/player?${params.toString()}`, { replace: true });
+        }
+      })();
     },
     [navigate]
   );
@@ -802,6 +844,7 @@ export default function BlissfulPlayer(props: {
     onHostEpisodeChange: handleHostEpisodeChange,
     onHostStreamChange: handleHostStreamChange,
     onHostSubsChange: handleHostSubsChange,
+    onHostSourceChange: handleHostSourceChange,
   });
 
   // If the cached password is wrong, the hook surfaces an error and
@@ -849,6 +892,25 @@ export default function BlissfulPlayer(props: {
     lastAnnouncedStreamRef.current = rd;
     watchParty.announceStream(rd);
   }, [watchParty.isHost, watchParty.announceStream, props.url]);
+
+  // Host (WP v2): announce the room's content `source` so guests on any platform
+  // land on the SAME file. On RD → the underlying RD link; on Vidking → the
+  // tmdb identity (unshareable, but lets non-web guests know). Emitted ALONGSIDE
+  // the legacy host:stream above for one transition cycle.
+  const lastAnnouncedSourceRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!watchParty.isHost) return;
+    const source = webPlayingToSource({
+      url: props.url,
+      tmdbId: props.tmdbId,
+      type: props.type === 'series' ? 'series' : 'movie',
+      videoId: props.videoId,
+    });
+    const key = JSON.stringify(source);
+    if (lastAnnouncedSourceRef.current === key) return;
+    lastAnnouncedSourceRef.current = key;
+    watchParty.announceSource(source);
+  }, [watchParty.isHost, watchParty.announceSource, props.url, props.tmdbId, props.type, props.videoId]);
 
   // Host: broadcast the selected subtitle LANGUAGE (canonical label, or null =
   // off) so guests match it. Language (not the exact key) is robust across

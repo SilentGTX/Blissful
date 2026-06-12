@@ -20,6 +20,7 @@ import {
   type WatchPartyClientMessage,
   type WatchPartyParticipant,
   type WatchPartyServerMessage,
+  type WatchPartySource,
 } from './watchParty';
 
 export type UseWatchPartyOptions = {
@@ -48,6 +49,10 @@ export type UseWatchPartyOptions = {
   /** Callback fired on guests when the host changes subtitle language (or null =
    *  off) so they match it. Also fired on join with the room's current value. */
   onHostSubsChange?: (lang: string | null) => void;
+  /** Callback fired on guests when the host announces the room's content
+   *  `source` (Watch Party v2 same-file sync) so the guest can resolve the
+   *  SAME file its own way. Also fired on join with the room's current value. */
+  onHostSourceChange?: (source: WatchPartySource) => void;
 };
 
 /** Reactions per chat message. messageKey → emoji → array of
@@ -118,6 +123,9 @@ export type UseWatchPartyResult = {
   announceStream: (streamUrl: string | null) => void;
   /** Host-only: announce the selected subtitle language (or null = off). */
   announceSubs: (lang: string | null) => void;
+  /** Host-only: announce the room's content `source` so guests land on the same
+   *  file (Watch Party v2). Pass null when no shareable source is resolved. */
+  announceSource: (source: WatchPartySource) => void;
   /** "Buffer until everybody loads" gate — true while any member is buffering. */
   partyWaiting: boolean;
   /** Report our own buffering state into the gate. */
@@ -149,6 +157,7 @@ export function useWatchParty({
   onHostEpisodeChange,
   onHostStreamChange,
   onHostSubsChange,
+  onHostSourceChange,
 }: UseWatchPartyOptions): UseWatchPartyResult {
   const [connected, setConnected] = useState(false);
   const [hostUserId, setHostUserId] = useState<string | null>(null);
@@ -195,6 +204,8 @@ export function useWatchParty({
   onHostStreamChangeRef.current = onHostStreamChange;
   const onHostSubsChangeRef = useRef(onHostSubsChange);
   onHostSubsChangeRef.current = onHostSubsChange;
+  const onHostSourceChangeRef = useRef(onHostSourceChange);
+  onHostSourceChangeRef.current = onHostSourceChange;
 
   const pushActivity = useCallback((item: WatchPartyActivity) => {
     setActivity((prev) => [...prev.slice(-19), item]);
@@ -299,6 +310,13 @@ export function useWatchParty({
   const announceSubs = useCallback(
     (lang: string | null) => {
       send({ t: 'host:subs', lang });
+    },
+    [send]
+  );
+
+  const announceSource = useCallback(
+    (source: WatchPartySource) => {
+      send({ t: 'host:source', source });
     },
     [send]
   );
@@ -511,6 +529,10 @@ export function useWatchParty({
           if (msg.self.userId !== msg.hostUserId && msg.subtitleLang) {
             onHostSubsChangeRef.current?.(msg.subtitleLang);
           }
+          // Late joiner: resolve the host's announced content source (WP v2).
+          if (msg.self.userId !== msg.hostUserId && msg.source) {
+            onHostSourceChangeRef.current?.(msg.source);
+          }
         } else if (msg.t === 'presence') {
           if (msg.kind === 'joined') {
             setParticipants((prev) => {
@@ -593,6 +615,10 @@ export function useWatchParty({
         } else if (msg.t === 'subs') {
           // Host changed subtitle language — guests match it.
           onHostSubsChangeRef.current?.(msg.lang);
+        } else if (msg.t === 'source') {
+          // Host announced/changed the room's content source — guests resolve
+          // the same file (WP v2 same-file sync).
+          onHostSourceChangeRef.current?.(msg.source);
         } else if (msg.t === 'gate') {
           // Buffer-until-everybody-loads gate flipped.
           setPartyWaiting(msg.waiting);
@@ -830,6 +856,7 @@ export function useWatchParty({
     announceEpisode,
     announceStream,
     announceSubs,
+    announceSource,
     partyWaiting,
     sendBuffering,
     transferHost,
