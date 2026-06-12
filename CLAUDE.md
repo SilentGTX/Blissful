@@ -26,7 +26,58 @@ web and Windows desktop; the backend lives here too:
 - Android TV lives on the `react-native-blissful` branch — **never merged into main, never
   touched** (standing rule).
 
-The shell auto-detects whether a Vite dev server is up on `:5173` and proxies UI requests to it; otherwise it serves the prebuilt `apps/blissful-mvs/dist/` (dev builds) or loads the deployed site (release builds).
+## Web + Desktop: one UI, the thin shell
+
+Since the 2026-06-11/12 monorepo migration, `apps/blissful-mvs` is a **single** React codebase
+with two personalities chosen at runtime by `isNativeShell()` (`lib/desktop.ts` — true when the
+Rust shell has injected `window.blissfulDesktop`):
+
+- **Desktop** (inside the shell): `NativeMpvPlayer` (libmpv), stremio-service torrent
+  resolution, multi-addon search, addon home rows, Stremio accounts, version badge, chapter-skip.
+- **Web** (plain browser, deployed to `https://blissful.budinoff.com`): `BlissfulPlayer`
+  (`<video>`/HLS) + the Vidking → Real-Debrid resolve pipeline, the persistent mini-player /
+  Document-PiP host.
+
+The platform boundary is deliberately narrow: only the **player + its stream-resolution
+pipeline + the `lib/desktop.ts` bridge** differ. Everything else (catalog, addons, auth,
+library/CW, home/discover/detail, watch party, friends, presence, settings) is shared, one copy,
+gated behind `isNativeShell()` rather than forked. Migrating a feature means editing it once and
+gating the platform-specific bits inside it.
+
+### Thin shell — how the desktop gets its UI
+
+The WebView2 navigation target is resolved in `main_window.rs`:
+
+1. `BLISSFUL_UI_URL` env override (any origin — staging, a vite preview, the local server); else
+2. **dev builds** (`cfg!(debug_assertions)`) → the local UI server (Vite proxy when `:5173` is
+   up, the built `dist/` otherwise); else
+3. **release builds** → `REMOTE_UI_URL` = `https://blissful.budinoff.com`. **This is the thin
+   shell: a web deploy updates every installed desktop app on its next launch/refresh — UI
+   changes need NO desktop release.**
+
+Supporting machinery:
+- **Origin pinning** (`webview.rs::is_allowed_internal_uri`) allows exactly two document origins
+  — the local UI server and the configured remote — and routes everything else to the OS browser.
+- **Failure fallback**: a failed initial remote navigation falls back ONCE to the bundled local
+  UI; after first visit the deployed PWA service worker absorbs short outages.
+- **`localServerBase`**: the JS shim (`ipc/mod.rs::js_shim()`) exposes the local server origin so
+  routes that must hit THIS machine still work from the remote page — `lib/desktop.ts::shellOrigin()`
+  prefixes `/resolve-url` and the `/addon-proxy` wraps of the loopback stremio-service
+  (`opensubHash`). Everything else stays relative (the Mac's equivalents, same as web).
+- **Version-skew rule**: the deployed UI must tolerate OLDER installed shells — IPC additions
+  stay additive + feature-detected (`shellOrigin()` returns `''` on shells that don't send it).
+
+### Deploy model
+
+- **UI change** → push `main`, then on the Mac (`~/home-lab/Blissful`): `git pull` +
+  `npm run build` in `apps/blissful-mvs`. The compose `blissful` service `serve -s dist` reads
+  from disk → live instantly; web on refresh, thin-shell desktops on next launch. No release.
+- **Shell change** (Rust) → needs a desktop release (see [Releases](#releases)). The first
+  release after the migration (v0.1.7) is what flips installed apps onto the thin-shell remote UI.
+- Backend (`apps/blissful-storage`) + proxy (`apps/addon-proxy`) deploy from this repo on the
+  Mac via the root `docker-compose.yml`. Protocol changes (watch-party wire types etc.) are now
+  single-repo — client + server in one commit. Runbook in
+  `C:\Users\origi\.claude\projects\…\memory\reference_mac_deploy_runbook.md`.
 
 ## Build & Dev Commands
 
@@ -95,9 +146,9 @@ The shell ships 1:1 with Stremio Desktop playback quality: in-process libmpv wit
 ### Core files
 
 - `src/main.rs` — entry. Sets up tracing (rotates `shell.log` → `shell.log.1` on launch), installs a Rust panic hook that logs thread/location/payload through tracing before death, locates `libmpv-2.dll`, dispatches to `run_spike` (the production path, gated on `spike0a` feature).
-- `src/main_window.rs` — owns the NWG parent window. Creates libmpv + WebView2 as sibling children, wires up IPC, the system tray, the delayed-show splash, and the on-ready handoff. Owns the outgoing-event channel + NWG `Notice` that funnels async events from worker threads to the UI thread.
-- `src/webview.rs` — WebView2 host. Persists user data in `%APPDATA%\Blissful\WebView2\`. Registers `add_navigation_starting` + `add_new_window_requested` to pin all navigation to `http://127.0.0.1:<bound-port>`; off-origin http/https links are cancelled and handed to the OS default browser, anything else (`javascript:`, `data:`, `file:`, custom schemes) is dropped.
-- `src/ui_server.rs` — same-origin local HTTP server on `:5175` (port-scan fallback 5175..5190). Serves the React app + proxies `/addon-proxy`, `/storage/*`, `/stremio/*`. The renderer thinks it's on a single origin so CORS never trips. Forwards `x-stremio-auth` etc. to the storage upstream. `classify_addon_proxy_target()` does the host/path validation as a pure function (typed `url::Host` variants, not string matching — closes an IPv6-loopback leak caught by a unit test) and is unit-tested.
+- `src/main_window.rs` — owns the NWG parent window. Creates libmpv + WebView2 as sibling children, wires up IPC, the system tray, the delayed-show splash, and the on-ready handoff. Owns the outgoing-event channel + NWG `Notice` that funnels async events from worker threads to the UI thread. **Resolves the WebView2 nav target** (`BLISSFUL_UI_URL` override → dev-local → release-`REMOTE_UI_URL`; see [thin shell](#thin-shell--how-the-desktop-gets-its-ui) above).
+- `src/webview.rs` — WebView2 host. Persists user data in `%APPDATA%\Blissful\WebView2\`. Registers `add_navigation_starting` + `add_new_window_requested`. `is_allowed_internal_uri()` pins navigation to **two** origins — the local UI server *and* the configured remote (`ALLOWED_UI_ORIGIN`, set from the nav target) — for the thin shell; off-origin http/https links are cancelled and handed to the OS default browser, anything else (`javascript:`, `data:`, `file:`, custom schemes) is dropped. On a failed initial remote nav, falls back once to the bundled local UI.
+- `src/ui_server.rs` — same-origin local HTTP server on `:5175` (port-scan fallback 5175..5190). Serves the React app (bundled fallback / dev) + proxies `/addon-proxy`, `/storage/*`, `/stremio/*`, and forwards `/tmdb-season-info`, `/rd-fallback`, `/imdb-rating`, `/resolve-url` to the backend. The renderer treats it as one origin so CORS never trips; thin-shell pages reach these via `shellOrigin()`. `classify_addon_proxy_target()` does the host/path validation as a pure function (typed `url::Host` variants, not string matching — closes an IPv6-loopback leak caught by a unit test) and is unit-tested. Dev: prefers a running Vite on `:5173` over any on-disk build.
 - `src/streaming_server.rs` — extracts `stremio-service.zip` to `%APPDATA%\Blissful\stremio-service\` on first run, copies bundled ffmpeg DLLs alongside, spawns `stremio-runtime.exe` and **retains the `Child` handle** for `try_wait()`-based crash detection + clean `kill()` on shutdown (replaces the historical taskkill-by-PID supervision which could kill an unrelated process if Windows recycled the PID). Writes an aggressive `server-settings.json` (cacheSize, BT caps) so 4K HEVC streams aren't throttled. Reuses an existing Stremio-Desktop streaming server if port 11470 is already bound. `copy_ffmpeg_dlls` returns a hard error if any required DLL is still missing after every source has been tried — silent failures here used to manifest as "the player just doesn't start" with nothing in the log.
 - `src/player/mpv.rs` — `libmpv2` wrapper. The renderer's `NativeMpvPlayer` issues `loadfile`, `set_property`, etc. via IPC; this module dispatches them on the libmpv handle. **libmpv2 5.0.3 cannot read `MPV_FORMAT_NODE` properties** (the crate's `PropertyData::from_raw` panics with `unimplemented!()` on Node format). Workaround pattern, used for `track-list` and `chapter-list`: read the count first as `Int64`, then loop `<prop>/N/<field>` sub-properties one at a time using only `Int64`/`Double`/`String` formats. See `get_tracks()` and `get_chapters()`.
 - `src/player/mpv_events.rs` — list of mpv properties the shell observes and forwards to the renderer (time-pos, pause, video-params/gamma for HDR, dwidth/dheight for 4K, `chapter` for Skip Intro detection, etc.). Add a property here when the renderer needs to react to a new mpv state — but only if the property is `Int64`/`Double`/`Flag`/`String`. Node properties can't be observed by libmpv2 5.0 (see above).
@@ -244,6 +295,13 @@ The canonical release pipeline is [.github/workflows/release.yml](.github/workfl
 2. Commit, tag `v<version>`, push tag (`git push origin v<version>`).
 3. CI runs on `windows-latest`: fetches and **SHA-256-verifies** vendored binaries from the `vendor-binaries-v1` GitHub release, builds the UI, builds the Rust shell, runs the WiX/Burn pipeline, computes a `<installer>.sha256` sidecar against the built installer, publishes a regular (non-prerelease) GitHub release with **both** the installer EXE and the sidecar attached, marks it `make_latest: true` so the in-app updater sees it on the next poll.
 4. After publish, the workflow's **Prune old releases** step deletes every Blissful release that isn't (a) the new Latest, (b) the immediately-prior version, or (c) the manually-pinned Stable release (read from the `STABLE_RELEASE_TAG` repo variable). `vendor-binaries-*` releases are filtered out and always preserved.
+
+**Releases ship the SHELL, not the UI** (since the thin-shell migration): a release that builds
+from `main` produces a shell that loads `https://blissful.budinoff.com` at runtime, so UI work
+reaches users via a web deploy, not a release. Tag a release only for Rust/shell changes — or to
+flip the installed base onto a new behavior (v0.1.7 is the first thin-shell release; installs
+≤ v0.1.6 still serve their own bundled UI until updated). The installer still bundles a `dist/`
+as the offline/remote-down fallback, so CI still builds the UI.
 
 The workflow runs unsigned by default; the SignPath signing step is wired but commented out. To enable: configure `SIGNPATH_API_TOKEN` (secret) and `SIGNPATH_ORGANIZATION_ID` (variable) under repo settings, then uncomment the "Submit to SignPath" block. When signing is enabled the `.sha256` sidecar must be recomputed against the signed EXE (signing rewrites the file).
 
