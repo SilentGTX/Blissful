@@ -69,9 +69,15 @@ Supporting machinery:
 
 ### Deploy model
 
-- **UI change** → push `main`, then on the Mac (`~/home-lab/Blissful`): `git pull` +
-  `npm run build` in `apps/blissful-mvs`. The compose `blissful` service `serve -s dist` reads
-  from disk → live instantly; web on refresh, thin-shell desktops on next launch. No release.
+- **UI change** → push `main`, then on the Mac run `infra/scripts/blissful-web-deploy.sh`
+  (git pull + build + **CDN purge**). The compose `blissful` service `serve -s dist` reads from
+  disk → live instantly; web on refresh, thin-shell desktops on their next SW check (~60s). No
+  release. **The CDN purge is mandatory:** Cloudflare's zone Browser-Cache-TTL (4h) rewrites
+  `Cache-Control` on `sw.js` even though the origin sends `no-cache` (`public/serve.json`), so a
+  plain `git pull && npm run build` leaves the service worker frozen on the old bundle inside
+  every desktop WebView for ~4h (the "web updated but desktop didn't" bug). The script purges
+  the PWA control files (`sw.js`, `registerSW.js`, `index.html`, `/`, `manifest.webmanifest`)
+  using `CLOUDFLARE_API_TOKEN` from `~/home-lab/Blissful/.env`.
 - **Shell change** (Rust) → needs a desktop release (see [Releases](#releases)). The first
   release after the migration (v0.1.7) is what flips installed apps onto the thin-shell remote UI.
 - Backend (`apps/blissful-storage`) + proxy (`apps/addon-proxy`) deploy from this repo on the
