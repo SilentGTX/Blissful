@@ -70,7 +70,6 @@ export function TopNav({
 }: TopNavProps) {
   const [isDesktopAccountMenuOpen, setIsDesktopAccountMenuOpen] = useState(false);
   const [isMobileAccountMenuOpen, setIsMobileAccountMenuOpen] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(() => Boolean(document.fullscreenElement));
   const fsLockedRef = useRef(false);
   const accountMenuDisabled = isWhoWatchingOpen;
 
@@ -146,7 +145,6 @@ export function TopNav({
 
   useEffect(() => {
     const onFsChange = () => {
-      setIsFullscreen(Boolean(document.fullscreenElement));
       setIsDesktopAccountMenuOpen(false);
       setIsMobileAccountMenuOpen(false);
     };
@@ -363,22 +361,8 @@ export function TopNav({
                         </div>
                       </div>
                     </BlissDropdown.Item>
-                    {/* Full-screen toggle. This dropdown closes on select (the
-                        fullscreen handler tears the popover down to escape
-                        HeroUI's focus trap before resizing), so the toggle
-                        shows the current state and flips on the next open. */}
                     <BlissDropdown.Item id="fullscreen" textValue="Fullscreen" className="hover:bg-white/15 data-[hovered=true]:bg-white/15">
-                      <Label className="flex w-full items-center justify-between gap-3">
-                        <span>Full screen mode</span>
-                        <span
-                          aria-hidden
-                          className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${isFullscreen ? 'bg-[var(--bliss-accent)]' : 'bg-white/25'}`}
-                        >
-                          <span
-                            className={`absolute top-1 h-4 w-4 rounded-full transition-all ${isFullscreen ? 'left-6 bg-black' : 'left-1 bg-white'}`}
-                          />
-                        </span>
-                      </Label>
+                      <Label>Full screen mode</Label>
                     </BlissDropdown.Item>
                     <BlissDropdown.Item id="settings" textValue="Settings" className="hover:bg-white/15 data-[hovered=true]:bg-white/15">
                       <Label>Settings</Label>

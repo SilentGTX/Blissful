@@ -24,7 +24,6 @@ export function AccountModal({
   user,
   displayName,
   avatar,
-  isFullscreen,
   onLogout,
   onLogin,
   onNavigateSettings,
@@ -120,26 +119,15 @@ export function AccountModal({
         </div>
 
         <div className="mt-6 space-y-2">
-          {/* Full-screen toggle. Stays a BlissButton so its padding/height
-              line up with the rows below; justify-between puts the label
-              left and an accent toggle right. The menu stays open on press
-              so the toggle visibly flips — `isFullscreen` updates from the
-              shell/document fullscreenchange event, so it reflects the real
-              state (incl. F11 / Esc done outside this menu). */}
           <BlissButton
             variant="ghost"
-            className="w-full justify-between rounded-2xl bg-white/20"
-            onPress={() => onToggleFullscreen()}
+            className="w-full justify-start rounded-2xl bg-white/20"
+            onPress={() => {
+              onOpenChange(false);
+              onToggleFullscreen();
+            }}
           >
-            <span>Full screen mode</span>
-            <span
-              aria-hidden
-              className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${isFullscreen ? 'bg-[var(--bliss-accent)]' : 'bg-white/25'}`}
-            >
-              <span
-                className={`absolute top-1 h-4 w-4 rounded-full transition-all ${isFullscreen ? 'left-6 bg-black' : 'left-1 bg-white'}`}
-              />
-            </span>
+            Full screen mode
           </BlissButton>
           <BlissButton
             variant="ghost"
