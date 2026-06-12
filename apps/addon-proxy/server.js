@@ -384,6 +384,109 @@ async function resolveImdbRating(imdbId) {
   return { rating: null };
 }
 
+// ──────────────────────────────────────────────────────────────────
+// /rd-by-hash — resolve a torrent (infoHash + fileIdx) to a key-free
+// Real-Debrid direct link, using the HOUSE RD token (RD_FALLBACK_KEY,
+// the same one /rd-fallback uses). Used by Watch Party v2: a desktop
+// host announces the EXACT torrent it's playing as the room's `source`,
+// and a web guest calls this to land on the same file (then feeds the
+// direct link to /transcode for its <video> element).
+//
+// RD deprecated /torrents/instantAvailability (now returns empty), so
+// "is this cached?" is detected the modern way: addMagnet ->
+// selectFiles(the one file) -> poll status. A cached torrent flips to
+// `downloaded` within a second or two; a NON-cached one goes
+// `downloading` (RD would start a fresh download) — we refuse that,
+// delete the torrent so it doesn't actually download, and 404 so the
+// guest falls back to its own pick. Note: we select ONLY the requested
+// file, so a cache MISS never triggers a multi-GB RD download.
+const RD_API = 'https://api.real-debrid.com/rest/1.0';
+const rdByHashCache = new Map(); // `${infoHash}:${fileIdx}` -> { direct, exp }
+const RD_BY_HASH_TTL = 20 * 60 * 1000; // RD direct links live hours; re-resolve well within that
+const rdDelay = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function rdApi(path, { method = 'GET', form = null } = {}) {
+  const rdKey = process.env.RD_FALLBACK_KEY || '';
+  const headers = { Authorization: `Bearer ${rdKey}` };
+  let body = null;
+  if (form) {
+    body = new URLSearchParams(form).toString();
+    headers['Content-Type'] = 'application/x-www-form-urlencoded';
+  }
+  return requestJson(`${RD_API}${path}`, { method, headers, body, timeoutMs: 15000 });
+}
+
+async function rdDeleteTorrent(id) {
+  if (!id) return;
+  try { await rdApi(`/torrents/delete/${id}`, { method: 'DELETE' }); } catch { /* best effort */ }
+}
+
+// Returns a direct https RD link for the file, or null (not cached / error).
+async function resolveRdByHash(infoHash, fileIdx) {
+  const key = `${infoHash}:${fileIdx == null ? '*' : fileIdx}`;
+  const cached = rdByHashCache.get(key);
+  if (cached && cached.exp > Date.now()) return cached.direct;
+  if (!process.env.RD_FALLBACK_KEY) return null;
+
+  let torrentId = null;
+  try {
+    const add = await rdApi('/torrents/addMagnet', {
+      method: 'POST',
+      form: { magnet: `magnet:?xt=urn:btih:${infoHash}` },
+    });
+    torrentId = add && add.json && add.json.id;
+    if (!torrentId) return null;
+
+    // Wait for the file list (magnet_conversion -> waiting_files_selection).
+    let info = null;
+    for (let i = 0; i < 6; i++) {
+      const r = await rdApi(`/torrents/info/${torrentId}`);
+      info = r && r.json;
+      if (!info) break;
+      if (['magnet_error', 'error', 'virus', 'dead'].includes(info.status)) { await rdDeleteTorrent(torrentId); return null; }
+      if (Array.isArray(info.files) && info.files.length) break;
+      await rdDelay(700);
+    }
+    if (!info || !Array.isArray(info.files) || !info.files.length) { await rdDeleteTorrent(torrentId); return null; }
+
+    // Map the Stremio fileIdx (0-based into the torrent's file list) to RD's
+    // file id; if no idx given, take the largest file.
+    let rdFileId = null;
+    if (fileIdx != null && info.files[fileIdx]) rdFileId = info.files[fileIdx].id;
+    if (rdFileId == null) {
+      const biggest = info.files.slice().sort((a, b) => (b.bytes || 0) - (a.bytes || 0))[0];
+      rdFileId = biggest && biggest.id;
+    }
+    if (rdFileId == null) { await rdDeleteTorrent(torrentId); return null; }
+
+    await rdApi(`/torrents/selectFiles/${torrentId}`, { method: 'POST', form: { files: String(rdFileId) } });
+
+    // Poll for `downloaded` (cached => near-instant). If RD starts a fresh
+    // download instead, bail: the guest shouldn't wait minutes/hours.
+    let ready = null;
+    for (let i = 0; i < 6; i++) {
+      const r = await rdApi(`/torrents/info/${torrentId}`);
+      const inf = r && r.json;
+      if (inf && inf.status === 'downloaded' && Array.isArray(inf.links) && inf.links.length) { ready = inf; break; }
+      if (inf && ['downloading', 'queued', 'compressing', 'uploading'].includes(inf.status)) { await rdDeleteTorrent(torrentId); return null; }
+      await rdDelay(700);
+    }
+    if (!ready) { await rdDeleteTorrent(torrentId); return null; }
+
+    const unr = await rdApi('/unrestrict/link', { method: 'POST', form: { link: ready.links[0] } });
+    const direct = unr && unr.json && unr.json.download;
+    if (!direct || !/^https?:\/\//i.test(direct)) { await rdDeleteTorrent(torrentId); return null; }
+
+    // Keep the torrent (RD dedupes by hash, so re-adds are free) and cache the
+    // resolved direct link.
+    rdByHashCache.set(key, { direct, exp: Date.now() + RD_BY_HASH_TTL });
+    return direct;
+  } catch {
+    await rdDeleteTorrent(torrentId);
+    return null;
+  }
+}
+
 const ANI_TV_FORMATS = new Set(['TV', 'TV_SHORT', 'ONA']);
 const aniChainCache = new Map(); // anilistId -> { chain, exp }
 const aniSkipCache = new Map();  // `${mal}:${ep}:${len}` -> { intervals, exp }
@@ -1854,6 +1957,45 @@ const server = http.createServer((req, res) => {
       } catch (e) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ streams: [], error: String((e && e.message) || e) }));
+      }
+    })();
+    return;
+  }
+
+  // ── /rd-by-hash ────────────────────────────────────────────────────
+  // Resolve one torrent (infoHash + optional fileIdx) to a key-free RD
+  // direct link via the house RD token. 200 {url,cached:true} on a cache
+  // hit; 404 {cached:false} when RD doesn't already have it (the guest
+  // then falls back to its own pick). Used by Watch Party v2 same-file
+  // sync — see resolveRdByHash above.
+  if (req.url === '/rd-by-hash' || req.url.startsWith('/rd-by-hash?')) {
+    const parsed = url.parse(req.url, true);
+    const infoHash = String(parsed.query.infoHash || '').toLowerCase();
+    const fileIdxRaw = parsed.query.fileIdx;
+    const fileIdx = fileIdxRaw == null || fileIdxRaw === '' ? null : Number.parseInt(String(fileIdxRaw), 10);
+    if (!/^[a-f0-9]{40}$/.test(infoHash) || (fileIdx != null && (!Number.isInteger(fileIdx) || fileIdx < 0))) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'bad infoHash/fileIdx' }));
+      return;
+    }
+    if (!process.env.RD_FALLBACK_KEY) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ cached: false, error: 'no rd key' }));
+      return;
+    }
+    void (async () => {
+      try {
+        const direct = await resolveRdByHash(infoHash, fileIdx);
+        if (!direct) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ cached: false }));
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ url: direct, cached: true }));
+      } catch (e) {
+        res.writeHead(502, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: String((e && e.message) || e) }));
       }
     })();
     return;

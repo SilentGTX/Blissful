@@ -126,6 +126,11 @@ const RD_FALLBACK_UPSTREAM: &str = "https://blissful.budinoff.com/rd-fallback";
 // client-side www.imdb.com HTML scrape. Fixed host + path, only the
 // query string is passed through.
 const IMDB_RATING_UPSTREAM: &str = "https://blissful.budinoff.com/imdb-rating";
+// Watch Party v2 same-file sync. A web guest resolves the host's exact torrent
+// via `/rd-by-hash?infoHash=..&fileIdx=..`; the backend resolves it against the
+// house Real-Debrid key and returns a key-free direct link (404 when RD doesn't
+// have it cached). Forwarded so a desktop guest can use the same fast path.
+const RD_BY_HASH_UPSTREAM: &str = "https://blissful.budinoff.com/rd-by-hash";
 
 static HTTP_CLIENT: OnceCell<Client> = OnceCell::new();
 static STATIC_ROOT: OnceCell<Option<PathBuf>> = OnceCell::new();
@@ -292,6 +297,11 @@ async fn handle_request(
         // ---- /rd-fallback?type=..&id=.. ----
         (&Method::GET, "/rd-fallback") => {
             forward_request(req, RD_FALLBACK_UPSTREAM, "").await
+        }
+
+        // ---- /rd-by-hash?infoHash=..&fileIdx=.. ----
+        (&Method::GET, "/rd-by-hash") => {
+            forward_request(req, RD_BY_HASH_UPSTREAM, "").await
         }
 
         // ---- /imdb-rating?imdbId=tt.. ----
