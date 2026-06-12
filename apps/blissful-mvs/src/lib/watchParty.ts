@@ -34,6 +34,17 @@ export type WatchPartyParticipant = {
   isHost: boolean;
 };
 
+/** Watch-party v2 (docs/WATCH-PARTY-V2.md): a platform-neutral identity for
+ *  WHAT is playing, so a desktop (mpv) and a web (`<video>`) guest can resolve
+ *  the SAME file instead of each picking its own. `null` = the host hasn't
+ *  resolved one yet, or the content is unshareable (a web Vidking embed). */
+export type WatchPartySource =
+  | { kind: 'torrent'; infoHash: string; fileIdx: number | null; trackers?: string[] }
+  | { kind: 'rd'; rdUrl: string; infoHash?: string | null }
+  | { kind: 'vidking'; tmdbId: number; mediaType: 'movie' | 'tv'; season?: number; episode?: number }
+  | { kind: 'relay'; url: string }
+  | null;
+
 export type WatchPartyRoomSnapshot = {
   code: string;
   hostUserId: string;
@@ -49,6 +60,9 @@ export type WatchPartyRoomSnapshot = {
   /** Host's selected subtitle language (canonical label) or null = off, so a
    *  late joiner matches the host's subtitle. */
   subtitleLang?: string | null;
+  /** v2: platform-neutral content identity so guests resolve the SAME file
+   *  (supersedes `streamUrl` across platforms). See WatchPartySource. */
+  source?: WatchPartySource;
   hasPassword: boolean;
   participants: WatchPartyParticipant[];
   lastTick: { currentTime: number; isPlaying: boolean; at: number } | null;
@@ -86,6 +100,9 @@ export type WatchPartyClientMessage =
   /** Host announces its selected subtitle language (canonical label, e.g.
    *  "English") or null for off, so guests match the same subtitle. */
   | { t: 'host:subs'; lang: string | null }
+  /** v2: host announces the platform-neutral content identity so guests load
+   *  the SAME file across platforms (supersedes `host:stream`). */
+  | { t: 'host:source'; source: WatchPartySource }
   | { t: 'host:transfer'; targetUserId: string }
   /** Anyone in the room can broadcast a discrete play/pause/seek —
    *  the server stamps `from` on the relay so clients can attribute
@@ -120,6 +137,8 @@ export type WatchPartyServerMessage =
   | { t: 'stream'; streamUrl: string | null }
   /** Relay of the host's subtitle language (or null = off) — guests match it. */
   | { t: 'subs'; lang: string | null }
+  /** v2 relay of the host's content identity — guests resolve the same file. */
+  | { t: 'source'; source: WatchPartySource }
   /** The "buffer until everybody loads" gate: true = at least one member is
    *  still buffering, so everyone should hold; false = all ready, resume. */
   | { t: 'gate'; waiting: boolean }

@@ -382,6 +382,7 @@ async function persistRoom(room) {
         videoId: room.videoId,
         streamUrl: room.streamUrl ?? null,
         subtitleLang: room.subtitleLang ?? null,
+        source: room.source ?? null,
         passwordHash: room.passwordHash ?? null,
         lastTick: room.lastTick ?? null,
         chat: room.chat ?? [],
@@ -410,6 +411,7 @@ async function loadRoom(code) {
       videoId: doc.videoId ?? null,
       streamUrl: doc.streamUrl ?? null,
       subtitleLang: doc.subtitleLang ?? null,
+      source: doc.source ?? null,
       passwordHash: doc.passwordHash ?? null,
       participants: new Map(),
       lastTick: doc.lastTick ?? null,
@@ -661,6 +663,41 @@ function hashPartyPassword(password) {
 // watch party while staying well under Mongo's 16 MB doc limit.
 const MAX_CHAT_HISTORY = 100;
 
+// Watch-party v2 content identity. Validate every field — this is host-
+// supplied and relayed to guests, who feed parts of it into URLs (infoHash
+// into /rd-by-hash, rdUrl/relay url into the player), so it must be strict.
+// See docs/WATCH-PARTY-V2.md.
+function sanitizeWatchPartySource(s) {
+  if (!s || typeof s !== 'object') return null;
+  const isHash = (h) => typeof h === 'string' && /^[a-f0-9]{40}$/i.test(h);
+  const isHttp = (u) => typeof u === 'string' && /^https?:\/\//i.test(u) && u.length <= 2000;
+  switch (s.kind) {
+    case 'torrent': {
+      if (!isHash(s.infoHash)) return null;
+      const out = { kind: 'torrent', infoHash: s.infoHash.toLowerCase(), fileIdx: Number.isInteger(s.fileIdx) ? s.fileIdx : null };
+      if (Array.isArray(s.trackers)) out.trackers = s.trackers.filter((t) => typeof t === 'string' && t.length <= 400).slice(0, 50);
+      return out;
+    }
+    case 'rd': {
+      if (!isHttp(s.rdUrl)) return null;
+      const out = { kind: 'rd', rdUrl: s.rdUrl };
+      if (isHash(s.infoHash)) out.infoHash = s.infoHash.toLowerCase();
+      return out;
+    }
+    case 'vidking': {
+      if (!Number.isInteger(s.tmdbId)) return null;
+      const out = { kind: 'vidking', tmdbId: s.tmdbId, mediaType: s.mediaType === 'tv' ? 'tv' : 'movie' };
+      if (Number.isInteger(s.season)) out.season = s.season;
+      if (Number.isInteger(s.episode)) out.episode = s.episode;
+      return out;
+    }
+    case 'relay':
+      return isHttp(s.url) ? { kind: 'relay', url: s.url } : null;
+    default:
+      return null;
+  }
+}
+
 function serializeRoom(room) {
   return {
     code: room.code,
@@ -670,6 +707,7 @@ function serializeRoom(room) {
     videoId: room.videoId,
     streamUrl: room.streamUrl ?? null,
     subtitleLang: room.subtitleLang ?? null,
+    source: room.source ?? null,
     hasPassword: !!room.passwordHash,
     participants: Array.from(room.participants.values()).map((p) => ({
       userId: p.userId,
@@ -738,6 +776,7 @@ app.post('/watch-party', async (req, res) => {
       videoId: typeof videoId === 'string' && videoId.trim() ? videoId.trim() : null,
       streamUrl: null,
       subtitleLang: null,
+      source: null,
       passwordHash: passwordTrimmed ? hashPartyPassword(passwordTrimmed) : null,
       participants: new Map(),
       lastTick: null,
@@ -2702,10 +2741,12 @@ wss.on('connection', (ws) => {
         const videoId = typeof msg.videoId === 'string' && msg.videoId.trim() ? msg.videoId.trim() : null;
         room.videoId = videoId;
         room.lastTick = null;
-        // New episode → the previous RD stream + subtitle choice no longer
-        // apply. Clear so a guest joining mid-change doesn't get stale state.
+        // New episode → the previous RD stream + subtitle choice + content
+        // source no longer apply. Clear so a guest joining mid-change doesn't
+        // get stale state.
         room.streamUrl = null;
         room.subtitleLang = null;
+        room.source = null;
         // Persist so a guest who joins after a crash lands on the
         // current episode rather than where the room started.
         persistRoom(room).catch(() => {});
@@ -2726,6 +2767,16 @@ wss.on('connection', (ws) => {
       room.subtitleLang = lang;
       persistRoom(room).catch(() => {});
       broadcast(room, { t: 'subs', lang }, ws);
+    } else if (msg.t === 'host:source') {
+      // Watch-party v2: host announces the platform-neutral content identity
+      // (torrent infohash / RD url / vidking tmdb / relay) so guests resolve
+      // the SAME file. Host-only; stored for late joiners; cleared on episode
+      // change. See docs/WATCH-PARTY-V2.md.
+      if (participant.userId !== room.hostUserId) return;
+      const source = sanitizeWatchPartySource(msg.source);
+      room.source = source;
+      persistRoom(room).catch(() => {});
+      broadcast(room, { t: 'source', source }, ws);
     } else if (msg.t === 'buffering') {
       // "Buffer until everybody loads" gate. Track who is buffering; whenever the
       // aggregate flips, broadcast the gate so everyone holds/resumes together.
