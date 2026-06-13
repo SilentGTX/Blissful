@@ -2777,6 +2777,31 @@ wss.on('connection', (ws) => {
       room.source = source;
       persistRoom(room).catch(() => {});
       broadcast(room, { t: 'source', source }, ws);
+    } else if (msg.t === 'party:request-host-stream') {
+      // Layer B: a guest asks the host to relay its exact stream. Route to the
+      // host only, stamped with who's asking, so the host shows a consent
+      // prompt. Acceptance is just the host announcing a `relay` source (above).
+      if (participant.userId === room.hostUserId) return;
+      const host = room.participants.get(room.hostUserId);
+      if (host && host.ws && host.ws.readyState === 1) {
+        try {
+          host.ws.send(JSON.stringify({
+            t: 'party:host-stream-request',
+            from: { userId: participant.userId, displayName: participant.displayName },
+          }));
+        } catch { /* host socket closed between check and send */ }
+      }
+    } else if (msg.t === 'party:decline-host-stream') {
+      // Layer B: the host declines a specific guest's request — deliver the
+      // rejection to that guest so it keeps its own fallback. Host-only.
+      if (participant.userId !== room.hostUserId) return;
+      const targetUserId = typeof msg.targetUserId === 'string' ? msg.targetUserId : null;
+      const target = targetUserId ? room.participants.get(targetUserId) : null;
+      if (target && target.ws && target.ws.readyState === 1) {
+        try {
+          target.ws.send(JSON.stringify({ t: 'party:host-stream-declined' }));
+        } catch { /* guest socket closed between check and send */ }
+      }
     } else if (msg.t === 'buffering') {
       // "Buffer until everybody loads" gate. Track who is buffering; whenever the
       // aggregate flips, broadcast the gate so everyone holds/resumes together.

@@ -1056,6 +1056,188 @@ function proxyRequest(req, res, targetUrl, headers = {}, redirectCount = 0) {
   req.pipe(proxyReq);
 }
 
+// ── Watch Party v2 Layer B — host relay ──────────────────────────────────
+// A desktop host isn't reachable from a guest's browser (NAT / mixed-content),
+// so the host dials an OUTBOUND WebSocket tunnel into us and we PULL its locally
+// transcoded HLS on demand, caching segments so N guests cost the host ~one
+// fetch each. The host registers (room, relayKey) on the tunnel; guests fetch
+// `/party-relay/{room}/<path>?k=<relayKey>`. See docs/WATCH-PARTY-V2.md (B).
+// `ws` is installed ad-hoc by the container command (like crypto-js); guard the
+// require so the proxy still boots if it's missing (relay just stays off).
+let PartyRelayWSS = null;
+try {
+  PartyRelayWSS = require('ws').WebSocketServer;
+} catch {
+  console.warn('[party-relay] ws module unavailable — host relay disabled');
+}
+// room -> { ws, key, pending: Map<id,{resolve,reject,timer}>, nextId }
+const partyRelayHosts = new Map();
+// `${room}\n${path}` -> { exp, contentType, body:Buffer }  (cached responses)
+const partyRelaySegCache = new Map();
+// `${room}\n${path}` -> Promise  (coalesce concurrent identical pulls → 1 fetch)
+const partyRelayInflight = new Map();
+const PARTY_RELAY_PULL_TIMEOUT = 25000;
+const PARTY_RELAY_SEG_TTL = 120 * 1000; // segments live long enough to fan out
+const PARTY_RELAY_PLAYLIST_TTL = 4 * 1000; // playlists refresh fast (live-ish)
+const PARTY_RELAY_MAX_CACHE = 400;
+
+function partyRelayPull(room, reqPath) {
+  const entry = partyRelayHosts.get(room);
+  if (!entry || !entry.ws || entry.ws.readyState !== 1) return Promise.reject(new Error('no-host'));
+  const id = entry.nextId++;
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      entry.pending.delete(id);
+      reject(new Error('pull-timeout'));
+    }, PARTY_RELAY_PULL_TIMEOUT);
+    entry.pending.set(id, { resolve, reject, timer });
+    try {
+      entry.ws.send(JSON.stringify({ t: 'pull', id, path: reqPath }));
+    } catch (e) {
+      clearTimeout(timer);
+      entry.pending.delete(id);
+      reject(e);
+    }
+  });
+}
+
+function partyRelayPullCoalesced(room, reqPath) {
+  const key = room + '\n' + reqPath;
+  const hit = partyRelayInflight.get(key);
+  if (hit) return hit;
+  const p = partyRelayPull(room, reqPath).finally(() => partyRelayInflight.delete(key));
+  partyRelayInflight.set(key, p);
+  return p;
+}
+
+// Append the relay key to a playlist URI so the guest's player carries it on the
+// follow-up segment/sub-playlist fetch (relative URIs otherwise drop the query).
+// Absolute loopback URLs (the host's 127.0.0.1:11470) collapse to their path so
+// they route back through the tunnel.
+function rewritePartyRelayUri(uri, key) {
+  let u = uri.trim();
+  const abs = u.match(/^https?:\/\/[^/]+\/(.*)$/i);
+  if (abs) u = abs[1];
+  const sep = u.includes('?') ? '&' : '?';
+  return `${u}${sep}k=${encodeURIComponent(key)}`;
+}
+function rewritePartyRelayPlaylist(text, key) {
+  return text
+    .split(/\r?\n/)
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return line;
+      if (trimmed.startsWith('#')) {
+        // EXT-X-KEY / EXT-X-MAP carry URI="..." attributes that also need it.
+        return line.replace(/URI="([^"]+)"/g, (_m, uri) => `URI="${rewritePartyRelayUri(uri, key)}"`);
+      }
+      return rewritePartyRelayUri(trimmed, key);
+    })
+    .join('\n');
+}
+
+function partyRelayCachePut(cacheKey, contentType, body, ttl) {
+  if (partyRelaySegCache.size >= PARTY_RELAY_MAX_CACHE) {
+    let n = Math.ceil(PARTY_RELAY_MAX_CACHE * 0.1);
+    for (const k of partyRelaySegCache.keys()) {
+      partyRelaySegCache.delete(k);
+      if (--n <= 0) break;
+    }
+  }
+  partyRelaySegCache.set(cacheKey, { exp: Date.now() + ttl, contentType, body });
+}
+
+async function handlePartyRelay(req, res) {
+  const q = url.parse(req.url, true);
+  const after = q.pathname.slice('/party-relay/'.length);
+  const slash = after.indexOf('/');
+  if (slash < 0) { res.writeHead(404); res.end('bad relay path'); return; }
+  const room = decodeURIComponent(after.slice(0, slash));
+  const reqPath = after.slice(slash + 1);
+  const key = (q.query.k || '').toString();
+  const entry = partyRelayHosts.get(room);
+  if (!entry) { res.writeHead(404); res.end('no host for room'); return; }
+  if (!key || key !== entry.key) { res.writeHead(403); res.end('bad relay key'); return; }
+
+  const isPlaylist = /\.m3u8$/i.test(reqPath.split('?')[0]);
+  const cacheKey = room + '\n' + reqPath;
+  if (!isPlaylist) {
+    const c = partyRelaySegCache.get(cacheKey);
+    if (c && c.exp > Date.now()) {
+      res.writeHead(200, { 'Content-Type': c.contentType, 'Cache-Control': 'public, max-age=60' });
+      res.end(c.body);
+      return;
+    }
+  }
+  try {
+    const r = await partyRelayPullCoalesced(room, reqPath);
+    if (!r || !r.ok) { res.writeHead(502); res.end('host fetch failed'); return; }
+    let body = r.body;
+    const contentType = r.contentType || (isPlaylist ? 'application/vnd.apple.mpegurl' : 'application/octet-stream');
+    if (isPlaylist) {
+      body = Buffer.from(rewritePartyRelayPlaylist(body.toString('utf8'), key), 'utf8');
+      partyRelayCachePut(cacheKey, contentType, body, PARTY_RELAY_PLAYLIST_TTL);
+    } else {
+      partyRelayCachePut(cacheKey, contentType, body, PARTY_RELAY_SEG_TTL);
+    }
+    res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'public, max-age=60' });
+    res.end(body);
+  } catch {
+    res.writeHead(504); res.end('relay timeout');
+  }
+}
+
+// Attach the host-tunnel WebSocket endpoint (`/party-relay-tunnel?room&key`) to
+// the HTTP server's upgrade event. The host replies to our `{t:'pull',id,path}`
+// with `{t:'pulled',id,ok,status,contentType,bodyB64}`.
+function setupPartyRelayTunnel(httpServer) {
+  if (!PartyRelayWSS) return;
+  const wss = new PartyRelayWSS({ noServer: true });
+  wss.on('connection', (ws, info) => {
+    const { room, key } = info;
+    const prev = partyRelayHosts.get(room);
+    if (prev && prev.ws !== ws) { try { prev.ws.close(); } catch {} }
+    const entry = { ws, key, pending: new Map(), nextId: 1 };
+    partyRelayHosts.set(room, entry);
+    console.log(`[party-relay] host tunnel up room=${room}`);
+    ws.on('message', (data) => {
+      let msg;
+      try { msg = JSON.parse(data.toString()); } catch { return; }
+      if (msg.t !== 'pulled' || typeof msg.id !== 'number') return;
+      const p = entry.pending.get(msg.id);
+      if (!p) return;
+      entry.pending.delete(msg.id);
+      clearTimeout(p.timer);
+      if (msg.ok) {
+        p.resolve({
+          ok: true,
+          status: msg.status || 200,
+          contentType: msg.contentType || null,
+          body: Buffer.from(msg.bodyB64 || '', 'base64'),
+        });
+      } else {
+        p.resolve({ ok: false });
+      }
+    });
+    const cleanup = () => {
+      if (partyRelayHosts.get(room) === entry) partyRelayHosts.delete(room);
+      for (const p of entry.pending.values()) { clearTimeout(p.timer); p.reject(new Error('host-gone')); }
+      entry.pending.clear();
+      console.log(`[party-relay] host tunnel down room=${room}`);
+    };
+    ws.on('close', cleanup);
+    ws.on('error', cleanup);
+  });
+  httpServer.on('upgrade', (req, socket, head) => {
+    const u = url.parse(req.url, true);
+    if (u.pathname !== '/party-relay-tunnel') { socket.destroy(); return; }
+    const room = (u.query.room || '').toString();
+    const key = (u.query.key || '').toString();
+    if (!room || !key) { socket.destroy(); return; }
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, { room, key }));
+  });
+}
+
 const server = http.createServer((req, res) => {
   // Set CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -1065,6 +1247,12 @@ const server = http.createServer((req, res) => {
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
     res.end();
+    return;
+  }
+
+  // Watch Party v2 Layer B — pull-through relay of a desktop host's HLS.
+  if (req.method === 'GET' && req.url.startsWith('/party-relay/')) {
+    handlePartyRelay(req, res);
     return;
   }
 
@@ -2337,6 +2525,9 @@ const server = http.createServer((req, res) => {
   console.log(`Proxying: ${targetUrl}`);
   proxyRequest(req, res, targetUrl);
 });
+
+// Watch Party v2 Layer B — accept host relay tunnels on this same server.
+setupPartyRelayTunnel(server);
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Blissful proxy listening on port ${PORT}`);
