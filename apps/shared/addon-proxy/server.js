@@ -1156,8 +1156,9 @@ async function handlePartyRelay(req, res) {
   const reqPath = after.slice(slash + 1);
   const key = (q.query.k || '').toString();
   const entry = partyRelayHosts.get(room);
-  if (!entry) { res.writeHead(404); res.end('no host for room'); return; }
-  if (!key || key !== entry.key) { res.writeHead(403); res.end('bad relay key'); return; }
+  if (!entry) { console.log('[party-relay] GET room=%s path=%s -> 404 no host', room, reqPath); res.writeHead(404); res.end('no host for room'); return; }
+  if (!key || key !== entry.key) { console.log('[party-relay] GET room=%s path=%s -> 403 bad key', room, reqPath); res.writeHead(403); res.end('bad relay key'); return; }
+  console.log('[party-relay] GET room=%s path=%s', room, reqPath);
 
   const isPlaylist = /\.m3u8$/i.test(reqPath.split('?')[0]);
   const cacheKey = room + '\n' + reqPath;
@@ -1171,7 +1172,11 @@ async function handlePartyRelay(req, res) {
   }
   try {
     const r = await partyRelayPullCoalesced(room, reqPath);
-    if (!r || !r.ok) { res.writeHead(502); res.end('host fetch failed'); return; }
+    if (!r || !r.ok) {
+      console.log('[party-relay] pull room=%s path=%s -> host returned not-ok', room, reqPath);
+      res.writeHead(502); res.end('host fetch failed'); return;
+    }
+    console.log('[party-relay] pull room=%s path=%s -> ok status=%s type=%s bytes=%s', room, reqPath, r.status, r.contentType, r.body ? r.body.length : 0);
     let body = r.body;
     const contentType = r.contentType || (isPlaylist ? 'application/vnd.apple.mpegurl' : 'application/octet-stream');
     if (isPlaylist) {
