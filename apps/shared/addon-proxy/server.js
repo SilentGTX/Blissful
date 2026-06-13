@@ -1153,8 +1153,18 @@ async function handlePartyRelay(req, res) {
   const slash = after.indexOf('/');
   if (slash < 0) { res.writeHead(404); res.end('bad relay path'); return; }
   const room = decodeURIComponent(after.slice(0, slash));
-  const reqPath = after.slice(slash + 1);
+  const pathOnly = after.slice(slash + 1);
   const key = (q.query.k || '').toString();
+  // Forward every query param EXCEPT our relay key to the host — stremio's
+  // /hlsv2 master playlist needs `?mediaURL=…`; segment requests carry none.
+  const fwd = new URLSearchParams();
+  for (const [pk, pv] of Object.entries(q.query)) {
+    if (pk === 'k') continue;
+    if (Array.isArray(pv)) pv.forEach((v) => fwd.append(pk, v));
+    else if (pv != null) fwd.append(pk, String(pv));
+  }
+  const fwdQs = fwd.toString();
+  const reqPath = fwdQs ? `${pathOnly}?${fwdQs}` : pathOnly;
   const entry = partyRelayHosts.get(room);
   if (!entry) { console.log('[party-relay] GET room=%s path=%s -> 404 no host', room, reqPath); res.writeHead(404); res.end('no host for room'); return; }
   if (!key || key !== entry.key) { console.log('[party-relay] GET room=%s path=%s -> 403 bad key', room, reqPath); res.writeHead(403); res.end('bad relay key'); return; }
