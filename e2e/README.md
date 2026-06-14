@@ -10,15 +10,22 @@ traces, shell logs, media) go to `.tmp-e2e/` (gitignored).
 ## Run it
 
 ```bash
-npm run test:e2e            # everything
-npm run test:e2e:web       # web project only (fast)
-npm run test:e2e:desktop   # desktop project only (launches the real Rust shell)
-npm run test:e2e:android   # android project (skips unless a device/emulator is attached)
-npm run test:e2e:report    # open the last HTML report
+npm run test:e2e:changed       # ONLY suites relevant to what you changed (git diff -> areas)
+npm run test:e2e:area player   # a named area: player | watch-party | shell
+npm run test:e2e               # everything
+npm run test:e2e:web           # web project only (fast)
+npm run test:e2e:desktop       # desktop project only (launches the real Rust shell)
+npm run test:e2e:android       # android project (skips unless a device/emulator is attached)
+npm run test:e2e:report        # open the last HTML report
 
-npx playwright test --project web e2e/suites/player.web.spec.ts   # one suite
-npx playwright test -g "renderer crash"                           # by title
+# direct: filename filter FIRST, then --project (a path after --project is read as a project)
+npx playwright test player.web --project web
+npx playwright test -g "renderer crash"
+node e2e/run.mjs --changed -- --project web   # runner + passthrough args after --
 ```
+
+There's also a local **`/test`** skill (in `.claude/`, gitignored) that wraps `e2e/run.mjs`
+— "call it after a change and it runs that feature's suites."
 
 Prereqs: `npm install` (root — pulls `@playwright/test`, `playwright`, `ws`) and once
 `npx playwright install chromium`. Desktop needs the Rust toolchain + `libmpv-2.dll`.

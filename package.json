@@ -9,6 +9,8 @@
     "build": "npm run --prefix apps/web-blissful build",
     "lint": "npm run --prefix apps/web-blissful lint",
     "test:e2e": "playwright test",
+    "test:e2e:changed": "node e2e/run.mjs --changed",
+    "test:e2e:area": "node e2e/run.mjs --area",
     "test:e2e:web": "playwright test --project web",
     "test:e2e:desktop": "playwright test --project desktop",
     "test:e2e:android": "playwright test --project android",
