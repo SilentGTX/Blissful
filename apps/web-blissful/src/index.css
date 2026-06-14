@@ -2142,3 +2142,19 @@ html[data-ui="netflix"] .netflix-detail .action-button-Pn4hZ.is-active {
     transform: translateX(120%);
   }
 }
+
+/* Indeterminate progress bar — a segment that sweeps across the track. Used by
+   the streams panel's "N addons still loading" indicator (Stremio-style). */
+@keyframes bliss-indeterminate {
+  0% {
+    left: -40%;
+    width: 40%;
+  }
+  50% {
+    width: 55%;
+  }
+  100% {
+    left: 100%;
+    width: 40%;
+  }
+}

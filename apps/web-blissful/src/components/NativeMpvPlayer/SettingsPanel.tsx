@@ -13,7 +13,7 @@ import { useState } from 'react';
 import { PlayerControlIcon as StremioIcon, type StremioIconName } from '../PlayerControlIcons';
 import type { MpvTrack } from '../../lib/desktop';
 import { subtitleLangLabel } from './subtitleHelpers';
-import { ReleasesPicker } from '../ReleasesPicker';
+import { BananasPicker } from '../BananasPicker';
 import {
   writeStoredPlayerSettings,
   type PlayerSettings,
@@ -391,11 +391,11 @@ export function SettingsPanel(props: SettingsPanelProps) {
                 ) : null}
 
                 {/* RELEASES -- Real-Debrid "change torrent" picker. Shared
-                    ReleasesPicker so the native drawer matches the web player
+                    BananasPicker so the native drawer matches the web player
                     1:1: a "Continue watching" pin for the playing release,
                     infohash dedup, and uncached ("[RD download]") handling. */}
                 {tab === 'releases' && releases && releases.length > 0 ? (
-                  <ReleasesPicker
+                  <BananasPicker
                     releases={releases}
                     selectedReleaseUrl={selectedReleaseUrl}
                     onSelectRelease={onSelectRelease}

@@ -190,7 +190,11 @@ export async function resolveSourceForWeb(
     const direct = await rdByHash(source.infoHash, source.fileIdx);
     return direct ? { url: direct, rdsel: true } : null;
   }
-  // vidking / relay → web guest keeps its own source (relay is Layer B).
+  // Layer B: the host relays its exact stream as HLS through the Mac. The URL is
+  // already an `…/party-relay/{room}/index.m3u8?k=` playlist — hls.js plays it
+  // directly (no /transcode wrap), so pin it like an rd source.
+  if (source.kind === 'relay') return { url: source.url, rdsel: true };
+  // vidking → web guest keeps its own source (Vidking is unshareable).
   return null;
 }
 

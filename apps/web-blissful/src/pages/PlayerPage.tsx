@@ -262,10 +262,17 @@ export default function PlayerPage() {
     // 2) House RD fallback (DMCA-filtered) — uncached + slow (server-side HEAD
     //    probing), so fire it SEPARATELY and merge whenever it arrives. It must
     //    never block the instant addon list above.
-    fetch(`/rd-fallback?type=${type}&id=${encodeURIComponent(streamId)}`)
-      .then((r) => (r.ok ? r.json() : { streams: [] }))
-      .then((d: { streams?: Array<{ name?: string; title?: string; url?: string }> }) => merge(d.streams ?? []))
-      .catch(() => {});
+    //    Real-Debrid is per-profile: only supplement with the house RD fallback
+    //    when THIS profile actually has RD (an RD-configured addon is present).
+    //    A no-RD profile (e.g. one whose Torrentio was de-debrided in
+    //    useAddonsManager) must not get RD releases leaking in here.
+    const hasRd = addons.some((a) => /realdebrid=|\/realdebrid\//i.test(a.transportUrl ?? ''));
+    if (hasRd) {
+      fetch(`/rd-fallback?type=${type}&id=${encodeURIComponent(streamId)}`)
+        .then((r) => (r.ok ? r.json() : { streams: [] }))
+        .then((d: { streams?: Array<{ name?: string; title?: string; url?: string }> }) => merge(d.streams ?? []))
+        .catch(() => {});
+    }
 
     return () => {
       cancelled = true;

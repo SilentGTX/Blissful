@@ -686,6 +686,12 @@ export default function PlayerPage() {
     // user goes straight to the torrent they pick, no waiting on Videasy.
     if (pickFirst || rdSelected) {
       setVideasyResolved(true);
+      // These modes reuse the already-mounted player (a watch-party relay swap,
+      // or "Play with RealDebrid"), so Videasy sources from the prior playback
+      // would linger and make `activeSource` shadow the chosen `url`. Clear them
+      // so the chosen stream actually plays and the picker shows torrent
+      // releases, not stale Videasy qualities.
+      setVideasySources([]);
       return;
     }
     if (!tmdbLookup) {
@@ -948,7 +954,18 @@ export default function PlayerPage() {
   // HEVC/x265 — so we can route around them by re-running the
   // fallback even though the URL itself isn't a placeholder.
   const HEVC_RE = /(^|[^a-z])(x265|h\.?265|hevc)([^a-z]|$)/i;
-  const urlIsHevc = !!url && HEVC_RE.test(decodeURIComponent(url));
+  // HLS URLs (.m3u8 / stremio-service /hlsv2 / our party-relay) are already a
+  // transcoded, SEGMENTED stream that hls.js plays directly, regardless of the
+  // SOURCE codec. The source filename frequently rides inside a `mediaURL=`/
+  // `url=` query param (e.g. a Layer-B relay
+  // `…/hlsv2/…/master.m3u8?mediaURL=…From.S01E01.x265-BlackBit.mkv&k=…`), so
+  // running HEVC_RE over the whole decoded URL false-positives on that inner
+  // `x265` and would wrongly DROP the playable HLS URL (→ empty playUrl → the
+  // player renders nothing and never fetches the playlist).
+  const urlIsHls =
+    !!url
+    && (/\.m3u8(\?|#|$)/i.test(url) || url.includes('/hlsv2/') || url.includes('/party-relay/'));
+  const urlIsHevc = !!url && !urlIsHls && HEVC_RE.test(decodeURIComponent(url));
   // Mirror "videasy currently has a playable (non-4K) source" into a ref so the
   // fallback effect can consult it WITHOUT listing videasySources /
   // videasyResolved in its deps. Those flip on every videasy server auto-switch
@@ -1405,12 +1422,22 @@ export default function PlayerPage() {
   // routes the /transcode HLS through hls.js where MSE exists (iPad), native
   // HLS otherwise.
   const rawPlay =
-    activeSource?.url
-    ?? fallbackPlayUrl
-    // Drop a bare HEVC URL (Chrome can't decode it) UNLESS it's a container
-    // we'll transcode anyway — then keep it so /transcode re-encodes it.
-    ?? (urlIsHevc && !TRANSCODE_CONTAINER_RE.test(url ?? '') ? null : url)
-    ?? '';
+    // RD-selected / watch-party relay mode: an exact URL was chosen and passed
+    // as `url` — play THAT, nothing else. It must take precedence over
+    // `activeSource` (Videasy): navigating into rdsel reuses this mounted
+    // component, so a Videasy source from the previous (non-rdsel) playback
+    // lingers in `videasySources` and would otherwise override the chosen URL —
+    // the "watch-party guest reverts to its own EPIX stream instead of the
+    // host's relay" bug. (The HEVC-drop is skipped too: the user explicitly
+    // chose this stream; /transcode re-encodes it downstream if needed.)
+    rdSelected
+      ? (url ?? '')
+      : activeSource?.url
+        ?? fallbackPlayUrl
+        // Drop a bare HEVC URL (Chrome can't decode it) UNLESS it's a container
+        // we'll transcode anyway — then keep it so /transcode re-encodes it.
+        ?? (urlIsHevc && !TRANSCODE_CONTAINER_RE.test(url ?? '') ? null : url)
+        ?? '';
   const basePlayUrl =
     // Already a transcode URL (e.g. a Continue-Watching `resume` that was saved
     // wrapped) — play it as-is; re-wrapping would double-encode the inner URL

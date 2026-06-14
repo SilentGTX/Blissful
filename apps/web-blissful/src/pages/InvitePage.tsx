@@ -250,6 +250,7 @@ export default function InvitePage() {
                 type="button"
                 onClick={() => void handleJoin()}
                 disabled={joining}
+                data-testid="wp-invite-continue"
                 // Hover stays on the same accent color — just nudges
                 // brightness with `brightness-95` so the feedback is
                 // a subtle dim, not a different colour. The old

@@ -113,6 +113,34 @@ Supporting machinery:
 4. **Local state** — watch progress (`progressStore.ts`), stream history (`streamHistory.ts`),
    library bookmarks (`libraryStore.ts`) all use `localStorage` under `bliss*` key prefixes.
 
+### Real-Debrid / debrid — where the key lives, how to detect it
+
+(Documented because it's non-obvious and easy to waste time re-deriving.)
+
+- **The key:** `playerSettings.realDebridApiKey` (`lib/playerSettings.ts`). `playerSettings` is
+  persisted **per profile (per `authKey`)** in the `blissful-storage` backend (`/settings`, see
+  `storageApi.ts`); the localStorage entry `blissful.playerSettings` (`readStoredPlayerSettings()`)
+  is only a local cache / guest fallback. So the RD key is effectively **per-profile** — one
+  profile can have it set while another (e.g. a "no-RD" profile) doesn't. Entered in
+  `SettingsPage.tsx`.
+- **How the key becomes RD streams:** `ProvidersGlue.tsx` → `AddonsProvider` → `useAddonsManager`
+  (`layout/app-shell/hooks/useAddonsManager.ts:47`). When `authKey && realDebridApiKey`, it strips
+  any plain Torrentio addon and injects `https://torrentio.strem.fun/realdebrid=<key>/manifest.json`.
+  That addon is what makes stream results carry `[RD+]` (cached) / `[RD download]` (uncached) markers.
+- **To know whether a *profile's results* are debrid-backed, don't read the key alone.** Debrid can
+  also come from per-profile addons whose `transportUrl` embeds a debrid token (e.g. a
+  manually-added Comet / Torrentio `…/realdebrid=…/manifest.json`). The reliable runtime signal is
+  the **effective addon transport URLs** (`realdebrid=` / `debrid=`) or the `[RD…]` markers the
+  results carry — which is why `components/BananasPicker.tsx` infers its `rdMode` from release
+  markers rather than the global key.
+- **Keeping RD per-profile:** `useTorrentioCloneSync` silently copies a profile's Torrentio addon
+  onto every other saved account (so switching profiles doesn't lose Torrentio). It must NOT carry
+  the debrid token across, or one profile's RD key leaks onto all of them. `stripTorrentioDebrid`
+  (`lib/stremioAddon.ts`) removes the `realdebrid=<key>` (and other debrid options) from a
+  Torrentio URL; the clone propagates only the keyless form, and `useAddonsManager` runs every
+  Torrentio URL through it for any profile/guest WITHOUT its own RD key — so a profile shows RD
+  iff its own `realDebridApiKey` is set, regardless of what leaked into stored addons.
+
 ### Provider architecture
 
 The deprecated `AppContext` mega-facade has been **deleted**. Global state lives in focused

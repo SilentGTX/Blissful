@@ -154,9 +154,22 @@ const hasLikelyUnsupportedBrowserAudio = (row: Pick<StreamRow, 'leftLabel' | 'ri
   return false;
 };
 
+// 40-hex BitTorrent infohash from any URL shape (magnet btih, RD resolve URL,
+// streaming-server path). Lets us recognise the last-played release even when
+// the stored URL and the row's URL differ in shape — resolved RD link vs
+// torrentio resolve URL, a season pack, or just different query/encoding — but
+// point at the same torrent. Mirrors BananasPicker's `sameBanana` match.
+const extractInfohash = (url: string | null | undefined): string | null => {
+  if (!url) return null;
+  const m = url.match(/btih:([a-f0-9]{40})/i) ?? url.match(/[/:]([a-f0-9]{40})(?:[/:]|$)/i);
+  return m ? m[1].toLowerCase() : null;
+};
+
 const getLastPlayedMatchScore = (
   lastStreamUrl: string | null,
-  row: Pick<StreamRow, 'effectiveUrl' | 'playerLink' | 'externalWeb' | 'externalStreaming'>
+  row: Pick<StreamRow, 'effectiveUrl' | 'playerLink' | 'externalWeb' | 'externalStreaming'> & {
+    infoHash?: string | null;
+  }
 ): number => {
   const target = lastStreamUrl;
   if (!target) return 0;
@@ -178,6 +191,19 @@ const getLastPlayedMatchScore = (
     if (candidates.some((c) => c === decoded2)) return 2;
   } catch {
     // ignore
+  }
+
+  // Infohash fallback (score 1, below an exact/decoded URL hit): the stored
+  // play URL and this row point at the same torrent even though the URL
+  // strings differ. Fixes the "Continue watching" pin vanishing on the detail
+  // page when the player stored a resolved/pack URL.
+  const targetIh = extractInfohash(target);
+  if (
+    targetIh &&
+    ((row.infoHash && row.infoHash.toLowerCase() === targetIh) ||
+      candidates.some((c) => extractInfohash(c) === targetIh))
+  ) {
+    return 1;
   }
 
   return 0;
@@ -265,6 +291,7 @@ export function buildStreamsView(
           playerLink,
           externalWeb,
           externalStreaming,
+          infoHash: stream.infoHash,
         });
 
         return {

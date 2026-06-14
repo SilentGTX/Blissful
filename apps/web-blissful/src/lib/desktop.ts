@@ -199,6 +199,30 @@ export const desktop = {
     return on<string>('update-download-failed', cb);
   },
 
+  // ---- watch party relay (v2 Layer B — host relay) ----
+  /** Host (desktop): start relaying the currently-playing torrent's LOCAL HLS
+   *  (stremio-service /hlsv2) to the Mac so web guests in `room` can watch the
+   *  exact same file, frame-aligned. `hlsPath` is the local stremio-service HLS
+   *  index path for what's playing (relative to 127.0.0.1:11470). The shell
+   *  mints a per-session key, opens the outbound tunnel, and resolves with the
+   *  public `…/party-relay/{room}/<index>?k=` URL to announce as the room
+   *  `source`. */
+  startPartyRelay(room: string, hlsPath: string): Promise<{ relayUrl: string }> {
+    return call<{ relayUrl: string }>('startPartyRelay', { room, hlsPath });
+  },
+  /** Host (desktop): tear down the relay tunnel + local HLS job. */
+  stopPartyRelay(): Promise<null> {
+    return call<null>('stopPartyRelay');
+  },
+  /** Subscribe to relay tunnel status transitions (host side). */
+  onPartyRelayStatus(
+    cb: (status: 'connecting' | 'ready' | 'failed' | 'stopped') => void,
+  ): () => void {
+    return on<string>('party-relay-status', (s) =>
+      cb(s as 'connecting' | 'ready' | 'failed' | 'stopped'),
+    );
+  },
+
   // ---- generic event subscription escape hatch ----
   on,
 };

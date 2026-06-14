@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { AddonDescriptor } from '../../../lib/mediaTypes';
-import { fetchAddonManifest, normalizeAddonBaseUrl } from '../../../lib/stremioAddon';
+import { fetchAddonManifest, normalizeAddonBaseUrl, stripTorrentioDebrid } from '../../../lib/stremioAddon';
 import type { BlissfulStorageState } from '../../../lib/storageApi';
 
 type UseAddonsManagerParams = {
@@ -48,6 +48,13 @@ export function useAddonsManager({ authKey, storedAddonUrls, persistStorageState
       const rdUrl = `https://torrentio.strem.fun/realdebrid=${realDebridApiKey}/manifest.json`;
       sourceUrls = sourceUrls.filter((u) => !TORRENTIO_RE.test(u));
       sourceUrls.push(rdUrl);
+    } else {
+      // No RD key in effect (guest, or a profile without its own key): strip any
+      // debrid token that leaked into a Torrentio URL — typically carried in by
+      // the cross-profile clone-sync — so Real-Debrid stays governed solely by
+      // THIS profile's own key (the branch above). Dedupe in case stripping
+      // collapses a keyed + plain Torrentio into the same URL.
+      sourceUrls = Array.from(new Set(sourceUrls.map(stripTorrentioDebrid)));
     }
 
     // Always include Cinemeta first — DiscoverPage's redirect picks it

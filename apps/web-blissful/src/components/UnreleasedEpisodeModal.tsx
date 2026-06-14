@@ -13,7 +13,7 @@ import { motion, type PanInfo } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { CloseIcon } from '../icons/CloseIcon';
 import { proxiedImage } from '../lib/imageProxy';
-import { ReleasesPicker, type ReleaseOption } from './ReleasesPicker';
+import { BananasPicker, type BananaOption } from './BananasPicker';
 
 export type UnreleasedEpisodeModalProps = {
   isOpen: boolean;
@@ -32,7 +32,7 @@ export type UnreleasedEpisodeModalProps = {
    *  while early/leaked torrents already exist — in that case "Play with
    *  RealDebrid" opens an in-modal torrent selector (the same Top-picks +
    *  per-quality accordions as the in-player Releases picker). */
-  releases?: ReleaseOption[] | null;
+  releases?: BananaOption[] | null;
   /** Invoked when the user picks a torrent in the selector — the caller
    *  navigates straight to the player (fallback mode, no Videasy) playing it. */
   onPickTorrent?: (url: string) => void;
@@ -130,9 +130,10 @@ export function UnreleasedEpisodeModal({
               </span>
             </div>
             <div className="-mx-1 max-h-[52vh] overflow-y-auto px-1">
-              <ReleasesPicker
+              <BananasPicker
                 releases={streams}
                 onSelectRelease={(url) => onPickTorrent?.(url)}
+                relevanceTitle={title}
               />
             </div>
           </>

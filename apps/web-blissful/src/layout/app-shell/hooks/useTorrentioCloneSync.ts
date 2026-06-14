@@ -16,6 +16,7 @@ import {
   addonCollectionSet,
   type AddonDescriptor,
 } from '../../../lib/stremioApi';
+import { stripTorrentioDebrid } from '../../../lib/stremioAddon';
 import type { SavedAccount } from '../../../lib/savedAccounts';
 
 const TORRENTIO_URLS_KEY = 'blissfulTorrentioUrls';
@@ -36,7 +37,11 @@ export function useTorrentioCloneSync(
             .filter(
               (transportUrl): transportUrl is string =>
                 typeof transportUrl === 'string' && TORRENTIO_RE.test(transportUrl),
-            ),
+            )
+            // Never carry a debrid key across profiles — Real-Debrid is
+            // per-profile (governed by each profile's own key). Propagate only
+            // the keyless Torrentio so other profiles get the addon, not the key.
+            .map(stripTorrentioDebrid),
         ),
       ),
     [addons],

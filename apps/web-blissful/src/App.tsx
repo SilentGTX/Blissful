@@ -47,7 +47,9 @@ export default function App() {
         <Route
           path="/*"
           element={<SplashScreen>
-      <Toast.Provider placement="bottom" queue={notificationQueue} />
+      {/* Info toasts (e.g. the player's "Subtitles loaded") sit at the TOP so
+          they don't clash with the player's bottom controls / releases drawer. */}
+      <Toast.Provider placement="top" queue={notificationQueue} />
       <Toast.Provider placement="bottom start" queue={errorQueue} />
       <Toast.Provider placement="bottom end" queue={successQueue} />
       <AuthProvider>

@@ -8,6 +8,7 @@ import {
   desktopPlayingUrlToSource,
   looksLikeRdLink,
   parseVideoIdSeasonEpisode,
+  resolveSourceForWeb,
   torrentToStreamingServerUrl,
   unwrapTranscodeUrl,
   webPlayingToSource,
@@ -146,5 +147,22 @@ describe('torrentToStreamingServerUrl', () => {
 
   it('returns null without a file index', () => {
     expect(torrentToStreamingServerUrl({ kind: 'torrent', infoHash: HASH, fileIdx: null })).toBeNull();
+  });
+});
+
+describe('resolveSourceForWeb (non-fetch cases)', () => {
+  it('plays a Layer B relay HLS URL directly (pinned)', async () => {
+    const url = 'https://blissful.budinoff.com/party-relay/abc-def/index.m3u8?k=xyz';
+    expect(await resolveSourceForWeb({ kind: 'relay', url })).toEqual({ url, rdsel: true });
+  });
+
+  it('reuses a shared rd link (pinned)', async () => {
+    const rdUrl = 'https://x.download.real-debrid.com/d/ABC/file.mkv';
+    expect(await resolveSourceForWeb({ kind: 'rd', rdUrl })).toEqual({ url: rdUrl, rdsel: true });
+  });
+
+  it('keeps own source for vidking and null (timeline-only)', async () => {
+    expect(await resolveSourceForWeb({ kind: 'vidking', tmdbId: 1, mediaType: 'tv' })).toBeNull();
+    expect(await resolveSourceForWeb(null)).toBeNull();
   });
 });

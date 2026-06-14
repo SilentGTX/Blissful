@@ -43,6 +43,12 @@ export type UseWatchPartyMpvOptions = {
    *  `source` (Watch Party v2 same-file sync) so the guest can resolve the SAME
    *  file in mpv. Also fired on join with the room's current value. */
   onHostSourceChange?: (source: WatchPartySource) => void;
+  /** Layer B — fired on the HOST (desktop) when a guest asks for its stream to
+   *  be relayed; the host shows a consent prompt and on accept starts the relay
+   *  + announces a `relay` source. */
+  onHostStreamRequest?: (from: { userId: string; displayName: string }) => void;
+  /** Layer B — fired on the requesting GUEST when the host declined. */
+  onHostStreamDeclined?: () => void;
   /** Ref that tracks the latest paused state from mpv. Read by the
    *  host tick interval to avoid re-rendering on every tick. */
   pausedRef: React.RefObject<boolean>;
@@ -74,6 +80,10 @@ export type UseWatchPartyMpvResult = {
   /** Host-only: announce the room's content `source` so guests land on the same
    *  file (Watch Party v2). Pass null when no shareable source is resolved. */
   announceSource: (source: WatchPartySource) => void;
+  /** Layer B (guest): ask the desktop host to relay its exact stream. */
+  requestHostStream: () => void;
+  /** Layer B (host): decline a specific guest's host-stream request. */
+  declineHostStream: (targetUserId: string) => void;
   /** "Buffer until everybody loads" gate — true while any member is buffering. */
   partyWaiting: boolean;
   /** Report our own buffering state into the gate. */
@@ -95,6 +105,8 @@ export function useWatchPartyMpv({
   onHostEpisodeChange,
   onHostSubsChange,
   onHostSourceChange,
+  onHostStreamRequest,
+  onHostStreamDeclined,
   pausedRef,
 }: UseWatchPartyMpvOptions): UseWatchPartyMpvResult {
   const [connected, setConnected] = useState(false);
@@ -122,6 +134,13 @@ export function useWatchPartyMpv({
   const hostIdRef = useRef<string | null>(null);
   // Stamp when we apply a remote action to suppress echo broadcasts.
   const applyingRemoteAtRef = useRef(0);
+  // The play/pause STATE we last applied from a remote tick/event, so we suppress
+  // an ECHO of that state while a genuine user action that CHANGES state still
+  // broadcasts (a blunt time window alone swallows real user pauses).
+  const lastAppliedStateRef = useRef<'play' | 'pause' | null>(null);
+  // Server `sentAt` of the newest applied tick/event — drop out-of-order ones so
+  // a stale isPlaying can't bounce a fresh pause back to playing.
+  const lastAppliedSentAtRef = useRef(0);
   // Stamp when the local user performed a play/pause/seek — stale
   // ticks within 1.5s are ignored so the user doesn't bounce back.
   const lastLocalActionAtRef = useRef(0);
@@ -132,6 +151,10 @@ export function useWatchPartyMpv({
   onHostSubsChangeRef.current = onHostSubsChange;
   const onHostSourceChangeRef = useRef(onHostSourceChange);
   onHostSourceChangeRef.current = onHostSourceChange;
+  const onHostStreamRequestRef = useRef(onHostStreamRequest);
+  onHostStreamRequestRef.current = onHostStreamRequest;
+  const onHostStreamDeclinedRef = useRef(onHostStreamDeclined);
+  onHostStreamDeclinedRef.current = onHostStreamDeclined;
 
   const pushActivity = useCallback((item: WatchPartyActivity) => {
     setActivity((prev) => [...prev.slice(-19), item]);
@@ -186,14 +209,16 @@ export function useWatchPartyMpv({
   // Explicit play/pause broadcasts for mpv (no DOM events to listen to).
   const broadcastPlay = useCallback(() => {
     if (!connected) return;
-    if (Date.now() - applyingRemoteAtRef.current < 600) return;
+    // Suppress only the ECHO of a just-applied remote PLAY; a user play that
+    // changes state (e.g. after a remote pause) must still broadcast.
+    if (Date.now() - applyingRemoteAtRef.current < 600 && lastAppliedStateRef.current === 'play') return;
     lastLocalActionAtRef.current = Date.now();
     send({ t: 'event', kind: 'play', currentTime: playbackClock.get() });
   }, [connected, send]);
 
   const broadcastPause = useCallback(() => {
     if (!connected) return;
-    if (Date.now() - applyingRemoteAtRef.current < 600) return;
+    if (Date.now() - applyingRemoteAtRef.current < 600 && lastAppliedStateRef.current === 'pause') return;
     lastLocalActionAtRef.current = Date.now();
     send({ t: 'event', kind: 'pause', currentTime: playbackClock.get() });
   }, [connected, send]);
@@ -246,6 +271,17 @@ export function useWatchPartyMpv({
     [send]
   );
 
+  const requestHostStream = useCallback(() => {
+    send({ t: 'party:request-host-stream' });
+  }, [send]);
+
+  const declineHostStream = useCallback(
+    (targetUserId: string) => {
+      send({ t: 'party:decline-host-stream', targetUserId });
+    },
+    [send]
+  );
+
   const transferHost = useCallback(
     (targetUserId: string) => {
       send({ t: 'host:transfer', targetUserId });
@@ -280,13 +316,17 @@ export function useWatchPartyMpv({
 
   // Apply a remote discrete event (play/pause/seek) to mpv.
   const applyHostEvent = useCallback(
-    (kind: 'play' | 'pause' | 'seek', currentTime: number, latencyMs: number) => {
+    (kind: 'play' | 'pause' | 'seek', currentTime: number, latencyMs: number, sentAt = 0) => {
+      if (sentAt && sentAt < lastAppliedSentAtRef.current) return; // out-of-order
+      if (sentAt) lastAppliedSentAtRef.current = sentAt;
       applyingRemoteAtRef.current = Date.now();
       const target = kind === 'pause' ? currentTime : currentTime + latencyMs / 1000;
       desktop.seek(target, 'absolute').catch(() => {});
       if (kind === 'play') {
+        lastAppliedStateRef.current = 'play';
         desktop.play().catch(() => {});
       } else if (kind === 'pause') {
+        lastAppliedStateRef.current = 'pause';
         desktop.pause().catch(() => {});
       }
     },
@@ -296,8 +336,10 @@ export function useWatchPartyMpv({
   // Periodic tick drift correction — snap mpv's position when it
   // strays beyond the tolerance threshold.
   const applyHostTick = useCallback(
-    (currentTime: number, isPlaying: boolean, latencyMs: number) => {
+    (currentTime: number, isPlaying: boolean, latencyMs: number, sentAt = 0) => {
+      if (sentAt && sentAt < lastAppliedSentAtRef.current) return; // out-of-order
       if (Date.now() - lastLocalActionAtRef.current < 1500) return;
+      if (sentAt) lastAppliedSentAtRef.current = sentAt;
       // Buffer-until-everybody gate takes precedence: while waiting, hold
       // paused and ignore the tick's play state. A buffering host is STALLED
       // (not paused) so it still broadcasts isPlaying=true — without this a
@@ -305,6 +347,7 @@ export function useWatchPartyMpv({
       if (partyWaitingRef.current) {
         if (!pausedRef.current) {
           applyingRemoteAtRef.current = Date.now();
+          lastAppliedStateRef.current = 'pause';
           desktop.pause().catch(() => {});
         }
         return;
@@ -319,9 +362,11 @@ export function useWatchPartyMpv({
       const isPaused = pausedRef.current;
       if (isPlaying && isPaused) {
         applyingRemoteAtRef.current = Date.now();
+        lastAppliedStateRef.current = 'play';
         desktop.play().catch(() => {});
       } else if (!isPlaying && !isPaused) {
         applyingRemoteAtRef.current = Date.now();
+        lastAppliedStateRef.current = 'pause';
         desktop.pause().catch(() => {});
       }
     },
@@ -395,7 +440,8 @@ export function useWatchPartyMpv({
             applyHostTick(
               msg.lastTick.currentTime,
               msg.lastTick.isPlaying,
-              Date.now() - msg.lastTick.at
+              Date.now() - msg.lastTick.at,
+              msg.lastTick.at
             );
           }
           // Late joiner: match the host's current subtitle language.
@@ -443,13 +489,13 @@ export function useWatchPartyMpv({
             });
           }
         } else if (msg.t === 'tick') {
-          applyHostTick(msg.currentTime, msg.isPlaying, Date.now() - msg.sentAt);
+          applyHostTick(msg.currentTime, msg.isPlaying, Date.now() - msg.sentAt, msg.sentAt);
         } else if (msg.t === 'event') {
           if (msg.from.userId !== selfIdRef.current) {
             const isHostNow = !!(selfIdRef.current && selfIdRef.current === hostIdRef.current);
             const settling = isHostNow && Date.now() - connectedAtRef.current < 3000;
             if (!settling) {
-              applyHostEvent(msg.kind, msg.currentTime, Date.now() - msg.sentAt);
+              applyHostEvent(msg.kind, msg.currentTime, Date.now() - msg.sentAt, msg.sentAt);
             }
           }
           pushActivity({
@@ -475,6 +521,12 @@ export function useWatchPartyMpv({
           // Host announced/changed the room's content source — guests resolve
           // the same file in mpv (WP v2 same-file sync).
           onHostSourceChangeRef.current?.(msg.source);
+        } else if (msg.t === 'party:host-stream-request') {
+          // Layer B: a guest wants this (desktop) host to relay its stream.
+          onHostStreamRequestRef.current?.(msg.from);
+        } else if (msg.t === 'party:host-stream-declined') {
+          // Layer B: the host declined our request — keep our own pick.
+          onHostStreamDeclinedRef.current?.();
         } else if (msg.t === 'gate') {
           // Buffer-until-everybody-loads gate flipped.
           setPartyWaiting(msg.waiting);
@@ -590,7 +642,24 @@ export function useWatchPartyMpv({
         applyingRemoteAtRef.current = Date.now();
         desktop.pause().catch(() => {});
       }
-    } else if (wasPlayingBeforeGateRef.current && pausedRef.current) {
+      // Safety valve: a member stuck buffering must not freeze the host
+      // indefinitely behind the veil. The grace period is generous (45s)
+      // because a Layer B relay guest's cold start is a live 4K→1080p
+      // seek-transcode that legitimately takes ~30s to produce its first
+      // segment — release earlier and the host resumes before the guest is
+      // ready. Past this, play on regardless; the member catches up async.
+      const release = window.setTimeout(() => {
+        // Don't out-run our OWN load: if we're the member still buffering, keep
+        // holding (our buffering=true will keep the gate closed for the room).
+        if (lastBufferingSentRef.current === true) return;
+        if (wasPlayingBeforeGateRef.current && pausedRef.current) {
+          applyingRemoteAtRef.current = Date.now();
+          desktop.play().catch(() => {});
+        }
+      }, 45000);
+      return () => window.clearTimeout(release);
+    }
+    if (wasPlayingBeforeGateRef.current && pausedRef.current) {
       applyingRemoteAtRef.current = Date.now();
       desktop.play().catch(() => {});
     }
@@ -643,6 +712,8 @@ export function useWatchPartyMpv({
     announceEpisode,
     announceSubs,
     announceSource,
+    requestHostStream,
+    declineHostStream,
     partyWaiting,
     sendBuffering,
     transferHost,

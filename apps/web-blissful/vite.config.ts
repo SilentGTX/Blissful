@@ -9,8 +9,9 @@ import { VitePWA } from 'vite-plugin-pwa'
 // applies to `vite` dev, so this is inert in production builds.) Prod storage
 // CORS-blocks localhost, hence the same-origin proxy; storageBaseUrl.ts routes
 // `/storage` through it. To target a LOCAL backend instead, set VITE_STORAGE_URL
-// / VITE_STORAGE_WS_URL. `/addon-proxy` has its own middleware below; `/stremio`
-// stays on strem.io (the Facebook account-link helper).
+// / VITE_STORAGE_WS_URL. `/addon-proxy` has a middleware below that forwards
+// non-local URLs to the prod proxy (Videasy Origin-spoofing etc.), so playback
+// matches prod; `/stremio` stays on strem.io (the Facebook account-link helper).
 const PROD_BACKEND = 'https://blissful.budinoff.com'
 const PROD_ROUTES = [
   '/storage', '/rd-by-hash', '/rd-fallback', '/transcode', '/imdb-rating',
@@ -174,7 +175,16 @@ export default defineConfig({
             const hasRange = !!req.headers.range;
             if (hasRange) fetchHeaders['Range'] = req.headers.range as string;
 
-            const upstream = await fetch(target.toString(), { headers: fetchHeaders });
+            // Route non-local hosts through the PROD /addon-proxy so its
+            // Origin-spoofing (Videasy CDNs 403 without it), HLS rewriting and
+            // empty-response handling apply in dev too — dev then plays exactly
+            // like prod. Loopback (local-addon stremio-service) stays direct,
+            // since prod can't reach the user's 127.0.0.1.
+            const qs = (req.url || '').split('?')[1] || '';
+            const fetchUrl = localHosts.has(target.hostname)
+              ? target.toString()
+              : `https://blissful.budinoff.com/addon-proxy?${qs}`;
+            const upstream = await fetch(fetchUrl, { headers: fetchHeaders });
             if (!upstream.ok && upstream.status !== 206 && isAddonReq) {
               emptyAddonResponse();
               return;

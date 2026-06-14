@@ -27,7 +27,7 @@ import { useImdbRating } from '../lib/useImdbRating';
 import { fetchTmdbId, type TmdbLookup } from '../lib/tmdb';
 import { ResumeOrStartOverModal } from '../components/ResumeOrStartOverModal';
 import { UnreleasedEpisodeModal } from '../components/UnreleasedEpisodeModal';
-import { type ReleaseOption } from '../components/ReleasesPicker';
+import { type BananaOption } from '../components/BananasPicker';
 import { fetchFallbackReleases } from '../lib/fallbackReleases';
 import { getResumeSeconds } from '../layout/app-shell/utils';
 import { isNativeShell } from '../lib/desktop';
@@ -84,6 +84,21 @@ export default function DetailPage() {
     return getLastStreamSelection({ authKey, type, id, videoId: vid });
   }, [authKey, id, selectedVideoId, type, isSeriesLike]);
 
+  // The last-played release as a ready-to-pin "Progress Banana" with a resume
+  // link. Lets the streams panel show what you were watching even when the
+  // current per-episode results don't include that exact release (e.g. a
+  // season pack), mirroring the in-player picker.
+  const lastPlayedPin = useMemo(() => {
+    if (!lastStream?.url || !type || !id) return null;
+    const params = new URLSearchParams({ url: lastStream.url, type, id });
+    if (isSeriesLike && selectedVideoId) params.set('videoId', selectedVideoId);
+    return {
+      url: lastStream.url,
+      title: lastStream.title ?? null,
+      playerLink: `/player?${params.toString()}`,
+    };
+  }, [lastStream, type, id, isSeriesLike, selectedVideoId]);
+
   const [isTrailerOpen, setIsTrailerOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
   // progress is used via the streams model's deepLinks.
@@ -91,7 +106,7 @@ export default function DetailPage() {
   // Series: streams should only appear after explicit episode selection.
   const enableStreams = !isSeriesLike || selectedVideoId !== null;
 
-  const { meta, metaLoading, streamsByAddon, streamsLoading } = useMetaDetails({
+  const { meta, metaLoading, streamsByAddon, streamsLoading, streamsTotal } = useMetaDetails({
     type,
     id,
     streamVideoId: selectedVideoId,
@@ -177,13 +192,17 @@ export default function DetailPage() {
   // Web-only: filter to the single best release that direct-plays in
   // Chrome (H.264 video + non-EAC3 audio per title hints). Falls back
   // to unfiltered if no title matches.
-  const webInstantOnly = true;
+  // Web wants ONE instantly browser-playable (H.264/AAC) stream; the desktop
+  // shell plays raw torrents in mpv, so show the FULL list there instead.
+  const webInstantOnly = !isNativeShell();
 
   const streamsViewDesktop = useMemo(
     () =>
       buildStreamsView(streamsByAddon, {
         selectedAddon,
-        onlyTorrentioRdResolve,
+        // Desktop shell (mpv) plays raw torrents — don't filter to RD-resolve
+        // browser-playable streams; show every release like the player's drawer.
+        onlyTorrentioRdResolve: isNativeShell() ? false : onlyTorrentioRdResolve,
         streamSortKey,
         lastStreamUrl: lastStream?.url ?? null,
         webInstantOnly,
@@ -295,6 +314,15 @@ export default function DetailPage() {
     if (selectedAddon === 'ALL') return true;
     return !streamsByAddon[selectedAddon];
   }, [selectedAddon, streamsByAddon, streamsLoading]);
+
+  // How many stream addons haven't reported back yet — drives the panel's
+  // "N addons still loading" bar so results can show progressively instead of
+  // waiting for the slowest addon.
+  const streamsPending = useMemo(() => {
+    if (!streamsLoading) return 0;
+    if (selectedAddon !== 'ALL') return streamsByAddon[selectedAddon] ? 0 : 1;
+    return Math.max(0, streamsTotal - Object.keys(streamsByAddon).length);
+  }, [streamsLoading, selectedAddon, streamsByAddon, streamsTotal]);
 
   const handleSelectAddon = useCallback(
     (key: string) => {
@@ -471,7 +499,7 @@ export default function DetailPage() {
   // modal opens, fetch the house RD fallback releases: null = checking,
   // [] = none, [...] = available → the modal lists them under "Play with
   // RealDebrid" and picking one plays it directly.
-  const [unreleasedRdStreams, setUnreleasedRdStreams] = useState<ReleaseOption[] | null>(null);
+  const [unreleasedRdStreams, setUnreleasedRdStreams] = useState<BananaOption[] | null>(null);
   useEffect(() => {
     const vid = unreleasedEpisode?.videoId;
     if (!vid) {
@@ -710,7 +738,11 @@ export default function DetailPage() {
     // Web series: force the panel to stay on the episode-list view so
     // users never see the stream picker — episode click goes straight
     // to /player (Vidking).
-    rightMode: isSeriesLike ? ('episodes' as const) : rightMode,
+    // On WEB, series lock to the episode list (clicking an episode goes to
+    // Vidking, never a torrent list). In the desktop shell mpv needs a torrent,
+    // so let the hook's rightMode flow: episode list -> pick episode -> its
+    // torrents -> back. (Movies use the hook's 'streams' on both.)
+    rightMode: isSeriesLike && !isNativeShell() ? ('episodes' as const) : rightMode,
     selectedVideoId,
     selectedEpisodeLabel,
     nextEpisode,
@@ -741,11 +773,13 @@ export default function DetailPage() {
     allVideos: videos,
     tmdbId: tmdbLookup?.tmdbId ?? null,
     onSelectEpisode:
-      isSeriesLike
+      isSeriesLike && !isNativeShell()
         ? (vid: string) => {
-            // Web series: set the selected episode AND immediately
-            // navigate to /player (Vidking iframe). The user never
-            // sees an intermediate stream picker.
+            // WEB series: set the selected episode AND immediately navigate to
+            // /player (Vidking iframe) — the user never sees a stream picker.
+            // The desktop shell falls through to onSelectEpisode instead, which
+            // selects the episode and shows its torrent list (mpv can't play
+            // Vidking), so picking an episode no longer pops the resume modal.
             setSelectedVideoId(vid);
             handlePlayWithVidking(vid);
           }
@@ -766,6 +800,8 @@ export default function DetailPage() {
     metaPoster: meta?.meta?.poster ?? null,
     onNavigate: handleNavigateToPlayer,
     onOpenExternalPrompt: openExternalPrompt,
+    lastPlayed: lastPlayedPin,
+    streamsPending,
   } as const;
 
   // Hide the mobile stream picker entirely for movies on web (Play
@@ -773,6 +809,13 @@ export default function DetailPage() {
   // hosts the episode list — but its rightMode is locked to 'episodes'
   // so the stream view never appears.
   const hideMobileStreamPicker = !isSeriesLike;
+  // The desktop streams aside is the ONLY play path for movies in the desktop
+  // shell — the "Play with Vidking" button is web-only (!isNativeShell()), so
+  // without this a movie there has no Play button AND no picker (unplayable).
+  // Show the aside for series always, and for movies/tv/channels in the native
+  // shell; web movies still use the Play button instead of the picker.
+  const showDesktopStreamsAside =
+    isSeriesLike || (isNativeShell() && (type === 'movie' || type === 'tv' || type === 'channel'));
   const TorrentsContent = (
     <div className="block px-4 pb-6 lg:hidden">
       {!hideMobileStreamPicker && (isSeriesLike || type === 'movie' || type === 'tv' || type === 'channel') ? (
@@ -988,7 +1031,7 @@ export default function DetailPage() {
           {/* Desktop sidebar - fixed position on right. Hidden on web
               for movies (Play button replaces it). Series keep the
               aside for episode selection. */}
-          {!hideMobileStreamPicker && (isSeriesLike || type === 'movie' || type === 'tv' || type === 'channel') ? (
+          {showDesktopStreamsAside ? (
             /* Panel sits inset from the viewport edges so it visually
                lines up with the back button (top-5) and the action
                buttons row (bottom matches via inset). Width scales

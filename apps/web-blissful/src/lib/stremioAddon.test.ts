@@ -7,6 +7,7 @@
 // the user's machine) can reach the user's own stremio-server.
 
 import { describe, expect, it } from 'vitest';
+import { stripTorrentioDebrid } from './stremioAddon';
 
 // `normalizeAddonBaseUrl` isn't currently exported. The tests cover
 // it via the only other public entrypoint that exposes the result —
@@ -104,5 +105,50 @@ describe('normalizeAddonBaseUrl', () => {
 
   it('trims whitespace before normalising', () => {
     expect(normalizeAddonBaseUrl('  https://example.com/  ')).toBe('https://example.com');
+  });
+});
+
+describe('stripTorrentioDebrid', () => {
+  it('strips a sole realdebrid token down to plain Torrentio', () => {
+    expect(stripTorrentioDebrid('https://torrentio.strem.fun/realdebrid=ABC123/manifest.json')).toBe(
+      'https://torrentio.strem.fun/manifest.json',
+    );
+  });
+
+  it('keeps other config options, dropping only the debrid token', () => {
+    expect(
+      stripTorrentioDebrid('https://torrentio.strem.fun/sort=qualitysize|realdebrid=ABC123/manifest.json'),
+    ).toBe('https://torrentio.strem.fun/sort=qualitysize/manifest.json');
+  });
+
+  it('handles an encoded pipe separator', () => {
+    expect(
+      stripTorrentioDebrid('https://torrentio.strem.fun/sort=qualitysize%7Crealdebrid=ABC/manifest.json'),
+    ).toBe('https://torrentio.strem.fun/sort=qualitysize/manifest.json');
+  });
+
+  it('strips other debrid providers too', () => {
+    expect(stripTorrentioDebrid('https://torrentio.strem.fun/alldebrid=XYZ/manifest.json')).toBe(
+      'https://torrentio.strem.fun/manifest.json',
+    );
+  });
+
+  it('leaves a keyless Torrentio unchanged', () => {
+    expect(stripTorrentioDebrid('https://torrentio.strem.fun/manifest.json')).toBe(
+      'https://torrentio.strem.fun/manifest.json',
+    );
+    expect(stripTorrentioDebrid('https://torrentio.strem.fun/sort=qualitysize/manifest.json')).toBe(
+      'https://torrentio.strem.fun/sort=qualitysize/manifest.json',
+    );
+  });
+
+  it('leaves non-Torrentio addons untouched', () => {
+    expect(stripTorrentioDebrid('https://v3-cinemeta.strem.io/manifest.json')).toBe(
+      'https://v3-cinemeta.strem.io/manifest.json',
+    );
+    // even one that happens to carry a realdebrid= option on a different host
+    expect(stripTorrentioDebrid('https://comet.example.com/realdebrid=ABC/manifest.json')).toBe(
+      'https://comet.example.com/realdebrid=ABC/manifest.json',
+    );
   });
 });

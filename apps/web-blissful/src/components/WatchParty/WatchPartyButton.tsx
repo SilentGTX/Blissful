@@ -59,6 +59,7 @@ export function WatchPartyButton({
       <button
         type="button"
         onClick={onClick}
+        data-testid="wp-room-pill"
         className="pointer-events-auto relative flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-2 text-sm font-semibold text-white backdrop-blur shadow-[0_8px_24px_-6px_rgba(0,0,0,0.55)] hover:bg-white/15"
         aria-label={`Watch party — ${list.length} participant${list.length === 1 ? '' : 's'}${unread > 0 ? `, ${unread} unread message${unread === 1 ? '' : 's'}` : ''}`}
       >
@@ -108,6 +109,7 @@ export function WatchPartyButton({
       type="button"
       onClick={onClick}
       disabled={busy}
+      data-testid="wp-open-drawer"
       className="pointer-events-auto flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-2 text-sm font-semibold text-white backdrop-blur shadow-[0_8px_24px_-6px_rgba(0,0,0,0.55)] hover:bg-white/15 disabled:opacity-50"
       aria-label="Watch party"
     >

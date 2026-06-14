@@ -8,3 +8,4 @@ export { WatchPartyDrawer } from './WatchPartyDrawer';
 export { WatchPartyJoinModal } from './WatchPartyJoinModal';
 export { WatchPartyNamePrompt } from './WatchPartyNamePrompt';
 export { WatchPartyPasswordPrompt } from './WatchPartyPasswordPrompt';
+export { WatchPartyShareConsent } from './WatchPartyShareConsent';

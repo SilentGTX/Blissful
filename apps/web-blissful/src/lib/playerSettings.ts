@@ -41,10 +41,20 @@ export type PlayerSettings = {
    *  addon and filters out non-RD Torrentio results. Get a key at
    *  https://real-debrid.com/apitoken */
   realDebridApiKey?: string;
+  /** Watch Party v2 Layer B: when a guest asks the desktop host to relay its
+   *  stream, the host gets a Share/Decline prompt. true = ALWAYS share without
+   *  asking (set via the prompt's "always share" checkbox). Default = ask.
+   *  Renamed from the legacy `autoShareHostStream` (old default `true` pre-dated
+   *  the consent prompt) so a stale stored value can't silently auto-share. */
+  alwaysShareHostStream?: boolean;
 };
 
 export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
-  subtitlesLanguage: null,
+  // English by default so subtitles auto-load out of the box. mpv's `slang`
+  // and the addon-subtitle auto-select both key off this; an empty/null value
+  // means "no preference" → nothing auto-loads (audio already defaults to
+  // English via mpv `alang`). Users can still pick "None" to disable.
+  subtitlesLanguage: 'eng',
   subtitlesSizePx: 28,
   subtitlesTextColor: 'rgba(255, 255, 255, 1)',
   subtitlesBackgroundColor: 'rgba(0, 0, 0, 0)',
@@ -68,6 +78,7 @@ export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
   favoriteQuality: null,
   accentColor: '#95a2ff',
   realDebridApiKey: '',
+  alwaysShareHostStream: false,
 };
 
 export const STREAMING_CACHE_SIZE_OPTIONS: Array<{

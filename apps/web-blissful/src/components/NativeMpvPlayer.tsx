@@ -40,6 +40,7 @@ import {
   WatchPartyDrawer,
   WatchPartyNamePrompt,
   WatchPartyPasswordPrompt,
+  WatchPartyShareConsent,
 } from './WatchParty';
 import type { WatchPartyDrawerTab } from './WatchParty/WatchPartyDrawer';
 import { BufferingOverlay } from './NativeMpvPlayer/BufferingOverlay';
@@ -238,6 +239,28 @@ function scoreSubtitleTrack(t: AddonSubtitleTrack): number {
   if (t.url.endsWith('.vtt')) s += 10;
   if (t.url.endsWith('.srt')) s += 5;
   return s;
+}
+
+// Watch Party v2 Layer B: build the LOCAL stremio-service HLS index path for the
+// currently-playing source, so the shell can relay it to web guests. stremio-
+// service's /hlsv2 transcodes a `mediaURL` into seekable HLS.
+//
+// VERIFY-ON-DEVICE: the exact /hlsv2 contract (required codec params + the
+// session-id form) hasn't been exercised end-to-end yet — confirm it against the
+// running stremio-service (127.0.0.1:11470) on a real host. It's isolated here on
+// purpose: a wrong value degrades safely (the relay 404s → the guest keeps its
+// RD/Vidking fallback) and the fix ships via a web deploy, not a shell rebuild.
+function localStremioHlsPath(playingUrl: string): string {
+  const qs = new URLSearchParams({
+    mediaURL: playingUrl,
+    // Keep the host's native resolution (up to 4K). The desktop host IS the single
+    // transcoder for the room (it replaces the Mac's one-transcode-fan-out): it
+    // transcodes the source ONCE to H.264 and the relay fans it out to guests.
+    // Browsers can't decode HEVC, so the codec is re-encoded regardless; Chrome
+    // plays 4K H.264 fine. /hlsv2 honors `maxWidth`; without it stremio caps at 1080p.
+    maxWidth: '3840',
+  });
+  return `hlsv2/blissful-party/master.m3u8?${qs.toString()}`;
 }
 
 interface NativeMpvPlayerProps {
@@ -940,6 +963,80 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     [navigate]
   );
 
+  // Layer B (desktop HOST): a guest asked us to relay our exact stream. Only the
+  // desktop shell can relay (it owns the local stremio-service HLS + the outbound
+  // tunnel). The host EXPLICITLY consents (Share/Decline prompt) since it costs
+  // CPU + upload — unless `alwaysShareHostStream` is on (always-allow shortcut).
+  // The ref breaks the definition cycle (the callback is passed into the hook it
+  // calls back into).
+  const watchPartyRef = useRef<ReturnType<typeof useWatchPartyMpv> | null>(null);
+  const [hostStreamRequest, setHostStreamRequest] = useState<{ userId: string; displayName: string } | null>(null);
+  // True while we (the desktop host) have an active outbound relay tunnel — so we
+  // tear it down when the content changes / on unmount instead of leaking it.
+  const relayActiveRef = useRef(false);
+
+  const clearRequest = useCallback((userId: string) => {
+    setHostStreamRequest((cur) => (cur && cur.userId === userId ? null : cur));
+  }, []);
+
+  const declineHostStreamReq = useCallback((userId: string) => {
+    watchPartyRef.current?.declineHostStream(userId);
+    clearRequest(userId);
+  }, [clearRequest]);
+
+  // Accept: start the local relay and announce a `relay` source the room swaps to.
+  // `startPartyRelay` rejects on shells without the tunnel yet (pre-B3) — handled
+  // as a decline so the guest keeps its own fallback.
+  const shareHostStream = useCallback(
+    (from: { userId: string; displayName: string }) => {
+      const wp = watchPartyRef.current;
+      const room = props.roomCode;
+      clearRequest(from.userId);
+      if (!wp || !room) return;
+      void (async () => {
+        try {
+          notifyInfo('Watch party', `Sharing your stream with ${from.displayName}`);
+          const { relayUrl } = await desktop.startPartyRelay(room, localStremioHlsPath(props.url));
+          wp.announceSource({ kind: 'relay', url: relayUrl });
+          relayActiveRef.current = true;
+        } catch {
+          notifyError('Could not share stream', 'Update the desktop app to relay your stream to guests.');
+          wp.declineHostStream(from.userId);
+        }
+      })();
+    },
+    [props.roomCode, props.url, clearRequest]
+  );
+
+  const handleHostStreamRequest = useCallback(
+    (from: { userId: string; displayName: string }) => {
+      const wp = watchPartyRef.current;
+      if (!wp) return;
+      if (!props.roomCode) {
+        wp.declineHostStream(from.userId);
+        return;
+      }
+      if (props.playerSettings.alwaysShareHostStream === true) {
+        shareHostStream(from); // always-allow shortcut
+      } else {
+        setHostStreamRequest(from); // ask the host
+      }
+    },
+    [props.roomCode, props.playerSettings.alwaysShareHostStream, shareHostStream]
+  );
+
+  // Tear down our relay tunnel when the content changes (new episode / stream) or
+  // on unmount — otherwise the orphaned tunnel + local HLS transcode job leak and
+  // a guest could keep pulling the old content. Re-share starts a fresh relay.
+  useEffect(() => {
+    return () => {
+      if (relayActiveRef.current) {
+        desktop.stopPartyRelay().catch(() => {});
+        relayActiveRef.current = false;
+      }
+    };
+  }, [props.videoId, props.url]);
+
   // Gate: only connect when room info loaded, password supplied if
   // needed, and display name chosen.
   const partyShouldConnect =
@@ -957,8 +1054,10 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     onHostEpisodeChange: handleHostEpisodeChange,
     onHostSubsChange: handleHostSubsChange,
     onHostSourceChange: handleHostSourceChange,
+    onHostStreamRequest: handleHostStreamRequest,
     pausedRef: wpPausedRef,
   });
+  watchPartyRef.current = watchParty;
 
   // Party guests mirror the host — hide the Releases + Audio pickers so they
   // can't drift onto a different torrent/track. Subtitles stay: the host
@@ -3413,6 +3512,22 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
           roomCode={props.roomCode!}
           onSubmit={handlePasswordSubmit}
           onCancel={handlePasswordCancel}
+        />
+      ) : null}
+
+      {/* Watch party host-stream consent -- a guest asked us to relay our stream. */}
+      {hostStreamRequest ? (
+        <WatchPartyShareConsent
+          from={hostStreamRequest}
+          onShare={(always) => {
+            if (always) {
+              const next = { ...props.playerSettings, alwaysShareHostStream: true };
+              try { writeStoredPlayerSettings(next); } catch { /* ignore */ }
+              void props.savePlayerSettings(next).catch(() => {});
+            }
+            shareHostStream(hostStreamRequest);
+          }}
+          onDecline={() => declineHostStreamReq(hostStreamRequest.userId)}
         />
       ) : null}
 

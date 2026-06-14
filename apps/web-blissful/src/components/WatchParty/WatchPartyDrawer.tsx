@@ -70,6 +70,10 @@ export type WatchPartyDrawerProps = {
   onLeave: () => void;
   /** Host-only: transfer host status to a participant. */
   onTransferHost: (targetUserId: string) => void;
+  /** Layer B (guest): ask the host to relay its exact stream so we watch the
+   *  same file frame-aligned (Vidking guests drift; this fixes it). Undefined →
+   *  the button is hidden (e.g. shown only to guests, never the host). */
+  onRequestHostStream?: () => void;
 
   // ---- Create flow (no-room → Open Room tab) -----------------------------
   /** Whether the user *can* create a room — false when there's no auth
@@ -357,6 +361,7 @@ function OpenRoomView({ canCreate, creatingRoom, onCreateRoom }: OpenRoomViewPro
         type="button"
         onClick={handleSubmit}
         disabled={!canCreate || creatingRoom || (mode === 'password' && !password.trim())}
+        data-testid="wp-create-submit"
         className="mt-auto rounded-full bg-white px-4 py-3 text-sm font-semibold text-black disabled:opacity-50"
       >
         {creatingRoom ? 'Starting…' : mode === 'password' ? 'Create password room' : 'Create public room'}
@@ -462,12 +467,14 @@ function JoinRoomView({ onNavigateToRoom }: JoinRoomViewProps) {
           autoComplete="off"
           autoCapitalize="off"
           spellCheck={false}
+          data-testid="wp-join-code"
           className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-center font-mono text-2xl tracking-[0.35em] uppercase text-white placeholder:text-white/30 focus:border-[var(--bliss-accent)] focus:outline-none"
         />
         {error ? <div className="text-xs text-red-400">{error}</div> : null}
         <button
           type="submit"
           disabled={busy || !isValidRoomCode(code)}
+          data-testid="wp-join-continue"
           className="mt-auto rounded-full bg-white px-4 py-3 text-sm font-semibold text-black disabled:opacity-50"
         >
           {busy ? 'Looking up…' : 'Continue'}
@@ -570,7 +577,15 @@ function ActiveRoomView(props: WatchPartyDrawerProps) {
     error,
     onLeave,
     onTransferHost,
+    onRequestHostStream,
   } = props;
+  // Layer B: transient "asked the host" state for the request button.
+  const [hostStreamAsked, setHostStreamAsked] = useState(false);
+  useEffect(() => {
+    if (!hostStreamAsked) return;
+    const id = window.setTimeout(() => setHostStreamAsked(false), 8000);
+    return () => window.clearTimeout(id);
+  }, [hostStreamAsked]);
   const { friends, outgoing, sendRequest } = useFriends();
   const friendUserIds = useMemo(() => {
     const set = new Set<string>();
@@ -627,12 +642,14 @@ function ActiveRoomView(props: WatchPartyDrawerProps) {
     // Invite link points to /invite/<code> — a short, readable URL
     // that opens a landing page (poster, title, episode, Continue).
     // The Continue click is the user gesture autoplay needs.
-    // Invite links are for sharing EXTERNALLY, so they must point at the public
-    // host — never a dev localhost or the desktop shell's loopback port. In
-    // prod `window.location.origin` already IS the public host; in dev it's
-    // 127.0.0.1:<port>, which nobody else can reach (and the shell's loopback
-    // can't upgrade the watch-party WebSocket). Fall back to the canonical host.
-    const inviteOrigin = import.meta.env.DEV ? 'https://blissful.budinoff.com' : window.location.origin;
+    // Invite-link host. Prod: window.location.origin already IS the public host.
+    // Dev: point at the dev WEB server (localhost:<vite port>) so a copied link
+    // opens YOUR dev guest — not prod, and not the desktop shell's loopback port
+    // (5175, which can't upgrade the watch-party WebSocket). Same-machine dev
+    // testing only; for sharing to another device use the code, or prod.
+    const inviteOrigin = import.meta.env.DEV
+      ? `http://localhost:${import.meta.env.VITE_DEV_PORT || 5173}`
+      : window.location.origin;
     const text =
       kind === 'code'
         ? roomCode.toUpperCase()
@@ -944,7 +961,7 @@ function ActiveRoomView(props: WatchPartyDrawerProps) {
         <div className="border-t border-white/5 bg-white/[0.03] px-4 py-3">
           <div className="flex items-baseline justify-between">
             <div className="text-[11px] uppercase tracking-[0.18em] text-white/45">Room code</div>
-            <div className="text-[11px] text-white/55">
+            <div className="text-[11px] text-white/55" data-testid="wp-connection-status">
               {error
                 ? <span className="text-red-400">{error}</span>
                 : connected
@@ -953,7 +970,7 @@ function ActiveRoomView(props: WatchPartyDrawerProps) {
             </div>
           </div>
           <div className="mt-1 flex items-center gap-2 font-mono text-2xl font-bold uppercase tracking-widest text-[var(--bliss-accent)]">
-            <span>{roomCode}</span>
+            <span data-testid="wp-room-code">{roomCode}</span>
             {hasPassword ? (
               <span className="text-base text-white/70" title="Password protected" aria-label="Password protected">🔒</span>
             ) : null}
@@ -974,9 +991,24 @@ function ActiveRoomView(props: WatchPartyDrawerProps) {
               {copied === 'link' ? 'Copied!' : 'Copy link'}
             </button>
           </div>
+          {!isViewerHost && onRequestHostStream ? (
+            <button
+              type="button"
+              onClick={() => {
+                onRequestHostStream();
+                setHostStreamAsked(true);
+              }}
+              disabled={!connected || hostStreamAsked}
+              title="Watch the host's exact stream, frame-aligned (best sync). The host has to approve."
+              className="mt-3 w-full rounded-full border border-[var(--bliss-accent)]/30 bg-[var(--bliss-accent)]/15 px-3 py-1.5 text-xs font-semibold text-[var(--bliss-accent)] hover:bg-[var(--bliss-accent)]/25 disabled:opacity-50"
+            >
+              {hostStreamAsked ? 'Asked host — waiting…' : "Ask for host's stream"}
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={onLeave}
+            data-testid="wp-leave"
             className="mt-3 w-full rounded-full border border-red-400/30 bg-red-500/15 px-3 py-1.5 text-xs font-semibold text-red-200 hover:bg-red-500/25"
           >
             Leave party

@@ -40,6 +40,12 @@ export type UseWatchPartyOptions = {
    *  provided, the hook surfaces `error: 'password required'` and
    *  stops reconnecting. */
   password?: string | null;
+  /** Drift-correction tolerance in seconds — the guest re-seeks when it strays
+   *  more than this from the host's tick. Defaults to a tight 0.35s. A LIVE
+   *  relay transcode (Layer B) restarts the encoder on every seek, so a tight
+   *  tolerance thrashes it into permanent buffering; pass a wide value (~10s)
+   *  there so the guest plays sequentially and only snaps for big gaps. */
+  driftToleranceS?: number;
   /** Callback fired on guests when the host changes the current episode. */
   onHostEpisodeChange?: (videoId: string | null) => void;
   /** Callback fired on guests when the host's Real-Debrid fallback URL changes
@@ -53,6 +59,13 @@ export type UseWatchPartyOptions = {
    *  `source` (Watch Party v2 same-file sync) so the guest can resolve the
    *  SAME file its own way. Also fired on join with the room's current value. */
   onHostSourceChange?: (source: WatchPartySource) => void;
+  /** Layer B — fired on the HOST when a guest asks for the host's stream to be
+   *  relayed. The host shows a consent prompt; on accept it starts the relay and
+   *  announces a `relay` source, on decline it calls `declineHostStream`. */
+  onHostStreamRequest?: (from: { userId: string; displayName: string }) => void;
+  /** Layer B — fired on the requesting GUEST when the host declined, so it keeps
+   *  its own fallback (Vidking / RD) and can surface a brief notice. */
+  onHostStreamDeclined?: () => void;
 };
 
 /** Reactions per chat message. messageKey → emoji → array of
@@ -100,6 +113,10 @@ export type UseWatchPartyResult = {
   /** The last error's machine code (e.g. 'no-room', 'password-incorrect') so
    *  callers can react precisely without string-matching the message. */
   errorCode: string | null;
+  /** The host's most recent broadcast playback time (seconds), or null before
+   *  the first tick — lets a relay swap seed its start position from the host's
+   *  authoritative spot instead of the guest's (possibly desynced) one. */
+  getHostTime: () => number | null;
   sendChat: (text: string) => void;
   /** Toggle the current user's reaction with `emoji` on the given
    *  message. Optimistically updates local state + broadcasts. */
@@ -126,6 +143,11 @@ export type UseWatchPartyResult = {
   /** Host-only: announce the room's content `source` so guests land on the same
    *  file (Watch Party v2). Pass null when no shareable source is resolved. */
   announceSource: (source: WatchPartySource) => void;
+  /** Layer B (guest): ask the desktop host to relay its exact stream. The host
+   *  gets a consent prompt; on accept it announces a `relay` source we swap to. */
+  requestHostStream: () => void;
+  /** Layer B (host): decline a specific guest's host-stream request. */
+  declineHostStream: (targetUserId: string) => void;
   /** "Buffer until everybody loads" gate — true while any member is buffering. */
   partyWaiting: boolean;
   /** Report our own buffering state into the gate. */
@@ -146,6 +168,10 @@ const TICK_DRIFT_TOLERANCE_S = 0.35;
 // corrections) without flooding the wire — payload is ~50 bytes.
 const TICK_INTERVAL_MS = 500;
 const RECONNECT_DELAY_MS = 2000;
+// Safety valve: never hold the readiness gate longer than this. A member that
+// wedges (stays connected but never clears buffering) would otherwise freeze the
+// whole party indefinitely. Mirrors the desktop hook so web + desktop match.
+const GATE_MAX_HOLD_MS = 45000;
 
 export function useWatchParty({
   videoRef,
@@ -154,11 +180,20 @@ export function useWatchParty({
   guestId,
   displayName,
   password,
+  driftToleranceS,
   onHostEpisodeChange,
   onHostStreamChange,
   onHostSubsChange,
   onHostSourceChange,
+  onHostStreamRequest,
+  onHostStreamDeclined,
 }: UseWatchPartyOptions): UseWatchPartyResult {
+  // Live value mirrored into a ref so the stable applyHostTick callback reads
+  // the current tolerance (wide for a relay, tight otherwise) without redefining.
+  const driftToleranceRef = useRef(driftToleranceS ?? TICK_DRIFT_TOLERANCE_S);
+  driftToleranceRef.current = driftToleranceS ?? TICK_DRIFT_TOLERANCE_S;
+  // Host's most recent broadcast playback time — surfaced via getHostTime().
+  const lastHostTimeRef = useRef<number | null>(null);
   const [connected, setConnected] = useState(false);
   const [hostUserId, setHostUserId] = useState<string | null>(null);
   const [selfUserId, setSelfUserId] = useState<string | null>(null);
@@ -184,6 +219,10 @@ export function useWatchParty({
   // re-broadcast, preventing an echo loop now that every participant
   // can fire events.
   const applyingRemoteAtRef = useRef(0);
+  // Server-stamped `sentAt` of the newest tick/event whose play-state we've
+  // committed. Lets us drop OUT-OF-ORDER messages (a stale tick that predates a
+  // fresh pause event would otherwise un-pause us — the tick-vs-event bounce).
+  const lastAppliedSentAtRef = useRef(0);
   // Stamp when *we* broadcast a local play/pause action. The host's
   // periodic tick can race ahead of our pause (it was scheduled before
   // the host saw our event), and applying that stale tick would
@@ -206,6 +245,10 @@ export function useWatchParty({
   onHostSubsChangeRef.current = onHostSubsChange;
   const onHostSourceChangeRef = useRef(onHostSourceChange);
   onHostSourceChangeRef.current = onHostSourceChange;
+  const onHostStreamRequestRef = useRef(onHostStreamRequest);
+  onHostStreamRequestRef.current = onHostStreamRequest;
+  const onHostStreamDeclinedRef = useRef(onHostStreamDeclined);
+  onHostStreamDeclinedRef.current = onHostStreamDeclined;
 
   const pushActivity = useCallback((item: WatchPartyActivity) => {
     setActivity((prev) => [...prev.slice(-19), item]);
@@ -321,6 +364,17 @@ export function useWatchParty({
     [send]
   );
 
+  const requestHostStream = useCallback(() => {
+    send({ t: 'party:request-host-stream' });
+  }, [send]);
+
+  const declineHostStream = useCallback(
+    (targetUserId: string) => {
+      send({ t: 'party:decline-host-stream', targetUserId });
+    },
+    [send]
+  );
+
   const transferHost = useCallback(
     (targetUserId: string) => {
       send({ t: 'host:transfer', targetUserId });
@@ -359,9 +413,12 @@ export function useWatchParty({
   // shift `currentTime` forward by the network latency on play/seek so
   // the guest doesn't start the next frame X ms behind the host.
   const applyHostEvent = useCallback(
-    (kind: 'play' | 'pause' | 'seek', currentTime: number, latencyMs: number) => {
+    (kind: 'play' | 'pause' | 'seek', currentTime: number, latencyMs: number, sentAt = 0) => {
       const video = videoRef.current;
       if (!video) return;
+      // Drop a stale (out-of-order) event so it can't undo a newer one.
+      if (sentAt && sentAt < lastAppliedSentAtRef.current) return;
+      if (sentAt) lastAppliedSentAtRef.current = sentAt;
       // Stamp BEFORE mutating so the resulting DOM event sees the
       // marker and skips its broadcast (echo prevention now that
       // every participant — not just the host — can broadcast).
@@ -389,9 +446,17 @@ export function useWatchParty({
   // tolerance, otherwise normal playback continues uninterrupted (no
   // micro-snaps every 500ms).
   const applyHostTick = useCallback(
-    (currentTime: number, isPlaying: boolean, latencyMs: number) => {
+    (currentTime: number, isPlaying: boolean, latencyMs: number, sentAt = 0) => {
       const video = videoRef.current;
       if (!video) return;
+      // Drop an out-of-order tick (one that predates a newer applied event/tick)
+      // so a stale isPlaying=true can't bounce a fresh pause back to playing.
+      if (sentAt && sentAt < lastAppliedSentAtRef.current) return;
+      if (sentAt) lastAppliedSentAtRef.current = sentAt;
+      // Remember the host's latest position so a relay swap can seed its start
+      // time from the host's authoritative spot (not the guest's, which may be
+      // mid-seek / desynced).
+      lastHostTimeRef.current = currentTime;
       // Stale-tick guard for ALL of the tick (drift + play/pause).
       // When the local user just performed an action (play / pause /
       // seek), there's a ~500ms window where the host is still
@@ -421,7 +486,7 @@ export function useWatchParty({
       // Only stamp when we actually mutate the video below.
       const expected = isPlaying ? currentTime + latencyMs / 1000 : currentTime;
       const drift = Math.abs(video.currentTime - expected);
-      if (drift > TICK_DRIFT_TOLERANCE_S) {
+      if (drift > driftToleranceRef.current) {
         applyingRemoteAtRef.current = Date.now();
         try {
           video.currentTime = expected;
@@ -517,7 +582,8 @@ export function useWatchParty({
             applyHostTick(
               msg.lastTick.currentTime,
               msg.lastTick.isPlaying,
-              Date.now() - msg.lastTick.at
+              Date.now() - msg.lastTick.at,
+              msg.lastTick.at
             );
           }
           // Late joiner: if the host is already on an RD fallback, load that same
@@ -575,7 +641,7 @@ export function useWatchParty({
             });
           }
         } else if (msg.t === 'tick') {
-          applyHostTick(msg.currentTime, msg.isPlaying, Date.now() - msg.sentAt);
+          applyHostTick(msg.currentTime, msg.isPlaying, Date.now() - msg.sentAt, msg.sentAt);
         } else if (msg.t === 'event') {
           // Apply to our own video (server already excluded us from
           // the broadcast, but defensive: skip if attribution says
@@ -590,7 +656,7 @@ export function useWatchParty({
             const isHost = !!(selfIdRef.current && selfIdRef.current === hostIdRef.current);
             const settling = isHost && Date.now() - connectedAtRef.current < 3000;
             if (!settling) {
-              applyHostEvent(msg.kind, msg.currentTime, Date.now() - msg.sentAt);
+              applyHostEvent(msg.kind, msg.currentTime, Date.now() - msg.sentAt, msg.sentAt);
             }
           }
           pushActivity({
@@ -619,6 +685,13 @@ export function useWatchParty({
           // Host announced/changed the room's content source — guests resolve
           // the same file (WP v2 same-file sync).
           onHostSourceChangeRef.current?.(msg.source);
+        } else if (msg.t === 'party:host-stream-request') {
+          // Layer B: a guest wants this host to relay its stream — surface the
+          // consent prompt (host side only).
+          onHostStreamRequestRef.current?.(msg.from);
+        } else if (msg.t === 'party:host-stream-declined') {
+          // Layer B: the host declined our request — keep our own fallback.
+          onHostStreamDeclinedRef.current?.();
         } else if (msg.t === 'gate') {
           // Buffer-until-everybody-loads gate flipped.
           setPartyWaiting(msg.waiting);
@@ -735,6 +808,14 @@ export function useWatchParty({
       if (Date.now() - applyingRemoteAtRef.current < 600) return;
       const isHost = !!(selfIdRef.current && selfIdRef.current === hostIdRef.current);
       if (!isHost && Date.now() - connectedAtRef.current < 2000) return;
+      // Don't announce "play" while still buffering. Autoplay (and recovery)
+      // fire `play` before the video can actually render — most visibly on a
+      // relay's slow seek-transcode start, which can take tens of seconds. A
+      // premature "X resumed" tells the room X is watching while X stares at a
+      // black buffering screen, and it keeps the readiness gate from holding the
+      // host (who then races ahead). Wait until we can truly play through; the
+      // gate drives the synchronized resume.
+      if (kind === 'play' && video.readyState < video.HAVE_FUTURE_DATA) return;
       lastLocalActionAtRef.current = Date.now();
       send({ t: 'event', kind, currentTime: video.currentTime });
     };
@@ -781,6 +862,19 @@ export function useWatchParty({
         applyingRemoteAtRef.current = Date.now();
         video.pause();
       }
+      // Safety valve: a member that wedges (stays connected but never clears
+      // buffering) would otherwise freeze the party forever. After the max hold,
+      // resume — but only if WE aren't the one still buffering (don't out-run our
+      // own load). Mirrors the desktop hook.
+      const timer = window.setTimeout(() => {
+        const v = videoRef.current;
+        if (lastBufferingSentRef.current === true) return;
+        if (wasPlayingBeforeGateRef.current && v && v.paused) {
+          applyingRemoteAtRef.current = Date.now();
+          v.play().catch(() => {});
+        }
+      }, GATE_MAX_HOLD_MS);
+      return () => window.clearTimeout(timer);
     } else if (wasPlayingBeforeGateRef.current && video.paused) {
       applyingRemoteAtRef.current = Date.now();
       video.play().catch(() => {});
@@ -849,6 +943,7 @@ export function useWatchParty({
     reactions,
     error,
     errorCode,
+    getHostTime: () => lastHostTimeRef.current,
     sendChat,
     sendTyping,
     broadcastSeek,
@@ -857,6 +952,8 @@ export function useWatchParty({
     announceStream,
     announceSubs,
     announceSource,
+    requestHostStream,
+    declineHostStream,
     partyWaiting,
     sendBuffering,
     transferHost,

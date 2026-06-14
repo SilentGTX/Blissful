@@ -67,6 +67,10 @@ export function useMetaDetails(params: {
 
   const [streamsByAddon, setStreamsByAddon] = useState<StreamsByAddon>({});
   const [streamsLoading, setStreamsLoading] = useState(false);
+  // Number of stream-capable addons being queried this round. The streams panel
+  // derives "N addons still loading" from this minus the keys already in
+  // `streamsByAddon`, so it can show results progressively (Stremio-style).
+  const [streamsTotal, setStreamsTotal] = useState(0);
 
   const metaBaseCandidates = useMemo(() => {
     const bases: string[] = [];
@@ -167,6 +171,7 @@ export function useMetaDetails(params: {
     if (!streamId) {
       setStreamsByAddon({});
       setStreamsLoading(false);
+      setStreamsTotal(0);
       return;
     }
 
@@ -174,6 +179,7 @@ export function useMetaDetails(params: {
     let cancelled = false;
     setStreamsLoading(true);
     setStreamsByAddon({});
+    setStreamsTotal(0);
 
     const run = async () => {
       const selectedVideo =
@@ -208,6 +214,7 @@ export function useMetaDetails(params: {
       const streamAddons = addons.filter((addon) =>
         supportsResource(addon, 'stream', type as MediaType, streamId)
       );
+      if (!cancelled) setStreamsTotal(streamAddons.length);
 
       await Promise.all(
         streamAddons.map(async (addon) => {
@@ -258,5 +265,6 @@ export function useMetaDetails(params: {
     metaLoading,
     streamsByAddon,
     streamsLoading,
+    streamsTotal,
   };
 }

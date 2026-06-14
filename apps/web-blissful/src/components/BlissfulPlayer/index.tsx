@@ -35,7 +35,7 @@ import type {
   HlsAudioTrack,
   NativeAudioTrackList,
 } from '../../lib/playerAudioTracks';
-import { notifyError, notifySuccess } from '../../lib/toastQueues';
+import { notifyError, notifyInfo, notifySuccess } from '../../lib/toastQueues';
 import { useStorage } from '../../context/StorageProvider';
 import { PauseOverlay } from './PauseOverlay';
 import { UpNextOverlay } from './UpNextOverlay';
@@ -794,6 +794,23 @@ export default function BlissfulPlayer(props: {
           if (cur === resolved.url) return; // already on it
           params.set('url', resolved.url);
           if (resolved.rdsel) params.set('rdsel', '1');
+          // Layer B relay: stremio-service transcodes from t=0, but we're already
+          // time-synced to the host — start the relay at our CURRENT position so
+          // we join where the host actually is (e.g. minute 8) instead of
+          // replaying from 0:00. Starting at 0 strands the readiness gate on a
+          // multi-minute catch-up and freezes the host behind the buffering veil.
+          // Drift-correct fine-tunes from there. Live relay only — full-VOD
+          // torrent/rd sources are seekable so the normal time-sync handles them.
+          if (source?.kind === 'relay') {
+            // Seed from the HOST's authoritative position — the guest may be
+            // mid-seek or briefly desynced, which would land the relay at the
+            // wrong spot and force a costly re-seek of the live transcode.
+            // Fall back to our own currentTime if no host tick yet.
+            const hostT = watchPartyRef.current?.getHostTime?.() ?? null;
+            const pos = Math.floor(hostT ?? videoRef.current?.currentTime ?? 0);
+            if (pos > 5) params.set('t', String(pos));
+            else params.delete('t');
+          }
           params.delete('autoplay');
           navigate(`/player?${params.toString()}`, { replace: true });
         } else if (params.get('rdsel') === '1') {
@@ -834,6 +851,20 @@ export default function BlissfulPlayer(props: {
     && (!roomInfo.hasPassword || !!partyPassword)
     && !!watchPartyDisplayName;
 
+  // Layer B: hold a ref to the live hook so the request/decline callbacks (which
+  // are passed INTO the hook) can call back into it without a definition cycle.
+  const watchPartyRef = useRef<ReturnType<typeof useWatchParty> | null>(null);
+  // Layer B (host side, WEB): a web host can't relay — it has no local
+  // stremio-service HLS or outbound tunnel (that's the desktop shell's job). So
+  // decline; the guest keeps its own fallback (Vidking / RD).
+  const handleHostStreamRequest = useCallback((from: { userId: string; displayName: string }) => {
+    watchPartyRef.current?.declineHostStream(from.userId);
+  }, []);
+  // Layer B (guest side): the host declined our request — stay on our source.
+  const handleHostStreamDeclined = useCallback(() => {
+    notifyInfo('Watch party', 'Host kept their stream private — staying on your own source.');
+  }, []);
+
   const watchParty = useWatchParty({
     videoRef,
     roomCode: partyShouldConnect ? props.roomCode ?? null : null,
@@ -841,11 +872,19 @@ export default function BlissfulPlayer(props: {
     guestId: props.authKey ? null : guestId,
     displayName: watchPartyDisplayName ?? '',
     password: partyPassword,
+    // Layer B relay: it's a LIVE transcode — every drift seek restarts the
+    // encoder and re-buffers, so tight 0.35s correction thrashes it into a
+    // permanent buffering loop. Widen the tolerance so the guest plays the
+    // relay sequentially and only snaps for big (buffer-induced) gaps.
+    driftToleranceS: props.url.includes('/party-relay') ? 10 : undefined,
     onHostEpisodeChange: handleHostEpisodeChange,
     onHostStreamChange: handleHostStreamChange,
     onHostSubsChange: handleHostSubsChange,
     onHostSourceChange: handleHostSourceChange,
+    onHostStreamRequest: handleHostStreamRequest,
+    onHostStreamDeclined: handleHostStreamDeclined,
   });
+  watchPartyRef.current = watchParty;
 
   // If the cached password is wrong, the hook surfaces an error and
   // stops reconnecting. Clear the stale cache so we re-prompt.
@@ -2381,8 +2420,15 @@ export default function BlissfulPlayer(props: {
     // it's available, even where native HLS exists. Falls back to
     // native only on iOS versions that have neither MSE nor
     // ManagedMediaSource (i.e. pre-iOS 17.1 in Safari).
+    // `/party-relay` (watch-party Layer B host relay) and any direct
+    // stremio-service `/hlsv2` stream are split-rendition fMP4 masters
+    // (separate video0/audio0, no CODECS attr) that the browser's NATIVE
+    // HLS player can't assemble — it picks one rendition, fails to append,
+    // and dies with MEDIA_ERR code 4. hls.js handles them (it derives codecs
+    // from the init segments), so force it just like the other proxied HLS.
     const isProxiedHls =
-      isHls && (src.includes('/addon-proxy') || src.includes('/hls-master') || src.includes('/transcode'));
+      isHls && (src.includes('/addon-proxy') || src.includes('/hls-master') || src.includes('/transcode')
+        || src.includes('/party-relay') || src.includes('/hlsv2/'));
     const shouldUseHlsJs =
       isHls && Hls.isSupported() && (!hasNativeHls || isProxiedHls);
     playerLog(
@@ -2417,9 +2463,20 @@ export default function BlissfulPlayer(props: {
       // for video), so every minute we'd hit a QuotaExceededError +
       // eviction-during-append, another race-condition trigger. Tuning
       // down to a single-VOD-friendly 90 s ahead / 90 s back.
+      // Layer B relay: start hls.js DIRECTLY at the host's position so its FIRST
+      // segment fetch is the seek target — not segment1. Fetching segment1 first
+      // anchors stremio's live transcode at 0:00; the later currentTime seek then
+      // fights it (you see it hit the host's spot, then fall back to playing from
+      // the start — segments 1,428,429,6,7,8…). startPosition makes the transcode
+      // begin where the host actually is. Non-relay sources keep -1 (auto).
+      const relayStartPosition =
+        src.includes('/party-relay') && props.startTimeSeconds && props.startTimeSeconds > 0
+          ? props.startTimeSeconds
+          : -1;
       const hls = new Hls({
         debug: false,
         enableWorker: true,
+        startPosition: relayStartPosition,
         lowLatencyMode: false,
         // Lets hls.js pick ManagedMediaSource on iOS 17.1+ — the
         // route that makes Videasy streams playable on iPhone /
@@ -2454,6 +2511,9 @@ export default function BlissfulPlayer(props: {
         },
       });
       hlsRef.current = hls;
+      // Watch-party relay: count manifest reloads triggered by transient tunnel
+      // 404s so a genuinely dead relay can't loop forever (reset on success).
+      let relayReloadCount = 0;
 
         const selectAudioTrack = (trackIndex: number) => {
           if (!Number.isFinite(trackIndex) || trackIndex < 0) return;
@@ -2485,6 +2545,7 @@ export default function BlissfulPlayer(props: {
         };
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        relayReloadCount = 0;
         updateTracks();
         playWithAutoplayFallback(video);
       });
@@ -2577,6 +2638,29 @@ export default function BlissfulPlayer(props: {
           if (hlsRef.current === hls) hlsRef.current = null;
           setSettingsTab('releases');
           setSettingsOpen(true);
+          return;
+        }
+        // Watch-party relay: the host's tunnel can briefly drop (reconnect /
+        // idle), so a playlist fetch may 404 for ~2s. hls.js marks a manifest /
+        // level load error fatal, and `startLoad()` can't re-fetch a manifest it
+        // never parsed — so the guest sticks on a black buffering screen. Reload
+        // the source after a short delay (the tunnel reconnects) instead of
+        // giving up; cap attempts so a genuinely dead relay falls through to the
+        // normal teardown/fallback.
+        if (
+          src.includes('/party-relay')
+          && relayReloadCount < 10
+          && (data.details === 'manifestLoadError'
+            || data.details === 'manifestLoadTimeOut'
+            || data.details === 'manifestParsingError'
+            || data.details === 'levelLoadError'
+            || data.details === 'levelLoadTimeOut')
+        ) {
+          relayReloadCount += 1;
+          playerLog(`[player] relay manifest err (${data.details}) — reload in 3s #${relayReloadCount}`);
+          window.setTimeout(() => {
+            try { hls.loadSource(src); hls.startLoad(); } catch { /* torn down */ }
+          }, 3000);
           return;
         }
         // Try to recover from media/network errors like Stremio does
@@ -3683,6 +3767,7 @@ export default function BlissfulPlayer(props: {
         error={watchParty.error}
         onLeave={handleLeaveParty}
         onTransferHost={watchParty.transferHost}
+        onRequestHostStream={watchParty.requestHostStream}
         canCreate={!!props.id && !!props.type}
         creatingRoom={creatingRoom}
         onCreateRoom={(pw) => createParty(pw)}

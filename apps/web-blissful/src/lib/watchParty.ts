@@ -103,6 +103,13 @@ export type WatchPartyClientMessage =
   /** v2: host announces the platform-neutral content identity so guests load
    *  the SAME file across platforms (supersedes `host:stream`). */
   | { t: 'host:source'; source: WatchPartySource }
+  /** Layer B: a guest asks the (desktop) host to relay its exact stream. Server
+   *  stamps `from` and routes to the host only. Acceptance is just the host
+   *  announcing a `relay` source (host:source) — guests swap to it. */
+  | { t: 'party:request-host-stream' }
+  /** Layer B: the host declines a specific guest's request; server routes the
+   *  rejection to that guest so it keeps its own fallback. */
+  | { t: 'party:decline-host-stream'; targetUserId: string }
   | { t: 'host:transfer'; targetUserId: string }
   /** Anyone in the room can broadcast a discrete play/pause/seek —
    *  the server stamps `from` on the relay so clients can attribute
@@ -139,6 +146,10 @@ export type WatchPartyServerMessage =
   | { t: 'subs'; lang: string | null }
   /** v2 relay of the host's content identity — guests resolve the same file. */
   | { t: 'source'; source: WatchPartySource }
+  /** Layer B: delivered to the HOST — a guest wants the host's stream relayed. */
+  | { t: 'party:host-stream-request'; from: { userId: string; displayName: string } }
+  /** Layer B: delivered to the requesting GUEST — the host declined the request. */
+  | { t: 'party:host-stream-declined' }
   /** The "buffer until everybody loads" gate: true = at least one member is
    *  still buffering, so everyone should hold; false = all ready, resume. */
   | { t: 'gate'; waiting: boolean }
@@ -314,11 +325,14 @@ const GUEST_ID_STORAGE_KEY = 'bliss:watchParty:guestId';
 const GUEST_NAME_STORAGE_KEY = 'bliss:watchParty:guestName';
 
 function generateGuestId(): string {
-  // 18 random alpha-num chars — long enough to be globally unique in
-  // practice, short enough to read in server logs.
+  // 18 random alpha-num chars from a CSPRNG — long enough to be globally unique
+  // in practice, short enough to read in server logs. crypto avoids the weak,
+  // predictable Math.random sequence (a guess lets you collide a participant slot).
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  const buf = new Uint32Array(18);
+  crypto.getRandomValues(buf);
   let out = '';
-  for (let i = 0; i < 18; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  for (let i = 0; i < 18; i++) out += chars[buf[i] % chars.length];
   return out;
 }
 

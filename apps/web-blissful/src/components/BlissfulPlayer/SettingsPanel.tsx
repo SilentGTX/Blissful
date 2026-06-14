@@ -17,7 +17,7 @@ import { BlissTabs } from '../base';
 import { useState, type MutableRefObject } from 'react';
 import { StremioIcon, type StremioIconName } from '../PlayerControlIcons';
 import { PLAYER_SERVERS } from '../../lib/playerServers';
-import { ReleasesPicker } from '../ReleasesPicker';
+import { BananasPicker } from '../BananasPicker';
 import {
   type SubtitleTrack,
   isEmbeddedOrigin,
@@ -718,7 +718,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
                     sorted by seeders/√size, grouped by resolution — mirrors
                     the detail-page stream list. */}
                 {tab === 'releases' ? (
-                  <ReleasesPicker
+                  <BananasPicker
                     releases={releases ?? []}
                     selectedReleaseUrl={selectedReleaseUrl}
                     onSelectRelease={onSelectRelease}

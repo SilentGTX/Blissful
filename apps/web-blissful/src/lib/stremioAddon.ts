@@ -138,6 +138,35 @@ setInterval(() => {
   }
 }, STALE_SWEEP_INTERVAL_MS);
 
+// Torrentio config options for a debrid service. Torrentio bakes the
+// debrid token straight into the addon URL (`…/realdebrid=<key>/manifest.json`,
+// options `|`-joined), so the key travels with the URL.
+const TORRENTIO_DEBRID_OPT_RE =
+  /^(?:real-?debrid|alldebrid|premiumize|debrid-?link|offcloud|torbox|easydebrid|putio|debrid)=/i;
+
+/**
+ * Return a Torrentio addon URL with any debrid token stripped (other config
+ * options preserved). Non-Torrentio URLs and Torrentio URLs without a debrid
+ * option are returned unchanged.
+ *
+ * Real-Debrid is a **per-profile** concern, governed by each profile's own
+ * `playerSettings.realDebridApiKey` (see `useAddonsManager`). This keeps it
+ * that way at the URL level: the cross-profile Torrentio clone-sync must never
+ * carry one profile's RD key onto another, and a profile WITHOUT its own key
+ * must never display an RD Torrentio that leaked into its stored addons.
+ */
+export function stripTorrentioDebrid(url: string): string {
+  const m = url.match(/^(https?:\/\/[^/]*torrentio\.strem\.fun)\/(.+)\/manifest\.json(\?.*)?$/i);
+  if (!m) return url;
+  const [, base, config, query = ''] = m;
+  const kept = config
+    .split(/\||%7C/i)
+    .filter((opt) => opt && !TORRENTIO_DEBRID_OPT_RE.test(opt.trim()));
+  return kept.length > 0
+    ? `${base}/${kept.join('|')}/manifest.json${query}`
+    : `${base}/manifest.json${query}`;
+}
+
 export function normalizeAddonBaseUrl(baseUrl: string): string {
   let next = baseUrl.trim();
 
