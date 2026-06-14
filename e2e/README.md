@@ -61,12 +61,15 @@ e2e/
 - **Watch-party protocol** (`watch-party.protocol`, 15 tests, no browser): Layer A
   source relay (all kinds) + sanitize + snapshot + episode-clear + guards + tick +
   presence; Layer B request/decline. Live against the deployed backend.
+- **Desktop shell** (`shell-*.desktop`): renderer-crash recovery, relay
+  software-transcode (the GPU-crash fix — libx264 / native 4K), and leftover-stremio
+  terminate+respawn.
 - The `/test` runner (`e2e/run.mjs`): changed files → relevant suites.
 
 **Roadmap (incremental):**
-1. Migrate the rest of `scripts/e2e/*.mjs`: the watch-party **behavioral** 2-client
-   sync + **host-relay**, and the `verify-software-transcode` / `-leftover-replace`
-   shell tests (`shell-*.desktop`). (renderer-recovery + the protocol suite are done.)
+1. Migrate the last 2 `scripts/e2e/*.mjs`: the watch-party **behavioral** 2-client
+   sync (web host + desktop guest) + the real **host-relay**. (renderer-recovery,
+   software-transcode, leftover-replace, and the protocol suite are done.)
 2. Remaining features: detail + streams, home + browse, addons, auth + library, social.
 3. `android` fixture (adb + CDP) and `player.android`.
 4. Richer player fixtures to lift the `test.fixme` scenarios (subtitles, audio
