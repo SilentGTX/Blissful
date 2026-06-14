@@ -27,6 +27,26 @@ const AREAS = {
     paths: [/desktop-blissful\/src\/(webview|streaming_server|host_relay|ipc)/],
     filter: 'shell-', // shell-recovery.desktop, etc.
   },
+  detail: {
+    paths: [/DetailPage/, /DetailStreamsPanel/, /features\/detail/, /BananasPicker/, /MetaPanel/, /EpisodePanel/, /SeasonHeader/, /StreamFilters/, /detail\/streams/],
+    filter: 'detail.',
+  },
+  'home-browse': {
+    paths: [/HomePage/, /NowPopular/, /MediaRail/, /MediaCard/, /DiscoverPage/, /SearchPage/, /top-nav/, /useSearchMenu/],
+    filter: 'home.',
+  },
+  addons: {
+    paths: [/AddonsPage/, /useAddonsManager/, /AddAddonModal/, /AddonsProvider/],
+    filter: 'addons.',
+  },
+  'auth-library': {
+    paths: [/BlissfulAuthProvider/, /LoginModal/, /LibraryPage/, /blissfulAuthApi/, /useLibraryState/, /useContinueWatching/],
+    filter: 'auth.',
+  },
+  social: {
+    paths: [/Friends\//, /useSocial/, /usePresence/, /PartyInviteListener/, /friendsApi/],
+    filter: 'social.',
+  },
 };
 
 const argv = process.argv.slice(2);

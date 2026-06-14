@@ -65,15 +65,22 @@ e2e/
 - **Desktop shell** (`shell-*.desktop`): renderer-crash recovery, relay
   software-transcode (the GPU-crash fix — libx264 / native 4K), and leftover-stremio
   terminate+respawn.
+- **Feature pages (web)**: `detail` (meta + episode list + Play), `home` (hero +
+  rails + search + discover), `addons` (page + add-modal), `auth` (login form +
+  register toggle + logged-out library), `social` (logged-out gating). Structure
+  assertions on live data; auth-gated / second-user / real-content scenarios are
+  `test.fixme` (tracked, not dropped).
 - The `/test` runner (`e2e/run.mjs`): changed files → relevant suites.
 
 **Roadmap (incremental):**
 1. ✅ All legacy `scripts/e2e/*.mjs` harnesses migrated (player, watch-party
    behavioral + protocol + host-relay, the shell `verify-*` trio).
-2. New feature suites: detail + streams, home + browse, addons, auth + library, social.
+2. ✅ Feature suites: detail+streams, home+browse, addons, auth+library, social
+   (structure; auth-gated / second-user / live-content scenarios are `test.fixme`).
 3. `android` fixture (adb + CDP) and `player.android`.
-4. Richer player fixtures to lift the `test.fixme` scenarios (subtitles, audio
-   tracks, quality, buffering, resume).
+4. Lift the `test.fixme` with richer fixtures + creds/second-user setup: player
+   subtitles/audio/quality/buffering/resume; real login + library content;
+   friends/presence/party-invites; addon install/uninstall (stubbed backend).
 
 ## Gotchas baked into the fixtures (learned the hard way)
 
