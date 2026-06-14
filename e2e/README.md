@@ -89,11 +89,13 @@ e2e/
    an adb-keyevent + screencap harness.
 4. ✅ Auth-gated features tested for REAL via throwaway Blissful accounts (login,
    logged-in library, two-account friend flow + presence lookup, addon
-   install/uninstall) + ✅ player resume + ✅ android boot smoke. The remaining
-   `test.fixme` are genuinely narrow:
-   - player audio-tracks / quality / subtitles / buffering → need multi-audio / HLS /
-     subbed / throttled media (Playwright's Chromium also has no H.264/HLS codec);
-   - social online/activity indicator + party-invite pills → need a live authed
+   install/uninstall) + ✅ player resume + ✅ player audio-tracks + subtitles
+   (`player-tracks.desktop`, generated 2-audio/1-sub MKV) + ✅ player buffering
+   (stalling server) + ✅ android boot smoke. Only 3 `test.fixme` remain, each with
+   a hard external blocker:
+   - player **quality** switch → a multi-variant HLS that hls.js + Playwright's
+     codec-free Chromium can decode (VP9 fMP4 — H.264/HLS is codec-blocked);
+   - social online/activity indicator + party-invite pills → a live authed
      `/ws/user` socket (UserSocketProvider), not REST;
    - deeper android (navigation/playback) → the real TV (emulator has no video
      decoder) + an adb-keyevent + screencap harness.
