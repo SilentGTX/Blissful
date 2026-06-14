@@ -45,18 +45,20 @@ e2e/
 
 ## Status
 
-**Foundation (done + green):** Playwright Test wired; `web` smoke + `desktop`
-renderer-recovery both pass — the shell-over-CDP fixture is proven.
+**Done + green:**
+- Foundation: Playwright Test wired; `web` smoke + `desktop` renderer-recovery
+  (shell-over-CDP fixture proven).
+- **Player** on both Playwright-drivable platforms: `player.web` (real `<video>`)
+  and `player.desktop` (mpv) — loads+plays, pause/resume, seek. The reference suite.
 
 **Roadmap (incremental):**
-1. Migrate the legacy `scripts/e2e/*.mjs` harnesses into suites/fixtures (watch-party
-   behavioral + protocol; the `verify-*` shell tests).
-2. **Player suite** (web → desktop → android) — first priority: playback start,
-   subtitles, audio tracks, seek, quality, buffering, resume.
+1. The `/test` runner skill — "changed files → run that feature's suites".
+2. Migrate the remaining `scripts/e2e/*.mjs` harnesses (watch-party behavioral +
+   protocol; the other `verify-*` shell tests) into suites.
 3. Remaining features: detail + streams, home + browse, addons, auth + library, social.
-4. `android` fixture (adb + CDP) and the Player android suite.
-5. A "run only suites relevant to changed files" mode (git diff → suite map) + a `/test`
-   skill, so a change auto-runs its scenarios.
+4. `android` fixture (adb + CDP) and `player.android`.
+5. Richer player fixtures to lift the `test.fixme` scenarios (subtitles, audio
+   tracks, quality, buffering, resume).
 
 ## Gotchas baked into the fixtures (learned the hard way)
 
@@ -66,5 +68,14 @@ renderer-recovery both pass — the shell-over-CDP fixture is proven.
 - Fixtures are transpiled to **CommonJS** — no `import.meta`; use `process.cwd()`.
 - After a renderer crash the prior `Page` stays "crashed" — reconnect **fresh** to probe
   for recovery, and don't `close()` a `connectOverCDP` browser (it disturbs the WebView).
-- For watch-party media use **WebM over local http** (Chromium has no H.264/AAC; the
-  player's DMCA fallback is https-only) and seed `localStorage` guestName.
+- For media use **WebM over local http** (`fixtures/media.ts` — Chromium has no H.264/AAC;
+  the player's DMCA fallback is https-only). `rdsel=1` plays a `url` directly (no Videasy /
+  fallback / stream picker).
+- The **desktop player is mpv, not `<video>`** — read playback state from `mpv-prop-change`
+  events (`window.blissfulDesktop.on('mpv-prop-change', ...)`; the shim supports multiple
+  listeners). `pause` only fires on CHANGE, so assert "playing" via `time-pos` advancing.
+  The player can sit paused on frame 0 in the harness (loadfile/play race) — nudge
+  `call('play')` until it advances.
+- Combine fixtures with `mergeTests(desktopTest, mediaTest)` (Playwright's fixture merge).
+- Run a single suite with the **filename filter FIRST**: `playwright test player.desktop
+  --project desktop` (a path after `--project` is parsed as a project name).
