@@ -3655,6 +3655,7 @@ export default function BlissfulPlayer(props: {
     <div ref={playerRootRef} className={props.compact ? 'group/mini absolute inset-0 bg-black' : 'fixed inset-0 z-50 bg-black'}>
       <video
         ref={videoRef}
+        data-testid="player-video"
         className="bliss-player-video h-full w-full bg-black"
         style={{
           objectFit: 'contain',

@@ -33,7 +33,12 @@ export default defineConfig({
     {
       name: 'web',
       testMatch: /.*\.web\.spec\.ts/,
-      use: { ...devices['Desktop Chrome'], baseURL: 'http://localhost:5173' },
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: 'http://localhost:5173',
+        // Player suites need autoplay without a user gesture.
+        launchOptions: { args: ['--autoplay-policy=no-user-gesture-required'] },
+      },
     },
     {
       name: 'desktop',
