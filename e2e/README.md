@@ -66,10 +66,13 @@ e2e/
   software-transcode (the GPU-crash fix — libx264 / native 4K), and leftover-stremio
   terminate+respawn.
 - **Feature pages (web)**: `detail` (meta + episode list + Play), `home` (hero +
-  rails + search + discover), `addons` (page + add-modal), `auth` (login form +
-  register toggle + logged-out library), `social` (logged-out gating). Structure
-  assertions on live data; auth-gated / second-user / real-content scenarios are
-  `test.fixme` (tracked, not dropped).
+  rails + search + discover), `addons` (page + add-modal + **real install/uninstall**),
+  `auth` (login/register form + logged-out CTA + **logged-in library**), `social`
+  (logged-out gating + **logged-in friends accordion**). Auth-gated features are
+  tested for REAL via throwaway **Blissful** accounts (`e2e/fixtures/auth.ts` —
+  Blissful's own auth, NOT Stremio).
+- **Social (real, two accounts)** `social.protocol`: friend request → accept →
+  both friends, + friend-gated presence lookup. Over the live backend, no mocks.
 - **Android TV** (`smoke.android`): the RN app boots on the emulator — its activity
   is foreground + the process is alive, over `adb` (no DOM/CDP). Auto-skips with no
   device. Playback (the emulator can't decode video) + deep UI (needs an adb-keyevent
@@ -84,12 +87,16 @@ e2e/
 3. ✅ `android` boot smoke (the RN app launches on the emulator over adb). Deeper
    android (navigation/playback) needs the REAL TV (emulator has no video decoder) +
    an adb-keyevent + screencap harness.
-4. The remaining `test.fixme` need EXTERNAL inputs, not framework work:
-   - real login + library content / friends / presence / party-invites → Stremio
-     credentials + a SECOND account (or route-stub for mock-only UI coverage);
-   - addon install/uninstall → a stubbed backend or an isolated test account;
-   - player audio-tracks / quality / subtitles / buffering → multi-audio / HLS /
-     subbed / throttled media (Chromium also has no H.264/HLS codec).
+4. ✅ Auth-gated features tested for REAL via throwaway Blissful accounts (login,
+   logged-in library, two-account friend flow + presence lookup, addon
+   install/uninstall) + ✅ player resume + ✅ android boot smoke. The remaining
+   `test.fixme` are genuinely narrow:
+   - player audio-tracks / quality / subtitles / buffering → need multi-audio / HLS /
+     subbed / throttled media (Playwright's Chromium also has no H.264/HLS codec);
+   - social online/activity indicator + party-invite pills → need a live authed
+     `/ws/user` socket (UserSocketProvider), not REST;
+   - deeper android (navigation/playback) → the real TV (emulator has no video
+     decoder) + an adb-keyevent + screencap harness.
 
 ## Gotchas baked into the fixtures (learned the hard way)
 
