@@ -61,7 +61,7 @@ export function MetaPanel({
   isLoading = false,
 }: MetaPanelProps) {
   return (
-    <div className="meta-preview-container-o22hc animation-fade-in">
+    <div data-testid="detail-meta-panel" className="meta-preview-container-o22hc animation-fade-in">
       <div className="meta-preview-ES0h3">
         <div className="meta-info-container-ub8AH">
           {/* Fixed-height logo slot sized to the (smaller) clamped

@@ -142,7 +142,7 @@ export function EpisodePanel({
 }: EpisodePanelProps) {
   return (
     <>
-      <div className={listContainerClassName}>
+      <div data-testid="detail-episode-list" className={listContainerClassName}>
         {videosForSeason.length === 0 ? emptyState : null}
         {/* Stacked 16:9 cards with text overlaid on the image — same
             visual language as the player's episode picker (poster fills

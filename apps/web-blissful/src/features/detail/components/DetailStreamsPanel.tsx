@@ -292,7 +292,7 @@ export function DetailStreamsPanel({
             showWebReadyToggle={isDesktop && !isNativeShell()}
           />
 
-          <div className={streamListOuterClassName}>
+          <div data-testid="detail-streams-list" className={streamListOuterClassName}>
             <div className={streamListScrollClassName}>
               {/* Show results progressively (Stremio-style): the picker renders
                   as soon as anything has arrived; a slow addon never blocks it.
