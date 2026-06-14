@@ -73,6 +73,11 @@ e2e/
   Blissful's own auth, NOT Stremio).
 - **Social (real, two accounts)** `social.protocol`: friend request → accept →
   both friends, + friend-gated presence lookup. Over the live backend, no mocks.
+- **Social over `/ws/user`** `social-ws.protocol`: two authed accounts on the
+  live push socket — the socket IS the online signal (online + activity flip
+  with it), and the party-invite request→accept handshake is pushed live (the
+  room code B receives over its socket is the room A created). + offline-friend
+  invite → 409. The WS layer the REST suite couldn't reach.
 - **Android TV** (`smoke.android`): the RN app boots on the emulator — its activity
   is foreground + the process is alive, over `adb` (no DOM/CDP). Auto-skips with no
   device. Playback (the emulator can't decode video) + deep UI (needs an adb-keyevent
@@ -91,12 +96,12 @@ e2e/
    logged-in library, two-account friend flow + presence lookup, addon
    install/uninstall) + ✅ player resume + ✅ player audio-tracks + subtitles
    (`player-tracks.desktop`, generated 2-audio/1-sub MKV) + ✅ player buffering
-   (stalling server) + ✅ android boot smoke. Only 3 `test.fixme` remain, each with
-   a hard external blocker:
+   (stalling server) + ✅ android boot smoke + ✅ the live `/ws/user` push layer
+   (`social-ws.protocol` — online/activity signal + party-invite request→accept
+   over two authed sockets). Only 2 `test.fixme` remain, each with a hard
+   external blocker:
    - player **quality** switch → a multi-variant HLS that hls.js + Playwright's
      codec-free Chromium can decode (VP9 fMP4 — H.264/HLS is codec-blocked);
-   - social online/activity indicator + party-invite pills → a live authed
-     `/ws/user` socket (UserSocketProvider), not REST;
    - deeper android (navigation/playback) → the real TV (emulator has no video
      decoder) + an adb-keyevent + screencap harness.
 

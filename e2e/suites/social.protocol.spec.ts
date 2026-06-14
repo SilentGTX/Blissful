@@ -47,6 +47,6 @@ test.describe('Social (real, two accounts)', () => {
     const rec = lookup.users.find((u) => u.userId === A.id);
     expect(rec, "B's friend-gated lookup should return a record for A").toBeTruthy();
     // NOTE: `online: true` + the live activity require an authed /ws/user socket
-    // (UserSocketProvider), not a REST heartbeat — that's a WS-layer test.
+    // (UserSocketProvider), not a REST heartbeat — covered in social-ws.protocol.spec.ts.
   });
 });
