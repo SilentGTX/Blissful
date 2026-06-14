@@ -174,6 +174,7 @@ export function FriendsAccordion({
       <div ref={chromeRef} className="flex shrink-0 flex-col">
         <button
           type="button"
+          data-testid="friends-accordion-toggle"
           onClick={() => setExpanded(!expanded)}
           className="flex w-full shrink-0 cursor-pointer items-center justify-between gap-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-foreground/50 hover:text-foreground/70"
           aria-expanded={expanded}
