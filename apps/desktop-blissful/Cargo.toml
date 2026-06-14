@@ -65,6 +65,13 @@ http-body-util = "0.1"
 # HTTP client for proxy + auto-updater (Phase 3 + 6).
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
 
+# Watch Party v2 Layer B — outbound WebSocket tunnel (host_relay.rs) to the Mac
+# relay. rustls roots to match reqwest (no OpenSSL). futures-util for the WS
+# Sink/Stream combinators; base64 to frame segment bytes over JSON text frames.
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+futures-util = "0.3"
+base64 = "0.22"
+
 # JSON for IPC protocol.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -84,6 +91,7 @@ windows = { version = "0.60", features = [
     "Win32_Graphics_Gdi",
     "Win32_System_Com",
     "Win32_System_LibraryLoader",
+    "Win32_System_Threading",
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_HiDpi",

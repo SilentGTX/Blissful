@@ -20,6 +20,7 @@ use std::path::PathBuf;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
+mod host_relay;
 mod ipc;
 mod main_window;
 mod player;

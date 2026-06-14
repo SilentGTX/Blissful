@@ -86,8 +86,34 @@ fn reap_dead_child() {
 pub fn ensure_started() -> Result<bool> {
     reap_dead_child();
     if is_alive() {
-        debug!("streaming server already alive on 127.0.0.1:11470 — reusing");
-        return Ok(true);
+        // Already listening on 11470. If WE spawned it this session it's running
+        // our current settings — reuse. If not, it's a leftover from a previous
+        // run (stremio-service can survive a hard crash of the shell) and may be
+        // running STALE settings — e.g. the pre-fix hardware/GPU transcode that
+        // overloaded the GPU. The live runtime never re-reads server-settings.json,
+        // so silently reusing it would defeat the software-transcode fix and the
+        // crash could recur. Terminate it ONLY if it's verifiably our own binary
+        // and respawn fresh; a foreign stremio (a running Stremio Desktop) is a
+        // different image path, so we leave it alone and reuse it as-is.
+        if SERVICE_CHILD.lock().unwrap().is_some() {
+            debug!("streaming server already alive (ours) — reusing");
+            return Ok(true);
+        }
+        let leftover_exe = ensure_extracted_and_locate_binary()
+            .context("locate binary for leftover-runtime check")?;
+        if terminate_leftover_runtime(&leftover_exe) {
+            // Wait for the port to free before we respawn (~5s budget).
+            for _ in 0..33 {
+                if !is_alive() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(150));
+            }
+            info!("replaced leftover stremio-runtime — respawning with current settings");
+        } else {
+            debug!("stremio on 11470 is not our binary (Stremio Desktop?) — reusing as-is");
+            return Ok(true);
+        }
     }
 
     let exe = ensure_extracted_and_locate_binary()
@@ -146,6 +172,12 @@ pub fn ensure_started() -> Result<bool> {
         .with_context(|| format!("spawn {}", exe.display()))?;
 
     let pid = child.id();
+    // Record the runtime PID next to its binary so a FUTURE session can find and
+    // terminate THIS process if it leaks past a hard crash. The reader verifies
+    // the image path before killing, so a recycled PID is never mistaken for ours.
+    if let Some(dir) = exe.parent() {
+        let _ = fs::write(dir.join("blissful-runtime.pid"), pid.to_string());
+    }
     {
         let mut guard = SERVICE_CHILD.lock().unwrap();
         *guard = Some(child);
@@ -170,6 +202,68 @@ pub fn kill_owned_process() {
             warn!(pid, error = ?e, "kill failed; process may already have exited");
         }
         let _ = child.wait();
+    }
+}
+
+/// Terminate a leftover stremio-runtime from a PREVIOUS session that is still
+/// holding port 11470 — but ONLY if the process at the recorded PID is actually
+/// our own stremio binary (image-path match). This lets a new launch respawn the
+/// runtime so the current `server-settings.json` (notably the software-transcode
+/// GPU-overload fix) takes effect, without the PID-reuse hazard of a blind kill
+/// and without ever touching a separately-installed Stremio Desktop's service.
+/// Returns true iff it terminated our leftover.
+fn terminate_leftover_runtime(exe: &Path) -> bool {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, TerminateProcess, PROCESS_NAME_WIN32,
+        PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
+    };
+
+    let pid_path = match exe.parent() {
+        Some(dir) => dir.join("blissful-runtime.pid"),
+        None => return false,
+    };
+    let pid: u32 = match fs::read_to_string(&pid_path)
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+    {
+        Some(p) if p != 0 => p,
+        _ => return false,
+    };
+    let want = exe.to_string_lossy().replace('/', "\\");
+
+    unsafe {
+        let handle = match OpenProcess(
+            PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION,
+            false,
+            pid,
+        ) {
+            Ok(h) => h,
+            // Process is gone (or no access) — nothing to reclaim.
+            Err(_) => return false,
+        };
+        let mut buf = [0u16; 1024];
+        let mut size = buf.len() as u32;
+        let mut killed = false;
+        if QueryFullProcessImageNameW(
+            handle,
+            PROCESS_NAME_WIN32,
+            windows::core::PWSTR(buf.as_mut_ptr()),
+            &mut size,
+        )
+        .is_ok()
+        {
+            let image = String::from_utf16_lossy(&buf[..size as usize]).replace('/', "\\");
+            if image.eq_ignore_ascii_case(&want) {
+                warn!(pid, image = %image, "terminating leftover stremio-runtime to apply current settings");
+                let _ = TerminateProcess(handle, 1);
+                killed = true;
+            } else {
+                debug!(pid, image = %image, "PID on 11470 is not our binary — leaving it running");
+            }
+        }
+        let _ = CloseHandle(handle);
+        killed
     }
 }
 
@@ -242,6 +336,21 @@ fn appdata_blissful() -> Result<PathBuf> {
 /// Desktop uses, %APPDATA%/stremio/stremio-server/). If Stremio Desktop is
 /// installed on the same machine it will overwrite our values when it
 /// runs; that's fine — we re-write before every Blissful runtime spawn.
+///
+/// TRANSCODE = SOFTWARE (the watch-party host-relay GPU-overload fix). The only
+/// thing the desktop transcodes is the Layer-B relay (the host's own playback
+/// goes straight to mpv — no stremio transcode). When a host shared a 4K HEVC
+/// stream, stremio hardware-decoded + nvenc-encoded it on the GPU **while mpv
+/// was already 4K-decoding the same file on the GPU** → GPU saturation → a TDR
+/// reset crashed the WebView2 renderer (and, pre-recovery-handler, the app).
+/// `transcodeHardwareAccel: false` moves the relay's decode+encode entirely to
+/// the CPU, so the GPU is mpv's alone — the host keeps perfect 4K playback and
+/// the relay stops contending. `transcodeMaxWidth: 3840` keeps the relay at
+/// native 4K (the whole point — the desktop transcodes once, like the Mac) and
+/// agrees with the relay's `maxWidth=3840` request (was 1920 → a silent cap).
+/// `transcodeHorsepower: 1.0` gives software encode the headroom to sustain 4K
+/// in real time; if the CPU still can't keep up the guest just buffers, which
+/// is graceful — far better than crashing the host.
 fn write_optimal_server_settings() -> Result<()> {
     let appdata = std::env::var("APPDATA").context("APPDATA env")?;
     let server_dir = PathBuf::from(&appdata).join("stremio").join("stremio-server");
@@ -262,14 +371,14 @@ fn write_optimal_server_settings() -> Result<()> {
     "btMinPeersForStable": 2,
     "remoteHttps": "",
     "localAddonEnabled": false,
-    "transcodeHorsepower": 0.75,
+    "transcodeHorsepower": 1.0,
     "transcodeMaxBitRate": 0,
     "transcodeConcurrency": 1,
     "transcodeTrackConcurrency": 1,
-    "transcodeHardwareAccel": true,
+    "transcodeHardwareAccel": false,
     "transcodeProfile": null,
-    "allTranscodeProfiles": ["nvenc-win", "amf"],
-    "transcodeMaxWidth": 1920,
+    "allTranscodeProfiles": [],
+    "transcodeMaxWidth": 3840,
     "proxyStreamsEnabled": false
 }}
 "#,

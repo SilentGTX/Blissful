@@ -88,8 +88,29 @@ impl WebView {
 
         let on_message_for_cb = Rc::clone(&on_message);
         let nav_outer = nav.clone();
-        let result = webview2::EnvironmentBuilder::new()
-            .with_user_data_folder(std::path::Path::new(&user_data_folder))
+        // E2E / dev only: optionally expose a CDP endpoint so an automated test
+        // harness (Playwright `connectOverCDP`) can drive this WebView. Gated on
+        // BOTH a debug build AND the BLISSFUL_REMOTE_DEBUG_PORT env var — release
+        // shells never open a debugging port (it would let any local process
+        // attach, pull the auth token out of the renderer, and drive the
+        // `blissfulDesktop` IPC bridge). The webview2 crate borrows the args as
+        // `&'a str` until `.build()`, so the owned string is bound here to
+        // outlive the builder chain.
+        let remote_debug_args: Option<String> = if cfg!(debug_assertions) {
+            std::env::var("BLISSFUL_REMOTE_DEBUG_PORT")
+                .ok()
+                .filter(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+                .map(|p| format!("--remote-debugging-port={p}"))
+        } else {
+            None
+        };
+        let mut builder = webview2::EnvironmentBuilder::new()
+            .with_user_data_folder(std::path::Path::new(&user_data_folder));
+        if let Some(args) = remote_debug_args.as_deref() {
+            info!(remote_debug = %args, "WebView2 remote debugging enabled (BLISSFUL_REMOTE_DEBUG_PORT)");
+            builder = builder.with_additional_browser_arguments(args);
+        }
+        let result = builder
             .build(move |env_res| {
                 let env = match env_res {
                     Ok(e) => e,
@@ -243,6 +264,42 @@ impl WebView {
                         }
                         if let Some(cb) = on_ready_for_nav.borrow_mut().take() {
                             cb();
+                        }
+                        Ok(())
+                    });
+
+                    // Renderer / GPU-process crash RECOVERY. WebView2's renderer
+                    // (or its GPU process) can die under heavy load — e.g. a 4K
+                    // HEVC relay transcode running alongside mpv's 4K decode + our
+                    // compositing tips the GPU over and the renderer crashes. With
+                    // no handler that's terminal: the window goes dead and the user
+                    // sees "the app crashed". Reload to bring the UI back instead.
+                    // A short guard prevents a reload-storm if it crashes on load.
+                    // Recover by NAVIGATING fresh to the configured UI origin — more
+                    // reliable than reload() after a renderer process exits, and the
+                    // blissfulDesktop bridge re-injects on the new document.
+                    let recovery_url = match &nav_for_inner {
+                        NavTarget::Url(u) => Some(u.clone()),
+                        NavTarget::InlineHtml => None,
+                    };
+                    let last_reload: Rc<RefCell<Option<std::time::Instant>>> =
+                        Rc::new(RefCell::new(None));
+                    let _ = webview.add_process_failed(move |w, _args| {
+                        let now = std::time::Instant::now();
+                        let mut lr = last_reload.borrow_mut();
+                        let recent = lr.map(|t| now.duration_since(t).as_secs() < 8).unwrap_or(false);
+                        if recent {
+                            error!("WebView2 process failed again within 8s — not recovering (avoid crash loop)");
+                            return Ok(());
+                        }
+                        *lr = Some(now);
+                        error!("WebView2 process failed (renderer/GPU crash) — recovering");
+                        let recovered = match &recovery_url {
+                            Some(u) => w.navigate(u).is_ok(),
+                            None => false,
+                        };
+                        if !recovered {
+                            let _ = w.reload();
                         }
                         Ok(())
                     });

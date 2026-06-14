@@ -167,6 +167,25 @@ pub fn dispatch(req: &Request) -> Response {
             }
         }
 
+        // ---- watch party relay (v2 Layer B — host relay) ----
+        "startPartyRelay" => {
+            // args: { room, hlsPath } — hlsPath is the LOCAL stremio-service HLS
+            // index path for the playing content (the renderer computes it).
+            let room = req.args.get("room").and_then(|v| v.as_str()).unwrap_or("");
+            let hls_path = req.args.get("hlsPath").and_then(|v| v.as_str()).unwrap_or("");
+            if room.is_empty() {
+                return Response::err(&req.id, "bad-args", "startPartyRelay needs { room }");
+            }
+            match crate::host_relay::start(room.to_string(), hls_path.to_string()) {
+                Ok(url) => Response::ok(&req.id, json!({ "relayUrl": url })),
+                Err(e) => Response::err(&req.id, "relay-error", e.to_string()),
+            }
+        }
+        "stopPartyRelay" => {
+            crate::host_relay::stop();
+            Response::ok(&req.id, json!(null))
+        }
+
         other => Response::err(&req.id, "unknown-command", format!("no handler for '{other}'")),
     }
 }
