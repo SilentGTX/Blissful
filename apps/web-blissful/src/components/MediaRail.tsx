@@ -96,7 +96,7 @@ export default function MediaRail({
   };
 
   return (
-    <section className={dimmed ? 'space-y-3 opacity-50' : 'space-y-3'}>
+    <section data-testid="media-rail" className={dimmed ? 'space-y-3 opacity-50' : 'space-y-3'}>
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <h2 className="text-lg font-semibold tracking-tight text-foreground/90">{title}</h2>

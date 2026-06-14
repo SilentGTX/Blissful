@@ -325,7 +325,7 @@ export default function DiscoverPage() {
               // we keep ~5 columns at 1920w (matches the old fixed
               // breakpoints) and get ~6-7 bigger cards at 4K instead
               // of shrinking each card down to nothing.
-              <div className="grid gap-5 p-1 [grid-template-columns:repeat(auto-fit,minmax(clamp(160px,16vw,420px),1fr))]">
+              <div data-testid="discover-grid" className="grid gap-5 p-1 [grid-template-columns:repeat(auto-fit,minmax(clamp(160px,16vw,420px),1fr))]">
                 {filteredItems.map((item) => (
                   <MediaCard
                     key={item.id}

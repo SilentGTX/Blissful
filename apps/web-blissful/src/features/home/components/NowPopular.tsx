@@ -100,7 +100,7 @@ export function NowPopular({
   );
 
   return (
-    <div className="@container solid-surface relative overflow-hidden rounded-[36px] bg-[#0f1115]/85">
+    <div data-testid="home-hero-card" className="@container solid-surface relative overflow-hidden rounded-[36px] bg-[#0f1115]/85">
       {/* Card grows with viewport at wide container widths, but at
           narrow card widths uses a flat min-height so chips+title+CTAs
           fit. Background image keeps `h-full w-full object-cover`,
