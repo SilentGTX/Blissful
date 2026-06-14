@@ -66,10 +66,20 @@ test.describe('Player (web)', () => {
       .toBeGreaterThan(6);
   });
 
-  // DEFERRED — need richer media fixtures (tracked so coverage gaps aren't silent):
-  // - subtitles: a WebM with an embedded/sidecar VTT + the subtitle picker.
-  // - audio tracks: a multi-audio source.
-  // - quality switch: HLS-only (this WebM is progressive).
-  // - buffering veil: a throttled/stalling server to force it deterministically.
-  test.fixme('subtitles / audio tracks / quality / buffering — need richer media fixtures', () => {});
+  test('shows the buffering overlay when the media stalls', async ({ page, stallingUrl }) => {
+    await page.goto(
+      `/player?${new URLSearchParams({ type: 'movie', id: 'tt1254207', url: stallingUrl, rdsel: '1', title: 'Buffering', logo: 'https://images.metahub.space/logo/medium/tt1254207/img' })}`,
+    );
+    // The media can't reach a playable state → the buffering overlay stays visible
+    // and the playhead never advances.
+    await expect(page.getByTestId('player-buffering')).toBeVisible({ timeout: 20_000 });
+    await page.waitForTimeout(3000);
+    const t = await page.evaluate(() => (document.querySelector('video') as HTMLVideoElement | null)?.currentTime ?? -1);
+    expect(t, 'a stalled video should not advance').toBeLessThan(0.5);
+  });
+
+  // DEFERRED — quality switching is HLS-variant-only (this WebM is progressive, and
+  // Chromium has no H.264). Audio-tracks + subtitles are covered on the desktop mpv
+  // player (player-tracks.desktop.spec.ts) with a generated multi-track file.
+  test.fixme('quality switch — needs a multi-variant HLS source', () => {});
 });

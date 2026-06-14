@@ -24,7 +24,7 @@ export function BufferingOverlay({ visible, logo }: BufferingOverlayProps) {
   if (!visible) return null;
   if (!logo) return null;
   return (
-    <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+    <div data-testid="player-buffering" className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
       <div className="bliss-buffering-panel">
         <img className="bliss-buffering-loader" src={proxiedImage(logo)} alt=" " />
       </div>

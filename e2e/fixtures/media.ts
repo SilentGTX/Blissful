@@ -81,6 +81,28 @@ function serveFile(file: string, contentType: string): http.Server {
   });
 }
 
+// Sends headers + a tiny slice (not enough to decode a frame), then NEVER ends —
+// so the <video> sits buffering. For the buffering-overlay test.
+function serveStalling(file: string): http.Server {
+  const size = fs.statSync(file).size;
+  const buf = fs.readFileSync(file);
+  return http.createServer((req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Content-Type', 'video/webm');
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      return res.end();
+    }
+    const m = /bytes=(\d+)-/.exec(req.headers.range || '');
+    const start = m ? parseInt(m[1], 10) : 0;
+    if (m) res.writeHead(206, { 'Content-Range': `bytes ${start}-${size - 1}/${size}`, 'Content-Length': String(size - start) });
+    else res.writeHead(200, { 'Content-Length': String(size) });
+    res.write(buf.subarray(start, Math.min(start + 1024, size)));
+    // intentionally no res.end() — hold the connection so the video keeps buffering.
+  });
+}
+
 async function listenServed(file: string, contentType: string, name: string): Promise<{ url: string; close: () => void }> {
   const server = serveFile(file, contentType);
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
@@ -88,13 +110,24 @@ async function listenServed(file: string, contentType: string, name: string): Pr
   return { url: `http://127.0.0.1:${port}/${name}`, close: () => server.close() };
 }
 
-export const test = base.extend<{ webmUrl: string; multitrackUrl: string | null }>({
+export const test = base.extend<{ webmUrl: string; multitrackUrl: string | null; stallingUrl: string }>({
   webmUrl: async ({}, use) => {
     const s = await listenServed(await ensureClip(), 'video/webm', 'clip.webm');
     try {
       await use(s.url);
     } finally {
       s.close();
+    }
+  },
+  stallingUrl: async ({}, use) => {
+    const server = serveStalling(await ensureClip());
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+    const port = (server.address() as AddressInfo).port;
+    try {
+      await use(`http://127.0.0.1:${port}/clip.webm`);
+    } finally {
+      (server as http.Server & { closeAllConnections?: () => void }).closeAllConnections?.();
+      server.close();
     }
   },
   multitrackUrl: async ({}, use) => {
