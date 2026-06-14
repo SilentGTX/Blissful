@@ -73,6 +73,10 @@ export type BottomControlsProps = {
   /** In RD fallback mode, whether there are alternative torrents to switch
    *  between — surfaces a "Releases" cloud icon in place of the Servers one. */
   hasReleases?: boolean;
+  /** Watch-party gate — when true (= guest in a room) the source/servers/releases
+   *  control is rendered DISABLED with a tooltip (the guest watches the host's exact
+   *  stream and can't switch it), instead of silently rendering nothing. */
+  sourceChangeDisabled?: boolean;
 
   // Settings + Episodes drawer triggers
   openSettings: (tab: SettingsTab) => void;
@@ -119,6 +123,7 @@ export function BottomControls(props: BottomControlsProps) {
     selectedAudioTrack,
     hideServerPicker,
     hasReleases,
+    sourceChangeDisabled,
     openSettings,
     toggleEpisodes,
     seekShortTimeDurationMs,
@@ -404,7 +409,19 @@ export function BottomControls(props: BottomControlsProps) {
               In Real-Debrid fallback mode there are no Videasy servers, so
               the same cloud icon instead opens the "Releases" tab to switch
               the torrent. */}
-          {hideServerPicker ? (
+          {sourceChangeDisabled ? (
+            <BlissTooltip content="Only the host can change the stream" placement="top">
+              <button
+                type="button"
+                className="bliss-player-icon-btn flex h-10 w-10 cursor-not-allowed items-center justify-center rounded-full opacity-40"
+                aria-label="Change source (host only)"
+                aria-disabled
+                disabled
+              >
+                <StremioIcon name="cloud" className="h-5 w-5" />
+              </button>
+            </BlissTooltip>
+          ) : hideServerPicker ? (
             hasReleases ? (
               <BlissTooltip content="Releases" placement="top">
                 <button

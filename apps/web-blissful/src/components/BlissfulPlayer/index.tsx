@@ -3841,6 +3841,7 @@ export default function BlissfulPlayer(props: {
         selectedAudioTrack={props.selectedAudioTrack}
         hideServerPicker={props.hideServerPicker}
         hasReleases={(props.releases?.length ?? 0) > 0}
+        sourceChangeDisabled={partyNonHost}
         openSettings={(tab: SettingsTab) => {
           setEpisodesOpen(false);
           setSettingsTab(tab);
