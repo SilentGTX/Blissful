@@ -50,5 +50,10 @@ export default defineConfig({
       testMatch: /.*\.android\.spec\.ts/,
       // adb keyevents + CDP over the TV WebView; the fixture skips when no device is attached.
     },
+    {
+      name: 'protocol',
+      testMatch: /.*\.protocol\.spec\.ts/,
+      // Raw ws/http wire-protocol tests against the deployed backend — no browser, no shell.
+    },
   ],
 });

@@ -37,6 +37,7 @@ Prereqs: `npm install` (root — pulls `@playwright/test`, `playwright`, `ws`) a
 | `web` | the dev UI (vite `:5173`) via Playwright chromium | built-in `page` | `webServer` starts/reuses vite |
 | `desktop` | the **real Rust shell** over a CDP debug port | [`fixtures/desktop.ts`](fixtures/desktop.ts) → `desktop` | no Playwright browser; shell points at the dev UI |
 | `android` | the TV app over `adb` + CDP on its WebView | `fixtures/android.ts` (planned) | auto-skips when no device attached |
+| `protocol` | raw `ws`/`http` against the deployed backend | (none) | no browser/shell; live wire-protocol + endpoint tests |
 
 Suites are named `*.<platform>.spec.ts` so `--project <platform>` selects them.
 
@@ -57,14 +58,18 @@ e2e/
   (shell-over-CDP fixture proven).
 - **Player** on both Playwright-drivable platforms: `player.web` (real `<video>`)
   and `player.desktop` (mpv) — loads+plays, pause/resume, seek. The reference suite.
+- **Watch-party protocol** (`watch-party.protocol`, 15 tests, no browser): Layer A
+  source relay (all kinds) + sanitize + snapshot + episode-clear + guards + tick +
+  presence; Layer B request/decline. Live against the deployed backend.
+- The `/test` runner (`e2e/run.mjs`): changed files → relevant suites.
 
 **Roadmap (incremental):**
-1. The `/test` runner skill — "changed files → run that feature's suites".
-2. Migrate the remaining `scripts/e2e/*.mjs` harnesses (watch-party behavioral +
-   protocol; the other `verify-*` shell tests) into suites.
-3. Remaining features: detail + streams, home + browse, addons, auth + library, social.
-4. `android` fixture (adb + CDP) and `player.android`.
-5. Richer player fixtures to lift the `test.fixme` scenarios (subtitles, audio
+1. Migrate the rest of `scripts/e2e/*.mjs`: the watch-party **behavioral** 2-client
+   sync + **host-relay**, and the `verify-software-transcode` / `-leftover-replace`
+   shell tests (`shell-*.desktop`). (renderer-recovery + the protocol suite are done.)
+2. Remaining features: detail + streams, home + browse, addons, auth + library, social.
+3. `android` fixture (adb + CDP) and `player.android`.
+4. Richer player fixtures to lift the `test.fixme` scenarios (subtitles, audio
    tracks, quality, buffering, resume).
 
 ## Gotchas baked into the fixtures (learned the hard way)
