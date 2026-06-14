@@ -70,6 +70,10 @@ e2e/
   register toggle + logged-out library), `social` (logged-out gating). Structure
   assertions on live data; auth-gated / second-user / real-content scenarios are
   `test.fixme` (tracked, not dropped).
+- **Android TV** (`smoke.android`): the RN app boots on the emulator — its activity
+  is foreground + the process is alive, over `adb` (no DOM/CDP). Auto-skips with no
+  device. Playback (the emulator can't decode video) + deep UI (needs an adb-keyevent
+  harness on a real TV) are out of scope.
 - The `/test` runner (`e2e/run.mjs`): changed files → relevant suites.
 
 **Roadmap (incremental):**
@@ -77,10 +81,15 @@ e2e/
    behavioral + protocol + host-relay, the shell `verify-*` trio).
 2. ✅ Feature suites: detail+streams, home+browse, addons, auth+library, social
    (structure; auth-gated / second-user / live-content scenarios are `test.fixme`).
-3. `android` fixture (adb + CDP) and `player.android`.
-4. Lift the `test.fixme` with richer fixtures + creds/second-user setup: player
-   subtitles/audio/quality/buffering/resume; real login + library content;
-   friends/presence/party-invites; addon install/uninstall (stubbed backend).
+3. ✅ `android` boot smoke (the RN app launches on the emulator over adb). Deeper
+   android (navigation/playback) needs the REAL TV (emulator has no video decoder) +
+   an adb-keyevent + screencap harness.
+4. The remaining `test.fixme` need EXTERNAL inputs, not framework work:
+   - real login + library content / friends / presence / party-invites → Stremio
+     credentials + a SECOND account (or route-stub for mock-only UI coverage);
+   - addon install/uninstall → a stubbed backend or an isolated test account;
+   - player audio-tracks / quality / subtitles / buffering → multi-audio / HLS /
+     subbed / throttled media (Chromium also has no H.264/HLS codec).
 
 ## Gotchas baked into the fixtures (learned the hard way)
 
