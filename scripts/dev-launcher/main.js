@@ -12,6 +12,17 @@ const path = require('path');
 const fs = require('fs');
 const { DevManager } = require('./lib/manager.cjs');
 
+// Brand mark shared with the Android app (transparent 1024px PNG).
+const ICON_PATH = path.join(
+  __dirname,
+  '..',
+  '..',
+  'apps',
+  'android-blissful',
+  'assets',
+  'blissful-small-logo.png',
+);
+
 const smokeArg = process.argv.find((a) => a.startsWith('--smoke'));
 const smokePath = smokeArg
   ? path.resolve(smokeArg.includes('=') ? smokeArg.split('=')[1] : 'launcher-smoke.png')
@@ -48,6 +59,7 @@ function main() {
       backgroundColor: '#070b11',
       show: false,
       title: 'Blissful Dev',
+      icon: fs.existsSync(ICON_PATH) ? ICON_PATH : undefined,
       titleBarStyle: 'hidden',
       titleBarOverlay: { color: '#070b11', symbolColor: '#bccdd2', height: 46 },
       webPreferences: {

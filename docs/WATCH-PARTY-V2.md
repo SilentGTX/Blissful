@@ -137,6 +137,32 @@ Web guest(s): https://blissful.budinoff.com/party-relay/{room}/index.m3u8
   live cross-device sync hasn't been exercised.
 - **B** behind A; the tunnel gets its own harness + a real 2-device test before release. **Needs
   a desktop release** (the outbound WS tunnel lives in the Rust shell).
+  - **B1 (protocol + web UX) — BUILT + unit-validated.** `party:request-host-stream` /
+    `party:decline-host-stream` (+ server→client `party:host-stream-request` /
+    `party:host-stream-declined`) in `watchParty.ts`; relayed in `blissful-storage` (request→host,
+    decline→guest). Both hooks expose `requestHostStream`/`declineHostStream` +
+    `onHostStreamRequest`/`onHostStreamDeclined`. Acceptance reuses `host:source` announcing a
+    `relay` source; `resolveSourceForWeb` now plays a `relay` HLS URL directly. Drawer
+    "Ask for host's stream" button (guest); desktop-host consent→`startPartyRelay`→announce;
+    web-host auto-declines. `autoShareHostStream` setting + `desktop.startPartyRelay/stop/onStatus`.
+    tsc + vitest green (3 relay-resolve tests added).
+  - **B2 (Mac relay) — BUILT + harness-validated.** `addon-proxy`: a `ws` tunnel endpoint
+    (`/party-relay-tunnel?room&key`, host registry) + `GET /party-relay/{room}/{path}?k=`
+    pull-through with an in-memory segment cache, concurrent-pull coalescing, and playlist URI
+    rewrite (relative + absolute loopback URIs keyed). `relayKey` gates the room. `ws` added to the
+    container's ad-hoc install; Traefik `/party-relay` router + catch-all exclusion (covers the WS
+    tunnel too). A local fake-host harness passed: playlist rewrite, segment relay+cache, wrong-key
+    403, unknown-room 404.
+  - **B3 (desktop tunnel) — BUILT + compile-checked.** `host_relay.rs` (outbound `wss`, answers
+    pulls by fetching local stremio-service, base64 frames, reconnect/backoff, status events) +
+    `startPartyRelay`/`stopPartyRelay` IPC; `tokio-tungstenite`+`futures-util`+`base64` deps.
+    `cargo check --features spike0a` clean.
+  - **OPEN (needs a real device):** (1) the local stremio-service `/hlsv2` index path
+    (`localStremioHlsPath` in `NativeMpvPlayer.tsx`) is a flagged best-effort — verify the exact
+    `/hlsv2` contract against the running stremio-service; a wrong value degrades safely (relay
+    404s → guest keeps RD/Vidking). (2) The Vidking-off auto-trigger is deferred until (1) is
+    confirmed (manual button works meanwhile). (3) Real 2-device test. (4) The desktop release
+    (tag) — needs the accumulated dev work committed first.
 
 Standing rule: each protocol message is additive + feature-detected so older installed shells
 keep working (same discipline as the thin-shell IPC).

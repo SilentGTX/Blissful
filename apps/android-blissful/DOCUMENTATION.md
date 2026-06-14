@@ -33,7 +33,12 @@ truth; the memory dir = cross-session state.
 
 ## Build / run / test
 
-**Start the dev environment (emulator + Metro + app)** — Windows/PowerShell;
+**One command:** `npm run dev android` from the repo root (or the Dev Launcher's Android card —
+plain `npm run dev`) runs `scripts/dev-android.cjs`, which does the whole loop below: boots the
+TV emulator if no device is online, starts Metro, sets `adb reverse`, and launches the app.
+Stop kills Metro only — the emulator stays warm for the next start.
+
+**The manual steps it automates (emulator + Metro + app)** — Windows/PowerShell;
 `$adb` = `%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe`,
 `$emulator` = `%LOCALAPPDATA%\Android\Sdk\emulator\emulator.exe`, package = `com.blissful.tv.rn`:
 

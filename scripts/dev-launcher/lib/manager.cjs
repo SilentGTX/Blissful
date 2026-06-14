@@ -11,11 +11,78 @@
 
 const { EventEmitter } = require('events');
 const { spawn, execFile, execFileSync } = require('child_process');
+const fs = require('fs');
 const net = require('net');
 const path = require('path');
 const { StringDecoder } = require('string_decoder');
 
 const ROOT = path.resolve(__dirname, '..', '..', '..');
+
+// adb helpers shared with the android dev script (safe to require: its
+// main() is gated behind require.main). Lazy so a broken SDK setup can
+// never take the whole manager down.
+function androidTools() {
+  try {
+    const tools = require(path.join(ROOT, 'scripts', 'dev-android.cjs'));
+    return fs.existsSync(tools.ADB) ? tools : null;
+  } catch {
+    return null;
+  }
+}
+
+// Stop teardown for the android env: kill the app, then shut down any
+// emulator. Real devices (TV over adb-wifi) only get the app force-stop —
+// never a device kill. Runs after the script tree is taskkilled.
+async function androidStopCleanup(logLine) {
+  const tools = androidTools();
+  if (!tools) return;
+  const { adb, listDevices, PACKAGE } = tools;
+  const devices = await listDevices();
+  for (const d of devices) {
+    if (d.state !== 'device') continue;
+    await adb(['-s', d.serial, 'shell', 'am', 'force-stop', PACKAGE]);
+    logLine(`> force-stopped ${PACKAGE} on ${d.serial}`);
+  }
+  // emu kill talks to the console port, so it also reaches still-booting
+  // emulators that adb reports as offline.
+  const emulators = devices.filter((d) => d.serial.startsWith('emulator-'));
+  for (const d of emulators) {
+    await adb(['-s', d.serial, 'emu', 'kill']);
+    logLine(`> emulator ${d.serial}: shutdown requested`);
+  }
+  if (emulators.length === 0) return;
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    const still = (await listDevices()).filter((d) => d.serial.startsWith('emulator-'));
+    if (still.length === 0) {
+      logLine('> emulator is down');
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 800));
+  }
+  logLine('> warning: emulator still listed after shutdown request');
+}
+
+// Quit-path twin of androidStopCleanup: synchronous, no waiting — fires
+// the emu kill and moves on so before-quit cannot stall.
+function androidStopCleanupSync() {
+  const tools = androidTools();
+  if (!tools) return;
+  try {
+    const out = execFileSync(tools.ADB, ['devices'], { encoding: 'utf8', windowsHide: true });
+    for (const line of out.split(/\r?\n/).slice(1)) {
+      const [serial] = line.trim().split(/\s+/);
+      if (serial && serial.startsWith('emulator-')) {
+        execFileSync(tools.ADB, ['-s', serial, 'emu', 'kill'], {
+          stdio: 'ignore',
+          windowsHide: true,
+        });
+      }
+    }
+  } catch {
+    // adb unavailable — nothing to clean
+  }
+}
 
 const LOG_BUFFER_MAX = 200;
 const POLL_INTERVAL_MS = 1500;
@@ -53,13 +120,19 @@ const ENVS = [
   {
     id: 'android',
     title: 'Android TV',
-    tagline: 'Expo / Metro for the React Native app',
-    command: 'npm start -- --port 8081',
-    cwd: path.join(ROOT, 'apps', 'android-blissful'),
+    tagline: 'TV emulator + Metro + app launch',
+    // Boots the Television_1080p AVD if no device is online, starts Metro,
+    // sets adb reverse, and launches the app. Stop kills the script tree
+    // (Metro) and then runs the cleanup hook: app force-stopped, emulator
+    // shut down via adb emu kill (real TVs only get the force-stop).
+    command: 'node scripts/dev-android.cjs',
+    cwd: ROOT,
     ports: [8081],
     portLabel: ':8081',
     url: 'http://localhost:8081',
     accent: 'lavender',
+    stopCleanup: androidStopCleanup,
+    stopCleanupSync: androidStopCleanupSync,
   },
 ];
 
@@ -488,6 +561,15 @@ class DevManager extends EventEmitter {
     this.emitState();
     this.log(id, [`> stopping (taskkill /T pid ${pid})`]);
     await killTree(pid);
+    if (env.stopCleanup) {
+      rt.detail = 'tearing down…';
+      this.emitState();
+      try {
+        await env.stopCleanup((line) => this.log(id, [line]));
+      } catch (err) {
+        this.log(id, [`> cleanup failed: ${err.message}`]);
+      }
+    }
     // The 'exit' handler flips the phase; give it a moment, then make sure
     // nothing is still holding the port (an orphan would re-surface as
     // "external" via the poll loop either way).
@@ -517,13 +599,24 @@ class DevManager extends EventEmitter {
   }
 
   // Belt-and-braces sweep for quit paths that cannot await (before-quit,
-  // process exit). Synchronous taskkill per live pid.
+  // process exit). Synchronous taskkill per live pid, plus each managed
+  // env's sync cleanup (e.g. android's adb emu kill) — gated on "we were
+  // running it" so quitting never touches an env the launcher didn't start.
   killAllSync() {
-    for (const rt of this.rt.values()) {
+    for (const [id, rt] of this.rt.entries()) {
+      const wasManaged = rt.pid !== null || rt.waiting;
       if (rt.pid) killTreeSync(rt.pid);
       rt.child = null;
       rt.pid = null;
       if (rt.waiting) rt.cancelWait = true;
+      const env = this.env(id);
+      if (wasManaged && env.stopCleanupSync) {
+        try {
+          env.stopCleanupSync();
+        } catch {
+          // best effort on the way out
+        }
+      }
     }
   }
 }

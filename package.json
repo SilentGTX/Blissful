@@ -7,6 +7,13 @@
     "dev:vite": "npm run --prefix apps/web-blissful dev:vite",
     "dev:shell": "npm run --prefix apps/web-blissful dev:shell",
     "build": "npm run --prefix apps/web-blissful build",
-    "lint": "npm run --prefix apps/web-blissful lint"
+    "lint": "npm run --prefix apps/web-blissful lint",
+    "test:watchparty": "node scripts/e2e/watchparty.mjs",
+    "test:watchparty:v2": "node scripts/e2e/watchparty-v2.mjs",
+    "test:watchparty:hostrelay": "node scripts/e2e/host-relay.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.0",
+    "ws": "^8.18.0"
   }
 }

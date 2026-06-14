@@ -8,6 +8,9 @@ apps/web-blissful/dist/
 apps/web-blissful/dev-dist/
 apps/desktop-blissful/target/
 
+# E2E test artifacts (scripts/e2e/* write logs/clips here)
+.tmp-e2e/
+
 # Bundled runtime binaries (downloaded by setup script, not committed)
 apps/desktop-blissful/resources/mpv-x64/
 apps/desktop-blissful/resources/ffmpeg-dlls/

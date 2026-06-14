@@ -37,9 +37,9 @@ const APPS = [
   {
     name: 'android',
     aliases: ['tv'],
-    summary: 'Android TV Metro (expo start --port 8081)',
-    command: 'npm start -- --port 8081',
-    cwd: path.join(ROOT, 'apps', 'android-blissful'),
+    summary: 'Android TV: boots the emulator if needed, Metro, launches the app',
+    command: 'node scripts/dev-android.cjs',
+    cwd: ROOT,
   },
 ];
 
