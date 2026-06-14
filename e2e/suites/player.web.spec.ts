@@ -55,11 +55,21 @@ test.describe('Player (web)', () => {
     await expect.poll(() => currentTime(page), { timeout: 5_000 }).toBeGreaterThan(before + 1);
   });
 
-  // DEFERRED (need richer fixtures — tracked so coverage gaps aren't silent):
+  test('resumes playback from the ?t= position', async ({ page, webmUrl }) => {
+    await page.goto(
+      `/player?${new URLSearchParams({ type: 'movie', id: 'tt1254207', url: webmUrl, rdsel: '1', t: '8', title: 'Resume' })}`,
+    );
+    await expect(page.getByTestId('player-video')).toBeVisible({ timeout: 20_000 });
+    // The player seeks to the resume position on load (startTimeSeconds), then plays.
+    await expect
+      .poll(() => page.evaluate(() => (document.querySelector('video') as HTMLVideoElement).currentTime), { timeout: 30_000 })
+      .toBeGreaterThan(6);
+  });
+
+  // DEFERRED — need richer media fixtures (tracked so coverage gaps aren't silent):
   // - subtitles: a WebM with an embedded/sidecar VTT + the subtitle picker.
   // - audio tracks: a multi-audio source.
   // - quality switch: HLS-only (this WebM is progressive).
   // - buffering veil: a throttled/stalling server to force it deterministically.
-  // - resume: play -> leave -> return resumes at the saved position (continue-watching).
-  test.fixme('subtitles / audio tracks / quality / buffering / resume — need richer fixtures', () => {});
+  test.fixme('subtitles / audio tracks / quality / buffering — need richer media fixtures', () => {});
 });
