@@ -58,18 +58,19 @@ e2e/
   (shell-over-CDP fixture proven).
 - **Player** on both Playwright-drivable platforms: `player.web` (real `<video>`)
   and `player.desktop` (mpv) — loads+plays, pause/resume, seek. The reference suite.
-- **Watch party**: `watch-party.protocol` (15, no browser — Layer A/B wire protocol)
-  + `watch-party.host-relay.desktop` (the real Layer-B relay tunnel serves valid
-  key-rewritten HLS through the Mac).
+- **Watch party**: `watch-party.sync.desktop` (the behavioral crown jewel — a WEB
+  host + DESKTOP-mpv guest in one room; the guest follows play/pause/resume),
+  `watch-party.protocol` (15, no browser — Layer A/B wire protocol),
+  `watch-party.host-relay.desktop` (real Layer-B tunnel → key-rewritten HLS via the Mac).
 - **Desktop shell** (`shell-*.desktop`): renderer-crash recovery, relay
   software-transcode (the GPU-crash fix — libx264 / native 4K), and leftover-stremio
   terminate+respawn.
 - The `/test` runner (`e2e/run.mjs`): changed files → relevant suites.
 
 **Roadmap (incremental):**
-1. Migrate the watch-party **behavioral** 2-client sync (web host + desktop guest) —
-   the last big `.mjs`. (recovery, transcode, leftover, protocol, host-relay are done.)
-2. Remaining features: detail + streams, home + browse, addons, auth + library, social.
+1. ✅ All legacy `scripts/e2e/*.mjs` harnesses migrated (player, watch-party
+   behavioral + protocol + host-relay, the shell `verify-*` trio).
+2. New feature suites: detail + streams, home + browse, addons, auth + library, social.
 3. `android` fixture (adb + CDP) and `player.android`.
 4. Richer player fixtures to lift the `test.fixme` scenarios (subtitles, audio
    tracks, quality, buffering, resume).
