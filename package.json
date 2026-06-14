@@ -8,11 +8,17 @@
     "dev:shell": "npm run --prefix apps/web-blissful dev:shell",
     "build": "npm run --prefix apps/web-blissful build",
     "lint": "npm run --prefix apps/web-blissful lint",
+    "test:e2e": "playwright test",
+    "test:e2e:web": "playwright test --project web",
+    "test:e2e:desktop": "playwright test --project desktop",
+    "test:e2e:android": "playwright test --project android",
+    "test:e2e:report": "playwright show-report .tmp-e2e/report",
     "test:watchparty": "node scripts/e2e/watchparty.mjs",
     "test:watchparty:v2": "node scripts/e2e/watchparty-v2.mjs",
     "test:watchparty:hostrelay": "node scripts/e2e/host-relay.mjs"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "playwright": "^1.49.0",
     "ws": "^8.18.0"
   }
