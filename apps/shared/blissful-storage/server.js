@@ -671,6 +671,10 @@ function sanitizeWatchPartySource(s) {
   if (!s || typeof s !== 'object') return null;
   const isHash = (h) => typeof h === 'string' && /^[a-f0-9]{40}$/i.test(h);
   const isHttp = (u) => typeof u === 'string' && /^https?:\/\//i.test(u) && u.length <= 2000;
+  // A host-supplied URL that a GUEST (or the /transcode proxy) will fetch must not
+  // point at an internal/metadata host. rdUrl is always a Real-Debrid direct link;
+  // a relay url is always our public /party-relay path. Lock both down at intake.
+  const isRdHost = (u) => { try { return /(^|\.)real-debrid\.com$/i.test(new URL(u).hostname); } catch { return false; } };
   switch (s.kind) {
     case 'torrent': {
       if (!isHash(s.infoHash)) return null;
@@ -679,7 +683,7 @@ function sanitizeWatchPartySource(s) {
       return out;
     }
     case 'rd': {
-      if (!isHttp(s.rdUrl)) return null;
+      if (!isHttp(s.rdUrl) || !isRdHost(s.rdUrl)) return null;
       const out = { kind: 'rd', rdUrl: s.rdUrl };
       if (isHash(s.infoHash)) out.infoHash = s.infoHash.toLowerCase();
       return out;
@@ -692,7 +696,7 @@ function sanitizeWatchPartySource(s) {
       return out;
     }
     case 'relay':
-      return isHttp(s.url) ? { kind: 'relay', url: s.url } : null;
+      return isHttp(s.url) && /\/party-relay\//.test(s.url) ? { kind: 'relay', url: s.url } : null;
     default:
       return null;
   }
@@ -2679,9 +2683,14 @@ wss.on('connection', (ws) => {
           // Replace prior connection for the same user (refresh / reconnect).
           existing.ws.close(4002, 'replaced');
         }
-        const displayName = typeof msg.displayName === 'string' && msg.displayName.trim()
-          ? msg.displayName.trim().slice(0, 64)
-          : 'Guest';
+        // Strip control chars + angle brackets at intake: displayName is relayed
+        // verbatim to every client (presence/chat/request) and stored; React
+        // auto-escapes today, but a non-React consumer (Android, logs, any
+        // innerHTML sink) must not inherit an unsanitized string.
+        const cleanedName = typeof msg.displayName === 'string'
+          ? Array.from(msg.displayName).filter((c) => c.charCodeAt(0) >= 32 && c !== '<' && c !== '>').join('').trim().slice(0, 64)
+          : '';
+        const displayName = cleanedName || 'Guest';
         participant = {
           ws,
           userId,

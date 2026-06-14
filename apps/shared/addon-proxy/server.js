@@ -1147,6 +1147,37 @@ function partyRelayCachePut(cacheKey, contentType, body, ttl) {
   partyRelaySegCache.set(cacheKey, { exp: Date.now() + ttl, contentType, body });
 }
 
+// Drop a room's cached segments/playlists immediately when its tunnel closes or
+// re-registers (a new HLS session) — otherwise stale bytes linger up to the TTL
+// and a re-used path could serve old-session content.
+function purgePartyRelayCache(room) {
+  const prefix = room + '\n';
+  for (const k of partyRelaySegCache.keys()) {
+    if (k.startsWith(prefix)) partyRelaySegCache.delete(k);
+  }
+}
+
+// /rd-by-hash abuse guard: each resolve burns several house-RD API calls
+// (addMagnet + poll + selectFiles + delete), so cap per-IP rate AND global
+// concurrency. Returns a reason string to 429 with, or null when allowed.
+const RDBH_RATE = 20; // tokens per window
+const RDBH_WINDOW_MS = 60 * 1000; // per minute
+const RDBH_MAX_CONCURRENT = 4;
+let rdbhInflight = 0;
+const rdbhBuckets = new Map(); // ip -> { tokens, ts }
+function rdbhReject(ip) {
+  if (rdbhBuckets.size > 5000) rdbhBuckets.clear(); // bound memory
+  const now = Date.now();
+  let b = rdbhBuckets.get(ip);
+  if (!b) { b = { tokens: RDBH_RATE, ts: now }; rdbhBuckets.set(ip, b); }
+  b.tokens = Math.min(RDBH_RATE, b.tokens + ((now - b.ts) / RDBH_WINDOW_MS) * RDBH_RATE);
+  b.ts = now;
+  if (b.tokens < 1) return 'rate limited';
+  if (rdbhInflight >= RDBH_MAX_CONCURRENT) return 'busy';
+  b.tokens -= 1;
+  return null;
+}
+
 async function handlePartyRelay(req, res) {
   const q = url.parse(req.url, true);
   const after = q.pathname.slice('/party-relay/'.length);
@@ -1212,6 +1243,7 @@ function setupPartyRelayTunnel(httpServer) {
     const { room, key } = info;
     const prev = partyRelayHosts.get(room);
     if (prev && prev.ws !== ws) { try { prev.ws.close(); } catch {} }
+    purgePartyRelayCache(room); // new session/key → drop the prior session's cache
     const entry = { ws, key, pending: new Map(), nextId: 1 };
     partyRelayHosts.set(room, entry);
     console.log(`[party-relay] host tunnel up room=${room}`);
@@ -1238,6 +1270,7 @@ function setupPartyRelayTunnel(httpServer) {
       if (partyRelayHosts.get(room) === entry) partyRelayHosts.delete(room);
       for (const p of entry.pending.values()) { clearTimeout(p.timer); p.reject(new Error('host-gone')); }
       entry.pending.clear();
+      purgePartyRelayCache(room); // host gone → its cached segments are dead weight
       console.log(`[party-relay] host tunnel down room=${room}`);
     };
     ws.on('close', cleanup);
@@ -2186,6 +2219,14 @@ const server = http.createServer((req, res) => {
       res.end(JSON.stringify({ cached: false, error: 'no rd key' }));
       return;
     }
+    const clientIp = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+    const limited = rdbhReject(clientIp);
+    if (limited) {
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '5' });
+      res.end(JSON.stringify({ error: limited }));
+      return;
+    }
+    rdbhInflight++;
     void (async () => {
       try {
         const direct = await resolveRdByHash(infoHash, fileIdx);
@@ -2199,6 +2240,8 @@ const server = http.createServer((req, res) => {
       } catch (e) {
         res.writeHead(502, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: String((e && e.message) || e) }));
+      } finally {
+        rdbhInflight--;
       }
     })();
     return;
