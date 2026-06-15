@@ -11,7 +11,6 @@ import { markContentFocus } from '../lib/focusBus';
 import { useSelfTag } from '../lib/useSelfTag';
 import { useAuth } from '../context/AuthContext';
 import { NavRail } from '../components/NavRail';
-import { TopBar } from '../components/TopBar';
 import { useToast } from '../components/Toast';
 import { TvSelect, TvSelectOverlay, type DropdownAnchor, type SelectOption } from '../components/TvSelect';
 import { TvTextField } from '../components/settings/TvTextField';
@@ -199,8 +198,8 @@ export function SettingsScreen() {
     if (Date.now() - dropdownClosedAt.current > 700) setCategory(key);
   };
   // Route D-pad Right from the category list straight into the detail panel (a
-  // focus guide that autoFocuses its first control) — otherwise the engine picks
-  // the up-right TopBar search instead of the panel.
+  // focus guide that autoFocuses its first control), so Right reliably lands on
+  // the panel's first control rather than a diagonal pick.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const panelRef = useRef<any>(null); // TVFocusGuideView ref (View & FocusGuideMethods)
   const [panelTag, setPanelTag] = useState<number | undefined>(undefined);
@@ -378,16 +377,16 @@ export function SettingsScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: 'transparent' }}>
       <NavRail active="Settings" />
-      <TopBar />
 
+      {/* Immersive chrome to match Discover/Library/Home: no TopBar, no screen
+          heading (the NavRail marks the active page), content dropped to the
+          safe-area top. Sits on the app-root themed surface gradient — NO movie /
+          content backdrop here (one was tried + removed: it read as noise on a
+          utility page). The two-column category/panel layout is unchanged. */}
       <View
         isTVSelectable={!railOpen}
-        style={{ position: 'absolute', left: m.contentLeft, top: m.contentTop, right: m.safeX, bottom: 0 }}
+        style={{ position: 'absolute', left: m.contentLeft, top: m.safeY + m.s(14), right: m.safeX, bottom: 0 }}
       >
-        <Text style={{ fontFamily: font.serif, fontSize: m.s(40), color: colors.text, marginBottom: m.s(18) }}>
-          Settings
-        </Text>
-
         <View style={{ flex: 1, flexDirection: 'row', gap: m.s(24) }}>
           {/* Left: category list. */}
           <View style={{ width: listW }}>
@@ -416,7 +415,7 @@ export function SettingsScreen() {
               provider routes the controls' D-pad Left back to the active category. */}
           <SettingsLeftTargetContext.Provider value={activeCatTag}>
           <TVFocusGuideView ref={panelRef} autoFocus style={{ flex: 1, minWidth: 0 }}>
-            <Text style={{ fontFamily: font.serif, fontSize: m.s(28), color: colors.text, marginBottom: m.s(16) }}>
+            <Text style={{ fontFamily: font.spectralBold, fontSize: m.s(32), color: colors.text, marginBottom: m.s(16) }}>
               {CATEGORY_TITLE[category]}
             </Text>
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: m.s(18), paddingBottom: m.s(80) }}>
@@ -726,7 +725,7 @@ export function SettingsScreen() {
 
               {category === 'about' ? (
                 <Card title="About" m={m}>
-                  <Text style={{ fontFamily: font.serif, fontSize: m.s(34), color: colors.text }}>{APP_NAME}</Text>
+                  <Text style={{ fontFamily: font.spectralBold, fontSize: m.s(34), color: colors.text }}>{APP_NAME}</Text>
                   <Text style={{ fontFamily: font.body, fontSize: m.s(18), color: colors.textDim }}>{APP_TAGLINE}</Text>
                   <Text style={{ fontFamily: font.body, fontSize: m.s(16), color: colors.textGhost }}>v{APP_VERSION}</Text>
                 </Card>

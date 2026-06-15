@@ -58,6 +58,12 @@ function StreamRow({ row, m, autoFocus, onPlay }: { row: PickerStream; m: M; aut
           ))}
         </View>
       ) : null}
+      {row.cacheRank === 0 ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(5), marginTop: m.s(6) }}>
+          <Ionicons name="flash" size={m.s(14)} color={colors.brand} />
+          <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(14), color: colors.brand }}>Cached · instant</Text>
+        </View>
+      ) : null}
       {!playable ? (
         <Text style={{ fontFamily: font.body, fontSize: m.s(14), color: colors.imdbGold, marginTop: m.s(4) }}>Real-Debrid required</Text>
       ) : null}
@@ -117,7 +123,7 @@ export function StreamPicker({
     setLoading(true);
     setRows([]);
     setExpanded(new Set());
-    loadStreams(token, target.type, target.id, { signal: ctrl.signal, onRows: setRows })
+    loadStreams(token, target.type, target.id, { signal: ctrl.signal, onRows: setRows, title: target.title })
       .then(setRows)
       .catch(() => { /* keep whatever arrived progressively */ })
       .finally(() => setLoading(false));
@@ -130,11 +136,20 @@ export function StreamPicker({
     return () => sub.remove();
   }, [target, onClose]);
 
-  // TOP PICKS = best 4K + best 1080p (already rank-sorted, so first of each bucket);
-  // buckets below exclude the pinned rows. Buckets start collapsed.
+  // TOP PICKS = best 4K + best 1080p. Rows are rank-sorted cached-first, so the
+  // first of each bucket is the best instantly-streamable ([RD+]) release when
+  // one exists, else the best overall. Buckets below exclude the pinned rows and
+  // start collapsed.
   const { items } = useMemo(() => {
     const byBucket: Record<ResolutionBucket, PickerStream[]> = { '4K': [], '1080p': [], '720p': [], SD: [], Other: [] };
     rows.forEach((r) => byBucket[r.bucket].push(r));
+    // Hide confirmed-not-cached ([RD download], cacheRank 2) per bucket unless
+    // that empties it — mirrors the web BananasPicker. No-op for non-RD profiles
+    // (no markers → everything is cacheRank 1, kept).
+    BUCKET_ORDER.forEach((b) => {
+      const cached = byBucket[b].filter((r) => r.cacheRank < 2);
+      if (cached.length > 0) byBucket[b] = cached;
+    });
     const pinned = [byBucket['4K'][0], byBucket['1080p'][0]].filter(Boolean) as PickerStream[];
     const pinnedKeys = new Set(pinned.map((p) => p.key));
 

@@ -5,6 +5,7 @@ import {
   type MediaType,
   type StremioStream,
 } from '@blissful/core';
+import { filterRelevantStreams } from './streamRelevance';
 
 // ── Addon URL list (ported from useAddonsManager.ts) ───────────────────────
 const CINEMETA_URL = 'https://v3-cinemeta.strem.io/manifest.json';
@@ -182,6 +183,11 @@ export type PickerStream = {
   seeders: number | null;
   sizeBytes: number | null;
   isRd: boolean;
+  // Real-Debrid cache state from the result-name marker: 0 = confirmed cached
+  // ([RD+]), 2 = confirmed NOT cached ([RD download]/[RD↓]/[RD⬇]), 1 = unknown
+  // (non-RD, or Comet's unreliable [RD⚡]). Drives cached-first ranking + the
+  // hide-not-cached picker filter, mirroring the web BananasPicker.
+  cacheRank: 0 | 1 | 2;
   bucket: ResolutionBucket;
 };
 
@@ -199,17 +205,33 @@ function bucketOf(row: { leftLabel: string; title: string }): ResolutionBucket {
   return 'Other';
 }
 
-// Playable-first, then RD, then seeders/(sizeGB+1), then title. Quality is NOT
-// penalised — 4K wins on merit; the player engine is responsible for decoding it
-// (ExoPlayer hardware-decodes 4K on real Android TVs; the x86 EMULATOR has no 4K
-// decoder so 4K renders black there, but that's an emulator artifact, not a
-// reason to avoid 4K).
+// Real-Debrid cache markers in the result NAME (the addon's stream name field):
+// Torrentio tags cached releases `[RD+]` and not-yet-cached ones `[RD download]`
+// / `[RD↓]` / `[RD⬇]`. Comet's `[RD⚡]` is an unreliable public-cache guess (it
+// went stale after RD removed /instantAvailability in 2024) — treated as
+// "unknown", NOT cached. Mirrors the web BananasPicker.
+const isCachedName = (name: string): boolean => /\[\s*RD\s*\+/iu.test(name);
+const isUncachedName = (name: string): boolean => /\[\s*RD\s*(?:download|↓|⬇)/iu.test(name);
+export function cacheRankOf(name: string): 0 | 1 | 2 {
+  if (isCachedName(name)) return 0;
+  if (isUncachedName(name)) return 2;
+  return 1;
+}
+
+// Playable-first, then RD-CACHED-first ([RD+] → unknown → [RD download]), then
+// RD, then seeders/(sizeGB+1), then title. Quality is NOT penalised — 4K wins on
+// merit; the player engine decodes it (ExoPlayer hardware-decodes 4K on real
+// Android TVs; the x86 EMULATOR has no 4K decoder so 4K renders black there, but
+// that's an emulator artifact, not a reason to avoid 4K). The cacheRank tier
+// mirrors the web BananasPicker so instantly-streamable [RD+] releases float to
+// the Top picks.
 const score = (r: PickerStream) => (r.seeders ?? 0) / ((r.sizeBytes ?? 0) / 1_073_741_824 + 1);
 export function rankStreams(rows: PickerStream[]): PickerStream[] {
   return rows.slice().sort((a, b) => {
     const ap = a.url ? 1 : 0;
     const bp = b.url ? 1 : 0;
     if (ap !== bp) return bp - ap;
+    if (a.cacheRank !== b.cacheRank) return a.cacheRank - b.cacheRank;
     if (a.isRd !== b.isRd) return a.isRd ? -1 : 1;
     const sd = score(b) - score(a);
     if (sd !== 0) return sd;
@@ -237,6 +259,7 @@ function toRows(transportUrl: string, streams: StremioStream[]): PickerStream[] 
       seeders: Number.isFinite(seeders as number) ? (seeders as number) : null,
       sizeBytes: parseSizeBytes(parsed.size),
       isRd,
+      cacheRank: cacheRankOf(leftLabel),
       bucket: bucketOf({ leftLabel, title }),
     };
   });
@@ -257,13 +280,19 @@ export async function loadStreams(
   token: string | null,
   type: MediaType,
   id: string,
-  opts: { signal?: AbortSignal; onRows?: (rows: PickerStream[]) => void } = {},
+  opts: { signal?: AbortSignal; onRows?: (rows: PickerStream[]) => void; title?: string | null } = {},
 ): Promise<PickerStream[]> {
+  // Rank + drop loosely-matched "random" torrents (Comet leaks unrelated titles
+  // on short/common names — see streamRelevance). Applied on every read so the
+  // cache can hold the RAW merged rows and stay title-correct.
+  const rankFiltered = (rows: PickerStream[]) => rankStreams(filterRelevantStreams(rows, opts.title));
+
   const cacheKey = `${token ?? 'guest'}|${type}|${id}`;
   const cached = streamResultCache.get(cacheKey);
   if (cached && Date.now() - cached.at < STREAM_RESULT_TTL_MS) {
-    opts.onRows?.(cached.rows);
-    return cached.rows;
+    const out = rankFiltered(cached.rows);
+    opts.onRows?.(out);
+    return out;
   }
 
   const allUrls = await loadAddonUrls(token);
@@ -282,7 +311,7 @@ export async function loadStreams(
         const res = await fetchStreams({ type, id, baseUrl: toBaseUrl(transportUrl), signal: ctrl.signal });
         if (opts.signal?.aborted) return;
         merged.push(...toRows(transportUrl, res.streams));
-        opts.onRows?.(rankStreams(merged));
+        opts.onRows?.(rankFiltered(merged));
       } catch {
         /* drop this addon (timeout / 404 / network) */
       } finally {
@@ -292,9 +321,10 @@ export async function loadStreams(
     }),
   );
 
-  const final = rankStreams(merged);
-  // Only cache a non-empty result so a transient all-addons-failed open doesn't
-  // pin "no streams" for 5 minutes.
-  if (final.length > 0) streamResultCache.set(cacheKey, { rows: final, at: Date.now() });
-  return final;
+  const out = rankFiltered(merged);
+  // Cache the RAW merged rows (non-empty only, so a transient all-addons-failed
+  // open doesn't pin "no streams" for 5 min); the relevance filter + ranking is
+  // re-applied on every read so it stays correct for the title.
+  if (merged.length > 0) streamResultCache.set(cacheKey, { rows: merged, at: Date.now() });
+  return out;
 }

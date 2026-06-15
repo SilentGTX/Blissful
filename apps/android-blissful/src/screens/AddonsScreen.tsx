@@ -14,7 +14,6 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 import { Img } from '../components/Img';
 import { NavRail } from '../components/NavRail';
-import { TopBar } from '../components/TopBar';
 import { Chip } from '../components/ui/Chip';
 import { markContentFocus } from '../lib/focusBus';
 import { useContentInert } from '../lib/contentFocus';
@@ -300,91 +299,75 @@ export function AddonsScreen() {
   const pairs: AddonRow[][] = [];
   for (let i = 0; i < filtered.length; i += 2) pairs.push(filtered.slice(i, i + 2));
 
+  const padL = m.s(20);
+
   return (
     <View style={styles.root}>
       <NavRail active="Addons" />
-      <TopBar />
+      {/* Immersive chrome to match Discover/Library: no TopBar, no giant glass
+          panel wrapper, no screen heading (the NavRail marks the page). Sits on the
+          app-root themed surface gradient — NO movie / content backdrop (one was
+          tried + removed). The add / search controls sit where Discover's
+          filter-pills row sits; each addon card is its own glass surface. */}
       <ScrollView
         // One flip (not per-card) so an open rail traps focus instantly.
         isTVSelectable={!railOpen}
-        style={{ position: 'absolute', left: m.contentLeft, top: m.contentTop, right: 0, bottom: 0 }}
-        contentContainerStyle={{ paddingRight: m.safeX, paddingBottom: m.s(60), paddingLeft: m.s(20) }}
+        style={{ position: 'absolute', left: m.contentLeft, top: m.safeY + m.s(14), right: m.safeX, bottom: 0 }}
+        contentContainerStyle={{ paddingLeft: padL, paddingBottom: m.s(60) }}
         showsVerticalScrollIndicator={false}
       >
-        <View
-          style={{
-            borderRadius: radius.panel,
-            backgroundColor: colors.surface,
-            borderWidth: 1,
-            borderColor: colors.hairline,
-            padding: m.s(28),
-          }}
-        >
-          {/* Header */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: m.s(20) }}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontFamily: font.serif, fontSize: m.s(34), color: colors.text }}>Addons</Text>
-              <Text style={{ fontFamily: font.body, fontSize: m.s(19), color: colors.textFaint, marginTop: m.s(4) }}>
-                Manage your installed addons.
-              </Text>
-            </View>
-          </View>
-
-          {/* Add-by-URL row */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(14), marginTop: m.s(22) }}>
-            <Field
-              value={draftUrl}
-              onChangeText={setDraftUrl}
-              placeholder="Addon manifest URL (https://.../manifest.json)"
-              iconName="link-outline"
-              onSubmit={onAdd}
-              atRowStart
-              m={m}
-            />
-            <FocusButton label="Add addon" variant="primary" busy={adding} disabled={adding} autoFocus onPress={onAdd} m={m} />
-          </View>
-
-          {/* Search filter */}
-          <View style={{ flexDirection: 'row', marginTop: m.s(14) }}>
-            <Field
-              value={query}
-              onChangeText={setQuery}
-              placeholder="Search addons"
-              iconName="search"
-              atRowStart
-              m={m}
-            />
-          </View>
-
-          {/* List */}
-          <View style={{ marginTop: m.s(24), gap: m.s(14) }}>
-            {loading ? (
-              <View style={{ height: m.height - m.contentTop - m.s(220), alignItems: 'center', justifyContent: 'center' }}>
-                <ActivityIndicator color={colors.accent} size="large" />
-              </View>
-            ) : filtered.length === 0 ? (
-              <Text style={{ fontFamily: font.body, fontSize: m.s(19), color: colors.textFaint }}>No addons found.</Text>
-            ) : (
-              pairs.map((pair, rowIdx) => (
-                <View key={rowIdx} style={{ flexDirection: 'row', gap: m.s(14) }}>
-                  {pair.map((row, colIdx) => (
-                    <View key={row.transportUrl} style={{ flex: 1 }}>
-                      <AddonCard
-                        row={row}
-                        busy={busyUrl === row.transportUrl}
-                        atRowStart={colIdx === 0}
-                        onUninstall={() => onUninstall(row.transportUrl)}
-                        m={m}
-                      />
-                    </View>
-                  ))}
-                  {/* Keep a lone card half-width like the web grid. */}
-                  {pair.length === 1 ? <View style={{ flex: 1 }} /> : null}
-                </View>
-              ))
-            )}
-          </View>
+        {/* Add-by-URL + search controls (the immersive "filter row" slot) */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(14) }}>
+          <Field
+            value={draftUrl}
+            onChangeText={setDraftUrl}
+            placeholder="Addon manifest URL (https://.../manifest.json)"
+            iconName="link-outline"
+            onSubmit={onAdd}
+            atRowStart
+            m={m}
+          />
+          <FocusButton label="Add addon" variant="primary" busy={adding} disabled={adding} autoFocus onPress={onAdd} m={m} />
         </View>
+        <View style={{ flexDirection: 'row', marginTop: m.s(14), marginBottom: m.s(24) }}>
+          <Field
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Search addons"
+            iconName="search"
+            atRowStart
+            m={m}
+          />
+        </View>
+
+        {/* Installed list — each card is its own glass surface */}
+        {loading ? (
+          <View style={{ height: m.height - m.safeY - m.s(260), alignItems: 'center', justifyContent: 'center' }}>
+            <ActivityIndicator color={colors.accent} size="large" />
+          </View>
+        ) : filtered.length === 0 ? (
+          <Text style={{ fontFamily: font.body, fontSize: m.s(19), color: colors.textFaint }}>No addons found.</Text>
+        ) : (
+          <View style={{ gap: m.s(14) }}>
+            {pairs.map((pair, rowIdx) => (
+              <View key={rowIdx} style={{ flexDirection: 'row', gap: m.s(14) }}>
+                {pair.map((row, colIdx) => (
+                  <View key={row.transportUrl} style={{ flex: 1 }}>
+                    <AddonCard
+                      row={row}
+                      busy={busyUrl === row.transportUrl}
+                      atRowStart={colIdx === 0}
+                      onUninstall={() => onUninstall(row.transportUrl)}
+                      m={m}
+                    />
+                  </View>
+                ))}
+                {/* Keep a lone card half-width like the web grid. */}
+                {pair.length === 1 ? <View style={{ flex: 1 }} /> : null}
+              </View>
+            ))}
+          </View>
+        )}
       </ScrollView>
     </View>
   );
