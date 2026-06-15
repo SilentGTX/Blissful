@@ -177,6 +177,7 @@ export type WatchPartyServerMessage =
 
 import { fetchMeta } from './stremioAddon';
 import { normalizeStremioImage } from './mediaTypes';
+import { preloadImage } from './imageProxy';
 import type { MediaType } from '../types/media';
 
 export type WatchPartyRoomTarget = {
@@ -262,7 +263,13 @@ export async function buildRoomPlayerUrl(room: WatchPartyRoomTarget): Promise<st
       if (background) params.set('background', background);
       if (meta.name) params.set('metaTitle', meta.name);
       const logo = (meta as { logo?: string | null }).logo;
-      if (logo) params.set('logo', logo);
+      if (logo) {
+        params.set('logo', logo);
+        // Warm the buffering-veil logo NOW so it paints on entry instead of
+        // cold-loading over ~1s after the veil mounts — a party join is a cold
+        // entry (the joiner never opened the detail page that would cache it).
+        preloadImage(logo);
+      }
     }
   } catch {
     // best-effort

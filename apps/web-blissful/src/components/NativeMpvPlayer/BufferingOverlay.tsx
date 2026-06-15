@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { proxiedImage } from '../../lib/imageProxy';
 
 export type BufferingOverlayProps = {
   visible: boolean;
@@ -24,7 +25,7 @@ export function BufferingOverlay({ visible, logo }: BufferingOverlayProps) {
         {logo ? (
           <img
             className="bliss-buffering-loader"
-            src={logo}
+            src={proxiedImage(logo)}
             alt=" "
             style={{ display: showLogo ? 'block' : 'none' }}
             onError={() => setLogoReady(false)}

@@ -1378,7 +1378,7 @@ const server = http.createServer((req, res) => {
     if (!target || typeof target !== 'string') { res.writeHead(400).end('bad url'); return; }
     let host;
     try { host = new URL(target).hostname; } catch { res.writeHead(400).end('bad url'); return; }
-    if (!/(^|\.)metahub\.space$/i.test(host) && host !== 'image.tmdb.org') {
+    if (!/(^|\.)metahub\.space$/i.test(host) && host !== 'image.tmdb.org' && !/(^|\.)fanart\.tv$/i.test(host)) {
       res.writeHead(400).end('host not allowed');
       return;
     }

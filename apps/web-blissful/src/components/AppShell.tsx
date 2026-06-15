@@ -668,13 +668,12 @@ export default function AppShell() {
           </div>
         ) : null}
 
-        {/* Persistent buffering screen for /player — rendered at the
-            AppShell level so it stays mounted across (a) the lazy
-            chunk download, (b) the Suspense fallback → PlayerPage
-            handoff, and (c) the TMDB lookup. Hidden as soon as
-            BlissfulPlayer mounts via `playerReady` from the context —
-            this avoids relying on CSS z-index winning across
-            Framer Motion's stacking contexts. */}
+        {/* Persistent buffering screen for /player — covers the (non-instant)
+            player mount: the lazy PlayerPageWeb chunk on web, and the heavy
+            NativeMpvPlayer init (mpv + watch-party hooks) on desktop. Hidden as
+            soon as the player flips `playerReady`. It carries a back button so a
+            slow load is escapable without waiting for the player to finish
+            mounting. */}
         {location.pathname.startsWith('/player') && !playerReady ? <PlayerBufferingScreen /> : null}
 
         <HeroTransitionOverlay />
@@ -821,15 +820,15 @@ export default function AppShell() {
             chain ends on /detail?autoplay=1 or /player's buffering
             screen, the visual is one continuous loading state with no
             flash between routes. */}
-        {modals.pendingContinueItem ? (
-          // Plain black cover. No spinner / pill — the click-to-route
-          // delay is short enough that any indicator just flashes
-          // briefly and looks worse than nothing. The overlay's only
-          // job is to hide the previous page so it doesn't peek
-          // through during navigation; the route we're heading to
-          // (player's buffering veil, or /detail's autoplay overlay)
-          // renders its own loading state once mounted.
-          <div className="fixed inset-0 z-[9998] bg-black" />
+        {modals.pendingContinueItem && !location.pathname.startsWith('/player') ? (
+          // Same loading veil as /player — black + title logo + a BACK BUTTON,
+          // not a bare black cover. A Continue-Watching resume can sit on
+          // /detail?autoplay=1 for many seconds while it re-resolves the stream
+          // (slow addons / RD), and the old plain-black div left the user
+          // stranded with no way out. The logo makes it branded; the back
+          // button makes the wait escapable. (/player itself is covered by the
+          // buffering-screen render above, so exclude it here to avoid doubling.)
+          <PlayerBufferingScreen />
         ) : null}
       </div>
 

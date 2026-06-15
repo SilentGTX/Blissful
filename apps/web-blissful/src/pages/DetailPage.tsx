@@ -5,7 +5,7 @@ import { useAddons } from '../context/AddonsProvider';
 import { useAuth } from '../context/AuthProvider';
 import { useUI } from '../context/UIProvider';
 import { normalizeStremioImage } from '../lib/mediaTypes';
-import { proxiedImage } from '../lib/imageProxy';
+import { proxiedImage, preloadImage } from '../lib/imageProxy';
 import { getLibraryEntry } from '../lib/libraryStore';
 import { useContinueWatchingContext } from '../context/ContinueWatchingProvider';
 import { showHeroTransition } from '../lib/heroTransition';
@@ -567,6 +567,10 @@ export default function DetailPage() {
       if (logo && !url.searchParams.get('logo')) {
         url.searchParams.set('logo', logo);
       }
+      // Warm the buffering-veil logo at click so it's painted on player entry
+      // (it already renders on this page, so this is usually a cache hit — but
+      // it guarantees the fetch is in flight even on a cold paint).
+      if (logo) preloadImage(logo);
 
       // sessionStorage for next-episode is now written by useEffect above
 

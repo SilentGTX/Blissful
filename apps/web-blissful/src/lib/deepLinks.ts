@@ -1,4 +1,5 @@
 import type { StremioStream } from './stremioAddon';
+import { preloadImage } from './imageProxy';
 
 export type ExternalPlayerDeepLinks = {
   web: string | null;
@@ -215,7 +216,7 @@ export function buildStreamDeepLinks(params: {
           id: params.id,
         });
         if (params.metaPoster) qs.set('poster', params.metaPoster);
-        if (params.metaLogo) qs.set('logo', params.metaLogo);
+        if (params.metaLogo) { qs.set('logo', params.metaLogo); preloadImage(params.metaLogo); }
         if (params.metaName) qs.set('metaTitle', params.metaName);
         if (params.videoId) qs.set('videoId', params.videoId);
         if (params.startTimeSeconds && Number.isFinite(params.startTimeSeconds) && params.startTimeSeconds > 0) {

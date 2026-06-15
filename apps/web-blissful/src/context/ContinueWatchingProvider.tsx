@@ -86,9 +86,18 @@ export function ContinueWatchingProvider({ children }: { children: ReactNode }) 
   useEffect(() => {
     if (continueOverlayPathRef.current !== location.pathname) {
       continueOverlayPathRef.current = location.pathname;
-      setPendingContinueItem(null);
+      // A Continue-Watching resume sometimes hops through `/detail?autoplay=1`
+      // (to re-resolve the stream) before landing on `/player`. DetailPage
+      // renders its content while it resolves, so clearing the veil on that
+      // intermediate `/detail` lets the detail page flash before the player.
+      // Hold the veil across the autoplay hop; it clears once we reach the
+      // real destination (where /player's own buffering veil takes over), and
+      // the 10s safety timeout still covers a dead-end resolve.
+      const isAutoplayDetailHop =
+        location.pathname.startsWith('/detail') && /[?&]autoplay=1(?:&|$)/.test(location.search);
+      if (!isAutoplayDetailHop) setPendingContinueItem(null);
     }
-  }, [location.pathname, setPendingContinueItem]);
+  }, [location.pathname, location.search, setPendingContinueItem]);
 
   const runContinue = useCallback(
     async (item: LibraryItem, options?: ContinueRunOptions) => {

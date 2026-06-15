@@ -35,7 +35,7 @@ export function proxiedImage(src: string | null | undefined): string {
   if (!/^https?:\/\//i.test(abs)) return src; // local / bundled asset
   try {
     const host = new URL(abs).hostname;
-    if (/(^|\.)metahub\.space$/i.test(host) || host === 'image.tmdb.org') {
+    if (/(^|\.)metahub\.space$/i.test(host) || host === 'image.tmdb.org' || /(^|\.)fanart\.tv$/i.test(host)) {
       // Web: same-origin relative (Traefik routes /img to the addon-proxy).
       // Desktop shell: absolute to the backend — the local origin has no /img.
       const base = isNativeShell() ? `${ABSOLUTE_IMG_BASE}?url=` : '/img?url=';
@@ -45,4 +45,22 @@ export function proxiedImage(src: string | null | undefined): string {
     /* not a parseable URL — leave as-is */
   }
   return src;
+}
+
+// Kick off a high-priority fetch of an image NOW so it's warm in the browser
+// cache by the time something renders it. Used right before navigating into the
+// player: the buffering veil's title logo otherwise cold-loads over ~1s (the
+// `/img` round-trip), leaving a black-veil-with-no-logo gap on entry points
+// that didn't already render the logo (a watch-party join, a deep link). Safe
+// to call with a null/blank src or in a non-DOM context (it just no-ops).
+export function preloadImage(src: string | null | undefined): void {
+  if (!src || typeof Image === 'undefined') return;
+  try {
+    const img = new Image();
+    img.decoding = 'async';
+    (img as HTMLImageElement & { fetchPriority?: string }).fetchPriority = 'high';
+    img.src = proxiedImage(src);
+  } catch {
+    /* no-op — preload is best-effort */
+  }
 }

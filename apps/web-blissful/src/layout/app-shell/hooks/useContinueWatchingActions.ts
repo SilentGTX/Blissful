@@ -8,6 +8,7 @@ import { getLastStreamSelection } from '../../../lib/streamHistory';
 import { getResumeSeconds } from '../utils';
 import { fetchMeta } from '../../../lib/stremioAddon';
 import { shellOrigin } from '../../../lib/desktop';
+import { preloadImage } from '../../../lib/imageProxy';
 
 type UseContinueWatchingActionsParams = {
   authKey: string | null;
@@ -77,7 +78,7 @@ export function useContinueWatchingActions({
       try {
         const meta = await fetchMeta({ type: item.type as MediaType, id: item._id });
         const logo = normalizeStremioImage(meta.meta.logo ?? null);
-        if (logo) qs.set('logo', logo);
+        if (logo) { qs.set('logo', logo); preloadImage(logo); }
       } catch {
         // best-effort — the veil just stays black until detail's own meta loads
       }
@@ -189,7 +190,7 @@ export function useContinueWatchingActions({
       const resolvedTitle = stored.title ?? item.name ?? null;
       if (resolvedTitle) qs.set('title', resolvedTitle);
       if (item.name) qs.set('metaTitle', item.name);
-      if (logo) qs.set('logo', logo);
+      if (logo) { qs.set('logo', logo); preloadImage(logo); }
       if (background) qs.set('background', background);
       if (item.poster) {
         const poster = normalizeStremioImage(item.poster);
