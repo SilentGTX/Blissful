@@ -7,6 +7,7 @@ import {
   type BlissfulUser,
 } from '@blissful/core';
 import { kv } from '../lib/storage';
+import { hydrateTvSettingsFromCloud } from '../lib/tvSettings';
 
 const TOKEN_KEY = 'bliss:authToken';
 
@@ -60,6 +61,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, []);
+
+  // Pull the account's saved player/appearance settings (subtitle colour/size,
+  // RD key, cache size, …) into the local MMKV as soon as we have a token — on
+  // launch with a persisted token, or right after login. The player + Settings
+  // read the local store synchronously, and hydration was previously triggered
+  // ONLY by opening the Settings screen, so styling saved on web/desktop never
+  // reached the TV player unless the user happened to visit Settings first.
+  // Best-effort (writes MMKV; no-op on failure).
+  useEffect(() => {
+    if (!token) return;
+    void hydrateTvSettingsFromCloud(token);
+  }, [token]);
 
   const login = useCallback(async (identifier: string, password: string) => {
     const res = await loginBlissfulAccount({ identifier, password });

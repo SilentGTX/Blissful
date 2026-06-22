@@ -29,7 +29,7 @@ import { setCurrentActivity, clearCurrentActivity } from '../lib/presence';
 import { loadStreams, bucketOf, type PickerStream } from '../lib/streamPicker';
 import { resolveMeta } from '../lib/metaResolver';
 import { useAuth } from '../context/AuthContext';
-import { getStorageBaseUrl, normalizeStremioImage, updateBlissfulLibraryProgress } from '@blissful/core';
+import { getStorageBaseUrl, normalizeStremioImage, saveStoredSettings, updateBlissfulLibraryProgress } from '@blissful/core';
 import type { RootStackParamList } from '../navigation/types';
 
 type PlayerRoute = RouteProp<RootStackParamList, 'Player'>;
@@ -1088,13 +1088,16 @@ export function PlayerScreen() {
           subtitleDelay={subDelay}
           onSubtitleDelayChange={setSubDelay}
           onSaveAppearance={() => {
-            // Persist size + colour to TV settings (rgba) so reopening highlights
-            // the saved swatch; mirrors the desktop SettingsPanel "Save to account".
+            // Persist size + colour LOCALLY (the player reads MMKV synchronously)
+            // AND to the account (cloud) — matching the Settings screen — so it
+            // survives relaunch and syncs across devices. Without the cloud write,
+            // the launch hydration would revert a local-only change on next start.
             try {
               writeTvSettings({ ...readTvSettings(), subtitlesSizePx: subSizePx, subtitlesTextColor: subColor });
             } catch {
               /* best-effort local cache */
             }
+            void saveStoredSettings(token, { subtitlesSizePx: subSizePx, subtitlesTextColor: subColor });
             toast.show('Subtitle appearance saved');
             closeDrawer();
           }}
