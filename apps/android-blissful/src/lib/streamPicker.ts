@@ -196,7 +196,7 @@ const ICON_SIZE = '\u{1F4BE}'; // 💾
 const ICON_GEAR = '\u{2699}\u{FE0F}'; // ⚙️
 
 // Resolution bucket (ported from StreamList.bucketOf): match against name+title.
-function bucketOf(row: { leftLabel: string; title: string }): ResolutionBucket {
+export function bucketOf(row: { leftLabel: string; title: string }): ResolutionBucket {
   const hay = `${row.leftLabel} ${row.title}`.toLowerCase();
   if (/\b(2160p|4k|uhd)\b/.test(hay)) return '4K';
   if (/\b(1440p|2k|1080p|fhd|full ?hd)\b/.test(hay)) return '1080p';

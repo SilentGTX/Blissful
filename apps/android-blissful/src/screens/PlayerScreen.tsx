@@ -19,12 +19,14 @@ import { createWatchPartyRoom, getOrCreateGuestUserId, getStashedWatchPartyPassw
 import { AudioIcon, BackPill, EpisodesIcon, NextEpisodeIcon, PlayIcon, PlayerIconBtn, PlayerLabelBtn, ReleasesIcon, SourceBadges, SubsIcon, WatchPartyButton } from '../components/player/PlayerControls';
 import { detectSource, is4kTitle, isHdrTitle, normColor, toRgba } from '../lib/colorUtils';
 import { readTvSettings, writeTvSettings } from '../lib/tvSettings';
-import { subtitleLangLabel, loadSubtitles, type SubtitleTrack } from '../lib/subtitles';
+import { subtitleLangLabel, loadSubtitles, orderSubtitlesForPlayer, type SubtitleTrack } from '../lib/subtitles';
 import { activeCueText, fetchSubtitleCues, type SubtitleCue } from '../lib/subtitleCues';
 import { SubtitleOverlay } from '../components/player/SubtitleOverlay';
+import { SkipButton } from '../components/player/SkipButton';
+import { useSkipSegments } from '../components/player/useSkipSegments';
 import { formatFullDate } from '../lib/releaseInfo';
 import { setCurrentActivity, clearCurrentActivity } from '../lib/presence';
-import { loadStreams, type PickerStream } from '../lib/streamPicker';
+import { loadStreams, bucketOf, type PickerStream } from '../lib/streamPicker';
 import { resolveMeta } from '../lib/metaResolver';
 import { useAuth } from '../context/AuthContext';
 import { getStorageBaseUrl, normalizeStremioImage, updateBlissfulLibraryProgress } from '@blissful/core';
@@ -223,6 +225,17 @@ export function PlayerScreen() {
   const subBg = toRgba(tvs.subtitlesBackgroundColor);
   const subOutline = toRgba(tvs.subtitlesOutlineColor);
 
+  // Skip Intro / Recap / Credits — AniSkip (anime) + TheIntroDB (series/film).
+  // Surfaces the SkipButton; OK while just-watching (row 'none') seeks past it.
+  const skip = useSkipSegments({
+    id: params.detailId ?? params.streamTarget?.id ?? '',
+    videoId: params.streamTarget?.id ?? null,
+    duration,
+    currentTime: time,
+  });
+  const skipRef = useRef(skip);
+  skipRef.current = skip;
+
   // Virtual focus position (playback rows) + the settings drawer. The drawer is
   // self-contained — it owns its own D-pad, so we only track which one is open.
   const [row, setRow] = useState<Row>('none');
@@ -352,7 +365,7 @@ export function PlayerScreen() {
     if (releasesFetched.current || !params.streamTarget) return;
     releasesFetched.current = true;
     setReleasesLoading(true);
-    loadStreams(token, params.streamTarget.type, params.streamTarget.id)
+    loadStreams(token, params.streamTarget.type, params.streamTarget.id, { title: params.title })
       .then(setReleases)
       .catch(() => { /* keep empty — the tab shows "no releases" */ })
       .finally(() => setReleasesLoading(false));
@@ -435,9 +448,19 @@ export function PlayerScreen() {
     drawerRef.current = 'none';
     setDrawer('none');
     setSwitching(true);
-    loadStreams(token, 'series', video.id)
+    // Match the quality the user is watching: float the best-ranked release in
+    // the SAME resolution bucket as the current stream to the front (4K→4K,
+    // 1080p→1080p, …); else keep the global best. `ranked` is already cache-first,
+    // so the chosen same-bucket release is the cached/best-seeded one of that
+    // quality. The rest stay behind it in rank order so DMCA auto-advance still
+    // walks them. `title` threads the relevance filter (drops Comet's leaks).
+    const wantBucket = bucketOf({ leftLabel: '', title: current.title });
+    loadStreams(token, 'series', video.id, { title: params.title })
       .then((streams) => {
-        const playable = streams.filter((s) => s.url).map((s) => ({ url: s.url as string, title: s.title }));
+        const ranked = streams.filter((s) => s.url);
+        const qi = ranked.findIndex((s) => s.bucket === wantBucket);
+        const playable = (qi > 0 ? [ranked[qi], ...ranked.slice(0, qi), ...ranked.slice(qi + 1)] : ranked)
+          .map((s) => ({ url: s.url as string, title: s.title }));
         if (playable.length === 0) {
           // Desktop fallback: open the episode's Detail page (picker) instead.
           navigation.reset({
@@ -643,7 +666,7 @@ export function PlayerScreen() {
     let cancelled = false;
     const ctrl = new AbortController();
     loadSubtitles({ type: st.type, id: st.id, token, signal: ctrl.signal })
-      .then((res) => { if (!cancelled) setExtTracks(res.tracks); })
+      .then((res) => { if (!cancelled) setExtTracks(orderSubtitlesForPlayer(res.tracks)); })
       .catch(() => { /* no addon subs — embedded still available */ });
     return () => { cancelled = true; ctrl.abort(); };
   }, [params.streamTarget, token]);
@@ -662,11 +685,15 @@ export function PlayerScreen() {
       const l = (lang ?? '').toLowerCase();
       return !!l && (pref.startsWith(l) || l.startsWith(pref) || l === pref);
     };
-    // Built-in (embedded) first — the old app's order — then external.
-    const emb = subTracks.find((t) => matches(t.language));
-    if (emb) { autoSubRef.current = true; applySubtitle(emb.id); return; }
+    // Prefer an EXTERNAL sub: we render those ourselves (SubtitleOverlay), so the
+    // saved colour/size/outline apply. Embedded subs go through expo-video's
+    // native renderer, which CAN'T be styled — so they're the fallback (the
+    // desktop styles embedded via mpv; expo-video has no equivalent). Manual
+    // selection can still pick a "Built-in" track.
     const ext = extTracks.find((t) => matches(t.lang) || matches(t.langName));
-    if (ext) { autoSubRef.current = true; applySubtitle(ext.id); }
+    if (ext) { autoSubRef.current = true; applySubtitle(ext.id); return; }
+    const emb = subTracks.find((t) => matches(t.language));
+    if (emb) { autoSubRef.current = true; applySubtitle(emb.id); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [extTracks, subTracks, revealed]);
 
@@ -714,6 +741,7 @@ export function PlayerScreen() {
     meta: [r.metaSize, r.metaSeeders].filter(Boolean).join('   ') || null,
     bucket: r.bucket,
     isRd: r.isRd,
+    cacheRank: r.cacheRank,
     url: r.url,
   }));
 
@@ -820,6 +848,15 @@ export function PlayerScreen() {
         if (r === 'bottom') { const stay = runBottom(bottom[i]); if (!stay) goRow('none'); }
         else if (r === 'top') { runTop(TOP[i]); goRow('none'); }
         else {
+          // A skip segment is showing → OK seeks past it (Netflix-style) rather
+          // than pausing. Only while just-watching (row 'none'); navigating the
+          // controls still toggles play / activates the focused button.
+          const s = skipRef.current;
+          if (s) {
+            const cur = player.currentTime ?? timeRef.current;
+            seek(s.endTime - cur);
+            break;
+          }
           const wasPlaying = !userPausedRef.current;
           togglePlay();
           if (wasPlaying) goRow('bottom', 0);
@@ -913,6 +950,9 @@ export function PlayerScreen() {
           m={m}
         />
       ) : null}
+
+      {/* Skip Intro / Recap / Credits pill — OK seeks past it while watching. */}
+      {revealed && skip ? <SkipButton m={m} label={skip.label} /> : null}
 
       <PauseOverlay
         visible={!playing && revealed}

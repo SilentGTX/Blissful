@@ -34,7 +34,7 @@ import {
 } from 'react-native';
 import { colors, font } from '../../theme/colors';
 import { useMetrics } from '../../theme/metrics';
-import { subtitleLangLabel } from '../../lib/subtitles';
+import { subtitleLangLabel, langPriority } from '../../lib/subtitles';
 import { normColor } from '../../lib/colorUtils';
 import { FocusTrap } from '../FocusTrap';
 
@@ -99,6 +99,10 @@ export type DrawerRelease = {
   meta: string | null;
   bucket: '4K' | '1080p' | '720p' | 'SD' | 'Other';
   isRd: boolean;
+  /** RD cache tier from the result name: 0 cached ([RD+]) / 1 unknown / 2 not
+   *  cached ([RD download]). Drives the "Cached" badge + hide-uncached, exactly
+   *  like the Detail StreamPicker + desktop BananasPicker. */
+  cacheRank: 0 | 1 | 2;
   /** Playable url, or null (infoHash-only → not selectable). */
   url: string | null;
 };
@@ -199,6 +203,15 @@ export function SettingsDrawer(props: SettingsDrawerProps) {
   const { nowPlaying, pinned, releaseBuckets } = useMemo(() => {
     const by: Record<DrawerRelease['bucket'], DrawerRelease[]> = { '4K': [], '1080p': [], '720p': [], SD: [], Other: [] };
     for (const r of releases) if (r.url) by[r.bucket].push(r);
+    // Hide confirmed-not-cached ([RD download], cacheRank 2) per bucket unless
+    // that empties it — mirrors the Detail StreamPicker + desktop BananasPicker.
+    // The currently-playing release is always kept. No-op for non-RD profiles
+    // (everything is cacheRank 1). Rows arrive cache-first ranked, so by[b][0]
+    // stays the best cached pick.
+    for (const b of RELEASE_BUCKET_ORDER) {
+      const cached = by[b].filter((r) => r.cacheRank < 2 || r.url === currentReleaseUrl);
+      if (cached.length > 0) by[b] = cached;
+    }
     // The currently-playing release gets its own "Continue watching" section and
     // is pulled out of Top picks + the accordions so it never appears twice.
     const playing = currentReleaseUrl ? releases.find((r) => r.url === currentReleaseUrl) ?? null : null;
@@ -255,10 +268,16 @@ export function SettingsDrawer(props: SettingsDrawerProps) {
       if (list) list.push(t);
       else variants.set(canon, [t]);
     }
-    return {
-      languageRows: order.map((c) => byCanon.get(c)!),
-      variantsByLang: variants,
-    };
+    // Order languages like the WEB player: preferred (Local → English) floated
+    // to the top, then the rest alphabetical by canonical label.
+    const rows = order.map((c) => byCanon.get(c)!);
+    rows.sort((a, b) => {
+      const pa = langPriority(a.rawLang);
+      const pb = langPriority(b.rawLang);
+      if (pb !== pa) return pb - pa;
+      return a.canon.localeCompare(b.canon);
+    });
+    return { languageRows: rows, variantsByLang: variants };
   }, [subtitleTracks]);
 
   // Which canonical language is actually playing (drives the lavender highlight).
@@ -269,7 +288,15 @@ export function SettingsDrawer(props: SettingsDrawerProps) {
     return subtitleLangLabel((t.lang ?? 'unknown').toLowerCase());
   }, [currentSubtitleId, subtitleTracks]);
 
-  const drilledVariants = drilledLang ? variantsByLang.get(drilledLang) ?? [] : [];
+  // Within a language, order variants like the WEB player's scoreSubtitleTrack:
+  // embedded (Built-in) first, then OpenSubtitles, then other addons. JS sort is
+  // stable, so same-tier variants keep their incoming (rating-sorted) order.
+  const drilledVariants = useMemo(() => {
+    const list = drilledLang ? variantsByLang.get(drilledLang) ?? [] : [];
+    const score = (t: DrawerSubtitleTrack) =>
+      t.embedded ? 100 : /opensubtitles/i.test(t.origin ?? '') ? 50 : /subtitles/i.test(t.origin ?? '') ? 20 : 0;
+    return list.slice().sort((a, b) => score(b) - score(a));
+  }, [drilledLang, variantsByLang]);
 
   // Re-seed focus to the first content row whenever the visible list changes.
   // FocusTrap's autoFocus pulls the cursor back inside when the focused node
@@ -466,7 +493,7 @@ export function SettingsDrawer(props: SettingsDrawerProps) {
                     rightPill="No Subtitles"
                     active={currentSubtitleId == null}
                     autoFocus
-                    onPress={() => { onApplySubtitle(null); onClose(); }}
+                    onPress={() => onApplySubtitle(null)}
                   />
                   {languageRows.map((row) => (
                     <LanguageRow
@@ -498,7 +525,7 @@ export function SettingsDrawer(props: SettingsDrawerProps) {
                         tag={tag}
                         embedded={v.embedded}
                         active={active}
-                        onPress={() => { onApplySubtitle(v.id); onClose(); }}
+                        onPress={() => onApplySubtitle(v.id)}
                       />
                     );
                   })}
@@ -664,11 +691,17 @@ function ReleaseRow({ m, release, active, autoFocus, onPress }: { m: M; release:
         <Text numberOfLines={2} style={{ flex: 1, fontFamily: font.bodyMed, fontSize: m.s(15), lineHeight: m.s(20), color: active ? colors.accent : 'rgba(255,255,255,0.9)' }}>{release.title}</Text>
         {active ? <Ionicons name="checkmark" size={m.s(18)} color={colors.accent} /> : null}
       </View>
-      {(release.isRd || release.meta) ? (
+      {(release.isRd || release.cacheRank === 0 || release.meta) ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(8), marginTop: m.s(5) }}>
           {release.isRd ? (
             <View style={{ borderRadius: m.s(4), backgroundColor: 'rgba(149,162,255,0.2)', paddingHorizontal: m.s(6), paddingVertical: m.s(1) }}>
               <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(10), letterSpacing: m.s(0.5), color: colors.accent }}>RD</Text>
+            </View>
+          ) : null}
+          {release.cacheRank === 0 ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(3), borderRadius: m.s(4), backgroundColor: 'rgba(25,247,210,0.16)', paddingHorizontal: m.s(6), paddingVertical: m.s(1) }}>
+              <Ionicons name="flash" size={m.s(10)} color={colors.brand} />
+              <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(10), letterSpacing: m.s(0.5), color: colors.brand }}>Cached</Text>
             </View>
           ) : null}
           {release.meta ? <Text numberOfLines={1} style={{ flex: 1, fontFamily: font.body, fontSize: m.s(12), color: 'rgba(255,255,255,0.55)' }}>{release.meta}</Text> : null}

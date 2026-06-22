@@ -88,6 +88,16 @@ export function subtitleLangLabel(lang: string): string {
   return l.length <= 4 ? l.toUpperCase() : l.charAt(0).toUpperCase() + l.slice(1);
 }
 
+/** Subtitle LANGUAGE sort priority — ported from the WEB player's `langPriority`
+ *  (subtitleUtils.ts): device-local subs first, then English, then everything
+ *  else (the caller breaks ties alphabetically). Higher = earlier. */
+export function langPriority(lang: string): number {
+  const l = lang.trim().toLowerCase();
+  if (l === 'local') return 2;
+  if (l === 'en' || l === 'eng' || l === 'english') return 1;
+  return 0;
+}
+
 // ── Public shapes ────────────────────────────────────────────────────────────
 /** One addon-provided subtitle variant (a single downloadable .srt/.vtt). */
 export type SubtitleTrack = {
@@ -231,6 +241,28 @@ export function groupSubtitlesByLanguage(tracks: SubtitleTrack[]): SubtitleLangu
     return ae - be;
   });
   return groups;
+}
+
+/** Flatten subtitle variants for the in-player flat list that SettingsDrawer
+ *  groups into language rows. Keeps languages in FIRST-APPEARANCE order (NO
+ *  preferred-language float — matches the desktop native player's language
+ *  list), but orders the variants WITHIN each language best-rated first so the
+ *  per-language drill-down shows the best sub on top (the desktop player's
+ *  `variantsForLanguage` ordering). Pure. */
+export function orderSubtitlesForPlayer(tracks: SubtitleTrack[]): SubtitleTrack[] {
+  const order: string[] = [];
+  const byCanon = new Map<string, SubtitleTrack[]>();
+  for (const t of tracks) {
+    const list = byCanon.get(t.langName);
+    if (list) list.push(t);
+    else {
+      byCanon.set(t.langName, [t]);
+      order.push(t.langName);
+    }
+  }
+  return order.flatMap((c) =>
+    byCanon.get(c)!.slice().sort((a, b) => b.rating - a.rating || a.source.localeCompare(b.source)),
+  );
 }
 
 /** Query every installed addon's `subtitles` resource for this content,
