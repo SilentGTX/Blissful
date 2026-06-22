@@ -9,6 +9,8 @@
     "web": "expo start --web",
     "link:core": "node scripts/link-core.js",
     "build:release": "npm run link:core && cd android && gradlew assembleRelease",
+    "apk": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-apk.ps1",
+    "apk:tv": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-apk.ps1 -Install",
     "postinstall": "node scripts/link-core.js"
   },
   "dependencies": {

@@ -58,8 +58,26 @@ Stop kills Metro only — the emulator stays warm for the next start.
    `npx expo run:android` (regenerates the gitignored `android/`).
 
 - **Typecheck (run before trusting changes):** `npx tsc --noEmit -p tsconfig.json` from this dir.
-- **Release APK:** `npm run build:release` → standalone universal `app-release.apk`
-  (debug-keystore signed, cleartext-traffic patched). Tee the build log; don't rely on bg output.
+- **Release APK:** `npm run apk` (build only) or `npm run apk:tv` (build + install + launch on the
+  TV) — both wrap `scripts/build-apk.ps1`, the documented working build. Output:
+  `android\app\build\outputs\apk\release\app-release.apk` (universal, debug-keystore signed,
+  cleartext-patched). The script runs, in order: `tsc --noEmit` gate → `node scripts/link-core.js`
+  (junctions `@blissful/core` so RELEASE bundling resolves the SOURCE workspace — Metro's
+  `extraNodeModules` alias is ignored once gradle bundles the JS) → `android\gradlew.bat
+  assembleRelease`. Flags: `-Install [-Device <serial>]`, `-Clean`, `-SkipTypecheck`.
+  - **Always invoke gradle as `.\gradlew.bat` from the `android` dir.** The legacy
+    `npm run build:release` (`… && cd android && gradlew …`) only resolves the bare `gradlew` when
+    cwd is exactly `android`, so it fails under `npm --prefix` / a wrong cwd — the .ps1 cd's there.
+  - **Build is INCREMENTAL** (gradle caches the NDK compile): ~20-30s JS-only · ~3 min
+    native-cached · ~10 min cold (arm64-v8a / armeabi-v7a / x86 / x86_64). Run it to COMPLETION —
+    a process cut off mid-build leaves no `BUILD SUCCESSFUL` and an "AAPT2 … daemon unexpectedly
+    exit" in `~/.gradle/daemon/*/daemon-*.out.log`; on a normal box that's a killed process, not
+    OOM — just re-run (incremental resumes from where it stopped).
+  - **Release is debug-keystore signed** (`android/app/build.gradle` → `release { signingConfig
+    signingConfigs.debug }`), so it installs over a previous build with `-r` (no signature clash).
+  - **Manual install/launch** (what `-Install` does): `adb -s 192.168.1.2:5555 install -r <apk>`
+    then `adb -s 192.168.1.2:5555 shell monkey -p com.blissful.tv.rn -c
+    android.intent.category.LAUNCHER 1`.
 - **Hot reload on the real TV:** debug APK + `adb reverse tcp:8081 tcp:8081`. Real TV = Philips
   65PUS7354 @ `192.168.1.2:5555` (adb-wifi, Android 12, armeabi-v7a); scrcpy to view.
 - **Verify TV interactions by DRIVING the app:** `adb shell input keyevent <code>` then
