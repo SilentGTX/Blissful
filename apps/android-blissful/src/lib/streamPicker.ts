@@ -239,6 +239,21 @@ export function rankStreams(rows: PickerStream[]): PickerStream[] {
   });
 }
 
+/** Build the player playlist for a CHOSEN release: the pick FIRST, then the other
+ *  playable releases in the SAME quality bucket (so a not-cached pick auto-
+ *  advances to another same-quality stream before dropping quality), then the
+ *  rest — all keeping the existing rank order (cached-first within each group). */
+export function orderForPick(rows: PickerStream[], chosenUrl: string): { url: string; title: string }[] {
+  const playable = rows.filter((r) => r.url);
+  const toPL = (r: PickerStream) => ({ url: r.url as string, title: r.title });
+  const chosen = playable.find((r) => r.url === chosenUrl);
+  if (!chosen) return playable.map(toPL);
+  const rest = playable.filter((r) => r.url !== chosenUrl);
+  const sameBucket = rest.filter((r) => r.bucket === chosen.bucket);
+  const others = rest.filter((r) => r.bucket !== chosen.bucket);
+  return [chosen, ...sameBucket, ...others].map(toPL);
+}
+
 function toRows(transportUrl: string, streams: StremioStream[]): PickerStream[] {
   const addonName = addonNameFromUrl(transportUrl);
   const isRd = addonName === 'Torrentio RD' || /realdebrid=/i.test(transportUrl);

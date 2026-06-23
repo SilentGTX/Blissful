@@ -26,7 +26,7 @@ import { SkipButton } from '../components/player/SkipButton';
 import { useSkipSegments } from '../components/player/useSkipSegments';
 import { formatFullDate } from '../lib/releaseInfo';
 import { setCurrentActivity, clearCurrentActivity } from '../lib/presence';
-import { loadStreams, bucketOf, type PickerStream } from '../lib/streamPicker';
+import { loadStreams, bucketOf, orderForPick, type PickerStream } from '../lib/streamPicker';
 import { resolveMeta } from '../lib/metaResolver';
 import { useAuth } from '../context/AuthContext';
 import { getStorageBaseUrl, normalizeStremioImage, saveStoredSettings, updateBlissfulLibraryProgress } from '@blissful/core';
@@ -34,7 +34,6 @@ import type { RootStackParamList } from '../navigation/types';
 
 type PlayerRoute = RouteProp<RootStackParamList, 'Player'>;
 type PlayerNav = StackNavigationProp<RootStackParamList, 'Player'>;
-const SEEK_STEP = 10;
 const CONTROLS_TIMEOUT = 3500;
 const DMCA_MAX_SECONDS = 45;
 
@@ -91,6 +90,7 @@ export function PlayerScreen() {
   const skippedRef = useRef(false);
   const autoSubRef = useRef(false); // whether we've auto-loaded the preferred subtitle for this file
   const autoAudioRef = useRef(false); // whether we've auto-selected the preferred audio for this file
+  const resumeAtRef = useRef(0); // seconds to resume at on the next file (release-switch / mid-play auto-advance)
 
   // ── Series episodes (next-episode button + the Episodes drawer) ────────────
   const isSeries = params.streamTarget?.type === 'series';
@@ -264,6 +264,11 @@ export function PlayerScreen() {
   const lastToggleRef = useRef(0);
 
   useEffect(() => {
+    // Carry the live position to the next file so switching the release (or an
+    // auto-advance from a real, playing file) RESUMES where we were — not at 0.
+    // Only from a REVEALED file; DMCA placeholders never played real content, so
+    // they must not clobber the CW-resume / switch position.
+    if (revealedRef.current) resumeAtRef.current = timeRef.current;
     player.replace(current.url);
     player.play();
     setRevealed(false);
@@ -275,10 +280,8 @@ export function PlayerScreen() {
     skippedRef.current = false;
     autoSubRef.current = false;
     autoAudioRef.current = false;
+    seekedRef.current = false;
     endFiredRef.current = false;
-    // Cancel any pending hold-to-seek carried from the previous file.
-    if (seekTimerRef.current) { clearTimeout(seekTimerRef.current); seekTimerRef.current = null; }
-    setSeekTarget(null);
     // Key on the URL (not just index) so switching to a different release via the
     // Sources picker — which may land on the same index — still reloads the player.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -296,7 +299,7 @@ export function PlayerScreen() {
     if (duration > DMCA_MAX_SECONDS) {
       if (!seekedRef.current) {
         seekedRef.current = true;
-        const start = params.startSeconds ?? 0;
+        const start = resumeAtRef.current > 0 ? resumeAtRef.current : (params.startSeconds ?? 0);
         if (start > 0 && start < duration - 5) player.currentTime = start;
         // The resume seek can leave the engine paused — keep it playing.
         player.play();
@@ -378,9 +381,10 @@ export function PlayerScreen() {
   // Switch to a different release: rebuild the ranked playable playlist starting
   // at the chosen url (so DMCA auto-advance still works), then close the drawer.
   const onSelectRelease = (url: string) => {
-    const playable = releases.filter((r) => r.url).map((r) => ({ url: r.url as string, title: r.title }));
-    const idx = Math.max(0, playable.findIndex((p) => p.url === url));
-    if (playable.length) { setPlaylist(playable); setIndex(idx); }
+    // Prefer the chosen QUALITY on auto-advance (same-bucket first), like the
+    // Detail picker; the live position carries over via the reload effect.
+    const ordered = orderForPick(releases, url);
+    if (ordered.length) { setPlaylist(ordered); setIndex(0); }
     closeDrawer();
   };
 
@@ -740,44 +744,23 @@ export function PlayerScreen() {
     bumpControls();
   };
   // ── Hold-to-accelerate seek ────────────────────────────────────────────────
-  // Holding FF/RW repeats the key; STACK the repeats into one growing target
-  // (10s ramping to ~90s) and apply a SINGLE seek when the burst settles, so the
-  // video seeks once instead of stuttering through every step. The scrub bar +
-  // time label preview the pending target via `seekTarget`.
-  const [seekTarget, setSeekTarget] = useState<number | null>(null);
-  const seekTargetRef = useRef(0);
+  // A single FF/RW press seeks the user's saved step (seekTimeDurationMs, default
+  // 10s) IMMEDIATELY — same as before. Holding repeats the key fast; the step then
+  // ramps up (x1 -> x8) so you cover ground quickly. Each press applies right away
+  // (no debounce / preview), so the scrub follows the real position with no flash.
   const seekLevelRef = useRef(0);
   const seekDirRef = useRef(0);
   const seekAtRef = useRef(0);
-  const seekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const applySeekTarget = () => {
-    seekTimerRef.current = null;
-    seekLevelRef.current = 0;
-    seekDirRef.current = 0;
-    const target = seekTargetRef.current;
-    const cur = player.currentTime ?? timeRef.current;
-    player.seekBy(target - cur);
-    watchPartyRef.current.broadcastSeek(target);
-    setSeekTarget(null);
-  };
   const bumpSeek = (dir: 1 | -1) => {
     const now = Date.now();
-    // New burst on a direction flip, a gap, or no pending apply → anchor to the
-    // live position and reset the acceleration.
-    if (dir !== seekDirRef.current || now - seekAtRef.current > 650 || seekTimerRef.current == null) {
-      seekLevelRef.current = 0;
-      seekTargetRef.current = player.currentTime ?? timeRef.current;
-    }
+    // Reset the ramp on a direction flip or a gap (a deliberate single tap).
+    if (dir !== seekDirRef.current || now - seekAtRef.current > 600) seekLevelRef.current = 0;
     seekDirRef.current = dir;
     seekAtRef.current = now;
     seekLevelRef.current += 1;
-    const step = SEEK_STEP * Math.min(9, 1 + Math.floor(seekLevelRef.current / 2)); // 10,10,20,20,…,90s
-    const max = durationRef.current > 0 ? durationRef.current : Number.MAX_SAFE_INTEGER;
-    seekTargetRef.current = Math.max(0, Math.min(max, seekTargetRef.current + dir * step));
-    setSeekTarget(seekTargetRef.current);
-    bumpControls();
-    if (seekTimerRef.current) clearTimeout(seekTimerRef.current);
-    seekTimerRef.current = setTimeout(applySeekTarget, 360);
+    const base = (tvs.seekTimeDurationMs ?? 10000) / 1000; // the saved single-tap step (seconds)
+    const step = base * Math.min(8, 1 + Math.floor(seekLevelRef.current / 3)); // x1 for taps, ramps on hold
+    seek(dir * step);
   };
   const seek = (delta: number) => {
     player.seekBy(delta);
@@ -986,9 +969,7 @@ export function PlayerScreen() {
   // at 0% — mirrors the desktop BottomControls.formatTime, which returns --:-- for
   // an invalid time. Once the real video reveals (duration > placeholder), the
   // real times appear.
-  // While holding FF/RW, the scrub + time PREVIEW the pending accumulated target.
-  const displayTime = seekTarget ?? time;
-  const pct = revealed && duration > 0 ? Math.min(1, displayTime / duration) : 0;
+  const pct = revealed && duration > 0 ? Math.min(1, time / duration) : 0;
   const badges = [detectSource(current.url)?.code, is4kTitle(current.title) ? '4K' : null, isHdrTitle(current.title) ? 'HDR' : null].filter(Boolean) as string[];
   const bf = (id: BottomId) => row === 'bottom' && bottom[idx] === id;
   const tf = (id: (typeof TOP)[number]) => row === 'top' && TOP[idx] === id;
@@ -1056,7 +1037,7 @@ export function PlayerScreen() {
       {controlsVisible && !drawerOpen ? (
         <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 20 }} pointerEvents="none">
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.85)']} style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(16), paddingHorizontal: m.s(22), paddingTop: m.s(40), paddingBottom: m.s(6) }}>
-            <Text style={timeStyle(m)}>{revealed ? fmt(displayTime) : '--:--'}</Text>
+            <Text style={timeStyle(m)}>{revealed ? fmt(time) : '--:--'}</Text>
             <View style={{ flex: 1, height: m.s(4), borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.25)', justifyContent: 'center' }}>
               <View style={{ position: 'absolute', left: 0, height: m.s(4), borderRadius: 999, width: `${pct * 100}%`, backgroundColor: colors.accent }} />
               <View style={{ position: 'absolute', left: `${pct * 100}%`, width: m.s(12), height: m.s(12), borderRadius: 999, marginLeft: -m.s(6), backgroundColor: '#fff' }} />

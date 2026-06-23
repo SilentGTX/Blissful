@@ -15,7 +15,7 @@ import { colors, font } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { FocusTrap } from './FocusTrap';
 import { useAuth } from '../context/AuthContext';
-import { BUCKET_ORDER, loadStreams, type PickerStream, type ResolutionBucket } from '../lib/streamPicker';
+import { BUCKET_ORDER, loadStreams, orderForPick, type PickerStream, type ResolutionBucket } from '../lib/streamPicker';
 
 type M = ReturnType<typeof useMetrics>;
 
@@ -174,13 +174,12 @@ export function StreamPicker({
 
   if (!target) return null;
 
-  // Ranked playable streams (debrid/HTTP) — the player auto-advances through
-  // these if a chosen one resolves to the DMCA placeholder.
-  const playable: PlayableStream[] = rows.filter((r) => r.url).map((r) => ({ url: r.url as string, title: r.title }));
   const playRow = (row: PickerStream) => {
     if (!row.url) return;
-    const idx = Math.max(0, playable.findIndex((p) => p.url === row.url));
-    onPlay(playable, idx);
+    // Order the playlist so the chosen QUALITY is preferred on auto-advance: the
+    // pick first, then other same-bucket streams, then the rest (rank order) — so
+    // a not-cached 4K pick falls to another 4K before dropping to 1080p.
+    onPlay(orderForPick(rows, row.url), 0);
   };
 
   const panelW = Math.min(m.s(900), m.width * 0.72);
