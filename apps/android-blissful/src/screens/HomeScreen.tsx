@@ -8,7 +8,7 @@ import { colors } from '../theme/colors';
 import { useMetrics } from '../theme/metrics';
 import { useAuth } from '../context/AuthContext';
 import { useContentInert } from '../lib/contentFocus';
-import { fetchContinueWatching, type CwItem } from '../lib/continueWatching';
+import { cwSeasonEpisode, fetchContinueWatching, type CwItem } from '../lib/continueWatching';
 import { formatReleaseInfo } from '../lib/releaseInfo';
 import { loadStreams } from '../lib/streamPicker';
 import { resolveMeta } from '../lib/metaResolver';
@@ -394,7 +394,14 @@ export function HomeScreen() {
         item={resumeItem}
         onResume={(i) => playCw(i, i.resumeSeconds)}
         onStartOver={(i) => playCw(i, 0)}
-        onGoToDetail={(i) => navigation.navigate('Detail', { id: i.id, type: i.type as MediaType, name: i.name, poster: i.poster })}
+        onGoToDetail={(i) => {
+          // Carry season+episode so Detail lands FOCUSED on that episode (the
+          // player-return flow already focuses + scrolls to params.season/episode).
+          // Only with a reliable season (imdb tt:S:E); kitsu has none → default focus.
+          const { season, episode } = cwSeasonEpisode(i.videoId);
+          const focus = season != null ? { season, episode } : {};
+          navigation.navigate('Detail', { id: i.id, type: i.type as MediaType, name: i.name, poster: i.poster, ...focus });
+        }}
         onClose={() => setResumeItem(null)}
       />
       {resolving ? <BufferingVeil visible black logo={resolving.logo} /> : null}

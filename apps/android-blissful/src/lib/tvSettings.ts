@@ -55,7 +55,7 @@ export const DEFAULT_TV_SETTINGS: TvSettings = {
   subtitlesBackgroundColor: 'rgba(0,0,0,0)', // transparent
   subtitlesOutlineColor: 'rgba(0,0,0,0.75)',
   subtitlesLanguage: 'English',
-  audioLanguage: null,
+  audioLanguage: 'English',
   seekTimeDurationMs: 10000,
   seekShortTimeDurationMs: 4000,
   bingeWatching: true,

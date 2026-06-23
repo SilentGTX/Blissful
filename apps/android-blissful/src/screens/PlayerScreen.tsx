@@ -90,6 +90,7 @@ export function PlayerScreen() {
   const releasesFetched = useRef(false);
   const skippedRef = useRef(false);
   const autoSubRef = useRef(false); // whether we've auto-loaded the preferred subtitle for this file
+  const autoAudioRef = useRef(false); // whether we've auto-selected the preferred audio for this file
 
   // ── Series episodes (next-episode button + the Episodes drawer) ────────────
   const isSeries = params.streamTarget?.type === 'series';
@@ -273,7 +274,11 @@ export function PlayerScreen() {
     setSubTracks([]);
     skippedRef.current = false;
     autoSubRef.current = false;
+    autoAudioRef.current = false;
     endFiredRef.current = false;
+    // Cancel any pending hold-to-seek carried from the previous file.
+    if (seekTimerRef.current) { clearTimeout(seekTimerRef.current); seekTimerRef.current = null; }
+    setSeekTarget(null);
     // Key on the URL (not just index) so switching to a different release via the
     // Sources picker — which may land on the same index — still reloads the player.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -697,6 +702,26 @@ export function PlayerScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [extTracks, subTracks, revealed]);
 
+  // Auto-select the preferred AUDIO language (saved setting; default English) on
+  // the real file — mirrors the subtitle auto-load. Silent (no toast), one-shot
+  // per file via autoAudioRef.
+  useEffect(() => {
+    if (autoAudioRef.current || !revealed || audioTracks.length === 0) return;
+    const pref = (tvs.audioLanguage ?? 'English').trim().toLowerCase();
+    if (!pref || pref === 'none') return;
+    const matches = (lang: string | null | undefined) => {
+      const l = (lang ?? '').toLowerCase();
+      return !!l && (pref.startsWith(l) || l.startsWith(pref) || l === pref);
+    };
+    const track = audioTracks.find((t) => matches(t.language));
+    if (track && track.id !== curAudio) {
+      autoAudioRef.current = true;
+      (player as unknown as { audioTrack?: Track | null }).audioTrack = track;
+      setCurAudio(track.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [audioTracks, revealed]);
+
   const togglePlay = () => {
     const now = Date.now();
     if (now - lastToggleRef.current < 250) return; // collapse select+playPause pair
@@ -713,6 +738,46 @@ export function PlayerScreen() {
     if (wantPlay) watchPartyRef.current.broadcastPlay();
     else watchPartyRef.current.broadcastPause();
     bumpControls();
+  };
+  // ── Hold-to-accelerate seek ────────────────────────────────────────────────
+  // Holding FF/RW repeats the key; STACK the repeats into one growing target
+  // (10s ramping to ~90s) and apply a SINGLE seek when the burst settles, so the
+  // video seeks once instead of stuttering through every step. The scrub bar +
+  // time label preview the pending target via `seekTarget`.
+  const [seekTarget, setSeekTarget] = useState<number | null>(null);
+  const seekTargetRef = useRef(0);
+  const seekLevelRef = useRef(0);
+  const seekDirRef = useRef(0);
+  const seekAtRef = useRef(0);
+  const seekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const applySeekTarget = () => {
+    seekTimerRef.current = null;
+    seekLevelRef.current = 0;
+    seekDirRef.current = 0;
+    const target = seekTargetRef.current;
+    const cur = player.currentTime ?? timeRef.current;
+    player.seekBy(target - cur);
+    watchPartyRef.current.broadcastSeek(target);
+    setSeekTarget(null);
+  };
+  const bumpSeek = (dir: 1 | -1) => {
+    const now = Date.now();
+    // New burst on a direction flip, a gap, or no pending apply → anchor to the
+    // live position and reset the acceleration.
+    if (dir !== seekDirRef.current || now - seekAtRef.current > 650 || seekTimerRef.current == null) {
+      seekLevelRef.current = 0;
+      seekTargetRef.current = player.currentTime ?? timeRef.current;
+    }
+    seekDirRef.current = dir;
+    seekAtRef.current = now;
+    seekLevelRef.current += 1;
+    const step = SEEK_STEP * Math.min(9, 1 + Math.floor(seekLevelRef.current / 2)); // 10,10,20,20,…,90s
+    const max = durationRef.current > 0 ? durationRef.current : Number.MAX_SAFE_INTEGER;
+    seekTargetRef.current = Math.max(0, Math.min(max, seekTargetRef.current + dir * step));
+    setSeekTarget(seekTargetRef.current);
+    bumpControls();
+    if (seekTimerRef.current) clearTimeout(seekTimerRef.current);
+    seekTimerRef.current = setTimeout(applySeekTarget, 360);
   };
   const seek = (delta: number) => {
     player.seekBy(delta);
@@ -893,13 +958,13 @@ export function PlayerScreen() {
       case 'fastForward':
         if (r === 'bottom') goRow('bottom', Math.min(bottom.length - 1, i + 1));
         else if (r === 'top') goRow('top', Math.min(TOP.length - 1, i + 1));
-        else seek(SEEK_STEP);
+        else bumpSeek(1);
         break;
       case 'left':
       case 'rewind':
         if (r === 'bottom') goRow('bottom', Math.max(0, i - 1));
         else if (r === 'top') goRow('top', Math.max(0, i - 1));
-        else seek(-SEEK_STEP);
+        else bumpSeek(-1);
         break;
       default:
         bumpControls();
@@ -921,7 +986,9 @@ export function PlayerScreen() {
   // at 0% — mirrors the desktop BottomControls.formatTime, which returns --:-- for
   // an invalid time. Once the real video reveals (duration > placeholder), the
   // real times appear.
-  const pct = revealed && duration > 0 ? Math.min(1, time / duration) : 0;
+  // While holding FF/RW, the scrub + time PREVIEW the pending accumulated target.
+  const displayTime = seekTarget ?? time;
+  const pct = revealed && duration > 0 ? Math.min(1, displayTime / duration) : 0;
   const badges = [detectSource(current.url)?.code, is4kTitle(current.title) ? '4K' : null, isHdrTitle(current.title) ? 'HDR' : null].filter(Boolean) as string[];
   const bf = (id: BottomId) => row === 'bottom' && bottom[idx] === id;
   const tf = (id: (typeof TOP)[number]) => row === 'top' && TOP[idx] === id;
@@ -989,7 +1056,7 @@ export function PlayerScreen() {
       {controlsVisible && !drawerOpen ? (
         <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 20 }} pointerEvents="none">
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.85)']} style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(16), paddingHorizontal: m.s(22), paddingTop: m.s(40), paddingBottom: m.s(6) }}>
-            <Text style={timeStyle(m)}>{revealed ? fmt(time) : '--:--'}</Text>
+            <Text style={timeStyle(m)}>{revealed ? fmt(displayTime) : '--:--'}</Text>
             <View style={{ flex: 1, height: m.s(4), borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.25)', justifyContent: 'center' }}>
               <View style={{ position: 'absolute', left: 0, height: m.s(4), borderRadius: 999, width: `${pct * 100}%`, backgroundColor: colors.accent }} />
               <View style={{ position: 'absolute', left: `${pct * 100}%`, width: m.s(12), height: m.s(12), borderRadius: 999, marginLeft: -m.s(6), backgroundColor: '#fff' }} />

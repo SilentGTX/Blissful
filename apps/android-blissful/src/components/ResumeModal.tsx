@@ -29,7 +29,9 @@ export function ResumeModal({
   item: CwItem | null;
   onResume: (i: CwItem) => void;
   onStartOver: (i: CwItem) => void;
-  onGoToDetail: (i: CwItem) => void;
+  /** Omit to HIDE the "Go to show" button — e.g. when the modal is already on
+   *  the show's detail page (DetailScreen), where it would be redundant. */
+  onGoToDetail?: (i: CwItem) => void;
   onClose: () => void;
 }) {
   const m = useMetrics();
@@ -66,7 +68,8 @@ export function ResumeModal({
   const buttons = [
     { label: `Resume ${fmtTime(item.resumeSeconds)}`, primary: true, run: () => onResume(item) },
     { label: 'Start from beginning', run: () => onStartOver(item) },
-    { label: 'Go to show', run: () => onGoToDetail(item) },
+    // Hidden when no handler is given (already on the show's detail page).
+    ...(onGoToDetail ? [{ label: 'Go to show', run: () => onGoToDetail(item) }] : []),
   ];
 
   return (

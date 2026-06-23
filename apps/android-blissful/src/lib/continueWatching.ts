@@ -34,6 +34,22 @@ function episodeLabelOf(item: LibraryItem): { label?: string; videoId?: string }
   return { videoId: vid };
 }
 
+/** Season + episode to FOCUS on the Detail page from a CW item's episode videoId.
+ *  Season is reliable ONLY for the imdb `tt…:S:E` form — kitsu/MAL ids are
+ *  `scheme:showId:ep` (the second-to-last part is the SHOW id, NOT a season), so
+ *  there we return only the episode and let Detail default the season. */
+export function cwSeasonEpisode(videoId?: string): { season?: number; episode?: number } {
+  if (!videoId) return {};
+  const parts = videoId.split(':');
+  if (parts.length < 2) return {};
+  const ep = Number(parts[parts.length - 1]);
+  const episode = Number.isFinite(ep) && ep > 0 ? ep : undefined;
+  const isImdbEp = /^tt\d+$/.test(parts[0]) && parts.length === 3;
+  const s = isImdbEp ? Number(parts[1]) : NaN;
+  const season = Number.isFinite(s) && s > 0 ? s : undefined;
+  return { season, episode };
+}
+
 function mtimeMs(item: LibraryItem): number {
   const t = item._mtime;
   if (typeof t === 'string') {

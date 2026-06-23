@@ -110,6 +110,14 @@ export function DetailScreen() {
   const [similar, setSimilar] = useState<StremioMetaPreview[]>([]);
   const [picker, setPicker] = useState<StreamPickerTarget | null>(null);
   const [dropdown, setDropdown] = useState<DropdownAnchor | null>(null);
+  // When an edge season/range chevron disables, focus would snap to the Back
+  // button — pull it to the first episode instead (one-shot, cleared after use).
+  const [pendingFocusFirstEp, setPendingFocusFirstEp] = useState(false);
+  useEffect(() => {
+    if (!pendingFocusFirstEp) return;
+    const t = setTimeout(() => setPendingFocusFirstEp(false), 120);
+    return () => clearTimeout(t);
+  }, [pendingFocusFirstEp]);
   const epListRef = useRef<FlatList<Video>>(null);
   const { token } = useAuth();
 
@@ -217,6 +225,17 @@ export function DetailScreen() {
     setEpChunk(preEpIdx >= 0 ? Math.floor(preEpIdx / EP_CHUNK) : 0);
   }, [season, episodes.length, preEpIdx]);
   const safeChunk = Math.min(epChunk, chunkCount - 1);
+  // Season / episode-range chevrons: when a press lands on an EDGE (a chevron
+  // disables → non-focusable), the focus engine snaps to the Back button — flag
+  // the first episode to grab focus instead.
+  const goToSeasonIdx = (nextIdx: number) => {
+    setSeason(seasons[nextIdx]);
+    if (nextIdx <= 0 || nextIdx >= seasons.length - 1) setPendingFocusFirstEp(true);
+  };
+  const goToChunk = (nextChunk: number) => {
+    setEpChunk(nextChunk);
+    if (nextChunk <= 0 || nextChunk >= chunkCount - 1) setPendingFocusFirstEp(true);
+  };
   const visibleEpisodes = needsRanges ? episodes.slice(safeChunk * EP_CHUNK, safeChunk * EP_CHUNK + EP_CHUNK) : episodes;
   const rangeOptions: SelectOption[] = useMemo(() => {
     if (!needsRanges) return [];
@@ -495,7 +514,7 @@ export function DetailScreen() {
                 const idx = Math.max(0, seasons.indexOf(season ?? seasons[0]));
                 return (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(8) }}>
-                    <IconButton icon="chevron-back" size="md" disabled={idx <= 0} onPress={() => setSeason(seasons[idx - 1])} />
+                    <IconButton icon="chevron-back" size="md" disabled={idx <= 0} onPress={() => goToSeasonIdx(idx - 1)} />
                     <TvSelect
                       iconName="albums-outline"
                       options={seasons.map((s): SelectOption => ({ key: String(s), label: `Season ${s}` }))}
@@ -505,14 +524,14 @@ export function DetailScreen() {
                       minWidth={m.s(220)}
                       onOpen={setDropdown}
                     />
-                    <IconButton icon="chevron-forward" size="md" disabled={idx >= seasons.length - 1} onPress={() => setSeason(seasons[idx + 1])} />
+                    <IconButton icon="chevron-forward" size="md" disabled={idx >= seasons.length - 1} onPress={() => goToSeasonIdx(idx + 1)} />
                   </View>
                 );
               })() : null}
               {/* Episode-range selector for huge seasons (One Piece etc.). */}
               {needsRanges ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(8) }}>
-                  <IconButton icon="chevron-back" size="md" disabled={safeChunk <= 0} onPress={() => setEpChunk(safeChunk - 1)} />
+                  <IconButton icon="chevron-back" size="md" disabled={safeChunk <= 0} onPress={() => goToChunk(safeChunk - 1)} />
                   <TvSelect
                     iconName="list-outline"
                     options={rangeOptions}
@@ -522,7 +541,7 @@ export function DetailScreen() {
                     minWidth={m.s(300)}
                     onOpen={setDropdown}
                   />
-                  <IconButton icon="chevron-forward" size="md" disabled={safeChunk >= chunkCount - 1} onPress={() => setEpChunk(safeChunk + 1)} />
+                  <IconButton icon="chevron-forward" size="md" disabled={safeChunk >= chunkCount - 1} onPress={() => goToChunk(safeChunk + 1)} />
                 </View>
               ) : null}
             </View>
@@ -535,7 +554,7 @@ export function DetailScreen() {
               getItemLayout={(_, index) => ({ length: m.s(280), offset: m.s(280) * index, index })}
               onScrollToIndexFailed={() => { /* layout not measured yet — the effect retries */ }}
               contentContainerStyle={{ gap: m.s(20), paddingVertical: m.s(10), paddingLeft: m.s(2), paddingRight: m.safeX }}
-              renderItem={({ item }) => (
+              renderItem={({ item, index }) => (
                 <EpisodeCard
                   video={item}
                   m={m}
@@ -553,7 +572,7 @@ export function DetailScreen() {
                   rating={(item.episode != null ? epRatings[item.episode] : undefined) ?? (item as { imdbRating?: string | number }).imdbRating ?? null}
                   watched={episodeWatched(item)}
                   progress={episodeProgressPct(item.id)}
-                  autoFocus={item.episode === params.episode && season === params.season}
+                  autoFocus={(item.episode === params.episode && season === params.season) || (index === 0 && pendingFocusFirstEp)}
                   onPress={() => onEpisodePress(item)}
                 />
               )}
@@ -613,7 +632,6 @@ export function DetailScreen() {
           item={cwItemForEpisode(resumeEp, name, normalizeStremioImage(meta?.poster) ?? params.poster, episodeResumeSeconds(resumeEp.id))}
           onResume={() => { const v = resumeEp; setResumeEp(null); playEpisodeDirect(v, episodeResumeSeconds(v.id)); }}
           onStartOver={() => { const v = resumeEp; setResumeEp(null); playEpisodeDirect(v, 0); }}
-          onGoToDetail={() => setResumeEp(null)}
           onClose={() => setResumeEp(null)}
         />
       ) : null}
