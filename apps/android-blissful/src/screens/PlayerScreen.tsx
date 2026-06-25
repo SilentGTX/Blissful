@@ -91,6 +91,8 @@ export function PlayerScreen() {
   const autoSubRef = useRef(false); // whether we've auto-loaded the preferred subtitle for this file
   const autoAudioRef = useRef(false); // whether we've auto-selected the preferred audio for this file
   const resumeAtRef = useRef(0); // seconds to resume at on the next file (release-switch / mid-play auto-advance)
+  const firstFrameRef = useRef(false); // VideoView painted a real frame — proves the decoder works; brakes the codec skip
+  const codecSkipRef = useRef(false); // one-shot guard for the undecodable-stream auto-advance
 
   // ── Series episodes (next-episode button + the Episodes drawer) ────────────
   const isSeries = params.streamTarget?.type === 'series';
@@ -281,6 +283,8 @@ export function PlayerScreen() {
     autoSubRef.current = false;
     autoAudioRef.current = false;
     seekedRef.current = false;
+    firstFrameRef.current = false;
+    codecSkipRef.current = false;
     endFiredRef.current = false;
     // Key on the URL (not just index) so switching to a different release via the
     // Sources picker — which may land on the same index — still reloads the player.
@@ -654,6 +658,7 @@ export function PlayerScreen() {
       const p = player as unknown as {
         availableAudioTracks?: Track[];
         availableSubtitleTracks?: Track[];
+        availableVideoTracks?: { isSupported?: boolean }[];
         audioTrack?: Track | null;
         subtitleTrack?: Track | null;
       };
@@ -661,6 +666,30 @@ export function PlayerScreen() {
       if (p.availableSubtitleTracks) setSubTracks(p.availableSubtitleTracks);
       setCurAudio(p.audioTrack?.id ?? null);
       setCurSub(p.subtitleTrack?.id ?? null);
+      // Codec watchdog. The TV's decoder reports per-track support; a 4K encode
+      // the panel can't decode (Dolby Vision profile / 10-bit level / lossless
+      // audio) plays as a BLACK, silent picture while the container + our text
+      // subtitles still parse — so expo-video never raises status 'error' (the
+      // demuxer is fine). Detect it from the device's own `isSupported` report
+      // and auto-advance to the next ranked release (orderForPick keeps the
+      // playlist same-quality-first, so we try OTHER 4K before dropping down).
+      // A painted first frame proves the decoder works, so it hard-brakes the
+      // skip — a guard against an isSupported false-negative on a stream that is
+      // actually rendering.
+      if (
+        revealedRef.current &&
+        !codecSkipRef.current &&
+        !skippedRef.current &&
+        !firstFrameRef.current &&
+        index < playlist.length - 1
+      ) {
+        const vids = p.availableVideoTracks ?? [];
+        if (vids.length > 0 && vids.every((t) => t.isSupported === false)) {
+          codecSkipRef.current = true;
+          toast.show("This release can't play on your TV", { description: 'Switching to the next one' });
+          setErrored(true);
+        }
+      }
     }, 400);
     return () => {
       clearInterval(id);
@@ -938,16 +967,24 @@ export function PlayerScreen() {
         else bumpControls();
         break;
       case 'right':
-      case 'fastForward':
         if (r === 'bottom') goRow('bottom', Math.min(bottom.length - 1, i + 1));
         else if (r === 'top') goRow('top', Math.min(TOP.length - 1, i + 1));
         else bumpSeek(1);
         break;
       case 'left':
-      case 'rewind':
         if (r === 'bottom') goRow('bottom', Math.max(0, i - 1));
         else if (r === 'top') goRow('top', Math.max(0, i - 1));
         else bumpSeek(-1);
+        break;
+      // Dedicated media seek keys ALWAYS seek — never navigate the control row.
+      // D-pad right/left (above) double as control-row navigation when a row is
+      // focused; the remote's FF/RW keys must NOT, or pressing seek-forward while
+      // the chrome is up just walks focus right instead of scrubbing.
+      case 'fastForward':
+        bumpSeek(1);
+        break;
+      case 'rewind':
+        bumpSeek(-1);
         break;
       default:
         bumpControls();
@@ -977,7 +1014,7 @@ export function PlayerScreen() {
 
   return (
     <View style={styles.root} focusable hasTVPreferredFocus>
-      <VideoView player={player} style={[StyleSheet.absoluteFill, { opacity: revealed ? 1 : 0 }]} contentFit="contain" nativeControls={false} />
+      <VideoView player={player} style={[StyleSheet.absoluteFill, { opacity: revealed ? 1 : 0 }]} contentFit="contain" nativeControls={false} onFirstFrameRender={() => { firstFrameRef.current = true; }} />
 
       {/* Buffering logo overlay — the title's logo pulsing on the black root while
           the torrent loads, with the full player chrome shown ON TOP (z below the
