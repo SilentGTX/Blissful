@@ -1039,12 +1039,33 @@ export default function PlayerPage() {
         res: { streams: [] as StremioStream[] },
         addon: { transportUrl: 'rd-fallback', manifest: { name: 'Real-Debrid' } },
       }));
+    // Per-source timeout. fetchStreams here is passed NO AbortSignal, so a
+    // hung/slow addon's fetch never settles — and `Promise.allSettled` waits for
+    // ALL of them. With 15-20 addons installed, one dead addon strands the whole
+    // chain, including the already-resolved House RD streams, so the player never
+    // probes/commits a fallback and just sits on the Vidking placeholder ("not
+    // falling back to RD" — observed on brand-new titles where Videasy 502s on
+    // every server). Cap each source so allSettled settles in bounded time and
+    // the RD pick can run. Mirrors fetchFallbackReleases' withTimeout.
+    const SOURCE_TIMEOUT_MS = 8000;
+    const settleWithin = <T,>(p: Promise<T>, fallback: T): Promise<T> =>
+      Promise.race([
+        p,
+        new Promise<T>((resolve) => { setTimeout(() => resolve(fallback), SOURCE_TIMEOUT_MS); }),
+      ]);
     void Promise.allSettled([
       ...addons.map((a) =>
-        fetchStreams({ type, id: streamId, baseUrl: stripManifest(a.transportUrl) })
-          .then((res) => ({ res, addon: a }))
+        settleWithin(
+          fetchStreams({ type, id: streamId, baseUrl: stripManifest(a.transportUrl) })
+            .then((res) => ({ res: { streams: res.streams ?? [] }, addon: a }))
+            .catch(() => ({ res: { streams: [] as StremioStream[] }, addon: a })),
+          { res: { streams: [] as StremioStream[] }, addon: a },
+        )
       ),
-      rdFallbackEntry,
+      settleWithin(rdFallbackEntry, {
+        res: { streams: [] as StremioStream[] },
+        addon: { transportUrl: 'rd-fallback', manifest: { name: 'Real-Debrid' } },
+      }),
     ]).then((results) => {
       if (cancelled) return;
       // Collect EVERY HTTPS stream (skip magnets/notWebReady — those need the
