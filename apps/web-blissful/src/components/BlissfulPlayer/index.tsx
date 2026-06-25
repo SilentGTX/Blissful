@@ -2532,9 +2532,15 @@ export default function BlissfulPlayer(props: {
             return;
           }
           const current = hls.audioTrack;
-          if (!userPickedAudioRef.current && props.playerSettings.audioLanguage) {
+          // Default the audio language to English when the profile has no
+          // explicit preference (mirrors mpv's `alang=eng,en` fallback on
+          // desktop and the TV app's `audioLanguage ?? 'English'`), so a
+          // multi-audio file lands on the English track out of the box rather
+          // than whatever track the file happens to list first.
+          if (!userPickedAudioRef.current) {
+            const audioPref = props.playerSettings.audioLanguage ?? 'eng';
             const preferred = tracks.findIndex((track) =>
-              languageMatch(props.playerSettings.audioLanguage, track.lang ?? track.name ?? '')
+              languageMatch(audioPref, track.lang ?? track.name ?? '')
             );
             if (preferred >= 0) {
               selectAudioTrack(preferred);

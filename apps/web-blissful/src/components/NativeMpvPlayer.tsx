@@ -1420,6 +1420,16 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         setTimePos(0);
         setDuration(0);
         const opts = startTarget > 0 ? `start=${startTarget}` : '';
+        // Default audio to English (or the saved preference) BEFORE loadfile so
+        // mpv's track selection AT LOAD TIME honors it. The styling effect also
+        // pushes `alang`, but it's declared later and the load is async, so on
+        // the FIRST file of a session it races the loadfile (mpv picks the
+        // file's first track before `alang` arrives). Setting it here, in
+        // sequence, makes the English default reliable for the first file too;
+        // mpv keeps the property across loadfiles. Mirrors line ~2040.
+        const audioPref = props.playerSettings.audioLanguage;
+        const alangPref = audioPref && audioPref.trim() !== '' ? audioPref : 'eng,en';
+        await desktop.mpv.command('set', 'alang', alangPref).catch(() => {});
         await desktop.mpv.command('loadfile', resolved, 'replace', '-1', opts);
         if (cancelled) return;
 
