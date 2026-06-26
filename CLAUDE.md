@@ -78,6 +78,17 @@ Source is **MIT** ([LICENSE](LICENSE)); the shipped desktop installer bundles LG
 details in [apps/desktop-blissful/DOCUMENTATION.md](apps/desktop-blissful/DOCUMENTATION.md) and
 the root [README](README.md).
 
+## Local vision LLM (home-lab Mac)
+
+An **Ollama** server runs on the M4 Mac mini home-lab (`192.168.1.11` — the same box as the
+web/backend deploy), serving **`qwen2.5vl:7b`** for reading images (OCR, screenshots, documents,
+sticker/album pages). Localhost-only on `:11434`; loads on demand and auto-unloads, so idle cost
+is ~zero. When the user says "the local model / local LLM / local vision model" or asks to "read
+this image," **this is it** — feed it the image via `ollama run qwen2.5vl:7b "read this: /path"`
+or the HTTP API (`POST :11434/api/generate` with base64 `images`). Setup, RAM notes, and lighter
+alternatives:
+`C:\Users\origi\.claude\projects\D--JS-Blissful\memory\project_homelab_local_vision_llm.md`.
+
 ## Key references
 
 - [.github/workflows/release.yml](.github/workflows/release.yml) — desktop CI release pipeline.
