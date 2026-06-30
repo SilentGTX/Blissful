@@ -54,7 +54,9 @@ function Label({ children, m }: { children: string; m: M }) {
 
 function EpisodeCard({ video, m, runtime, imgs, poster, watched, rating, progress, autoFocus, onPress }: { video: Video; m: M; runtime?: string | null; imgs?: (string | null | undefined)[]; poster?: string | null; watched?: boolean; rating?: string | number | null; progress?: number; autoFocus?: boolean; onPress: () => void }) {
   const [focused, setFocused] = useState(false);
-  const w = m.s(260);
+  // 340 (was 260): episode stills read too small on big screens next to the
+  // 432-wide content rails. Bumped with the title/sub fonts below to match.
+  const w = m.s(340);
   // EXACT desktop EpisodeThumb logic: cycle the episode images (metahub still →
   // TMDB still) on load error; once exhausted, fall back to the show poster as a
   // SEPARATE element (it never errors out). Cinemeta hands broken metahub urls for
@@ -91,11 +93,11 @@ function EpisodeCard({ video, m, runtime, imgs, poster, watched, rating, progres
           </View>
         ) : null}
       </View>
-      <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(20), color: focused ? colors.accent : colors.text, marginTop: m.s(8) }} numberOfLines={1}>
+      <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(24), color: focused ? colors.accent : colors.text, marginTop: m.s(8) }} numberOfLines={1}>
         {video.episode != null ? `${video.episode}. ` : ''}
         {video.title || video.name || `Episode ${video.episode ?? ''}`}
       </Text>
-      {sub ? <Text style={{ fontFamily: font.body, fontSize: m.s(18), color: 'rgba(255,255,255,0.6)', marginTop: m.s(2) }}>{sub}</Text> : null}
+      {sub ? <Text style={{ fontFamily: font.body, fontSize: m.s(21), color: 'rgba(255,255,255,0.6)', marginTop: m.s(3) }}>{sub}</Text> : null}
     </Pressable>
   );
 }

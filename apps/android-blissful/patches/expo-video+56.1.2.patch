@@ -1,0 +1,121 @@
+diff --git a/node_modules/expo-video/android/src/main/java/expo/modules/video/VideoModule.kt b/node_modules/expo-video/android/src/main/java/expo/modules/video/VideoModule.kt
+index 65f16a5..f42e9d9 100644
+--- a/node_modules/expo-video/android/src/main/java/expo/modules/video/VideoModule.kt
++++ b/node_modules/expo-video/android/src/main/java/expo/modules/video/VideoModule.kt
+@@ -417,6 +417,10 @@ private inline fun <reified T : VideoView> ViewDefinitionBuilder<T>.VideoViewCom
+   Prop("useExoShutter") { view: T, useExoShutter: Boolean? ->
+     view.useExoShutter = useExoShutter
+   }
++  // Blissful patch: fixed subtitle size (sp) for embedded subs (0 = system default).
++  Prop("subtitleTextSize") { view: T, size: Float? ->
++    view.subtitleTextSizeSp = size ?: 0f
++  }
+   AsyncFunction("enterFullscreen") { view: T ->
+     view.enterFullscreen()
+   }.runOnQueue(Queues.MAIN)
+diff --git a/node_modules/expo-video/android/src/main/java/expo/modules/video/VideoView.kt b/node_modules/expo-video/android/src/main/java/expo/modules/video/VideoView.kt
+index 58c8b10..3bdb586 100644
+--- a/node_modules/expo-video/android/src/main/java/expo/modules/video/VideoView.kt
++++ b/node_modules/expo-video/android/src/main/java/expo/modules/video/VideoView.kt
+@@ -91,6 +91,20 @@ open class VideoView(context: Context, appContext: AppContext, useTextureView: B
+     }
+   }
+ 
++  // Blissful patch: app-controlled SIZE for EMBEDDED subtitles. expo-video renders
++  // embedded subs via ExoPlayer's SubtitleView, which supports a fixed-size
++  // override (the same knob Stremio uses) — expo-video just never surfaced it. The
++  // size is stashed on SubtitleUtils so EVERY configureSubtitleView call (player
++  // attach / track change / window focus / fullscreen) applies it instead of a
++  // later call resetting to the system style; we also re-run it once right now.
++  // 0 (default) = leave the default size.
++  var subtitleTextSizeSp: Float = 0f
++    set(value) {
++      field = value
++      SubtitleUtils.appSubtitleTextSizeSp = value
++      SubtitleUtils.configureSubtitleView(playerView, context)
++    }
++
+   var pipParams by IgnoreSameSet(PiPParams()) { new, old ->
+     listeners.forEach {
+       it.get()?.onPiPParamsChanged(this, old, new)
+diff --git a/node_modules/expo-video/android/src/main/java/expo/modules/video/utils/SubtitleUtils.kt b/node_modules/expo-video/android/src/main/java/expo/modules/video/utils/SubtitleUtils.kt
+index 52bdcd8..0b88154 100644
+--- a/node_modules/expo-video/android/src/main/java/expo/modules/video/utils/SubtitleUtils.kt
++++ b/node_modules/expo-video/android/src/main/java/expo/modules/video/utils/SubtitleUtils.kt
+@@ -1,34 +1,42 @@
+ package expo.modules.video.utils
+ 
+ import android.content.Context
++import android.graphics.Color
+ import android.util.TypedValue
+ import android.view.accessibility.CaptioningManager
+ import androidx.media3.ui.CaptionStyleCompat
+ import androidx.media3.ui.PlayerView
+ 
+ object SubtitleUtils {
++  // Blissful: app-chosen subtitle size (sp), set from VideoView's `subtitleTextSize`
++  // prop. configureSubtitleView is called from MANY lifecycle points (player
++  // attach, track change, window focus, fullscreen) — routing the size through
++  // this single chokepoint means every one of them applies it, instead of later
++  // calls re-applying the system style and clobbering the prop. 0 = default size.
++  var appSubtitleTextSizeSp: Float = 0f
++
+   /**
+-   * Configures the PlayerView's subtitle view to fix sizing issues with embedded styles.
+-   * Disables embedded HLS subtitle styling and applies Android accessibility settings
+-   * with a reasonable base font size.
++   * Configures the PlayerView's subtitle view. Blissful override: IGNORE the
++   * Android system caption style — it paints an ugly black box behind the text and
++   * forces the system size — and apply a clean, readable style instead: white
++   * text, NO background box, black outline, at the app-chosen size.
+    */
+   fun configureSubtitleView(playerView: PlayerView, context: Context) {
+     playerView.subtitleView?.apply {
+       setApplyEmbeddedStyles(false)
+       setApplyEmbeddedFontSizes(false)
+-
+-      // Apply system accessibility caption style but with reasonable base font size
+-      val captioningManager = context.getSystemService(Context.CAPTIONING_SERVICE) as? CaptioningManager
+-      val userStyle = captioningManager?.userStyle
+-
+-      if (userStyle != null) {
+-        val systemStyle = CaptionStyleCompat.createFromCaptionStyle(userStyle)
+-        setStyle(systemStyle)
+-
+-        val fontScale = captioningManager.fontScale
+-        val baseFontSize = 16f // Reasonable base size
+-        setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, baseFontSize * fontScale)
+-      }
++      setStyle(
++        CaptionStyleCompat(
++          Color.WHITE,
++          Color.TRANSPARENT, // background box → gone (this was the ugly black bar)
++          Color.TRANSPARENT, // window
++          CaptionStyleCompat.EDGE_TYPE_OUTLINE,
++          Color.BLACK,
++          null,
++        ),
++      )
++      val size = if (appSubtitleTextSizeSp > 0f) appSubtitleTextSizeSp else 20f
++      setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, size)
+     }
+   }
+ 
+diff --git a/node_modules/expo-video/build/VideoView.types.d.ts b/node_modules/expo-video/build/VideoView.types.d.ts
+index 1e9cdeb..6b811f7 100644
+--- a/node_modules/expo-video/build/VideoView.types.d.ts
++++ b/node_modules/expo-video/build/VideoView.types.d.ts
+@@ -21,6 +21,13 @@ export interface VideoViewProps extends ViewProps {
+      * A video player instance. Use [`useVideoPlayer()`](#usevideoplayersource-setup) hook to create one.
+      */
+     player?: VideoPlayer | null;
++    /**
++     * Blissful patch (android): fixed subtitle text size in sp for EMBEDDED subs
++     * (overrides ExoPlayer's system caption size / the file's own sizes). 0 or
++     * undefined leaves expo-video's default styling. See VideoView.kt.
++     * @platform android
++     */
++    subtitleTextSize?: number;
+     /**
+      * Determines whether native controls should be displayed or not.
+      *

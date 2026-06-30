@@ -23,6 +23,7 @@
 
 import {
   fetchSubtitles,
+  getStorageBaseUrl,
   type MediaType,
   type StremioSubtitle,
 } from '@blissful/core';
@@ -278,8 +279,15 @@ export async function loadSubtitles(params: LoadSubtitlesParams): Promise<LoadSu
   const transportUrls = allUrls.filter((u) => !NO_SUBTITLE_RE.test(u));
 
   const merged: SubtitleTrack[] = [];
-  await Promise.allSettled(
-    transportUrls.map(async (transportUrl) => {
+  await Promise.allSettled([
+    // Built-in OpenSubtitles (proxy /opensubs) — available to EVERY account with
+    // NO installed addon (OpenSubtitles isn't a default addon). Mirrors the
+    // web/desktop player; without this a fresh TV account only sees embedded subs.
+    // Deduped by URL below, so a user who ALSO installed OpenSubtitles won't see
+    // doubles. Listed first so it's the reliable external source.
+    fetchProxyOpenSubs({ type, id: baseId, videoHash: params.videoHash, videoSize: params.videoSize, signal })
+      .then((subs) => { merged.push(...subs); }),
+    ...transportUrls.map(async (transportUrl) => {
       // Per-addon timeout, chained to the caller's signal.
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), ADDON_TIMEOUT_MS);
@@ -303,8 +311,111 @@ export async function loadSubtitles(params: LoadSubtitlesParams): Promise<LoadSu
         signal?.removeEventListener('abort', onAbort);
       }
     }),
-  );
+  ]);
 
   const tracks = dedupeSubtitleTracks(merged);
   return { tracks, groups: groupSubtitlesByLanguage(tracks) };
+}
+
+/** Addon-proxy origin (the storage base, minus the `/storage` suffix). The probe
+ *  + subtitle-extract endpoints live on the proxy, NOT the storage service. */
+function proxyBaseUrl(): string {
+  try {
+    return getStorageBaseUrl().replace(/\/storage\/?$/i, '');
+  } catch {
+    return '';
+  }
+}
+
+/** Fetch the BUILT-IN OpenSubtitles source via the addon-proxy's cached
+ *  `/opensubs` endpoint — the SAME source the web/desktop player uses. This is
+ *  why external subs work WITHOUT an OpenSubtitles addon installed: OpenSubtitles
+ *  is NOT a default addon, so on TV (which only queries installed addons) a fresh
+ *  account would otherwise see ONLY embedded subs. The proxy caches + retries
+ *  past the flaky community instance's 504s. Hash-matched when a videoHash is
+ *  supplied. Best-effort with a per-call timeout: returns [] on any failure. */
+async function fetchProxyOpenSubs(params: {
+  type: MediaType;
+  id: string;
+  videoHash?: string;
+  videoSize?: number;
+  signal?: AbortSignal;
+}): Promise<SubtitleTrack[]> {
+  const proxy = proxyBaseUrl();
+  if (!proxy) return [];
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ADDON_TIMEOUT_MS);
+  const onAbort = () => ctrl.abort();
+  params.signal?.addEventListener('abort', onAbort);
+  try {
+    const qs = new URLSearchParams({ type: String(params.type), id: params.id });
+    if (params.videoHash) {
+      qs.set('videoHash', params.videoHash);
+      qs.set('videoSize', String(params.videoSize ?? 0));
+    }
+    const res = await fetch(`${proxy}/opensubs?${qs.toString()}`, { signal: ctrl.signal });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { subtitles?: Array<{ id?: string; lang?: string; url?: string }> };
+    const out: SubtitleTrack[] = [];
+    for (const sub of data.subtitles ?? []) {
+      if (!sub?.url) continue;
+      const lang = (sub.lang ?? 'unknown').trim() || 'unknown';
+      const langName = subtitleLangLabel(lang);
+      out.push({
+        id: `OpenSubtitles::${sub.id ?? sub.url}`,
+        lang,
+        langName,
+        label: `${langName} - OpenSubtitles`,
+        url: sub.url,
+        source: 'OpenSubtitles',
+        rating: 0,
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timer);
+    params.signal?.removeEventListener('abort', onAbort);
+  }
+}
+
+/** Probe the PLAYING stream URL for EMBEDDED text subtitle tracks via the
+ *  addon-proxy's ffprobe endpoint and return them as STYLEABLE `SubtitleTrack`s.
+ *  Their `url` points at `/extract-subtitle.vtt`, which the player fetches +
+ *  parses (`fetchSubtitleCues`) and renders through the styled `SubtitleOverlay`
+ *  — so embedded subs honour the saved colour / size / outline, unlike
+ *  expo-video's native embedded rendering, which has NO styling hook. Mirrors the
+ *  web BlissfulPlayer embedded-subtitle probe. Best-effort: returns [] on any
+ *  failure (the caller keeps the native tracks as a fallback). Bitmap subs (PGS,
+ *  VobSub) are dropped by the server's `textBased` flag — no client-side OCR. */
+export async function probeEmbeddedSubtitles(streamUrl: string, signal?: AbortSignal): Promise<SubtitleTrack[]> {
+  if (!/^https?:\/\//i.test(streamUrl)) return [];
+  const proxy = proxyBaseUrl();
+  if (!proxy) return [];
+  try {
+    const resp = await fetch(`${proxy}/probe-streams?url=${encodeURIComponent(streamUrl)}`, { signal });
+    if (!resp.ok) return [];
+    const data = (await resp.json()) as {
+      subtitles?: Array<{ index: number; language?: string; title?: string | null; textBased?: boolean }>;
+    };
+    const out: SubtitleTrack[] = [];
+    for (const s of data.subtitles ?? []) {
+      if (!s.textBased) continue;
+      const lang = (s.language || 'und').toLowerCase();
+      const langName = subtitleLangLabel(lang);
+      out.push({
+        id: `embedded::${s.index}`,
+        lang,
+        langName,
+        label: s.title ? `${langName} - ${s.title}` : `${langName} - Built-in`,
+        url: `${proxy}/extract-subtitle.vtt?url=${encodeURIComponent(streamUrl)}&track=${s.index}`,
+        source: 'Built-in',
+        rating: 0,
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
 }

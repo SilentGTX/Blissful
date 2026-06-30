@@ -2,6 +2,13 @@
   "name": "blissful-tv-rn",
   "version": "1.0.0",
   "main": "index.ts",
+  "expo": {
+    "autolinking": {
+      "buildFromSource": [
+        "expo-video"
+      ]
+    }
+  },
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
@@ -11,7 +18,7 @@
     "build:release": "npm run link:core && cd android && gradlew assembleRelease",
     "apk": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-apk.ps1",
     "apk:tv": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-apk.ps1 -Install",
-    "postinstall": "node scripts/link-core.js"
+    "postinstall": "node scripts/link-core.js && patch-package"
   },
   "dependencies": {
     "@expo-google-fonts/fraunces": "^0.4.1",
@@ -38,6 +45,7 @@
     "@react-native-tvos/config-tv": "^0.1.6",
     "@types/react": "~19.2.2",
     "cross-env": "^7.0.3",
+    "patch-package": "^8.0.1",
     "typescript": "~6.0.3"
   },
   "overrides": {

@@ -808,6 +808,12 @@ export function PlayerScreen() {
   const drawerAudio: DrawerAudioTrack[] = audioTracks.map((t) => ({ id: t.id, label: langLabel(t, 'Audio'), lang: t.language, codec: null }));
   const drawerSubs: DrawerSubtitleTrack[] = [
     // Built-in (embedded) subs first (the old app's order), then addon subs.
+    // NOTE: embedded subs use expo-video's NATIVE rendering (unstyled) — that's a
+    // documented engine limit. Server-side extraction (probe → /extract-subtitle.vtt)
+    // to style them was tried + reverted: ffmpeg must read the whole interleaved
+    // track from the COLD remote RD file (the TV plays it directly, not through
+    // the Mac), so it hangs/times out and the sub never shows. Styleable subs come
+    // from external sources instead — incl. the built-in /opensubs (see subtitles.ts).
     ...subTracks.map((t) => ({ id: t.id, label: langLabel(t, 'Subtitle'), lang: t.language, embedded: true, origin: 'Embedded' })),
     ...extTracks.map((t) => ({ id: t.id, label: t.langName, lang: t.lang, embedded: false, origin: t.source })),
   ];
@@ -1014,7 +1020,7 @@ export function PlayerScreen() {
 
   return (
     <View style={styles.root} focusable hasTVPreferredFocus>
-      <VideoView player={player} style={[StyleSheet.absoluteFill, { opacity: revealed ? 1 : 0 }]} contentFit="contain" nativeControls={false} onFirstFrameRender={() => { firstFrameRef.current = true; }} />
+      <VideoView player={player} style={[StyleSheet.absoluteFill, { opacity: revealed ? 1 : 0 }]} contentFit="contain" nativeControls={false} onFirstFrameRender={() => { firstFrameRef.current = true; }} subtitleTextSize={subSizePx} />
 
       {/* Buffering logo overlay — the title's logo pulsing on the black root while
           the torrent loads, with the full player chrome shown ON TOP (z below the
