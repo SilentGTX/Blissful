@@ -7,6 +7,8 @@ import { useMetrics } from '../theme/metrics';
 import { FocusTrap } from './FocusTrap';
 import { useAuth } from '../context/AuthContext';
 import { resolveAvatar, PRESET_AVATARS } from '../lib/avatars';
+import { openLogin } from '../lib/loginStore';
+import type { StoredAccount } from '../lib/accounts';
 
 const PRESET_RE = /avatar[_-]?(\d{1,2})/i;
 function presetIndexOf(avatar?: string | null): number {
@@ -69,10 +71,40 @@ function AvatarCell({ src, size, selected, autoFocus, onPress }: { src: number; 
   );
 }
 
+// A switchable saved profile (avatar + name). Tapping it activates that account;
+// the swap icon signals "switch to". Mirrors the Row affordance (purple ring on
+// focus, no fill change).
+function ProfileRow({ account, m, onPress }: { account: StoredAccount; m: ReturnType<typeof useMetrics>; onPress: () => void }) {
+  const [f, setF] = useState(false);
+  const name = account.user.displayName || account.user.username || 'Profile';
+  const av = resolveAvatar(account.user.avatar, name.charAt(0).toUpperCase());
+  return (
+    <Pressable
+      onFocus={() => setF(true)}
+      onBlur={() => setF(false)}
+      onPress={onPress}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(16), paddingVertical: m.s(10), paddingHorizontal: m.s(12), borderRadius: m.s(14), borderWidth: 1, borderColor: f ? colors.accent : 'transparent' }}
+    >
+      {av.kind === 'image' ? (
+        <Image source={av.source} style={{ width: m.s(50), height: m.s(50), borderRadius: radius.pill }} resizeMode="cover" />
+      ) : (
+        <View style={{ width: m.s(50), height: m.s(50), borderRadius: radius.pill, backgroundColor: colors.surface12, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ fontFamily: font.serif, fontSize: m.s(24), color: colors.text }}>{av.value}</Text>
+        </View>
+      )}
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(24), color: colors.text }} numberOfLines={1}>{name}</Text>
+        {account.user.username ? <Text style={{ fontFamily: font.body, fontSize: m.s(18), color: colors.textFaint }} numberOfLines={1}>@{account.user.username}</Text> : null}
+      </View>
+      <Ionicons name="swap-horizontal" size={m.s(24)} color={colors.textDim} />
+    </Pressable>
+  );
+}
+
 export function ProfileMenu({ visible, onClose, onCustomizeHome }: { visible: boolean; onClose: () => void; onCustomizeHome?: () => void }) {
   const m = useMetrics();
   const navigation = useNavigation<any>();
-  const { user, logout, updateProfile } = useAuth();
+  const { user, token, accounts, switchAccount, logout, updateProfile } = useAuth();
   const [mode, setMode] = useState<'menu' | 'avatar'>('menu');
   const [selected, setSelected] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -103,6 +135,8 @@ export function ProfileMenu({ visible, onClose, onCustomizeHome }: { visible: bo
 
   const name = user.displayName || user.username || 'You';
   const av = resolveAvatar(user.avatar, name.charAt(0).toUpperCase());
+  // The OTHER saved profiles (the active one is already the header).
+  const others = accounts.filter((a) => a.token !== token);
 
   const save = async () => {
     setSaving(true);
@@ -153,6 +187,12 @@ export function ProfileMenu({ visible, onClose, onCustomizeHome }: { visible: bo
               </View>
             </Pressable>
             <View style={{ height: 1, backgroundColor: colors.hairline, marginBottom: m.s(6) }} />
+            {/* Switch profile — other saved accounts (instant, no re-login) + add a new one. */}
+            {others.map((acc) => (
+              <ProfileRow key={acc.token} account={acc} m={m} onPress={() => { switchAccount(acc.token); onClose(); }} />
+            ))}
+            <Row label="Add account" icon="person-add-outline" m={m} onPress={() => { onClose(); openLogin(); }} />
+            <View style={{ height: 1, backgroundColor: colors.hairline, marginVertical: m.s(6) }} />
             <Row label="Settings" icon="settings-outline" m={m} onPress={() => { onClose(); navigation.navigate('Settings'); }} />
             <Row label="Customize Home" icon="grid-outline" m={m} onPress={() => { onClose(); onCustomizeHome?.(); }} />
             <Row label="Log out" icon="log-out-outline" danger m={m} onPress={() => { logout(); onClose(); }} />
