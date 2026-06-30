@@ -2459,8 +2459,41 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         }
       }
       if (cancelled) return;
-      await Promise.allSettled(
-        candidates.map(async (addon) => {
+      // Built-in OpenSubtitles via the proxy /opensubs — the SAME source the web
+      // BlissfulPlayer uses. The desktop mpv player previously fetched ONLY
+      // installed addons, so with no OpenSubtitles addon installed it showed only
+      // embedded "Built-in" subs (OpenSubtitles is NOT a default addon). This is
+      // what makes external subs appear out of the box; deduped by URL so a user
+      // who ALSO installed OpenSubtitles doesn't get doubles.
+      const fetchOpenSubs = async () => {
+        try {
+          const osQs = new URLSearchParams({ type: String(props.type), id: baseId });
+          if (hashInfo?.hash) {
+            osQs.set('videoHash', hashInfo.hash);
+            osQs.set('videoSize', String(hashInfo.size));
+          }
+          const osRes = await fetch(`/opensubs?${osQs.toString()}`, { signal: controller.signal });
+          if (!osRes.ok) return;
+          const resp = (await osRes.json()) as { subtitles?: Array<{ id?: string; lang?: string; url?: string }> };
+          for (const sub of resp.subtitles ?? []) {
+            if (!sub?.url || uniq.has(sub.url)) continue;
+            uniq.set(sub.url, {
+              key: `opensubtitles-v3::built-in::${sub.id ?? sub.url}`,
+              lang: sub.lang ?? 'unknown',
+              label: sub.lang ?? 'Subtitles',
+              origin: 'OpenSubtitles',
+              rating: 0,
+              url: sub.url,
+            });
+            scheduleFlush();
+          }
+        } catch {
+          /* network / 5xx — silent; installed-addon subs still surface */
+        }
+      };
+      await Promise.allSettled([
+        fetchOpenSubs(),
+        ...candidates.map(async (addon) => {
           const baseUrl = addon.transportUrl.replace(/\/manifest\.json$/, '').replace(/\/$/, '');
           const origin = addon.manifest?.name ?? addon.transportUrl;
           const resp = await fetchSubtitles({
@@ -2502,7 +2535,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
             }
           }
         }),
-      );
+      ]);
       if (flushTimer) window.clearTimeout(flushTimer);
       flush();
     })();
