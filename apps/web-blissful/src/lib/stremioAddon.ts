@@ -439,7 +439,20 @@ export async function fetchOpenSubHash(
 ): Promise<{ hash: string; size: number } | null> {
   try {
     const target = `http://127.0.0.1:11470/opensubHash?videoUrl=${encodeURIComponent(streamUrl)}`;
-    const res = await fetch(resolveAddonFetchUrl(target), { signal });
+    // Route by STREAM locality, not by the endpoint's (always-loopback) URL.
+    // A loopback stream — the local streaming server's torrent HLS — is only
+    // readable by the machine playing it, so the hash must come from the
+    // LOCAL stremio-service via the shell (which is running: it serves that
+    // stream). A public https stream (RD direct) is readable from anywhere,
+    // so use the REMOTE addon-proxy's stremio-service instead — in the
+    // desktop shell the local service is NOT running for direct plays, so
+    // every local probe failed and the caller's poll burned its full 10s
+    // deadline before any subtitles were fetched (the web player felt
+    // "instant" precisely because its '' origin always sent this remote).
+    // Outside the shell both branches are the same relative URL.
+    const viaShell = isLoopbackTarget(streamUrl);
+    const proxied = `${viaShell ? shellOrigin() : ''}/addon-proxy?url=${encodeURIComponent(target)}`;
+    const res = await fetch(proxied, { signal });
     if (!res.ok) return null;
     const data = (await res.json()) as { result?: { hash?: string; size?: number } };
     const hash = data.result?.hash;
