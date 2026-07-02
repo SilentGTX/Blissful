@@ -57,6 +57,7 @@ HOOK = r"""(function(){
   try {
   var orig = JSON.parse;
   window.__caps = [];
+  window.__seen = {};
   JSON.parse = function(s){
     var r = orig.apply(this, arguments);
     try {
@@ -64,7 +65,19 @@ HOOK = r"""(function(){
           (s.indexOf('m3u8')>=0 || s.indexOf('"sources"')>=0 || s.indexOf('.mp4')>=0 ||
            s.indexOf('.vtt')>=0 || s.indexOf('subtitle')>=0 ||
            (s.indexOf('"url"')>=0 && s.indexOf('http')>=0))) {
-        if (window.__caps.length < 40) window.__caps.push(s.slice(0, 12000));
+        // Ad SDKs JSON.parse the same junk payload dozens of times — dedupe by
+        // prefix so spam can't fill the 40-slot buffer before the real payload.
+        var k = s.slice(0, 64);
+        if (!window.__seen[k] && window.__caps.length < 40) {
+          window.__seen[k] = 1;
+          // The {sources,subtitles} payload can exceed 100k now: dozens of
+          // subtitle tracks with ~500-char tokenized URLs come FIRST in the
+          // JSON, so a flat 12k slice truncated it mid-payload, json.loads
+          // failed on it, and every resolve 0-sourced (broke 2026-06-16).
+          // Keep the small cap only for strings that can't be the payload.
+          var main = s.indexOf('"sources"')>=0 || s.indexOf('"subtitles"')>=0;
+          window.__caps.push(s.slice(0, main ? 400000 : 12000));
+        }
       }
     } catch(e){}
     return r;
