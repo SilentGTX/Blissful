@@ -2499,11 +2499,18 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       const isRealUrl = props.url && /^https?:\/\/|^magnet:/i.test(props.url);
       if (isRealUrl) {
         const hashUrl = resolveHashUrl(props.url);
+        // Retrying only heals LOCAL torrent streams (the tail piece lands and
+        // /opensubHash starts succeeding) — poll those for the full deadline.
+        // A public https stream is fully available from byte 0, so a failure
+        // is definitive (403 / geo-block): cap it at two attempts instead of
+        // burning the whole deadline before the hash-matched fetch below.
+        const streamIsLocal = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])[:/]/i.test(hashUrl);
+        const maxAttempts = streamIsLocal ? Number.POSITIVE_INFINITY : 2;
         const deadline = Date.now() + 10000;
-        while (!cancelled && Date.now() < deadline) {
+        for (let attempt = 0; !cancelled && Date.now() < deadline && attempt < maxAttempts; attempt++) {
+          if (attempt > 0) await new Promise<void>((resolve) => setTimeout(resolve, 2000));
           hashInfo = await fetchOpenSubHash(hashUrl, controller.signal).catch(() => null);
           if (hashInfo) break;
-          await new Promise<void>((resolve) => setTimeout(resolve, 2000));
         }
       }
       if (cancelled) return;
