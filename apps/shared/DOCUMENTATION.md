@@ -13,7 +13,29 @@ REST + WebSockets. Single file: `server.js`.
 
 CORS proxy + edge cache for addon hosts (`/addon-proxy`), image proxy/cache (`/img` — allowlists
 metahub + tmdb), `/imdb-rating`, `/tmdb-find`, `/tmdb-season-info` (server-keyed TMDB),
-`/rd-fallback`, `/trakt/*`, transcode endpoints, videasy resolve. Single file: `server.js`.
+`/rd-fallback`, `/trakt/*`, transcode endpoints, Videasy resolve. Single file: `server.js`.
+
+### Videasy/Vidking source pipeline (web player)
+
+`/videasy-sources` resolves a playable stream for the web player. As of 2026-07-02 it fetches the
+encrypted payload **in-process** from `https://api.videasy.to/<provider>/sources-with-title`
+(providers `cdn`/`downloader2` return it; `mb-flix`/`1movies` 404) with just a
+`Referer: https://www.vidking.net/`, then decrypts it with the bundled WASM decryptor
+(`videasy-decrypt.js` + `videasy-module.wasm`). ~1 s, no browser, no token — the API moved off
+`api.videasy.net` (now 404s) to `api.videasy.to`, which dropped its Cloudflare-Turnstile /
+session-token wall (`VIDEASY_API_BASE` overrides the host). Decrypted source + subtitle URLs are
+re-proxied through `/addon-proxy?...&vd=1`, which forces the CDN Origin/Referer spoof + HLS
+per-segment rewrite (Videasy rotates CDN hostnames, so no host allowlist).
+
+**Fallbacks, in order:** if fetch+decrypt fails for every provider — the one case it can't
+handle is Videasy rotating the response cipher — it falls back to the on-Mac browser-resolver
+(`infra/scripts/videasy-resolver.py`, launchd `com.budinoff.videasy-resolver`, `:13099`): a headed
+undetected-Chrome that harvests already-**decrypted** output from Vidking's own player, so it's
+immune to cipher changes. Its warm-loop is off by default (`VIDEASY_RESOLVER_WARM=1` to re-enable),
+so Chrome stays cold until a real fallback fires. Below that, Real-Debrid (`/rd-fallback`). The
+legacy session-token machinery (`videasyAuthHeaders`, `/videasy-token`, the removed
+`videasy-minter`) is retained but **inert** — it reactivates only if the token wall returns. Full
+anatomy + outside-in diagnosis in the memory note `project_vidking_videasy_pipeline`.
 
 ## `blissful-core/` — `@blissful/core`
 

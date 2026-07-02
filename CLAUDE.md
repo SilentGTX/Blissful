@@ -89,6 +89,16 @@ or the HTTP API (`POST :11434/api/generate` with base64 `images`). Setup, RAM no
 alternatives:
 `C:\Users\origi\.claude\projects\D--JS-Blissful\memory\project_homelab_local_vision_llm.md`.
 
+## Vidking/Videasy source pipeline (web player)
+
+The web player's stream-source resolver. `/videasy-sources` (addon-proxy) fetches an encrypted
+payload **in-process** from `api.videasy.to` and opens it with a bundled WASM decryptor — ~1 s,
+no browser, no token (the API dropped its Turnstile/session-token wall 2026-07-02). A headed-Chrome
+fallback on the Mac (`infra/scripts/videasy-resolver.py`, kept cold) covers response-cipher
+rotation only; Real-Debrid (`/rd-fallback`) is the final fallback. Anatomy, the moved-domain
+history, and outside-in diagnosis: [apps/shared/DOCUMENTATION.md](apps/shared/DOCUMENTATION.md)
+§Videasy/Vidking + the memory note `project_vidking_videasy_pipeline`.
+
 ## Key references
 
 - [.github/workflows/release.yml](.github/workflows/release.yml) — desktop CI release pipeline.
