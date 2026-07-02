@@ -22,6 +22,7 @@ from __future__ import annotations
 import atexit
 import json
 import os
+import re
 import signal
 import threading
 import time
@@ -148,6 +149,34 @@ def _kill_orphan_chromes():
             pass
 
 
+_CHROME_BINARIES = (
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    os.path.expanduser("~/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
+)
+
+
+def _chrome_major():
+    """Major version of the installed Chrome, or None if undetectable.
+
+    undetected-chromedriver downloads the LATEST chromedriver when version_main
+    is not pinned. When Google publishes driver N+1 before this Mac's Chrome
+    auto-updates past N, every launch dies with SessionNotCreatedException
+    ("only supports Chrome version N+1") — this killed the resolver for 16 days
+    starting 2026-06-16 (driver 150 vs Chrome 149). Pin the driver to the
+    browser we actually have.
+    """
+    for binary in _CHROME_BINARIES:
+        try:
+            r = subprocess.run([binary, "--version"], capture_output=True,
+                               text=True, timeout=10)
+            m = re.search(r"(\d+)\.", r.stdout)
+            if m:
+                return int(m.group(1))
+        except Exception:
+            continue
+    return None
+
+
 def _new_driver():
     import undetected_chromedriver as uc
     _kill_orphan_chromes()  # clear any leaked Chromes from a prior driver/run
@@ -170,7 +199,10 @@ def _new_driver():
         "--disable-features=CalculateNativeWinOcclusion",
     ):
         opts.add_argument(arg)
-    d = uc.Chrome(options=opts, headless=False, use_subprocess=True)
+    # version_main=None falls back to uc's default (latest driver) if Chrome's
+    # version can't be read — same behavior as before the pin.
+    d = uc.Chrome(options=opts, headless=False, use_subprocess=True,
+                  version_main=_chrome_major())
     try:
         d.set_window_position(-32000, -32000)
         d.set_window_size(1280, 1000)
