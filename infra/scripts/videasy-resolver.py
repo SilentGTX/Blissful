@@ -390,6 +390,14 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, {"error": "not_found"})
 
 
+# The warm-loop kept Chrome hot for the PRIMARY resolve path. As of 2026-07-02
+# the addon-proxy resolves in-process from api.videasy.to (no browser), so this
+# service is a break-glass fallback only — keeping Chrome hot 24/7 (and grabbing
+# focus on every relaunch) is pure cost. Default OFF; set VIDEASY_RESOLVER_WARM=1
+# to restore warming if the browser ever becomes the primary path again.
+WARM_ENABLED = os.environ.get("VIDEASY_RESOLVER_WARM", "0") == "1"
+
+
 def _warm_loop():
     # Prime the browser at startup, then keep it warm: a fresh/recycled Chrome
     # needs ~60s to clear Turnstile, during which real resolves 0-source and fall
@@ -417,7 +425,10 @@ def main():
     signal.signal(signal.SIGINT, _on_term)
     if not SECRET:
         log("WARN no VIDEASY_TOKEN_SECRET — /resolve will reject all requests")
-    threading.Thread(target=_warm_loop, daemon=True).start()
+    if WARM_ENABLED:
+        threading.Thread(target=_warm_loop, daemon=True).start()
+    else:
+        log("warm-loop disabled (fallback-only; Chrome stays cold until a /resolve call)")
     log(f"listening on 0.0.0.0:{PORT}")
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     srv.serve_forever()

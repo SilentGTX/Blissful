@@ -102,22 +102,18 @@ function appendPlayerLog(line) {
 
 const PORT = process.env.PORT || 3000;
 
-// ── Videasy session auth ───────────────────────────────────────────────
-// Videasy flipped on a global session wall: /sources-with-title now 401s with
-// {"error":"session_missing"} unless the request carries x-app-id + a valid
-// x-session-token. That token can only be minted in a real browser that passes
-// Cloudflare Turnstile (every automation flavour we tried — headless/headed
-// Playwright, rebrowser CDP-patch — fails Turnstile; only a genuine browser
-// passes). The solver is an undetected-chromedriver minter running on the Mac
-// itself (infra/scripts/videasy-minter.py, driven by a launchd agent): it loads
-// vidking's embed in a real Chrome, captures the freshly-minted token, and POSTs
-// it here to /videasy-token every ~40 min. Because the token is minted AND used
-// from the same Mac IP, there's no binding/portability problem.
-//
-// Token sources, in priority order:
-//   1. HTTP push (_vdHttpTok) — the live path, refreshed by the minter.
-//   2. File (VIDEASY_TOKEN_FILE) — a manually-dropped token (fallback).
-//   3. Env (VIDEASY_SESSION_TOKEN) — last resort / first boot.
+// ── Videasy sources API ────────────────────────────────────────────────
+// The sources API moved from api.videasy.net (dead — routes 404) to
+// api.videasy.to, and — as of 2026-07-02 — that host does NO bot-gating:
+// no Cloudflare Turnstile, no x-session-token wall. A plain https.get with a
+// `Referer: https://www.vidking.net/` returns the encrypted payload, which we
+// open with our own WASM decryptor (videasy-decrypt.js). So the whole
+// browser/minter apparatus that existed only to clear Turnstile is obsolete;
+// the on-Mac browser-resolver is now a break-glass fallback for cipher
+// rotation only (see /videasy-sources). The old session-token machinery below
+// (videasySessionToken/videasyAuthHeaders, /videasy-token push) is retained
+// but inert — if the wall ever comes back, a pushed token flows through again.
+const VIDEASY_API_BASE = process.env.VIDEASY_API_BASE || 'https://api.videasy.to';
 const VIDEASY_APP_ID = process.env.VIDEASY_APP_ID || 'vidking';
 const VIDEASY_TOKEN_FILE = process.env.VIDEASY_TOKEN_FILE || '/nas/state/videasy/session-token.txt';
 const VIDEASY_TOKEN_SECRET = process.env.VIDEASY_TOKEN_SECRET || '';
@@ -1926,10 +1922,13 @@ const server = http.createServer((req, res) => {
       res.end(JSON.stringify(vsCached.payload));
       return;
     }
-    // Primary: ask the on-Mac browser-resolver (immune to Videasy's response
-    // encryption — it harvests sources from their own player). Fall through to
-    // the legacy server-side fetch+decrypt only if it yields nothing.
-    const runLegacyVideasy = () => {
+    // Primary: fetch the encrypted payload straight from api.videasy.to and
+    // decrypt it in-process (fast, ~1s, no browser). The on-Mac browser-resolver
+    // is now a break-glass fallback (see browserResolverFallback) invoked only if
+    // every provider fails to fetch+decrypt — e.g. Videasy rotates the cipher and
+    // our WASM decryptor can't open it; the browser stays immune because it
+    // harvests already-decrypted output from Videasy's own player.
+    const runDirectVideasy = () => {
     const qs = new URLSearchParams({
       title: String(title),
       mediaType: String(mediaType),
@@ -1943,8 +1942,8 @@ const server = http.createServer((req, res) => {
     // bucket goes down. We replicate that: start with the caller's
     // requested provider, then fall through to alternates known to
     // share the same payload format (HLS via decryptVideasyResponse).
-    // `cdn` is the default Neon/Yoru/Cypher provider but currently
-    // 500s — `mb-flix` and `downloader2` mirror the same catalog.
+    // `cdn` and `downloader2` return the 200 ciphertext; `mb-flix` /
+    // `1movies` currently 404 on api.videasy.to, so they self-skip.
     const FALLBACK_CHAIN = ['cdn', 'mb-flix', 'downloader2', '1movies'];
     const requested = String(provider);
     const tryOrder = [requested, ...FALLBACK_CHAIN.filter((p) => p !== requested)];
@@ -1954,7 +1953,7 @@ const server = http.createServer((req, res) => {
     // 'cdn'/HLS). Subs are content-synced for the same episode, so borrowing
     // them keeps the player captioned. Resolves to [] on any failure.
     const fetchProviderSubs = (prov) => new Promise((resolve) => {
-      const u = `https://api.videasy.net/${encodeURIComponent(prov)}/sources-with-title?${qs}`;
+      const u = `${VIDEASY_API_BASE}/${encodeURIComponent(prov)}/sources-with-title?${qs}`;
       https
         .get(
           u,
@@ -1981,12 +1980,12 @@ const server = http.createServer((req, res) => {
     const tryProvider = () => {
       if (providerIdx >= tryOrder.length) {
         if (res.writableEnded || res.headersSent) return;
-        res.writeHead(502, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'all videasy providers failed' }));
+        console.log('Videasy direct fetch+decrypt exhausted all providers — trying browser resolver');
+        browserResolverFallback();
         return;
       }
       const p = tryOrder[providerIdx++];
-      const upstream = `https://api.videasy.net/${encodeURIComponent(p)}/sources-with-title?${qs}`;
+      const upstream = `${VIDEASY_API_BASE}/${encodeURIComponent(p)}/sources-with-title?${qs}`;
       console.log(`Videasy sources [try ${p}]: ${upstream.slice(0, 140)}`);
       https
         .get(
@@ -2102,13 +2101,23 @@ const server = http.createServer((req, res) => {
     };
       tryProvider();
     };
-    fetchFromResolver(String(mediaType), String(tmdbId), String(seasonId), String(episodeId), (resolved) => {
-      if (resolved && !res.writableEnded && !res.headersSent) {
-        console.log(`Videasy resolver → ${resolved.sources.length} sources for tmdb ${tmdbId}`);
-        return respondVideasyPayload(resolved, vsCacheKey, res);
-      }
-      runLegacyVideasy();
-    });
+    // Break-glass fallback: the on-Mac browser-resolver. Only reached when the
+    // in-process fetch+decrypt fails for every provider. Chrome stays cold until
+    // this fires (its warm-loop is retired), so a rare fallback pays a ~60s
+    // first-resolve cost; steady state never launches a browser. If it too
+    // yields nothing, surface the 502 the direct path would have returned.
+    const browserResolverFallback = () => {
+      fetchFromResolver(String(mediaType), String(tmdbId), String(seasonId), String(episodeId), (resolved) => {
+        if (resolved && !res.writableEnded && !res.headersSent) {
+          console.log(`Videasy resolver fallback → ${resolved.sources.length} sources for tmdb ${tmdbId}`);
+          return respondVideasyPayload(resolved, vsCacheKey, res);
+        }
+        if (res.writableEnded || res.headersSent) return;
+        res.writeHead(502, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'all videasy providers failed' }));
+      });
+    };
+    runDirectVideasy();
     return;
   }
 
