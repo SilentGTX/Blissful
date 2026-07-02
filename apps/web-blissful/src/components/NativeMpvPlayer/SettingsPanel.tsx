@@ -370,7 +370,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
                               >
                                 <span className="flex items-center justify-between gap-2">
                                   <span className="truncate">
-                                    {v.embedded ? subtitleLangLabel(drilledLang) : v.label || v.origin || 'Subtitle'}
+                                    {v.label || v.origin || 'Subtitle'}
                                   </span>
                                   <span className={`shrink-0 rounded px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${tagClass}`}>
                                     {isEmbedded ? 'Built-in' : v.origin}

@@ -86,6 +86,12 @@ export function subtitleLangLabel(lang: string): string {
     ml: 'Malayalam', mal: 'Malayalam', malayalam: 'Malayalam',
   };
   if (map[l]) return map[l];
+  // BCP-47 tags (embedded MKV tracks often carry the IETF tag, e.g.
+  // "en-US"): fold region/script variants onto the base language so they
+  // land in the same row as addon subs tagged "eng". Multi-part tags the
+  // map knows explicitly (pt-br) matched above, before the strip.
+  const primary = l.split(/[-_]/, 1)[0];
+  if (primary !== l && map[primary]) return map[primary];
   return l.length <= 4 ? l.toUpperCase() : l.charAt(0).toUpperCase() + l.slice(1);
 }
 
@@ -95,7 +101,7 @@ export function subtitleLangLabel(lang: string): string {
 export function langPriority(lang: string): number {
   const l = lang.trim().toLowerCase();
   if (l === 'local') return 2;
-  if (l === 'en' || l === 'eng' || l === 'english') return 1;
+  if (subtitleLangLabel(l) === 'English') return 1;
   return 0;
 }
 

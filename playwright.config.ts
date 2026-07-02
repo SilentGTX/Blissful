@@ -23,8 +23,12 @@ export default defineConfig({
   outputDir: '.tmp-e2e/results',
   use: { trace: 'on-first-retry', screenshot: 'only-on-failure' },
   // Dev UI for the web (and desktop, pointed at it) projects — reused if already up.
+  // MUST be dev:vite (vite alone), NOT `dev`: `dev` is concurrently vite+shell with
+  // --kill-others-on-fail, so the desktop fixture's `taskkill blissful-shell.exe`
+  // takes the webServer's shell down and vite dies with it mid-run
+  // (ERR_CONNECTION_REFUSED on :5173 for every test after the first).
   webServer: {
-    command: 'npm --prefix apps/web-blissful run dev -- --port 5173 --strictPort',
+    command: 'npm --prefix apps/web-blissful run dev:vite -- --port 5173 --strictPort',
     url: 'http://localhost:5173',
     reuseExistingServer: true,
     timeout: 120_000,

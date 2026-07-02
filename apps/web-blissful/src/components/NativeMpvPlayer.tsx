@@ -228,7 +228,11 @@ function languageMatch(target: string | null, candidate: string | null): boolean
   if (!t || !c) return false;
   if (t === c) return true;
   const aliases = LANGUAGE_ALIASES[t] ?? [t];
-  return aliases.includes(c);
+  if (aliases.includes(c)) return true;
+  // BCP-47 region tags (en-us) aren't in the alias table — canonical-label
+  // equality lets a plain-code preference ("eng") match an embedded
+  // IETF-tagged track ("en-US").
+  return subtitleLangLabel(t) === subtitleLangLabel(c);
 }
 
 function scoreSubtitleTrack(t: AddonSubtitleTrack): number {
@@ -2932,7 +2936,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       return;
     }
     const fallback =
-      combinedSubLanguages.find((l) => /^(en|eng|english)$/.test(l)) ??
+      combinedSubLanguages.find((l) => subtitleLangLabel(l) === 'English') ??
       combinedSubLanguages[0];
     if (fallback) setSelectedSubLang(fallback);
     lastPrefSnapRef.current = prefKey;
@@ -2969,12 +2973,25 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       Boolean(lang) && subtitleLangLabel(lang as string) === targetCanon;
     const embeddedVariants = tracks
       .filter((t) => t.kind === 'sub' && sameCanon(t.lang ?? 'unknown'))
-      .map((t) => ({
-        key: `embedded:${t.id}`,
-        label: t.title ?? t.codec ?? `Track ${t.id}`,
-        origin: 'In video',
-        embedded: true,
-      }));
+      .map((t) => {
+        // Label parity with the web player: keep the mux title ("SDH",
+        // "Forced") next to the language so twin embedded tracks are
+        // distinguishable — "English – SDH" vs "English". No title (or a
+        // codec-only track) falls back to the plain language label.
+        const base = subtitleLangLabel((t.lang ?? 'unknown').trim().toLowerCase());
+        const title = t.title?.trim() ?? '';
+        const label = !title
+          ? base
+          : title.toLowerCase().includes(base.toLowerCase())
+            ? title
+            : `${base} – ${title}`;
+        return {
+          key: `embedded:${t.id}`,
+          label,
+          origin: 'In video',
+          embedded: true,
+        };
+      });
     const addonVariants = addonSubs
       .filter((t) => sameCanon(t.lang))
       .slice()

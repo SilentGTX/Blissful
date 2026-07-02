@@ -197,13 +197,19 @@ export function subtitleLangLabel(lang: string): string {
     ml: 'Malayalam', mal: 'Malayalam', malayalam: 'Malayalam',
   };
   if (map[l]) return map[l];
+  // BCP-47 tags (mpv reports the MKV's IETF tag verbatim): fold region and
+  // script variants onto the base language so an embedded "en-US" track
+  // lands in the same row as addon subs tagged "eng". Multi-part tags the
+  // map knows explicitly (pt-br) matched above, before the strip.
+  const primary = l.split(/[-_]/, 1)[0];
+  if (primary !== l && map[primary]) return map[primary];
   return l.length <= 4 ? l.toUpperCase() : l.charAt(0).toUpperCase() + l.slice(1);
 }
 
 export function langPriority(lang: string): number {
   const l = lang.trim().toLowerCase();
   if (l === 'local') return 2;
-  if (l === 'eng' || l === 'en') return 1;
+  if (subtitleLangLabel(l) === 'English') return 1;
   return 0;
 }
 
@@ -276,7 +282,11 @@ export function languageMatch(target: string | null, candidate: string | null): 
   if (!t || !c) return false;
   if (t === c) return true;
   const aliases = LANGUAGE_ALIASES[t] ?? [t];
-  return aliases.includes(c);
+  if (aliases.includes(c)) return true;
+  // BCP-47 region tags (en-us) aren't in the alias table — canonical-label
+  // equality lets a plain-code preference ("eng") match an embedded
+  // IETF-tagged track ("en-US").
+  return subtitleLangLabel(t) === subtitleLangLabel(c);
 }
 
 export function findMatchingLanguage<T extends { lang: string }>(list: T[], target: string | null): string | null {
