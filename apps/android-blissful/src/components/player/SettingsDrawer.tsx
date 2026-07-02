@@ -82,7 +82,7 @@ const SUBTITLE_COLOR_SWATCHES = [
 ];
 
 const SIZE_MIN = 14;
-const SIZE_MAX = 56;
+const SIZE_MAX = 120;
 const DELAY_MIN = -30;
 const DELAY_MAX = 30;
 

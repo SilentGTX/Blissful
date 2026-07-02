@@ -104,7 +104,7 @@ const languageOptions = Object.entries(LANGUAGE_NAMES)
 
 export const PLAYER_LANGUAGE_OPTIONS = [{ value: null, label: 'None' }, ...languageOptions];
 
-export const SUBTITLE_SIZE_OPTIONS_PX = [16, 20, 24, 28, 32, 36, 40, 48, 56, 64];
+export const SUBTITLE_SIZE_OPTIONS_PX = [16, 20, 24, 28, 32, 36, 40, 48, 56, 64, 72, 80, 96, 120];
 
 export const SEEK_TIME_DURATION_OPTIONS_MS = [5000, 10000, 15000, 20000, 30000, 45000, 60000];
 

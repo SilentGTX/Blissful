@@ -424,7 +424,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
                       <input
                         type="range"
                         min={14}
-                        max={56}
+                        max={120}
                         step={1}
                         value={subtitleSizePx}
                         className="bliss-player-range h-1 w-full cursor-pointer appearance-none rounded-full"

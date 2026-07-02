@@ -128,7 +128,7 @@ export async function hydrateTvSettingsFromCloud(token: string | null): Promise<
 
 // --- Option catalogues (mirror apps/web-blissful/src/lib/playerSettings.ts) ---
 
-export const SUBTITLE_SIZE_OPTIONS_PX = [16, 20, 24, 28, 32, 36, 40, 48, 56, 64];
+export const SUBTITLE_SIZE_OPTIONS_PX = [16, 20, 24, 28, 32, 36, 40, 48, 56, 64, 72, 80, 96, 120];
 
 export const NEXT_VIDEO_POPUP_OPTIONS_MS = [0, 5000, 10000, 15000, 20000, 30000, 45000, 60000];
 
