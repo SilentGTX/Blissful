@@ -2451,31 +2451,23 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       return raw;
     };
     void (async () => {
-      let hashInfo: { hash: string; size: number } | null = null;
-      const isRealUrl = props.url && /^https?:\/\/|^magnet:/i.test(props.url);
-      if (isRealUrl) {
-        const hashUrl = resolveHashUrl(props.url);
-        const deadline = Date.now() + 10000;
-        while (!cancelled && Date.now() < deadline) {
-          hashInfo = await fetchOpenSubHash(hashUrl, controller.signal).catch(() => null);
-          if (hashInfo) break;
-          await new Promise<void>((resolve) => setTimeout(resolve, 2000));
-        }
-      }
-      if (cancelled) return;
       // Built-in OpenSubtitles via the proxy /opensubs — the SAME source the web
       // BlissfulPlayer uses. The desktop mpv player previously fetched ONLY
       // installed addons, so with no OpenSubtitles addon installed it showed only
       // embedded "Built-in" subs (OpenSubtitles is NOT a default addon). This is
       // what makes external subs appear out of the box; deduped by URL so a user
       // who ALSO installed OpenSubtitles doesn't get doubles.
-      const fetchOpenSubs = async () => {
+      const fetchOpenSubs = async (
+        withHash: { hash: string; size: number } | null,
+        opts?: { cacheOnly?: boolean },
+      ) => {
         try {
           const osQs = new URLSearchParams({ type: String(props.type), id: baseId });
-          if (hashInfo?.hash) {
-            osQs.set('videoHash', hashInfo.hash);
-            osQs.set('videoSize', String(hashInfo.size));
+          if (withHash?.hash) {
+            osQs.set('videoHash', withHash.hash);
+            osQs.set('videoSize', String(withHash.size));
           }
+          if (opts?.cacheOnly) osQs.set('cacheOnly', '1');
           const osRes = await fetch(`/opensubs?${osQs.toString()}`, { signal: controller.signal });
           if (!osRes.ok) return;
           const resp = (await osRes.json()) as { subtitles?: Array<{ id?: string; lang?: string; url?: string }> };
@@ -2495,8 +2487,29 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
           /* network / 5xx — silent; installed-addon subs still surface */
         }
       };
+      // Warm-cache probe FIRST, before the hash poll: the proxy answers from
+      // its episode-level NAS cache in one round trip, so subtitles show as
+      // playback starts. Without it they appeared only after the poll below —
+      // which burns its FULL 10s deadline on RD direct plays, where the local
+      // stremio-service isn't running and every /opensubHash probe fails.
+      // cacheOnly leaves a cold cache untouched: the post-poll fetch still
+      // does the real hash-matched, upstream-retried pass and caches that.
+      const earlyOpenSubs = fetchOpenSubs(null, { cacheOnly: true });
+      let hashInfo: { hash: string; size: number } | null = null;
+      const isRealUrl = props.url && /^https?:\/\/|^magnet:/i.test(props.url);
+      if (isRealUrl) {
+        const hashUrl = resolveHashUrl(props.url);
+        const deadline = Date.now() + 10000;
+        while (!cancelled && Date.now() < deadline) {
+          hashInfo = await fetchOpenSubHash(hashUrl, controller.signal).catch(() => null);
+          if (hashInfo) break;
+          await new Promise<void>((resolve) => setTimeout(resolve, 2000));
+        }
+      }
+      if (cancelled) return;
       await Promise.allSettled([
-        fetchOpenSubs(),
+        earlyOpenSubs,
+        fetchOpenSubs(hashInfo),
         ...candidates.map(async (addon) => {
           const baseUrl = addon.transportUrl.replace(/\/manifest\.json$/, '').replace(/\/$/, '');
           const origin = addon.manifest?.name ?? addon.transportUrl;

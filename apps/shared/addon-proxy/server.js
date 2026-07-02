@@ -1579,6 +1579,7 @@ const server = http.createServer((req, res) => {
     const sid = String(q.id || '').trim();
     const vh = String(q.videoHash || '').trim();
     const vs = String(q.videoSize || '').trim();
+    const cacheOnly = String(q.cacheOnly || '') === '1';
     if (!stype || !sid) {
       res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       res.end(JSON.stringify({ subtitles: [] }));
@@ -1608,6 +1609,12 @@ const server = http.createServer((req, res) => {
         }
         return send(h);
       }
+      // Cache-only probe (the desktop player fires one BEFORE its slow hash
+      // poll so warm titles show subs instantly): serve steps 1-2 from cache,
+      // but never hit the flaky upstream and never cache the miss — the
+      // caller's real (hash-matched, retried) fetch follows and fills the
+      // cache with the better result.
+      if (cacheOnly) return send({ subtitles: [] });
       // 3. Fetch with the hash (the addon's fast path; hashless 504s more).
       const extra = vh
         ? `videoHash=${encodeURIComponent(vh)}${vs ? `&videoSize=${encodeURIComponent(vs)}` : ''}`
