@@ -31,6 +31,36 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
   });
 
   const [gifLoaded, setGifLoaded] = useState(false);
+  // Backdrop for the gif's letterbox. The gif export quantizes/dithers its
+  // background, so no hardcoded color reliably matches — sample the loaded
+  // frame's edges instead. #070321 is only the pre-load fallback.
+  const [backdrop, setBackdrop] = useState('#070321');
+
+  const handleGifLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget;
+    try {
+      const W = 24, H = 16;
+      const canvas = document.createElement('canvas');
+      canvas.width = W;
+      canvas.height = H;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, W, H);
+        const data = ctx.getImageData(0, 0, W, H).data;
+        let r = 0, g = 0, b = 0, n = 0;
+        for (let y = 0; y < H; y++) {
+          for (let x = 0; x < W; x++) {
+            // Average only the border ring; the interior holds the logo.
+            if (x > 1 && x < W - 2 && y > 1 && y < H - 2) continue;
+            const i = (y * W + x) * 4;
+            r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
+          }
+        }
+        setBackdrop(`rgb(${Math.round(r / n)}, ${Math.round(g / n)}, ${Math.round(b / n)})`);
+      }
+    } catch { /* canvas unavailable — keep the fallback color */ }
+    setGifLoaded(true);
+  };
 
   // Only start counting once the gif has loaded, so the full animation always
   // plays through even on a slow first fetch (it's ~5 MB).
@@ -57,22 +87,30 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
           <motion.div
             key="splash"
             className="fixed inset-0 z-[9999] flex items-center justify-center"
-            // Matches the gif's own background, so the object-contain
-            // letterbox on non-16:10 screens (phones) is invisible.
-            style={{ background: '#070321' }}
+            style={{ background: backdrop }}
             initial={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.6, ease: 'easeInOut' }}
           >
-            {/* Full-bleed animated GIF */}
+            {/* Letterboxed animated GIF. The gif's background is close to the
+                backdrop but not identical (palette + vignette), so feather its
+                edges with a mask instead of chasing an exact color match. */}
             <motion.img
               src="/blissful.gif"
               alt="Blissful"
-              className="absolute inset-0 h-full w-full object-contain"
+              className="max-h-full max-w-full"
+              style={{
+                WebkitMaskImage:
+                  'linear-gradient(to right, transparent, black 6%, black 94%, transparent), linear-gradient(to bottom, transparent, black 6%, black 94%, transparent)',
+                WebkitMaskComposite: 'source-in',
+                maskImage:
+                  'linear-gradient(to right, transparent, black 6%, black 94%, transparent), linear-gradient(to bottom, transparent, black 6%, black 94%, transparent)',
+                maskComposite: 'intersect',
+              }}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.3, ease: 'easeOut' }}
-              onLoad={() => setGifLoaded(true)}
+              onLoad={handleGifLoad}
               onError={() => setShow(false)}
             />
           </motion.div>
