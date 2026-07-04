@@ -59,9 +59,9 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
             />
 
             <div className="relative flex flex-col items-center">
-              {/* Logo image */}
+              {/* Animated loading GIF */}
               <motion.img
-                src="/blissful-logo-v2.png"
+                src="/blissful.gif"
                 alt="Blissful"
                 className="w-[min(90vw,700px)] drop-shadow-[0_0_60px_rgba(25,247,210,0.3)]"
                 initial={{ scale: 0.85, opacity: 0, y: 12 }}
