@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-// One full play of /blissful.gif: 56 frames, 4480 ms measured from the file's
-// frame delays. The gif loops forever, so we dismiss after exactly one pass.
-const GIF_DURATION = 4480;
+// One full play of /blissful.gif is 4480 ms (56 frames, measured from the
+// file's frame delays), but we deliberately dismiss at 3300 ms — the tail of
+// the loop is not worth holding the app for. The gif loops forever either way.
+const GIF_DURATION = 3300;
 // If the gif never loads (offline, bad cache), don't hold the app hostage.
 const FALLBACK_TIMEOUT = 8000;
 
