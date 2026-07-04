@@ -59,7 +59,7 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
             className="fixed inset-0 z-[9999] flex items-center justify-center"
             // Matches the gif's own background, so the object-contain
             // letterbox on non-16:10 screens (phones) is invisible.
-            style={{ background: '#080725' }}
+            style={{ background: '#070321' }}
             initial={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.6, ease: 'easeInOut' }}
