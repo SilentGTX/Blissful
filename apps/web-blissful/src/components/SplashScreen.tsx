@@ -57,7 +57,9 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
           <motion.div
             key="splash"
             className="fixed inset-0 z-[9999] flex items-center justify-center"
-            style={{ background: '#060a10' }}
+            // Matches the gif's own background, so the object-contain
+            // letterbox on non-16:10 screens (phones) is invisible.
+            style={{ background: '#080725' }}
             initial={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.6, ease: 'easeInOut' }}
@@ -66,7 +68,7 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
             <motion.img
               src="/blissful.gif"
               alt="Blissful"
-              className="absolute inset-0 h-full w-full object-cover"
+              className="absolute inset-0 h-full w-full object-contain"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.3, ease: 'easeOut' }}
