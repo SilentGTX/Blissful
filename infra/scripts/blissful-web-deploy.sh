@@ -36,10 +36,10 @@ ZONE=$(curl -s -H "Authorization: Bearer $TOKEN" \
   | python3 -c 'import json,sys; r=json.load(sys.stdin).get("result") or []; print(r[0]["id"] if r else "")')
 if [ -z "$ZONE" ]; then echo "WARN: could not resolve Cloudflare zone $ZONE_NAME — skipped purge."; exit 0; fi
 
-echo "==> purge CDN (sw.js + entry points)"
+echo "==> purge CDN (sw.js + entry points + unhashed public/ assets)"
 curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE/purge_cache" \
   -H "Authorization: Bearer $TOKEN" -H "content-type: application/json" \
-  --data "{\"files\":[\"$SITE/sw.js\",\"$SITE/registerSW.js\",\"$SITE/index.html\",\"$SITE/\",\"$SITE/manifest.webmanifest\"]}" \
+  --data "{\"files\":[\"$SITE/sw.js\",\"$SITE/registerSW.js\",\"$SITE/index.html\",\"$SITE/\",\"$SITE/manifest.webmanifest\",\"$SITE/blissful.gif\"]}" \
   | python3 -c 'import json,sys; d=json.load(sys.stdin); print("    purge:", "ok" if d.get("success") else d.get("errors"))'
 
 echo "==> done. Live + every thin-shell desktop updates on its next SW check (~60s)."
