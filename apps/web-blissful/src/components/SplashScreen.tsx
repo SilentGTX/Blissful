@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const SPLASH_DURATION = 1800;
+// One full play of /blissful.gif: 56 frames, 4480 ms measured from the file's
+// frame delays. The gif loops forever, so we dismiss after exactly one pass.
+const GIF_DURATION = 4480;
+// If the gif never loads (offline, bad cache), don't hold the app hostage.
+const FALLBACK_TIMEOUT = 8000;
 
 // Use a module-level flag so the splash shows on every fresh page load
 // (including hard refresh) but not on React re-renders or hot reloads.
@@ -25,11 +29,23 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
     return true;
   });
 
+  const [gifLoaded, setGifLoaded] = useState(false);
+
+  // Only start counting once the gif has loaded, so the full animation always
+  // plays through even on a slow first fetch (it's ~5 MB).
+  useEffect(() => {
+    if (!show || !gifLoaded) return;
+    const timer = setTimeout(() => {
+      setShow(false);
+    }, GIF_DURATION);
+    return () => clearTimeout(timer);
+  }, [show, gifLoaded]);
+
   useEffect(() => {
     if (!show) return;
     const timer = setTimeout(() => {
       setShow(false);
-    }, SPLASH_DURATION);
+    }, FALLBACK_TIMEOUT);
     return () => clearTimeout(timer);
   }, [show]);
 
@@ -45,41 +61,17 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.6, ease: 'easeInOut' }}
           >
-            {/* Ambient glow behind the logo */}
-            <motion.div
-              className="absolute rounded-full blur-[120px]"
-              style={{
-                width: 400,
-                height: 400,
-                background: 'radial-gradient(circle, rgba(25,247,210,0.15) 0%, transparent 70%)',
-              }}
-              initial={{ scale: 0.5, opacity: 0 }}
-              animate={{ scale: 1.2, opacity: 1 }}
-              transition={{ duration: 1.2, ease: 'easeOut' }}
+            {/* Full-bleed animated GIF */}
+            <motion.img
+              src="/blissful.gif"
+              alt="Blissful"
+              className="absolute inset-0 h-full w-full object-cover"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.3, ease: 'easeOut' }}
+              onLoad={() => setGifLoaded(true)}
+              onError={() => setShow(false)}
             />
-
-            <div className="relative flex flex-col items-center">
-              {/* Animated loading GIF */}
-              <motion.img
-                src="/blissful.gif"
-                alt="Blissful"
-                className="w-[min(90vw,700px)] drop-shadow-[0_0_60px_rgba(25,247,210,0.3)]"
-                initial={{ scale: 0.85, opacity: 0, y: 12 }}
-                animate={{ scale: 1, opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-              />
-
-              {/* Shimmer bar */}
-              <motion.div
-                className="mt-6 h-[2px] rounded-full"
-                style={{
-                  background: 'linear-gradient(90deg, transparent, var(--bliss-accent), transparent)',
-                }}
-                initial={{ width: 0, opacity: 0 }}
-                animate={{ width: 120, opacity: 1 }}
-                transition={{ delay: 0.3, duration: 0.7, ease: 'easeOut' }}
-              />
-            </div>
           </motion.div>
         )}
       </AnimatePresence>
