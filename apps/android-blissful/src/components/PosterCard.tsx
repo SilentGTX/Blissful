@@ -210,6 +210,7 @@ export function PosterCard({
   autoFocus,
   atRowStart,
   nextFocusUp,
+  cardRef,
   progress,
   active,
   onSelect,
@@ -229,6 +230,9 @@ export function PosterCard({
   atRowStart?: boolean;
   /** nextFocusUp node handle (the Home top row routes Up to the avatar). */
   nextFocusUp?: number;
+  /** Ref to the focusable Pressable — callers use its tag as a nextFocus* target
+      (Search points the field's nextFocusDown at the first result card). */
+  cardRef?: React.Ref<View>;
   progress?: number;
   /** This card's hold-OK action overlay is open — drop the ring + report the rect. */
   active?: boolean;
@@ -279,8 +283,16 @@ export function PosterCard({
     return () => clearTimeout(id);
   }, [active, focused, onActiveRect]);
 
+  // Merge the hook's internal ref (rail-trap self-tag) with the caller's cardRef
+  // (same merge idiom as TopBar's forwarded search ref).
+  const setPressRef = (node: unknown) => {
+    (focusProps.ref as unknown as { current: unknown }).current = node;
+    if (typeof cardRef === 'function') cardRef(node as View | null);
+    else if (cardRef) (cardRef as unknown as { current: unknown }).current = node;
+  };
+
   return (
-    <Pressable {...focusProps} nextFocusUp={nextFocusUp} style={{ width }}>
+    <Pressable {...focusProps} ref={setPressRef as never} nextFocusUp={nextFocusUp} style={{ width }}>
       <PosterVisual item={item} width={width} variant={variant} art={art} hideRating={hideRating} titlePlacement={titlePlacement} focused={focused} active={active} progress={progress} m={m} frameRef={frameRef} />
     </Pressable>
   );

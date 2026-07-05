@@ -1,6 +1,6 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, Keyboard, ScrollView, StyleSheet, Text, useTVEventHandler, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, findNodeHandle, FlatList, Keyboard, ScrollView, StyleSheet, Text, useTVEventHandler, View } from 'react-native';
 import { fetchCatalog, type StremioMetaPreview } from '@blissful/core';
 import { useContentInert } from '../lib/contentFocus';
 import { colors, font } from '../theme/colors';
@@ -14,11 +14,14 @@ function ResultRail({
   title,
   items,
   onSelect,
+  firstCardRef,
 }: {
   m: ReturnType<typeof useMetrics>;
   title: string;
   items: StremioMetaPreview[];
   onSelect: (item: CardItem) => void;
+  /** Attached to card 0's Pressable — the search field's nextFocusDown target. */
+  firstCardRef?: React.RefObject<View | null>;
 }) {
   const posterW = m.s(200);
   if (!items.length) return null;
@@ -34,7 +37,7 @@ function ResultRail({
         keyExtractor={(it) => it.id}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ gap: m.s(24), paddingTop: m.s(20), paddingBottom: m.s(12), paddingLeft: m.s(20), paddingRight: m.safeX }}
-        renderItem={({ item, index }) => <PosterCard item={item} width={posterW} atRowStart={index === 0} onSelect={onSelect} />}
+        renderItem={({ item, index }) => <PosterCard item={item} width={posterW} atRowStart={index === 0} cardRef={index === 0 ? firstCardRef : undefined} onSelect={onSelect} />}
       />
     </View>
   );
@@ -79,9 +82,31 @@ export function SearchScreen() {
   const onSelect = (item: CardItem) =>
     navigation.navigate('Detail', { id: item.id, type: item.type, name: item.name, poster: item.poster ?? undefined });
 
-  // D-pad Up dismisses the on-screen keyboard (so the user can reach the results).
+  // The search field's explicit Down target: the FIRST card of the first visible
+  // rail. Without it, Down from the wide centered field lands on whichever card
+  // sits under its middle (native geometry), not the row start. Re-resolved when
+  // the leading item changes — new results remount the card, killing the old tag.
+  const firstCardRef = useRef<View | null>(null);
+  const firstId = movies[0]?.id ?? series[0]?.id;
+  const [firstCardTag, setFirstCardTag] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    if (!firstId) {
+      setFirstCardTag(undefined);
+      return;
+    }
+    const t = setTimeout(() => {
+      const tag = firstCardRef.current ? findNodeHandle(firstCardRef.current) : null;
+      setFirstCardTag(tag ?? undefined);
+    }, 0);
+    return () => clearTimeout(t);
+  }, [firstId]);
+
+  // D-pad Up while typing dismisses the on-screen keyboard (so the user can
+  // reach the results). Gate on the IME actually being up: Keyboard.dismiss()
+  // also BLURS the focused TextInput, so an unconditional dismiss bounced focus
+  // straight back to the first result card whenever Up landed on the search field.
   useTVEventHandler((evt) => {
-    if (evt.eventType === 'up') Keyboard.dismiss();
+    if (evt.eventType === 'up' && Keyboard.isVisible()) Keyboard.dismiss();
   });
 
   const hasResults = movies.length > 0 || series.length > 0;
@@ -92,7 +117,7 @@ export function SearchScreen() {
       <NavRail active="Search" />
       {/* Don't auto-open the IME when arriving with a pre-filled query (cast/
           genre chip) — show results instead. Only auto-focus an empty search. */}
-      <TopBar searchValue={query} onSearchChange={setQuery} searchAutoFocus={!route.params?.query} />
+      <TopBar searchValue={query} onSearchChange={setQuery} searchAutoFocus={!route.params?.query} searchNextFocusDown={firstCardTag} />
       <ScrollView
         isTVSelectable={!railOpen}
         style={{ position: 'absolute', left: m.contentLeft, top: m.contentTop, right: 0, bottom: 0 }}
@@ -104,8 +129,8 @@ export function SearchScreen() {
             <ActivityIndicator color={colors.accent} size="large" />
           </View>
         ) : null}
-        <ResultRail m={m} title="Popular - Movie" items={movies} onSelect={onSelect} />
-        <ResultRail m={m} title="Popular - Series" items={series} onSelect={onSelect} />
+        <ResultRail m={m} title="Popular - Movie" items={movies} onSelect={onSelect} firstCardRef={movies.length ? firstCardRef : undefined} />
+        <ResultRail m={m} title="Popular - Series" items={series} onSelect={onSelect} firstCardRef={!movies.length ? firstCardRef : undefined} />
         {query.trim().length >= 2 && !loading && !hasResults ? (
           <Text style={{ fontFamily: font.body, fontSize: m.s(26), color: colors.textFaint, marginTop: m.s(40) }}>No results for “{query.trim()}”.</Text>
         ) : null}
