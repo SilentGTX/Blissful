@@ -520,6 +520,17 @@ export default function BlissfulPlayer(props: {
   selectedQualityRef.current = props.selectedQuality ?? null;
   const onSelectQualityRef = useRef(props.onSelectQuality);
   onSelectQualityRef.current = props.onSelectQuality;
+  // Live mirrors read inside the HLS 409 handler: the "pick another release"
+  // drawer must only auto-open when there is actually something to pick — the
+  // Releases list resolves async, and opening before it landed showed an
+  // empty panel with no tab selected. Party guests never get the picker
+  // (SettingsPanel receives releases=undefined), so don't open it for them.
+  const releasesRef = useRef(props.releases);
+  releasesRef.current = props.releases;
+  const partyNonHostRef = useRef(false);
+  // Set when a 409 wanted the Releases drawer before the list resolved; an
+  // effect below opens the drawer as soon as releases arrive.
+  const pendingReleasesOpenRef = useRef(false);
   // Counts transient load-time failures (mobile network blip,
   // upstream 502 on a Videasy segment, etc.). Bumping `retryNonce`
   // re-runs the src effect — same code path as a fresh mount —
@@ -2642,8 +2653,16 @@ export default function BlissfulPlayer(props: {
           setError('Not cached — pick another release');
           try { hls.destroy(); } catch { /* ignore */ }
           if (hlsRef.current === hls) hlsRef.current = null;
-          setSettingsTab('releases');
-          setSettingsOpen(true);
+          if (!partyNonHostRef.current) {
+            if ((releasesRef.current?.length ?? 0) > 0) {
+              setSettingsTab('releases');
+              setSettingsOpen(true);
+            } else {
+              // Releases haven't resolved yet — opening now would show an
+              // empty drawer. Defer until the list arrives.
+              pendingReleasesOpenRef.current = true;
+            }
+          }
           return;
         }
         // Watch-party relay: the host's tunnel can briefly drop (reconnect /
@@ -3300,6 +3319,7 @@ export default function BlissfulPlayer(props: {
   // moving everyone forward; a non-host triggering their own advance
   // would desync the party.
   const partyNonHost = !!props.roomCode && !watchParty.isHost;
+  partyNonHostRef.current = partyNonHost;
 
   const advanceToNextEpisode = useCallback(() => {
     if (partyNonHost) return;
@@ -3466,6 +3486,24 @@ export default function BlissfulPlayer(props: {
       setSettingsOpen(true);
     }
   }, [props.autoOpenReleases, props.releases]);
+
+  // A transcode 409 asked for the Releases drawer before the list had
+  // resolved (it loads async while the player starts). Open it as soon as the
+  // releases arrive — but only while the dead stream is still what playback
+  // is stuck on (fallback or rd mode); if Videasy took over meanwhile there
+  // is nothing to swap and popping the drawer would just interrupt.
+  useEffect(() => {
+    if (!pendingReleasesOpenRef.current) return;
+    if ((!props.fallbackActive && !props.rdMode) || partyNonHost) {
+      pendingReleasesOpenRef.current = false;
+      return;
+    }
+    if ((props.releases?.length ?? 0) > 0) {
+      pendingReleasesOpenRef.current = false;
+      setSettingsTab('releases');
+      setSettingsOpen(true);
+    }
+  }, [props.fallbackActive, props.rdMode, props.releases, partyNonHost]);
 
   const handleSelectEpisode = useCallback((v: EpisodesDrawerVideo) => {
     // Watch-party guests are read-only on the episode picker — host

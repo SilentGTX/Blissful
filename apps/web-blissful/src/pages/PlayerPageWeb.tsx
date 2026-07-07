@@ -884,6 +884,20 @@ export default function PlayerPage() {
     const t = window.setTimeout(() => setFallbackPlayUrl(resumeUrl), 8000);
     return () => window.clearTimeout(t);
   }, [resumeUrl, videasyResolved, videasySources, fallbackPlayUrl]);
+  // Once Videasy actually resolves sources, DROP any committed standby
+  // fallback (chiefly the CW resume stream — often an RD torrent saved by the
+  // desktop app). Selection already prefers Videasy, but the standby lingered:
+  // every server switch empties videasySources for a beat, activeSource goes
+  // null, and playback flickered onto the stale RD transcode just long enough
+  // to 409 ("Not cached — pick another release" + a phantom Releases drawer)
+  // before the new server resolved. The resume effect above re-commits the
+  // saved stream if Videasy later resolves empty, so dropping it loses
+  // nothing. rdSelected/pickFirst keep their explicitly-picked URL
+  // (videasySources can linger from a previous playback in those modes).
+  useEffect(() => {
+    if (rdSelected || pickFirst) return;
+    if (fallbackPlayUrl && videasySources.length > 0) setFallbackPlayUrl(null);
+  }, [rdSelected, pickFirst, fallbackPlayUrl, videasySources]);
   // Audio tracks for a transcoded RD stream. The transcoder muxes ONE track at
   // a time (&a=N), so probe the source's tracks → the player offers a picker and
   // switching reloads the transcode at the same position. (Above the early
