@@ -2525,6 +2525,13 @@ export default function BlissfulPlayer(props: {
       // Watch-party relay: count manifest reloads triggered by transient tunnel
       // 404s so a genuinely dead relay can't loop forever (reset on success).
       let relayReloadCount = 0;
+      // Consecutive fragment-load timeouts without a completed fragment.
+      // Videasy serves each quality as its OWN single-level playlist, so
+      // hls.js has no ABR ladder to step down when one tier is throttled
+      // (the 4K cdn1 bucket sometimes crawls at KB/s while 1080p stays
+      // fast) — it just retries the same fragment forever. We count the
+      // 20s timeouts and swap down a quality ourselves.
+      let fragTimeoutCount = 0;
 
         const selectAudioTrack = (trackIndex: number) => {
           if (!Number.isFinite(trackIndex) || trackIndex < 0) return;
@@ -2567,6 +2574,10 @@ export default function BlissfulPlayer(props: {
         playWithAutoplayFallback(video);
       });
 
+      hls.on(Hls.Events.FRAG_LOADED, () => {
+        fragTimeoutCount = 0;
+      });
+
       hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
         updateTracks();
       });
@@ -2578,7 +2589,45 @@ export default function BlissfulPlayer(props: {
       });
 
       hls.on(Hls.Events.ERROR, (_evt, data) => {
-        if (!data.fatal) return;
+        // Pick the best alternate quality — shared by the codec-error and
+        // frag-timeout fallbacks. 1080p first (best still-smooth tier),
+        // then down the ladder, then anything that isn't the current one.
+        const pickLowerQuality = () => {
+          const opts = qualityOptionsRef.current ?? [];
+          const current = selectedQualityRef.current;
+          const byLabel = (needle: string) =>
+            opts.find((o) => o.quality.toLowerCase().includes(needle) && o.quality !== current);
+          return byLabel('1080p') ?? byLabel('720p') ?? byLabel('480p')
+            ?? opts.find((o) => o.quality !== current);
+        };
+        // A tier whose fragments keep hitting the 20s load timeout is
+        // throttled upstream, not blipping — retrying it can never finish.
+        // Swap to a lower quality so the user keeps watching.
+        const swapDownForStall = (): boolean => {
+          if (src.includes('/party-relay')) return false; // guests follow the host's stream
+          const fallback = pickLowerQuality();
+          if (!fallback || !onSelectQualityRef.current) return false;
+          playerLog(`[player] frag timeouts on ${selectedQualityRef.current ?? '?'} — switching to ${fallback.quality}`);
+          notifyError(
+            `${selectedQualityRef.current ?? 'This'} stream is too slow`,
+            `The CDN can't keep up. Switched to ${fallback.label}.`
+          );
+          onSelectQualityRef.current(fallback.quality);
+          try { hls.destroy(); } catch { /* ignore */ }
+          if (hlsRef.current === hls) hlsRef.current = null;
+          return true;
+        };
+        if (!data.fatal) {
+          // Each frag timeout is already a 20s stall (fragLoadingTimeOut);
+          // two in a row without a completed fragment means the tier is
+          // dead-slow. Don't sit through all 6 retries (~2min) waiting for
+          // the fatal — swap down now.
+          if (data.details === 'fragLoadTimeOut') {
+            fragTimeoutCount += 1;
+            if (fragTimeoutCount >= 2) swapDownForStall();
+          }
+          return;
+        }
         // Surface every fatal HLS error to the log so we can correlate
         // mid-playback reloads (`emptied` → `loadstart`) with their root
         // cause. Dump as much of hls.js's ErrorData as we can to pin
@@ -2623,15 +2672,7 @@ export default function BlissfulPlayer(props: {
         if (data.details === 'bufferAddCodecError') {
           const mime = d.mimeType ?? '';
           if (/hvc1|hev1/i.test(mime)) {
-            const opts = qualityOptionsRef.current ?? [];
-            const current = selectedQualityRef.current;
-            const pickByLabel = (needle: string) =>
-              opts.find((o) => o.quality.toLowerCase().includes(needle) && o.quality !== current);
-            const fallback =
-              pickByLabel('1080p')
-              ?? pickByLabel('720p')
-              ?? pickByLabel('480p')
-              ?? opts.find((o) => o.quality !== current);
+            const fallback = pickLowerQuality();
             if (fallback && onSelectQualityRef.current) {
               notifyError(
                 '4K not supported on this browser',
@@ -2688,6 +2729,10 @@ export default function BlissfulPlayer(props: {
           }, 3000);
           return;
         }
+        // Fatal frag timeout: hls.js already burned all 6 in-policy retries
+        // (~2min of stall) — backstop in case the non-fatal counter above
+        // didn't catch it (e.g. timeouts interleaved with loaded fragments).
+        if (data.details === 'fragLoadTimeOut' && swapDownForStall()) return;
         // Try to recover from media/network errors like Stremio does
         if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
           hls.recoverMediaError();
