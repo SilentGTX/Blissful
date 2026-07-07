@@ -7,7 +7,7 @@ import { putBlissfulLibraryItem } from '../../../lib/blissfulAuthApi';
 import { getLastStreamSelection } from '../../../lib/streamHistory';
 import { getResumeSeconds } from '../utils';
 import { fetchMeta } from '../../../lib/stremioAddon';
-import { shellOrigin } from '../../../lib/desktop';
+import { shellOrigin, isNativeShell } from '../../../lib/desktop';
 import { preloadImage } from '../../../lib/imageProxy';
 
 type UseContinueWatchingActionsParams = {
@@ -131,14 +131,30 @@ export function useContinueWatchingActions({
     // every platform, both branches just go straight to /player.
 
     if (stored?.url) {
+      // On the WEB, a stored transcode-bound stream (an RD/torrentio torrent
+      // container — typically progress made in the desktop app, where mpv
+      // plays it natively) must not be the PRIMARY url: the web player would
+      // start transcoding it immediately and 409 out ("Not cached") when the
+      // torrent is no longer cached on RD, even though Videasy has the title.
+      // Hand it to the player's resume flow instead (url=vidking:placeholder
+      // + resume=<saved>): Videasy resolves first and the saved stream stays
+      // the standby fallback, committed only if Videasy comes up empty/slow.
+      // The native shell keeps the direct URL — mpv plays the original
+      // container at the original quality the user picked.
+      const transcodeBound =
+        /\.(mkv|avi|m2ts|wmv|flv|ogm)(\?|#|$)/i.test(stored.url)
+        || /\/resolve\/realdebrid\//i.test(stored.url);
+      const videasyFirst = !isNativeShell() && /^https?:\/\//i.test(stored.url) && transcodeBound;
       // Pre-flight HEAD probe — Real-Debrid serves a ~30 s "File was
       // removed" placeholder (<20 MB) when a cached release is DMCA'd.
       // If we hit one, transparently fall back to the auto-pick flow:
       // hand off to the detail page with `autoplay=1&t=<sec>` so it
       // fetches addon streams, picks the top-ranked one, and resumes
       // at the saved offset — the user never sees a player UI on a
-      // dead stream.
-      if (/^https:\/\//i.test(stored.url)) {
+      // dead stream. Skipped in videasy-first mode: the stored stream is
+      // only a standby there, so probing it would burn an RD resolve (and
+      // seconds of CW-click latency) on a URL we don't intend to play.
+      if (!videasyFirst && /^https:\/\//i.test(stored.url)) {
         try {
           const probe = await fetch(
             `${shellOrigin()}/resolve-url?url=${encodeURIComponent(stored.url)}`,
@@ -183,10 +199,11 @@ export function useContinueWatchingActions({
       // round-trips into the library row's `name` and shows up as a
       // tile titled "undefined" in Continue Watching forever.
       const qs = new URLSearchParams({
-        url: stored.url,
+        url: videasyFirst ? 'vidking:placeholder' : stored.url,
         type: item.type,
         id: item._id,
       });
+      if (videasyFirst) qs.set('resume', stored.url);
       const resolvedTitle = stored.title ?? item.name ?? null;
       if (resolvedTitle) qs.set('title', resolvedTitle);
       if (item.name) qs.set('metaTitle', item.name);
