@@ -47,3 +47,4 @@ desktop.ini
 .env
 .env.local
 *.local
+graphify-out/
