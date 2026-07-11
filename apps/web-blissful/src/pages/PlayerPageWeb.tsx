@@ -483,15 +483,19 @@ export default function PlayerPage() {
   // anything the addon meta provides, then the library / continue-
   // watching item's poster (same source the ResumeOrStartOver
   // modal uses) so we never end up with a black overlay.
-  const poster =
-    posterParam
-    ?? (meta?.meta?.poster ? normalizeStremioImage(meta.meta.poster) ?? null : null)
-    ?? libraryFallbackPoster;
+  // The meta ternaries are hoisted into named consts (not inlined into the ??
+  // chains) to dodge a TS7 7.0.2 false-positive TS2871 ("always nullish") in its
+  // new nullish-coalescing analysis — `x ?? (cond ? y ?? null : null)` trips it.
+  // Behaviour is identical: URL param wins, then addon meta, then library fallback.
+  const metaPoster: string | null = meta?.meta?.poster
+    ? normalizeStremioImage(meta.meta.poster) ?? null
+    : null;
+  const metaBackground: string | null = meta?.meta?.background
+    ? normalizeStremioImage(meta.meta.background) ?? null
+    : null;
+  const poster = posterParam ?? metaPoster ?? libraryFallbackPoster;
   const background =
-    backgroundParam
-    ?? (meta?.meta?.background ? normalizeStremioImage(meta.meta.background) ?? null : null)
-    ?? (meta?.meta?.poster ? normalizeStremioImage(meta.meta.poster) ?? null : null)
-    ?? libraryFallbackPoster;
+    backgroundParam ?? metaBackground ?? metaPoster ?? libraryFallbackPoster;
 
   // Compute next-episode info from the full episode list when available.
   // Falls back to sessionStorage (written by DetailPage) for the initial play.
