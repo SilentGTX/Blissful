@@ -432,6 +432,11 @@ export default function BlissfulPlayer(props: {
   // switch fallback chain works across the whole player.
   selectedServer?: string;
   onSelectServer?: (id: string) => void;
+  // Reports a source whose fatal HLS network errors keep recurring (e.g.
+  // the Videasy segment CDN died mid-session). Returns true when the
+  // parent takes over (swaps in a fallback stream) — the player then
+  // stops retrying this source instead of looping forever.
+  onSourceDead?: (src: string) => boolean;
   // IDs of servers that the parent has already tried and given up
   // on for the current title — rendered as disabled rows in the
   // picker so the user knows what's been ruled out.
@@ -520,6 +525,8 @@ export default function BlissfulPlayer(props: {
   selectedQualityRef.current = props.selectedQuality ?? null;
   const onSelectQualityRef = useRef(props.onSelectQuality);
   onSelectQualityRef.current = props.onSelectQuality;
+  const onSourceDeadRef = useRef(props.onSourceDead);
+  onSourceDeadRef.current = props.onSourceDead;
   // Live mirrors read inside the HLS 409 handler: the "pick another release"
   // drawer must only auto-open when there is actually something to pick — the
   // Releases list resolves async, and opening before it landed showed an
@@ -2532,6 +2539,12 @@ export default function BlissfulPlayer(props: {
       // fast) — it just retries the same fragment forever. We count the
       // 20s timeouts and swap down a quality ourselves.
       let fragTimeoutCount = 0;
+      // Fatal network errors without a completed fragment in between —
+      // a Videasy source whose segment-host pool died mid-session (fast
+      // 504s from the proxy's failover, not slow timeouts, so the frag-
+      // timeout counter above never sees them). Two of these hand the
+      // source to the page's fallback instead of retrying forever.
+      let videasyFatalNetCount = 0;
 
         const selectAudioTrack = (trackIndex: number) => {
           if (!Number.isFinite(trackIndex) || trackIndex < 0) return;
@@ -2576,6 +2589,7 @@ export default function BlissfulPlayer(props: {
 
       hls.on(Hls.Events.FRAG_LOADED, () => {
         fragTimeoutCount = 0;
+        videasyFatalNetCount = 0;
       });
 
       hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
@@ -2733,6 +2747,24 @@ export default function BlissfulPlayer(props: {
         // (~2min of stall) — backstop in case the non-fatal counter above
         // didn't catch it (e.g. timeouts interleaved with loaded fragments).
         if (data.details === 'fragLoadTimeOut' && swapDownForStall()) return;
+        // Videasy source with recurring fatal network errors: the segment
+        // CDN died mid-session (hosts drop out of the pool while a stream
+        // plays). startLoad() would retry into the same dead pool forever,
+        // and quality swaps don't help — every tier shares the pool. Hand
+        // the source to the page, which swaps in the RD fallback.
+        if (
+          data.type === Hls.ErrorTypes.NETWORK_ERROR
+          && src.includes('vd=1')
+          && !src.includes('/party-relay')
+        ) {
+          videasyFatalNetCount += 1;
+          if (videasyFatalNetCount >= 2 && onSourceDeadRef.current?.(src)) {
+            playerLog(`[player] videasy source dead (${videasyFatalNetCount} fatal network errors) — handed to page fallback`);
+            try { hls.destroy(); } catch { /* ignore */ }
+            if (hlsRef.current === hls) hlsRef.current = null;
+            return;
+          }
+        }
         // Try to recover from media/network errors like Stremio does
         if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
           hls.recoverMediaError();

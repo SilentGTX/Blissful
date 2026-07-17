@@ -1002,20 +1002,42 @@ export default function PlayerPage() {
   // own player too). hls.js then grinds through its 6×20s manifest retries
   // while the addon fallback stays skipped ("videasy resolved"), so the
   // user stares at an endless spinner even though RD has the title. Probe
-  // the manifest the player is about to use: a healthy playlist answers in
-  // well under a second, so two failed 10s attempts ⇒ the source is dead.
-  // Then drop ALL videasy state for this episode (the subtitles live on
-  // the same host) and bump the nonce so the addon-fallback effect re-runs
-  // — with videasyPlayableRef now false it walks its probe loop and
-  // commits the RD pick.
+  // what the player is about to use — the manifest AND its first segment
+  // (same day, later: manifests stayed 200 while every segment host died,
+  // so a manifest-only probe passes right into an unplayable stream). A
+  // healthy source answers both in well under a second, so two failed 10s
+  // attempts ⇒ dead. Then drop ALL videasy state for this episode (the
+  // subtitles live on the same host) and bump the nonce so the addon-
+  // fallback effect re-runs — with videasyPlayableRef now false it walks
+  // its probe loop and commits the RD pick.
   const [videasyDeadNonce, setVideasyDeadNonce] = useState(0);
-  // Manifests already proven dead — if a manual server switch re-fetches
+  // Sources already proven dead — if a manual server switch re-fetches
   // the same URLs (the API keeps returning them while the CDN is down),
   // kill them instantly instead of burning another 20s re-probing.
   const deadManifestsRef = useRef<Set<string>>(new Set());
+  const videasySourcesRef = useRef<VideasySource[]>([]);
+  useEffect(() => { videasySourcesRef.current = videasySources; }, [videasySources]);
   useEffect(() => {
     deadManifestsRef.current.clear(); // dead-CDN verdicts don't carry across episodes
   }, [imdbId, seriesSeasonEpisode]);
+  const declareVideasyDead = useCallback((src: string, why: string) => {
+    deadManifestsRef.current.add(src);
+    sendPlayerLog(`[player-page] videasy source dead (${why}) — dropping videasy, engaging addon fallback url=…${src.slice(-60)}`);
+    setVideasySources([]);
+    setVideasySubs([]);
+    setVideasyDeadNonce((n) => n + 1);
+  }, []);
+  // Mid-playback escape hatch: BlissfulPlayer reports a videasy source
+  // whose fatal HLS network errors keep recurring (segment hosts died
+  // AFTER the pre-play probe passed). Returns true when handled so the
+  // player stops its own retry loop.
+  const handleSourceDead = useCallback((deadSrc: string) => {
+    if (!videasySourcesRef.current.length) return false;
+    const known = videasySourcesRef.current.some((s) => s.url && deadSrc.startsWith(s.url));
+    if (!known) return false;
+    declareVideasyDead(deadSrc, 'fatal network errors in playback');
+    return true;
+  }, [declareVideasyDead]);
   useEffect(() => {
     if (pickFirst || rdSelected) return; // videasy never plays in RD modes
     // Mirrors the activeSource pick below — probe exactly what will play.
@@ -1025,33 +1047,53 @@ export default function PlayerPage() {
     // Only proxied videasy HLS; anything else has its own failure handling.
     if (!src || !src.startsWith('/addon-proxy')) return;
     let cancelled = false;
-    const declareDead = () => {
-      deadManifestsRef.current.add(src);
-      sendPlayerLog(`[player-page] videasy manifest unreachable — dropping videasy, engaging addon fallback url=…${src.slice(-60)}`);
-      setVideasySources([]);
-      setVideasySubs([]);
-      setVideasyDeadNonce((n) => n + 1);
-    };
     if (deadManifestsRef.current.has(src)) {
-      declareDead();
+      declareVideasyDead(src, 'known dead');
       return;
     }
+    // First non-comment line of the rewritten playlist = the first proxied
+    // segment URL. Read only its first chunk — enough to prove the segment
+    // host answers, without downloading the segment.
+    const probeFirstSegment = async (playlist: string): Promise<boolean> => {
+      const segUrl = playlist
+        .split(/\r?\n/)
+        .find((l) => l.trim() && !l.trim().startsWith('#'))
+        ?.trim();
+      if (!segUrl) return false; // no segments = nothing playable
+      try {
+        const resp = await fetch(segUrl, { signal: AbortSignal.timeout(10_000) });
+        if (!resp.ok || !resp.body) return false;
+        const reader = resp.body.getReader();
+        const first = await reader.read();
+        void reader.cancel().catch(() => { /* already closed */ });
+        return !first.done;
+      } catch {
+        return false;
+      }
+    };
     void (async () => {
       for (let attempt = 1; attempt <= 2; attempt += 1) {
         try {
           const resp = await fetch(src, { signal: AbortSignal.timeout(10_000) });
           if (cancelled) return;
-          if (resp.ok) return; // healthy — the player's own load takes it from here
+          if (resp.ok) {
+            const body = await resp.text();
+            if (cancelled) return;
+            if (await probeFirstSegment(body)) return; // healthy — the player's own load takes it from here
+            if (cancelled) return;
+            sendPlayerLog(`[player-page] videasy segment probe failed attempt=${attempt}`);
+            continue;
+          }
           sendPlayerLog(`[player-page] videasy manifest probe !ok status=${resp.status} attempt=${attempt}`);
         } catch (err) {
           if (cancelled) return;
           sendPlayerLog(`[player-page] videasy manifest probe err attempt=${attempt} err=${String((err as Error)?.message ?? err)}`);
         }
       }
-      if (!cancelled) declareDead();
+      if (!cancelled) declareVideasyDead(src, 'manifest/segment unreachable');
     })();
     return () => { cancelled = true; };
-  }, [videasySources, selectedQuality, pickFirst, rdSelected]);
+  }, [videasySources, selectedQuality, pickFirst, rdSelected, declareVideasyDead]);
   useEffect(() => {
     if (!type || !id) {
       sendPlayerLog(`[player-page] addon fallback gate: no type/id (type=${type} id=${id})`);
@@ -1602,6 +1644,7 @@ export default function PlayerPage() {
       builtinSubtitles={builtinSubtitles}
       selectedServer={selectedServer}
       onSelectServer={handleSelectServer}
+      onSourceDead={handleSourceDead}
       unavailableServers={unavailableServers}
       hideServerPicker={(!!fallbackPlayUrl || pickFirst || rdSelected) && !activeSource}
       releases={(!!fallbackPlayUrl || pickFirst || rdSelected) && !activeSource && addonStreams.length ? addonStreams : undefined}
