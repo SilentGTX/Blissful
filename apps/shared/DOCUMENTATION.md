@@ -32,10 +32,15 @@ flow:
 
 Providers (Vidking player names): `cdn`=Hydrogen, `tejo`=Titanium, `neon2`=Oxygen,
 `downloader2`=Lithium, `1movies`=Helium; the chain falls through on any per-title failure. Decrypted
-source + subtitle URLs are re-proxied through `/addon-proxy?...&vd=1`, which forces the CDN Referer
+source + subtitle URLs are re-proxied through `/addon-proxy?...&vd=1`, which forces the CDN header
 spoof + HLS per-segment rewrite (Videasy rotates CDN hostnames, so no host allowlist). **The segment
-CDNs 403 any request carrying an `Origin` header** (as of 2026-07-18 — the inverse of the old rule),
-so `proxyRequest` sends the Referer spoof but NO Origin for `vd=1` requests. Host history:
+CDNs' provenance rule keeps flipping** (2026-07-17: 403 on any `Origin` header; 2026-07-18: 403
+UNLESS `Referer`+`Origin` name `player.videasy.to`), so `proxyRequest` defaults `vd=1` requests to
+the real player's header shape and retries a 403 once with the vidking no-Origin shape. **Pool
+hosts also just die** (one stream is sharded across many throwaway domains; tokens are
+host-portable): the proxy learns the host pool from the playlists it rewrites and replays a
+timed-out/connect-failed/double-403 fetch on the freshest healthy alternate, with a 5-min dead-host
+cooldown + pre-skip. Host history:
 `api.videasy.net` → `api.videasy.to` (both now 404) → `api.speedracelight.com`. The old CryptoJS/WASM
 decryptor (`videasy-decrypt.js` + `videasy-module.wasm`) is kept for reference but unused.
 
@@ -44,7 +49,10 @@ handle is Videasy rotating the response cipher — it falls back to the on-Mac b
 (`infra/scripts/videasy-resolver.py`, launchd `com.budinoff.videasy-resolver`, `:13099`): a headed
 undetected-Chrome that harvests already-**decrypted** output from Vidking's own player, so it's
 immune to cipher changes. Its warm-loop is off by default (`VIDEASY_RESOLVER_WARM=1` to re-enable),
-so Chrome stays cold until a real fallback fires. Below that, Real-Debrid (`/rd-fallback`). The
+so Chrome stays cold until a real fallback fires. Below that, Real-Debrid (`/rd-fallback`) — the
+web player also probes the resolved manifest client-side (PlayerPageWeb dead-manifest probe,
+`player-videasy-fallback.web.spec.ts`) and commits the RD pick itself when videasy "resolves"
+sources whose CDN never answers. The
 legacy session-token machinery (`videasyAuthHeaders`, `/videasy-token`, the removed
 `videasy-minter`) is retained but **inert** — it reactivates only if the token wall returns. Full
 anatomy + outside-in diagnosis in the memory note `project_vidking_videasy_pipeline`.
