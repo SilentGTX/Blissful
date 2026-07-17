@@ -889,7 +889,7 @@ function rewriteHlsPlaylist(body, baseUrl, publicOrigin, vd) {
   return lines.join('\n');
 }
 
-function proxyRequest(req, res, targetUrl, headers = {}, redirectCount = 0) {
+function proxyRequest(req, res, targetUrl, headers = {}, redirectCount = 0, vdShape = 0) {
   if (redirectCount > 5) {
     if (!res.headersSent) {
       res.writeHead(502, { 'Content-Type': 'text/plain' });
@@ -929,14 +929,20 @@ function proxyRequest(req, res, targetUrl, headers = {}, redirectCount = 0) {
     'Content-Length': req.headers['content-length'],
     Cookie: req.headers.cookie,
     Authorization: req.headers.authorization,
-    // Videasy CDN hosts validate the Referer (Vidking player origin, NOT the
-    // browser's actual origin) but as of 2026-07-18 the segment hosts 403 ANY
-    // request carrying an Origin header — even https://www.vidking.net (the
-    // exact inverse of the old rule, where a missing/wrong Origin was what
-    // 403'd). So spoof the Referer and send no Origin at all. For everything
-    // else, pass the browser's own headers through.
-    Origin: isVideasy ? undefined : req.headers.origin,
-    Referer: isVideasy ? 'https://www.vidking.net/' : req.headers.referer,
+    // Videasy CDN hosts gate on the request's provenance headers, and the
+    // accepted shape keeps flipping (2026-07-17: segment hosts 403'd ANY
+    // request carrying an Origin header; 2026-07-18: the same hosts 403
+    // unless BOTH Referer and Origin name the Videasy player). Default to
+    // impersonating the real player — a shape their CDN can't ban without
+    // breaking their own site — and when a host still 403s, retry once with
+    // the vidking no-Origin shape (the previous regime; see the 403 handler
+    // below). For everything else, pass the browser's own headers through.
+    Origin: isVideasy
+      ? (vdShape === 0 ? 'https://player.videasy.to' : undefined)
+      : req.headers.origin,
+    Referer: isVideasy
+      ? (vdShape === 0 ? 'https://player.videasy.to/' : 'https://www.vidking.net/')
+      : req.headers.referer,
     Range: req.headers.range,
     ...headers,
   };
@@ -961,7 +967,20 @@ function proxyRequest(req, res, targetUrl, headers = {}, redirectCount = 0) {
         proxyRes.resume(); // drain the response body
         const redirectUrl = new URL(proxyRes.headers.location, targetUrl).toString();
         console.log(`Redirect ${status}: ${redirectUrl}`);
-        proxyRequest(req, res, redirectUrl, {}, redirectCount + 1);
+        proxyRequest(req, res, redirectUrl, {}, redirectCount + 1, vdShape);
+        return;
+      }
+
+      // Wrong-provenance 403 from a Videasy CDN — flip to the alternate
+      // header shape once. GET/HEAD only: a piped POST body can't be
+      // replayed (Videasy media fetches are all GETs anyway).
+      if (
+        isVideasy && status === 403 && vdShape === 0
+        && (!req.method || req.method === 'GET' || req.method === 'HEAD')
+      ) {
+        proxyRes.resume(); // drain the response body
+        console.log(`Videasy 403 with player headers — retrying vidking shape: ${parsedTarget.hostname}`);
+        proxyRequest(req, res, targetUrl, headers, redirectCount, 1);
         return;
       }
 
