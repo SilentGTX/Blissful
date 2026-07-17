@@ -807,6 +807,55 @@ function isVideasyCdn(hostname) {
   return VIDEASY_CDN_HOST_SUFFIXES.some((s) => h === s || h.endsWith('.' + s));
 }
 
+// ── Videasy CDN host pool ────────────────────────────────────────────────
+// The segment CDN shards one stream across many throwaway domains
+// (sandstorm13.site, cartlegion03.site, diskphone12.site, …) and some of
+// them just die — a manifest can assign a segment to a host that never
+// answers, stalling playback forever at that position. The tokens are
+// HOST-PORTABLE (verified 2026-07-18: the same /r2/cdn2/<token>/… path
+// serves from any healthy pool host), so remember every host seen while
+// rewriting playlists and replay a failed fetch on an alternate. Hosts
+// that timed out are skipped for a cooldown so ONE dead host costs one
+// stall, not one 15s stall per segment.
+const videasyHostPool = new Map(); // hostname → lastSeen ms
+const videasyDeadHosts = new Map(); // hostname → diedAt ms
+const VIDEASY_DEAD_HOST_COOLDOWN_MS = 5 * 60 * 1000;
+function recordVideasyHost(hostname) {
+  if (!hostname) return;
+  videasyHostPool.set(hostname, Date.now());
+  if (videasyHostPool.size > 64) {
+    // Drop the stalest entry (Map iterates in insertion order; re-setting
+    // an existing key does not move it, so scan for the true oldest).
+    let oldest = null;
+    for (const [h, ts] of videasyHostPool) {
+      if (!oldest || ts < oldest[1]) oldest = [h, ts];
+    }
+    if (oldest) videasyHostPool.delete(oldest[0]);
+  }
+}
+function markVideasyHostDead(hostname) {
+  if (hostname) videasyDeadHosts.set(hostname, Date.now());
+}
+function isVideasyHostDead(hostname) {
+  const diedAt = videasyDeadHosts.get(hostname);
+  if (diedAt == null) return false;
+  if (Date.now() - diedAt >= VIDEASY_DEAD_HOST_COOLDOWN_MS) {
+    videasyDeadHosts.delete(hostname);
+    return false;
+  }
+  return true;
+}
+function pickVideasyAltHost(excludeHost, triedHosts) {
+  let best = null;
+  for (const [h, ts] of videasyHostPool) {
+    if (h === excludeHost) continue;
+    if (triedHosts && triedHosts.has(h)) continue;
+    if (isVideasyHostDead(h)) continue;
+    if (!best || ts > best[1]) best = [h, ts];
+  }
+  return best ? best[0] : null;
+}
+
 // Videasy returns subtitle language as a display name (English,
 // Arabic, etc.). The web player wants ISO 639 codes for matching
 // against user preference settings. Map the common cases.
@@ -868,8 +917,11 @@ function rewriteHlsPlaylist(body, baseUrl, publicOrigin, vd) {
   const suffix = vd ? '&vd=1' : '';
   const proxify = (u) => {
     try {
-      const abs = new URL(u, base).toString();
-      return prefix + '/addon-proxy?url=' + encodeURIComponent(abs) + suffix;
+      const abs = new URL(u, base);
+      // Learn the segment host pool for dead-host failover (see
+      // videasyHostPool above).
+      if (vd) recordVideasyHost(abs.hostname);
+      return prefix + '/addon-proxy?url=' + encodeURIComponent(abs.toString()) + suffix;
     } catch {
       return u;
     }
@@ -889,7 +941,7 @@ function rewriteHlsPlaylist(body, baseUrl, publicOrigin, vd) {
   return lines.join('\n');
 }
 
-function proxyRequest(req, res, targetUrl, headers = {}, redirectCount = 0, vdShape = 0) {
+function proxyRequest(req, res, targetUrl, headers = {}, redirectCount = 0, vdShape = 0, vdTriedHosts = null) {
   if (redirectCount > 5) {
     if (!res.headersSent) {
       res.writeHead(502, { 'Content-Type': 'text/plain' });
@@ -920,6 +972,20 @@ function proxyRequest(req, res, targetUrl, headers = {}, redirectCount = 0, vdSh
   // rewriter) — force the cineby.sc spoof for ANY host, not just an allowlist.
   const vd = /[?&]vd=1(?:&|$)/.test(req.url || '');
   const isVideasy = isVideasyCdn(parsedTarget.hostname) || vd;
+  // A pool host we recently proved dead — don't burn a timeout on it, go
+  // straight to a healthy alternate (same path; tokens are host-portable).
+  if (isVideasy && isVideasyHostDead(parsedTarget.hostname)) {
+    const alt = pickVideasyAltHost(parsedTarget.hostname, vdTriedHosts);
+    if (alt) {
+      console.log(`Videasy dead-host pre-skip ${parsedTarget.hostname} -> ${alt}`);
+      parsedTarget.hostname = alt;
+      targetUrl = parsedTarget.toString();
+    }
+  }
+  // Once a retry recursion takes over this response, this request's own
+  // late events (destroy-triggered 'error', mid-stream 'timeout') must
+  // not touch `res` again.
+  let handedOff = false;
   const requestHeaders = {
     'User-Agent': isVideasy
       ? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36'
@@ -958,7 +1024,10 @@ function proxyRequest(req, res, targetUrl, headers = {}, redirectCount = 0, vdSh
     {
       method: req.method || 'GET',
       headers: requestHeaders,
-      timeout: 15000,
+      // Inactivity timeout. Videasy pool hosts either answer in well under
+      // a second or never — fail fast so the alt-host retry still lands
+      // within the player's fragment-load budget.
+      timeout: isVideasy ? 8000 : 15000,
     },
     (proxyRes) => {
       // Follow redirects server-side (torrentio resolve → RD CDN)
@@ -967,21 +1036,42 @@ function proxyRequest(req, res, targetUrl, headers = {}, redirectCount = 0, vdSh
         proxyRes.resume(); // drain the response body
         const redirectUrl = new URL(proxyRes.headers.location, targetUrl).toString();
         console.log(`Redirect ${status}: ${redirectUrl}`);
-        proxyRequest(req, res, redirectUrl, {}, redirectCount + 1, vdShape);
+        handedOff = true;
+        proxyRequest(req, res, redirectUrl, {}, redirectCount + 1, vdShape, vdTriedHosts);
         return;
       }
 
       // Wrong-provenance 403 from a Videasy CDN — flip to the alternate
-      // header shape once. GET/HEAD only: a piped POST body can't be
-      // replayed (Videasy media fetches are all GETs anyway).
+      // header shape once, and if BOTH shapes are refused try another pool
+      // host (rules differ per host). GET/HEAD only: a piped POST body
+      // can't be replayed (Videasy media fetches are all GETs anyway).
       if (
-        isVideasy && status === 403 && vdShape === 0
+        isVideasy && status === 403
         && (!req.method || req.method === 'GET' || req.method === 'HEAD')
       ) {
-        proxyRes.resume(); // drain the response body
-        console.log(`Videasy 403 with player headers — retrying vidking shape: ${parsedTarget.hostname}`);
-        proxyRequest(req, res, targetUrl, headers, redirectCount, 1);
-        return;
+        if (vdShape === 0) {
+          proxyRes.resume(); // drain the response body
+          console.log(`Videasy 403 with player headers — retrying vidking shape: ${parsedTarget.hostname}`);
+          handedOff = true;
+          proxyRequest(req, res, targetUrl, headers, redirectCount, 1, vdTriedHosts);
+          return;
+        }
+        const tried = (vdTriedHosts || new Set()).add(parsedTarget.hostname);
+        const alt = pickVideasyAltHost(parsedTarget.hostname, tried);
+        if (alt) {
+          proxyRes.resume(); // drain the response body
+          console.log(`Videasy 403 on both shapes — retrying on alternate host ${parsedTarget.hostname} -> ${alt}`);
+          const swapped = new URL(targetUrl);
+          swapped.hostname = alt;
+          handedOff = true;
+          proxyRequest(req, res, swapped.toString(), headers, redirectCount, 0, tried);
+          return;
+        }
+      }
+      // Keep the pool's lastSeen fresh (and learn manifest hosts, which the
+      // playlist rewriter never records as segment hosts).
+      if (isVideasy && status >= 200 && status < 300) {
+        recordVideasyHost(parsedTarget.hostname);
       }
 
       const responseHeaders = {
@@ -1052,8 +1142,26 @@ function proxyRequest(req, res, targetUrl, headers = {}, redirectCount = 0, vdSh
     }
   );
 
+  // Dead/refusing Videasy pool host — replay the fetch on an alternate
+  // (tokens are host-portable). Returns true when a retry took over.
+  const retryOnAltHost = (why) => {
+    if (!isVideasy || res.headersSent) return false;
+    if (req.method && req.method !== 'GET' && req.method !== 'HEAD') return false;
+    const tried = (vdTriedHosts || new Set()).add(parsedTarget.hostname);
+    const alt = pickVideasyAltHost(parsedTarget.hostname, tried);
+    if (!alt) return false;
+    console.log(`Videasy ${why} ${parsedTarget.hostname} -> retrying on ${alt}`);
+    const swapped = new URL(targetUrl);
+    swapped.hostname = alt;
+    handedOff = true;
+    proxyRequest(req, res, swapped.toString(), headers, redirectCount, vdShape, tried);
+    return true;
+  };
+
   proxyReq.on('error', (err) => {
+    if (handedOff) return;
     console.error('Proxy error:', err.message);
+    if (retryOnAltHost(`connect error (${err.code || err.message})`)) return;
     if (!res.headersSent) {
       res.writeHead(502, { 'Content-Type': 'text/plain' });
     }
@@ -1062,6 +1170,9 @@ function proxyRequest(req, res, targetUrl, headers = {}, redirectCount = 0, vdSh
 
   proxyReq.on('timeout', () => {
     proxyReq.destroy();
+    if (handedOff) return;
+    if (isVideasy) markVideasyHostDead(parsedTarget.hostname);
+    if (retryOnAltHost('host timeout')) return;
     if (!res.headersSent) {
       res.writeHead(504, { 'Content-Type': 'text/plain' });
     }
