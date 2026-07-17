@@ -6,6 +6,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { decryptVideasyResponse } = require('./videasy-decrypt');
+const { decryptVideasyV2 } = require('./videasy-decrypt-v2');
 
 // ── JSON disk cache (NAS-backed) ───────────────────────────────────────
 // Small, immutable-ish JSON — TMDB id maps, season info, skip-times, ratings
@@ -103,17 +104,19 @@ function appendPlayerLog(line) {
 const PORT = process.env.PORT || 3000;
 
 // ── Videasy sources API ────────────────────────────────────────────────
-// The sources API moved from api.videasy.net (dead — routes 404) to
-// api.videasy.to, and — as of 2026-07-02 — that host does NO bot-gating:
-// no Cloudflare Turnstile, no x-session-token wall. A plain https.get with a
-// `Referer: https://www.vidking.net/` returns the encrypted payload, which we
-// open with our own WASM decryptor (videasy-decrypt.js). So the whole
-// browser/minter apparatus that existed only to clear Turnstile is obsolete;
-// the on-Mac browser-resolver is now a break-glass fallback for cipher
-// rotation only (see /videasy-sources). The old session-token machinery below
-// (videasySessionToken/videasyAuthHeaders, /videasy-token push) is retained
-// but inert — if the wall ever comes back, a pushed token flows through again.
-const VIDEASY_API_BASE = process.env.VIDEASY_API_BASE || 'https://api.videasy.to';
+// Host history: api.videasy.net (dead) -> api.videasy.to (404 as of
+// 2026-07-18) -> api.speedracelight.com. The current host does NO bot-gating
+// (no Turnstile, no x-session-token wall) but uses a two-step "enc=2" flow:
+//   1. GET {base}/seed?mediaId=<tmdbId> -> { seed, ttlMs } (~30s TTL)
+//   2. GET {base}/<provider>/sources-with-title?...&enc=2&seed=<seed>, then
+//      XOR-decrypt the body with a (seed, tmdbId)-derived keystream
+//      (videasy-decrypt-v2.js). The old CryptoJS/WASM decryptor
+//      (videasy-decrypt.js) is kept for reference but no longer used.
+// The on-Mac browser-resolver stays a break-glass fallback (cipher rotation).
+// The old session-token machinery below (videasySessionToken/
+// videasyAuthHeaders, /videasy-token push) is retained but inert — if a token
+// wall ever returns, a pushed token flows through again.
+const VIDEASY_API_BASE = process.env.VIDEASY_API_BASE || 'https://api.speedracelight.com';
 const VIDEASY_APP_ID = process.env.VIDEASY_APP_ID || 'vidking';
 const VIDEASY_TOKEN_FILE = process.env.VIDEASY_TOKEN_FILE || '/nas/state/videasy/session-token.txt';
 const VIDEASY_TOKEN_SECRET = process.env.VIDEASY_TOKEN_SECRET || '';
@@ -926,11 +929,13 @@ function proxyRequest(req, res, targetUrl, headers = {}, redirectCount = 0) {
     'Content-Length': req.headers['content-length'],
     Cookie: req.headers.cookie,
     Authorization: req.headers.authorization,
-    // Videasy CDN hosts validate Origin/Referer — must be the Vidking player
-    // origin, NOT the browser's actual origin. (Was cineby.sc; Vidking moved to
-    // vidking.net and the CDN now 403s cineby.sc — verified the CDN returns 200
-    // for vidking.net, 403 for cineby.sc/none.) For everything else, pass through.
-    Origin: isVideasy ? 'https://www.vidking.net' : req.headers.origin,
+    // Videasy CDN hosts validate the Referer (Vidking player origin, NOT the
+    // browser's actual origin) but as of 2026-07-18 the segment hosts 403 ANY
+    // request carrying an Origin header — even https://www.vidking.net (the
+    // exact inverse of the old rule, where a missing/wrong Origin was what
+    // 403'd). So spoof the Referer and send no Origin at all. For everything
+    // else, pass the browser's own headers through.
+    Origin: isVideasy ? undefined : req.headers.origin,
     Referer: isVideasy ? 'https://www.vidking.net/' : req.headers.referer,
     Range: req.headers.range,
     ...headers,
@@ -1947,20 +1952,46 @@ const server = http.createServer((req, res) => {
     }).toString();
     // Videasy's own player auto-routes between providers when one
     // bucket goes down. We replicate that: start with the caller's
-    // requested provider, then fall through to alternates known to
-    // share the same payload format (HLS via decryptVideasyResponse).
-    // `cdn` and `downloader2` return the 200 ciphertext; `mb-flix` /
-    // `1movies` currently 404 on api.videasy.to, so they self-skip.
-    const FALLBACK_CHAIN = ['cdn', 'mb-flix', 'downloader2', '1movies'];
+    // requested provider, then fall through to alternates that share the
+    // same enc=2 payload format. Provider endpoints (Vidking player names):
+    // cdn=Hydrogen, tejo=Titanium, neon2=Oxygen, downloader2=Lithium,
+    // 1movies=Helium. Any per-title failure (e.g. tejo 500s for a given
+    // episode) just falls through to the next.
+    const FALLBACK_CHAIN = ['cdn', 'tejo', 'neon2', 'downloader2', '1movies'];
     const requested = String(provider);
     const tryOrder = [requested, ...FALLBACK_CHAIN.filter((p) => p !== requested)];
     const fetchStart = Date.now();
+    // enc=2 auth/decrypt seed — one GET /seed?mediaId=<tmdbId> per resolve,
+    // reused across every provider (the seed is keyed by mediaId, not
+    // provider). Refetched once if a provider 401s ("seed rejected", i.e. the
+    // ~30s TTL lapsed mid-chain). Held in closure so fetchProviderSubs and
+    // tryProvider share it.
+    let vsSeed = null;
+    let vsSeedRefetched = false;
+    const getSeed = (cb) => {
+      const su = `${VIDEASY_API_BASE}/seed?mediaId=${encodeURIComponent(String(tmdbId))}`;
+      https
+        .get(su, { headers: videasyAuthHeaders() }, (r) => {
+          if ((r.statusCode || 0) >= 400) { r.resume(); cb(null); return; }
+          let b = '';
+          r.setEncoding('utf8');
+          r.on('data', (c) => { b += c; });
+          r.on('end', () => {
+            try { cb(JSON.parse(b.trim())?.seed || null); }
+            catch { cb(null); }
+          });
+          r.on('error', () => cb(null));
+        })
+        .on('error', () => cb(null));
+    };
+    // Append the enc=2 + seed params the current API requires.
+    const withSeed = (base) => `${base}&enc=2&seed=${encodeURIComponent(String(vsSeed))}`;
     // Fetch JUST the subtitles from an alternate provider — used when the
     // provider that resolved the video has sources but NO subtitles (e.g.
     // 'cdn'/HLS). Subs are content-synced for the same episode, so borrowing
     // them keeps the player captioned. Resolves to [] on any failure.
     const fetchProviderSubs = (prov) => new Promise((resolve) => {
-      const u = `${VIDEASY_API_BASE}/${encodeURIComponent(prov)}/sources-with-title?${qs}`;
+      const u = withSeed(`${VIDEASY_API_BASE}/${encodeURIComponent(prov)}/sources-with-title?${qs}`);
       https
         .get(
           u,
@@ -1974,9 +2005,10 @@ const server = http.createServer((req, res) => {
             r.on('data', (c) => { b += c; });
             r.on('end', () => {
               if (!b.trim()) { resolve([]); return; }
-              decryptVideasyResponse(b.trim(), String(tmdbId))
-                .then((pl) => resolve(Array.isArray(pl?.subtitles) ? pl.subtitles : []))
-                .catch(() => resolve([]));
+              try {
+                const pl = decryptVideasyV2(b.trim(), vsSeed, String(tmdbId));
+                resolve(Array.isArray(pl?.subtitles) ? pl.subtitles : []);
+              } catch { resolve([]); }
             });
             r.on('error', () => resolve([]));
           }
@@ -1992,7 +2024,7 @@ const server = http.createServer((req, res) => {
         return;
       }
       const p = tryOrder[providerIdx++];
-      const upstream = `${VIDEASY_API_BASE}/${encodeURIComponent(p)}/sources-with-title?${qs}`;
+      const upstream = withSeed(`${VIDEASY_API_BASE}/${encodeURIComponent(p)}/sources-with-title?${qs}`);
       console.log(`Videasy sources [try ${p}]: ${upstream.slice(0, 140)}`);
       https
         .get(
@@ -2001,6 +2033,18 @@ const server = http.createServer((req, res) => {
             headers: videasyAuthHeaders(),
           },
           (upRes) => {
+            // 401 = "seed rejected" (the ~30s seed TTL lapsed). Refetch a
+            // fresh seed ONCE, then retry this same provider before moving on.
+            if ((upRes.statusCode || 0) === 401 && !vsSeedRefetched) {
+              vsSeedRefetched = true;
+              upRes.resume();
+              console.log(`Videasy provider ${p} → 401, refetching seed`);
+              getSeed((s) => {
+                if (s) { vsSeed = s; providerIdx -= 1; } // retry same provider
+                tryProvider();
+              });
+              return;
+            }
             if ((upRes.statusCode || 0) >= 400) {
               console.log(`Videasy provider ${p} → ${upRes.statusCode}, trying next`);
               upRes.resume();
@@ -2019,7 +2063,8 @@ const server = http.createServer((req, res) => {
                 tryProvider();
                 return;
               }
-            decryptVideasyResponse(ct, String(tmdbId))
+            Promise.resolve()
+              .then(() => decryptVideasyV2(ct, vsSeed, String(tmdbId)))
               .then(async (payload) => {
                 console.log(
                   `Videasy sources OK ${Date.now() - fetchStart}ms — ` +
@@ -2106,7 +2151,18 @@ const server = http.createServer((req, res) => {
           tryProvider();
         });
     };
-      tryProvider();
+      // Fetch the enc=2 seed first, then run the provider chain. If the seed
+      // endpoint is down we can't decrypt anything — go straight to the
+      // browser resolver.
+      getSeed((s) => {
+        if (!s) {
+          console.log('Videasy seed fetch failed — trying browser resolver');
+          browserResolverFallback();
+          return;
+        }
+        vsSeed = s;
+        tryProvider();
+      });
     };
     // Break-glass fallback: the on-Mac browser-resolver. Only reached when the
     // in-process fetch+decrypt fails for every provider. Chrome stays cold until

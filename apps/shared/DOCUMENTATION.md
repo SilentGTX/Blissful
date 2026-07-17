@@ -17,15 +17,27 @@ metahub + tmdb), `/imdb-rating`, `/tmdb-find`, `/tmdb-season-info` (server-keyed
 
 ### Videasy/Vidking source pipeline (web player)
 
-`/videasy-sources` resolves a playable stream for the web player. As of 2026-07-02 it fetches the
-encrypted payload **in-process** from `https://api.videasy.to/<provider>/sources-with-title`
-(providers `cdn`/`downloader2` return it; `mb-flix`/`1movies` 404) with just a
-`Referer: https://www.vidking.net/`, then decrypts it with the bundled WASM decryptor
-(`videasy-decrypt.js` + `videasy-module.wasm`). ~1 s, no browser, no token — the API moved off
-`api.videasy.net` (now 404s) to `api.videasy.to`, which dropped its Cloudflare-Turnstile /
-session-token wall (`VIDEASY_API_BASE` overrides the host). Decrypted source + subtitle URLs are
-re-proxied through `/addon-proxy?...&vd=1`, which forces the CDN Origin/Referer spoof + HLS
-per-segment rewrite (Videasy rotates CDN hostnames, so no host allowlist).
+`/videasy-sources` resolves a playable stream for the web player. It fetches the encrypted payload
+**in-process** and decrypts it (~250-520 ms, no browser, no token). As of 2026-07-18 the API host
+is `https://api.speedracelight.com` (`VIDEASY_API_BASE` overrides it) and uses a two-step "enc=2"
+flow:
+
+1. `GET {base}/seed?mediaId=<tmdbId>` → `{ seed, ttlMs }` (~30 s TTL; one seed per resolve, reused
+   across providers, refetched once on a `401` "seed rejected").
+2. `GET {base}/<provider>/sources-with-title?...&enc=2&seed=<seed>` with `Referer: https://www.vidking.net/`.
+3. Decrypt (`videasy-decrypt-v2.js`, ported verbatim from the Vidking player bundle): base64url-decode,
+   XOR with a `(seed, tmdbId)`-derived keystream, verify the 4-byte `mvm1` magic prefix, and the rest
+   is the JSON `{ sources, subtitles }`. Regression-tested against a frozen real fixture
+   (`videasy-decrypt-v2.test.js`, run `node --test`).
+
+Providers (Vidking player names): `cdn`=Hydrogen, `tejo`=Titanium, `neon2`=Oxygen,
+`downloader2`=Lithium, `1movies`=Helium; the chain falls through on any per-title failure. Decrypted
+source + subtitle URLs are re-proxied through `/addon-proxy?...&vd=1`, which forces the CDN Referer
+spoof + HLS per-segment rewrite (Videasy rotates CDN hostnames, so no host allowlist). **The segment
+CDNs 403 any request carrying an `Origin` header** (as of 2026-07-18 — the inverse of the old rule),
+so `proxyRequest` sends the Referer spoof but NO Origin for `vd=1` requests. Host history:
+`api.videasy.net` → `api.videasy.to` (both now 404) → `api.speedracelight.com`. The old CryptoJS/WASM
+decryptor (`videasy-decrypt.js` + `videasy-module.wasm`) is kept for reference but unused.
 
 **Fallbacks, in order:** if fetch+decrypt fails for every provider — the one case it can't
 handle is Videasy rotating the response cipher — it falls back to the on-Mac browser-resolver

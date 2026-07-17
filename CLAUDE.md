@@ -92,10 +92,12 @@ alternatives:
 ## Vidking/Videasy source pipeline (web player)
 
 The web player's stream-source resolver. `/videasy-sources` (addon-proxy) fetches an encrypted
-payload **in-process** from `api.videasy.to` and opens it with a bundled WASM decryptor — ~1 s,
-no browser, no token (the API dropped its Turnstile/session-token wall 2026-07-02). A headed-Chrome
-fallback on the Mac (`infra/scripts/videasy-resolver.py`, kept cold) covers response-cipher
-rotation only; Real-Debrid (`/rd-fallback`) is the final fallback. Anatomy, the moved-domain
+payload **in-process** from `api.speedracelight.com` via a two-step seed flow (`GET /seed` →
+`GET /<provider>/sources-with-title?enc=2&seed=…`) and XOR-decrypts it with `videasy-decrypt-v2.js`
+— ~250-520 ms, no browser, no token. A headed-Chrome fallback on the Mac
+(`infra/scripts/videasy-resolver.py`, kept cold) covers response-cipher rotation only; Real-Debrid
+(`/rd-fallback`) is the final fallback. NOTE: the segment CDNs 403 any request carrying an `Origin`
+header, so the `vd=1` proxy path sends the Vidking Referer spoof but NO Origin. Anatomy, the moved-domain
 history, and outside-in diagnosis: [apps/shared/DOCUMENTATION.md](apps/shared/DOCUMENTATION.md)
 §Videasy/Vidking + the memory note `project_vidking_videasy_pipeline`.
 
