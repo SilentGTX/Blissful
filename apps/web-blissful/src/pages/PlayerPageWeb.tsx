@@ -996,6 +996,62 @@ export default function PlayerPage() {
     videasyPlayableRef.current =
       videasyResolved && videasySources.some((s) => !/4k|2160p/i.test(s.quality ?? ''));
   }, [videasyResolved, videasySources]);
+  // Videasy can "resolve" sources whose CDN is dead — the API hands out
+  // URLs but the media origin never answers a byte (observed 2026-07-18:
+  // every moon.ironwallnet.net path hung → /addon-proxy 504, on videasy's
+  // own player too). hls.js then grinds through its 6×20s manifest retries
+  // while the addon fallback stays skipped ("videasy resolved"), so the
+  // user stares at an endless spinner even though RD has the title. Probe
+  // the manifest the player is about to use: a healthy playlist answers in
+  // well under a second, so two failed 10s attempts ⇒ the source is dead.
+  // Then drop ALL videasy state for this episode (the subtitles live on
+  // the same host) and bump the nonce so the addon-fallback effect re-runs
+  // — with videasyPlayableRef now false it walks its probe loop and
+  // commits the RD pick.
+  const [videasyDeadNonce, setVideasyDeadNonce] = useState(0);
+  // Manifests already proven dead — if a manual server switch re-fetches
+  // the same URLs (the API keeps returning them while the CDN is down),
+  // kill them instantly instead of burning another 20s re-probing.
+  const deadManifestsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    deadManifestsRef.current.clear(); // dead-CDN verdicts don't carry across episodes
+  }, [imdbId, seriesSeasonEpisode]);
+  useEffect(() => {
+    if (pickFirst || rdSelected) return; // videasy never plays in RD modes
+    // Mirrors the activeSource pick below — probe exactly what will play.
+    const src =
+      videasySources.find((s) => s.quality === selectedQuality)?.url
+      ?? videasySources[0]?.url;
+    // Only proxied videasy HLS; anything else has its own failure handling.
+    if (!src || !src.startsWith('/addon-proxy')) return;
+    let cancelled = false;
+    const declareDead = () => {
+      deadManifestsRef.current.add(src);
+      sendPlayerLog(`[player-page] videasy manifest unreachable — dropping videasy, engaging addon fallback url=…${src.slice(-60)}`);
+      setVideasySources([]);
+      setVideasySubs([]);
+      setVideasyDeadNonce((n) => n + 1);
+    };
+    if (deadManifestsRef.current.has(src)) {
+      declareDead();
+      return;
+    }
+    void (async () => {
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        try {
+          const resp = await fetch(src, { signal: AbortSignal.timeout(10_000) });
+          if (cancelled) return;
+          if (resp.ok) return; // healthy — the player's own load takes it from here
+          sendPlayerLog(`[player-page] videasy manifest probe !ok status=${resp.status} attempt=${attempt}`);
+        } catch (err) {
+          if (cancelled) return;
+          sendPlayerLog(`[player-page] videasy manifest probe err attempt=${attempt} err=${String((err as Error)?.message ?? err)}`);
+        }
+      }
+      if (!cancelled) declareDead();
+    })();
+    return () => { cancelled = true; };
+  }, [videasySources, selectedQuality, pickFirst, rdSelected]);
   useEffect(() => {
     if (!type || !id) {
       sendPlayerLog(`[player-page] addon fallback gate: no type/id (type=${type} id=${id})`);
@@ -1283,8 +1339,10 @@ export default function PlayerPage() {
     return () => { cancelled = true; };
     // videasyResolved / videasySources are intentionally omitted — they flip on
     // every videasy server-switch and would cancel + restart this whole chain.
-    // The fallback consults videasyPlayableRef (a ref) instead, so it runs ONCE.
-  }, [type, id, videoId, url, addons, fallbackPlayUrl, urlIsHevc, pickFirst, rdSelected, metaTitle, resumeUrl]);
+    // The fallback consults videasyPlayableRef (a ref) instead, so it runs ONCE
+    // — plus once more per dead-manifest declaration (videasyDeadNonce), where
+    // the ref has flipped false and the re-run commits the RD pick.
+  }, [type, id, videoId, url, addons, fallbackPlayUrl, urlIsHevc, pickFirst, rdSelected, metaTitle, resumeUrl, videasyDeadNonce]);
 
   // Convert Videasy subtitles → SubtitleTrack shape the player expects.
   // Proxy already normalizes lang to an ISO code and rewrites URLs
