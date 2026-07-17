@@ -48,3 +48,5 @@ desktop.ini
 .env.local
 *.local
 graphify-out/
+.aider*
+__pycache__/
