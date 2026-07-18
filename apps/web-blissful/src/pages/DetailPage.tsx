@@ -759,6 +759,13 @@ export default function DetailPage() {
     if (autoplayTimeRaw && Number.parseInt(autoplayTimeRaw, 10) > 0) {
       params.set('t', autoplayTimeRaw);
     }
+    // Carry the watch-party room through the autoplay bounce. A desktop party
+    // join for a title with no stored stream routes here
+    // (buildRoomPlayerUrl → /detail/…?autoplay=1&room=CODE); without this the
+    // stream's deepLink player URL has no room, so the player starts the movie
+    // but never joins the party — "plays alone, no room indication".
+    const roomParam = searchParams.get('room');
+    if (roomParam) params.set('room', roomParam);
     for (const skipUrl of skipSet) params.append('skip', skipUrl);
     // `replace: true` so the chain of dead-stream redirects doesn't pile
     // up history entries. Each cycle (detail-autoplay -> player -> detail-
