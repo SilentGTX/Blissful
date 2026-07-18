@@ -2781,17 +2781,24 @@ export default function BlissfulPlayer(props: {
           && !src.includes('/party-relay')
         ) {
           videasyFatalNetCount += 1;
-          if (videasyFatalNetCount >= 2 && onSourceDeadRef.current?.(src)) {
-            playerLog(`[player] videasy source dead (${videasyFatalNetCount} fatal network errors) — handed to page fallback`);
+          if (videasyFatalNetCount >= 2) {
+            // Two strikes: the source is dead. Tell the page (it drops
+            // videasy and commits the RD fallback) and STOP — destroy hls
+            // and sit behind the buffering veil until React swaps the src.
+            // Never keep a retry loop running here: when the page can't
+            // take over yet (RD throttled, fallback still resolving), a
+            // 2s reload loop just churns the <video> — visible as the
+            // player flashing black + resetting to 0:00 every 2 seconds.
+            const handled = onSourceDeadRef.current?.(src) ?? false;
+            playerLog(`[player] videasy source dead (${videasyFatalNetCount} fatal network errors) — ${handled ? 'handed to page fallback' : 'awaiting page fallback'}`);
             try { hls.destroy(); } catch { /* ignore */ }
             if (hlsRef.current === hls) hlsRef.current = null;
             return;
           }
-          // Manifest-level fatals need an explicit source reload —
-          // `startLoad()` can't re-fetch a manifest it never parsed (same
-          // trap as the party-relay recovery above), so falling through to
-          // the generic handler would retry NOTHING: no further fatals, no
-          // second strike, black screen forever.
+          // First strike on a manifest-level fatal: one explicit source
+          // reload — `startLoad()` can't re-fetch a manifest it never
+          // parsed, so falling through to the generic handler would retry
+          // NOTHING (no second strike, black screen forever).
           if (
             data.details === 'manifestLoadError'
             || data.details === 'manifestLoadTimeOut'
@@ -2799,7 +2806,7 @@ export default function BlissfulPlayer(props: {
             || data.details === 'levelLoadError'
             || data.details === 'levelLoadTimeOut'
           ) {
-            playerLog(`[player] videasy manifest err (${data.details}) — reload in 2s #${videasyFatalNetCount}`);
+            playerLog(`[player] videasy manifest err (${data.details}) — one reload in 2s`);
             window.setTimeout(() => {
               try { hls.loadSource(src); hls.startLoad(); } catch { /* torn down */ }
             }, 2000);
