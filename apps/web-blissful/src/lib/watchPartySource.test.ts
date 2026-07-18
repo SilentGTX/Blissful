@@ -70,12 +70,23 @@ describe('desktopPlayingUrlToSource', () => {
 });
 
 describe('looksLikeRdLink', () => {
-  it('matches real-debrid hosts only', () => {
+  it('matches real-debrid hosts', () => {
     expect(looksLikeRdLink('https://9-3.download.real-debrid.com/d/X/f.mkv')).toBe(true);
     expect(looksLikeRdLink('https://real-debrid.com/d/X')).toBe(true);
     expect(looksLikeRdLink('https://not-real-debrid.com.evil.test/x')).toBe(false);
     expect(looksLikeRdLink('https://example.com/x')).toBe(false);
     expect(looksLikeRdLink('not a url')).toBe(false);
+  });
+
+  it('matches torrentio RD resolve links (the release-picker shape)', () => {
+    // A host playing a torrentio-RD release must announce `rd`, not `vidking`
+    // — misclassifying made pinned guests un-pin back to their own resolve
+    // ("guest waits for its own fallback even though the party hosts RD").
+    expect(
+      looksLikeRdLink('https://torrentio.strem.fun/resolve/realdebrid/KEY/hash/null/0/Show.S01E01.mkv'),
+    ).toBe(true);
+    // Not an RD resolve path → still not RD.
+    expect(looksLikeRdLink('https://torrentio.strem.fun/lite/manifest.json')).toBe(false);
   });
 });
 

@@ -69,7 +69,7 @@ import {
   clearWatchPartyPassword,
   type WatchPartySource,
 } from '../../lib/watchParty';
-import { resolveSourceForWeb, webPlayingToSource } from '../../lib/watchPartySource';
+import { resolveSourceForWeb, unwrapTranscodeUrl, webPlayingToSource } from '../../lib/watchPartySource';
 import { StremioIcon } from '../PlayerControlIcons';
 
 import {
@@ -825,7 +825,11 @@ export default function BlissfulPlayer(props: {
         const params = sessionParams();
         const cur = params.get('url') ?? '';
         if (resolved) {
-          if (cur === resolved.url) return; // already on it
+          // Already on it — either verbatim, or our url is the /transcode.m3u8
+          // wrapper around the same inner stream (an invite join pins the
+          // host's WRAPPED streamUrl while host:source carries the RAW link;
+          // reloading over that identical stream just flashes the veil).
+          if (cur === resolved.url || unwrapTranscodeUrl(cur) === resolved.url) return;
           params.set('url', resolved.url);
           if (resolved.rdsel) params.set('rdsel', '1');
           // Layer B relay: stremio-service transcodes from t=0, but we're already

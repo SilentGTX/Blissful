@@ -31,12 +31,21 @@ const DEFAULT_TRACKERS = [
   'udp://opentracker.i2p.rocks:6969/announce',
 ];
 
-/** Does this URL look like a Real-Debrid direct download link? RD serves them
- *  from `*.download.real-debrid.com` (and occasionally `real-debrid.com`). */
+/** Does this URL look like a Real-Debrid-backed link? Two shapes count:
+ *  - RD direct downloads (`*.download.real-debrid.com` / `real-debrid.com`);
+ *  - Torrentio RD resolve links (`…/resolve/realdebrid/…`) — what the release
+ *    picker / Progress Banana hand the player. They 302 to a fresh direct RD
+ *    link for WHOEVER fetches them, so they're shareable: a guest wrapping the
+ *    SAME resolve URL in /transcode joins the host's exact Mac transcode.
+ *    Without this shape, a host playing a torrentio-RD release announced
+ *    `vidking` instead of `rd`, and pinned guests un-pinned themselves back to
+ *    their own resolution — "the guest waits for its own fallback even though
+ *    the party is already hosting RD". */
 export function looksLikeRdLink(url: string): boolean {
   try {
-    const { hostname } = new URL(url);
-    return /(^|\.)real-debrid\.com$/i.test(hostname);
+    const { hostname, pathname } = new URL(url);
+    if (/(^|\.)real-debrid\.com$/i.test(hostname)) return true;
+    return /\/resolve\/realdebrid\//i.test(pathname);
   } catch {
     return false;
   }

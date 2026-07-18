@@ -1,18 +1,27 @@
-import { test, expect, chromium, type Page } from '@playwright/test';
+import { test, expect, chromium } from '@playwright/test';
 
-// The "join my RD party" flow, end to end: a WEB host playing a real
-// RD-fallbacked episode (The Chestnut Man — videasy's CDN is dead for it, so
-// the player self-falls-back to the House RD transcode on the Mac), and a WEB
-// guest joining via the /invite/<code> landing page. The guest must land on
-// the HOST's exact transcode stream (url=<host streamUrl> + rdsel=1), not
-// resolve its own source.
+// The "join my RD party" flow, deterministic: a WEB host in rd-selected mode
+// on a torrentio-RD transcode stream (the release-picker shape), and a WEB
+// guest joining via the /invite/<code> landing page. Asserts, against the
+// LIVE backend:
+//   1. the host announces its stream → the room's REST info carries it;
+//   2. the guest lands PINNED to the host stream (url=<streamUrl> + rdsel=1);
+//   3. the guest STAYS pinned after the host's `host:source` broadcast —
+//      regression: torrentio `/resolve/realdebrid/…` URLs used to classify as
+//      `vidking` (not `rd`), so pinned guests un-pinned back to their own
+//      resolution and sat through their own fallback ("guest waits for
+//      fallback even though the party is already hosting RD").
 //
-// This exercises: host announceStream → room.streamUrl → REST room info →
-// buildRoomPlayerUrl pinning → guest player. Live backend + live RD.
+// No real media plays: the /transcode manifest is stubbed, because the flow
+// under test is announcement + pinning, not decoding.
 
 const STORAGE_HTTP = process.env.STORAGE_HTTP || 'https://blissful.budinoff.com/storage';
 const UI = process.env.E2E_DESKTOP_UI || 'http://localhost:5173';
 const rid = () => 'e2erdinv' + Math.random().toString(36).slice(2, 10);
+
+const TORRENTIO_RD =
+  'https://torrentio.strem.fun/resolve/realdebrid/E2EKEY/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/null/0/Show.S01E01.1080p.mkv';
+const HOST_STREAM = `/transcode.m3u8?url=${encodeURIComponent(TORRENTIO_RD)}`;
 
 async function createRoom(): Promise<string> {
   const res = await fetch(`${STORAGE_HTTP}/watch-party`, {
@@ -32,63 +41,62 @@ async function roomStreamUrl(code: string): Promise<string | null> {
   return json.streamUrl ?? null;
 }
 
-async function seedName(page: Page, name: string) {
-  await page.goto(UI);
-  await page.evaluate((n) => localStorage.setItem('bliss:watchParty:guestName', n), name);
-}
-
-test('web RD host → web guest via invite link lands on the host stream', async ({ page }) => {
-  test.slow(); // RD fallback commit can take ~40s (videasy probe dies first)
+test('web RD host → web guest via invite link lands (and stays) on the host stream', async ({ page }) => {
+  test.slow();
   const code = await createRoom();
 
-  // 1) HOST: short vidking URL + room. Videasy is dead for this episode, so
-  //    the player self-falls-back to the House RD transcode, then announces
-  //    the stream to the room.
-  await seedName(page, 'RdHost');
-  await page.goto(`${UI}/player/vidking/tt10834220:1:1/The.Chestnut.Man?t=0&room=${code}`);
-  await expect
-    .poll(
-      () => page.evaluate(() => {
-        const v = document.querySelector('video') as HTMLVideoElement | null;
-        void v?.play().catch(() => {});
-        return v && v.currentTime > 0.5 && v.readyState >= 2;
-      }),
-      { timeout: 120_000, intervals: [2000] },
-    )
-    .toBe(true);
+  // Keep the fake transcode fast + harmless on both pages.
+  await page.route(/\/transcode\.m3u8\?/, (route) => route.fulfill({ status: 404 }));
 
-  // 2) The host must have announced its RD stream to the room.
-  let hostStream: string | null = null;
-  await expect
-    .poll(async () => { hostStream = await roomStreamUrl(code); return hostStream; }, { timeout: 30_000, intervals: [1500] })
-    .toMatch(/transcode|real-debrid/i);
+  // 1) HOST: rd-selected mode on the torrentio-RD transcode, in the room.
+  await page.goto(UI);
+  await page.evaluate((n) => localStorage.setItem('bliss:watchParty:guestName', n), 'RdHost');
+  await page.goto(
+    `${UI}/player?${new URLSearchParams({
+      type: 'series',
+      id: 'tt10834220',
+      videoId: 'tt10834220:1:1',
+      url: HOST_STREAM,
+      rdsel: '1',
+      title: 'RD Host',
+      room: code,
+    })}`,
+  );
 
-  // 3) GUEST: joins via the invite landing page in a SEPARATE browser.
-  const guestBrowser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
+  // The host connects and announces → the room carries the stream.
+  await expect
+    .poll(() => roomStreamUrl(code), { timeout: 30_000, intervals: [1500] })
+    .toBe(HOST_STREAM);
+
+  // 2) GUEST: joins via the invite landing page in a SEPARATE browser.
+  const guestBrowser = await chromium.launch();
   try {
     const guest = await guestBrowser.newPage();
-    await seedName(guest, 'RdGuest');
+    await guest.route(/\/transcode\.m3u8\?/, (route) => route.fulfill({ status: 404 }));
+    await guest.goto(UI);
+    await guest.evaluate((n) => localStorage.setItem('bliss:watchParty:guestName', n), 'RdGuest');
     await guest.goto(`${UI}/invite/${code}`);
     await guest.getByTestId('wp-invite-continue').click();
 
-    // The player URL must pin the HOST's stream (rdsel=1 + the same url).
     await guest.waitForURL(/\/player\?/, { timeout: 20_000 });
-    const params = new URLSearchParams(new URL(guest.url()).search);
-    expect(params.get('rdsel'), 'guest must join in rd-selected mode').toBe('1');
-    expect(params.get('url'), 'guest must play the host stream').toBe(hostStream);
-    expect(params.get('room')).toBe(code);
+    const pinned = () => {
+      const params = new URLSearchParams(new URL(guest.url()).search);
+      return { url: params.get('url'), rdsel: params.get('rdsel'), room: params.get('room') };
+    };
+    expect(pinned(), 'guest must join pinned to the host stream').toEqual({
+      url: HOST_STREAM,
+      rdsel: '1',
+      room: code,
+    });
 
-    // And it actually plays (same Mac transcode the host is on).
-    await expect
-      .poll(
-        () => guest.evaluate(() => {
-          const v = document.querySelector('video') as HTMLVideoElement | null;
-          void v?.play().catch(() => {});
-          return v ? v.currentTime : 0;
-        }),
-        { timeout: 90_000, intervals: [2000] },
-      )
-      .toBeGreaterThan(0.5);
+    // 3) STAYS pinned: the host's `host:source` broadcast arrives after the
+    //    guest connects; the un-pin regression fired within a second or two.
+    await guest.waitForTimeout(6000);
+    expect(pinned(), 'guest must STAY pinned after host:source arrives').toEqual({
+      url: HOST_STREAM,
+      rdsel: '1',
+      room: code,
+    });
   } finally {
     await guestBrowser.close();
   }
