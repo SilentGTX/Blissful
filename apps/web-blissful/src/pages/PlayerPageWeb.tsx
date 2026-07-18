@@ -16,6 +16,30 @@ import { fetchStreams, type StremioStream } from '../lib/stremioAddon';
 // Container formats the browser can't play natively — routed through the
 // proxy's /transcode endpoint (remux/re-encode to fragmented MP4).
 const TRANSCODE_CONTAINER_RE = /\.(mkv|avi|m2ts|wmv|flv|ogm)(\?|#|$)/i;
+
+// Global videasy cooldown. Videasy's bad days are upstream-WIDE: manifests
+// mint alive and die seconds later on EVERY episode, so each fresh resolve
+// passes the health probe and then collapses mid-play — the player churns
+// videasy → death → RD on every single episode/session. Once a videasy
+// source is declared dead (pre-play probe or mid-playback), skip videasy
+// entirely for a while and go straight to the RD fallback: quiet, instant
+// playback instead of a doomed first act. sessionStorage so it survives
+// reloads within the tab; self-lifts after the window; a MANUAL server pick
+// clears it (the user explicitly asked to try videasy again).
+const VIDEASY_COOLDOWN_KEY = 'bliss:videasyCooldownUntil';
+const VIDEASY_COOLDOWN_MS = 10 * 60 * 1000;
+function videasyCooldownActive(): boolean {
+  try {
+    const raw = sessionStorage.getItem(VIDEASY_COOLDOWN_KEY);
+    return !!raw && Date.now() < Number(raw);
+  } catch { return false; }
+}
+function startVideasyCooldown(): void {
+  try { sessionStorage.setItem(VIDEASY_COOLDOWN_KEY, String(Date.now() + VIDEASY_COOLDOWN_MS)); } catch { /* noop */ }
+}
+function clearVideasyCooldown(): void {
+  try { sessionStorage.removeItem(VIDEASY_COOLDOWN_KEY); } catch { /* noop */ }
+}
 import { getResumeSeconds, openInVlc } from '../layout/app-shell/utils';
 import { parseStreamDescription } from '../features/detail/utils';
 import { releaseMatchesShow } from '../lib/fallbackReleases';
@@ -638,6 +662,9 @@ export default function PlayerPage() {
   const userPickedServerRef = useRef(false);
   const handleSelectServer = useCallback((id: string) => {
     userPickedServerRef.current = true;
+    // An explicit pick means "try videasy again" — lift the dead-source
+    // cooldown so the resolve actually runs.
+    clearVideasyCooldown();
     setSelectedServer(id);
   }, []);
   const [videasyResolved, setVideasyResolved] = useState(false);
@@ -733,6 +760,15 @@ export default function PlayerPage() {
       // so the chosen stream actually plays and the picker shows torrent
       // releases, not stale Videasy qualities.
       setVideasySources([]);
+      return;
+    }
+    // Cooldown after a recent dead videasy source: resolve nothing and let
+    // the addon fallback commit RD directly — no doomed videasy first act.
+    // A manual server pick (userPickedServerRef) bypasses and clears it.
+    if (videasyCooldownActive() && !userPickedServerRef.current) {
+      sendPlayerLog('[player-page] videasy skip — cooldown after recent dead source (RD-first for now)');
+      setVideasySources([]);
+      setVideasyResolved(true);
       return;
     }
     if (!tmdbLookup) {
@@ -1078,6 +1114,10 @@ export default function PlayerPage() {
   }, [imdbId, seriesSeasonEpisode]);
   const declareVideasyDead = useCallback((src: string, why: string) => {
     deadManifestsRef.current.add(src);
+    // A death here means videasy's CDN is lying upstream-wide right now —
+    // skip videasy on subsequent resolves for a while (see the cooldown
+    // constants at the top of the file).
+    startVideasyCooldown();
     sendPlayerLog(`[player-page] videasy source dead (${why}) — dropping videasy, engaging addon fallback url=…${src.slice(-60)}`);
     setVideasySources([]);
     setVideasySubs([]);
