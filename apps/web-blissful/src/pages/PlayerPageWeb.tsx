@@ -452,7 +452,7 @@ export default function PlayerPage() {
   const title = searchParams.get('title');
   const posterParam = searchParams.get('poster');
   const backgroundParam = searchParams.get('background');
-  const metaTitle = searchParams.get('metaTitle');
+  const metaTitleParam = searchParams.get('metaTitle');
   const type = searchParams.get('type');
   const id = searchParams.get('id');
   // Logo: URL param wins (legacy long links stamp it), else the same metahub
@@ -549,6 +549,11 @@ export default function PlayerPage() {
     addons,
     enableStreams: false,
   });
+
+  // Display title: URL param wins (legacy long links stamp metaTitle=), else
+  // the Cinemeta name. Short URLs carry no title params at all — without this
+  // the player's back pill showed a literal "Player" instead of the show.
+  const metaTitle = metaTitleParam ?? meta?.meta?.name ?? null;
 
   // Fallback chain for poster + background — URL param wins, then
   // anything the addon meta provides, then the library / continue-
