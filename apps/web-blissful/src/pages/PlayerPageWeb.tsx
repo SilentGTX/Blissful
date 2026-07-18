@@ -16,7 +16,7 @@ import { fetchStreams, type StremioStream } from '../lib/stremioAddon';
 // Container formats the browser can't play natively — routed through the
 // proxy's /transcode endpoint (remux/re-encode to fragmented MP4).
 const TRANSCODE_CONTAINER_RE = /\.(mkv|avi|m2ts|wmv|flv|ogm)(\?|#|$)/i;
-import { openInVlc } from '../layout/app-shell/utils';
+import { getResumeSeconds, openInVlc } from '../layout/app-shell/utils';
 import { parseStreamDescription } from '../features/detail/utils';
 import { releaseMatchesShow } from '../lib/fallbackReleases';
 import BottomDrawer from '../components/BottomDrawer';
@@ -482,16 +482,21 @@ export default function PlayerPage() {
       const cwVideo = st.videoId ?? st.video_id ?? null;
       if (cwVideo && cwVideo !== videoId) return null;
     }
-    const off = st.timeOffset;
-    if (typeof off !== 'number' || off <= 0) return null;
+    // getResumeSeconds normalizes the CW state's ms-vs-seconds ambiguity
+    // (web-written offsets are milliseconds, desktop-written are seconds).
+    // Reading st.timeOffset raw seeked ms values to the clamp-end of the
+    // video, which "finished" instantly and binge-advanced.
+    const off = getResumeSeconds(cw);
+    if (off == null || off <= 0) return null;
     // Fully-watched guard: resuming at ~the end makes the video finish
     // within seconds and binge-advance instantly skip to the next episode
     // — re-opening a watched episode must RESTART it, not fast-forward
     // through it. Mirrors the usual >=95% / <60s-left "watched" heuristic.
-    const dur = st.duration;
-    if (typeof dur === 'number' && dur > 0 && (off / dur >= 0.95 || dur - off < 60)) {
-      return null;
-    }
+    const durRaw = st.duration;
+    const dur = typeof durRaw === 'number' && Number.isFinite(durRaw) && durRaw > 0
+      ? (durRaw >= 10_000 ? durRaw / 1000 : durRaw)
+      : null;
+    if (dur !== null && (off / dur >= 0.95 || dur - off < 60)) return null;
     return off;
   }, [searchParams, continueWatching, id, type, videoId]);
 
