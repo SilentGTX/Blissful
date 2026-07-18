@@ -486,6 +486,12 @@ export default function PlayerPage() {
   const pickFirstBestRef = useRef<string | null>(null);
   const isSeriesLike = type === 'series' || type === 'anime';
 
+  // FROZEN once per episode session: startTimeSeconds is a dependency of the
+  // player's src effect, and the CW list this lookup reads is updated by OUR
+  // OWN progress saves every few seconds during playback. A live-tracking
+  // value tears the video down and reloads it on every save — the "player
+  // flashes black and re-seeks every ~2 seconds" loop.
+  const initialResumeRef = useRef<{ key: string; value: number | null } | null>(null);
   const startTime = useMemo(() => {
     const raw = searchParams.get('t');
     if (raw) {
@@ -493,25 +499,30 @@ export default function PlayerPage() {
       return Number.isFinite(n) && n > 0 ? n : null;
     }
     // No explicit `t` — this is a short player URL, which keeps the resume
-    // position OUT of the URL. Look it up from the user's Continue-Watching
-    // progress for this exact movie/episode instead. (In-app navigation has
-    // CW already loaded, so this resolves on first render; a cold-loaded
-    // shared link may briefly lack it until CW fetches, then resume.)
+    // position OUT of the URL. Look it up ONCE from the user's Continue-
+    // Watching progress for this exact movie/episode. (In-app navigation has
+    // CW already loaded, so this resolves on first render.)
     if (!id || !type) return null;
+    const key = `${type}:${id}:${videoId ?? ''}`;
+    if (initialResumeRef.current?.key === key) return initialResumeRef.current.value;
+    const freeze = (value: number | null): number | null => {
+      initialResumeRef.current = { key, value };
+      return value;
+    };
     const cw = continueWatching.find((it) => it._id === id && it.type === type);
     const st = cw?.state;
-    if (!st) return null;
+    if (!st) return freeze(null);
     // For a series, only honor progress that belongs to THIS episode.
     if (type === 'series' && videoId) {
       const cwVideo = st.videoId ?? st.video_id ?? null;
-      if (cwVideo && cwVideo !== videoId) return null;
+      if (cwVideo && cwVideo !== videoId) return freeze(null);
     }
     // getResumeSeconds normalizes the CW state's ms-vs-seconds ambiguity
     // (web-written offsets are milliseconds, desktop-written are seconds).
     // Reading st.timeOffset raw seeked ms values to the clamp-end of the
     // video, which "finished" instantly and binge-advanced.
     const off = getResumeSeconds(cw);
-    if (off == null || off <= 0) return null;
+    if (off == null || off <= 0) return freeze(null);
     // Fully-watched guard: resuming at ~the end makes the video finish
     // within seconds and binge-advance instantly skip to the next episode
     // — re-opening a watched episode must RESTART it, not fast-forward
@@ -520,8 +531,8 @@ export default function PlayerPage() {
     const dur = typeof durRaw === 'number' && Number.isFinite(durRaw) && durRaw > 0
       ? (durRaw >= 10_000 ? durRaw / 1000 : durRaw)
       : null;
-    if (dur !== null && (off / dur >= 0.95 || dur - off < 60)) return null;
-    return off;
+    if (dur !== null && (off / dur >= 0.95 || dur - off < 60)) return freeze(null);
+    return freeze(off);
   }, [searchParams, continueWatching, id, type, videoId]);
 
   // Fetch series metadata so we can compute next-episode for chained auto-advance
