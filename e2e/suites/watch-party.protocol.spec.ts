@@ -243,6 +243,44 @@ test.describe('Watch Party v2 protocol (Layer A)', () => {
       host.c.close();
     }
   });
+
+  // Server CONTRACT the client's reconnect suppression depends on: a second
+  // live socket for the SAME identity supersedes the first, and the first is
+  // closed with code 4002 ('replaced') — NOT an `error` frame. The web hook
+  // keys off exactly this code to NOT reconnect; without that, the two sockets
+  // ping-pong and the room is stuck on "Connecting…" forever. If the server
+  // ever stops sending 4002 here, that fix silently breaks — so pin it.
+  test('duplicate identity → first socket closed with 4002 (not an error frame)', async () => {
+    const code = await createRoom();
+    const guestId = rid(); // SAME identity for both sockets
+
+    const a = new WebSocket(STORAGE_WS);
+    await new Promise<void>((res, rej) => { a.once('open', () => res()); a.once('error', rej); });
+    let aErrorFrame = false;
+    a.on('message', (raw: WebSocket.RawData) => {
+      try { if (JSON.parse(raw.toString()).t === 'error') aErrorFrame = true; } catch { /* ignore */ }
+    });
+    const aClosed = new Promise<number>((res) => a.once('close', (c: number) => res(c)));
+    a.send(JSON.stringify({ t: 'join', code, displayName: 'Dup A', guestId }));
+    await sleep(600); // let A fully join
+
+    // Second socket, same guestId → server should replace A.
+    const b = new WebSocket(STORAGE_WS);
+    await new Promise<void>((res, rej) => { b.once('open', () => res()); b.once('error', rej); });
+    b.send(JSON.stringify({ t: 'join', code, displayName: 'Dup B', guestId }));
+
+    const closeCode = await Promise.race([
+      aClosed,
+      sleep(8000).then(() => -1),
+    ]);
+    try {
+      expect(closeCode, 'first socket must be closed by the server').toBe(4002);
+      expect(aErrorFrame, 'the replace close must NOT be preceded by an error frame').toBe(false);
+    } finally {
+      try { a.close(); } catch { /* already closed */ }
+      try { b.close(); } catch { /* ignore */ }
+    }
+  });
 });
 
 test.describe('Watch Party v2 protocol (Layer B — host relay request)', () => {

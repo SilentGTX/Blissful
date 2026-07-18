@@ -565,9 +565,18 @@ export function useWatchPartyMpv({
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (ev) => {
         if (wsRef.current === ws) wsRef.current = null;
         setConnected(false);
+        // Server code 4002 = "replaced": another live socket for THIS user
+        // joined the room and the server superseded this one. Reconnecting
+        // here is the bug behind the permanent "Connecting…": the reconnect
+        // would supersede that other socket, which then reconnects and
+        // supersedes us — an endless ping-pong where the room shows you as a
+        // participant but the status never settles. A replacement is always
+        // intentional (refresh / a second tab / a stray duplicate mount), so
+        // the superseded socket must stay down and let the winner hold.
+        if (ev.code === 4002) return;
         if (!leftRef.current && !cancelled) {
           reconnectTimerRef.current = window.setTimeout(connect, RECONNECT_DELAY_MS);
         }
