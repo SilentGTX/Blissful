@@ -697,6 +697,12 @@ export default function PlayerPage() {
   // listing fallbackPlayUrl in its deps (which would restart Videasy). The
   // ref is kept in sync by an effect after fallbackPlayUrl's declaration.
   const fallbackPlayUrlRef = useRef<string | null>(null);
+  // WHICH episode the committed fallback belongs to. On an episode change the
+  // videasy effect runs BEFORE the reset effect clears fallbackPlayUrl, so
+  // gating on the bare ref made the NEW episode skip its videasy resolve
+  // entirely ("RD fallback already playing" — the PREVIOUS episode's). Gates
+  // must compare this key against the current videoId.
+  const fallbackVideoKeyRef = useRef<string | null>(null);
   const videasyAbortRef = useRef<AbortController | null>(null);
 
   // Fetch playable sources from Videasy once TMDB lookup and title
@@ -737,9 +743,12 @@ export default function PlayerPage() {
     const server = PLAYER_SERVERS.find((s) => s.id === selectedServer)
       ?? PLAYER_SERVERS.find((s) => s.id === DEFAULT_SERVER_ID)!;
 
-    // RD fallback already committed & playing — don't start another Videasy
-    // resolve (it would spin up the resolver browser and stall the transcode).
-    if (fallbackPlayUrlRef.current) {
+    // RD fallback already committed & playing FOR THIS EPISODE — don't start
+    // another Videasy resolve (it would spin up the resolver browser and
+    // stall the transcode). A previous episode's commit doesn't count: the
+    // reset effect clears it a beat later, and skipping here would strand
+    // the new episode with videasyResolved=true + zero sources.
+    if (fallbackPlayUrlRef.current && fallbackVideoKeyRef.current === (videoId ?? id ?? null)) {
       sendPlayerLog('[player-page] videasy skip — RD fallback already playing');
       setVideasyResolved(true);
       return;
@@ -766,10 +775,10 @@ export default function PlayerPage() {
     // server. Matches bitcine's behavior of silently retrying with
     // alternates until one resolves.
     const tryNextServer = () => {
-      // RD fallback is live — halt the server cascade. Each further Videasy
-      // server drives the on-Mac resolver browser, starving the ffmpeg
-      // transcode of CPU and stalling the RD stream.
-      if (fallbackPlayUrlRef.current) {
+      // RD fallback is live for THIS episode — halt the server cascade. Each
+      // further Videasy server drives the on-Mac resolver browser, starving
+      // the ffmpeg transcode of CPU and stalling the RD stream.
+      if (fallbackPlayUrlRef.current && fallbackVideoKeyRef.current === (videoId ?? id ?? null)) {
         sendPlayerLog('[player-page] videasy auto-switch halted — RD fallback playing');
         setVideasyResolved(true);
         return;
@@ -886,9 +895,15 @@ export default function PlayerPage() {
   // browser stops competing with the live transcode for the Mac's CPU.
   useEffect(() => {
     fallbackPlayUrlRef.current = fallbackPlayUrl;
+    // Stamp WHICH episode this commit belongs to. Runs only when the URL
+    // itself changes (videoId/id intentionally NOT deps — re-running on an
+    // episode change would re-tag the stale URL with the new episode and
+    // resurrect the very gate bug the key exists to fix).
+    fallbackVideoKeyRef.current = fallbackPlayUrl ? (videoId ?? id ?? null) : null;
     if (fallbackPlayUrl) {
       try { videasyAbortRef.current?.abort(); } catch { /* noop */ }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fallbackPlayUrl]);
   // Resume fallback: CW resume tries Vidking first (url=placeholder) but carries
   // the exact saved stream as `resume`. Commit the saved stream the moment

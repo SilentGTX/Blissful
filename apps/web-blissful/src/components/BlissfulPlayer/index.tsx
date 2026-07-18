@@ -3724,6 +3724,15 @@ export default function BlissfulPlayer(props: {
     const onEnded = () => {
       if (upNextFiredRef.current) return;
       if (!bingeWatchingRef.current) return;
+      // A dying stream fires `ended` too — MSE endOfStream during a fatal
+      // error can "end" a wedged <video> at ANY position (observed: yanked
+      // to the next episode 40s into a 57-minute stream while videasy's
+      // CDN was flapping). Only honor `ended` when the playhead actually
+      // reached the end of a real duration; mid-stream deaths fall to the
+      // player's error/fallback recovery instead of binge-advancing.
+      const t = video.currentTime;
+      const d = video.duration;
+      if (!Number.isFinite(t) || !Number.isFinite(d) || d <= 0 || d - t > 120) return;
       if (!showUpNextRef.current && !upNextCancelledRef.current) {
         setShowUpNext(true);
       } else if (!upNextCancelledRef.current) {
