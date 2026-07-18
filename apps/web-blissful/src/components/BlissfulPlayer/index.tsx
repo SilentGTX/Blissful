@@ -18,7 +18,8 @@ import { getProgress, setProgress, flushNow } from '../../lib/progressStore';
 import { updateBlissfulLibraryProgress } from '../../lib/blissfulAuthApi';
 import { isStremioLinked, syncStremioItem, triggerStremioItemSync } from '../../lib/stremioLinkApi';
 import { clearCurrentActivity, setCurrentActivity } from '../../lib/usePresenceHeartbeat';
-import { getLastStreamSelection, setLastStreamSelection } from '../../lib/streamHistory';
+import { setLastStreamSelection } from '../../lib/streamHistory';
+import { buildPlayerPath } from '../../lib/playerUrl';
 import {
   clamp,
   isHttpUrl,
@@ -479,6 +480,13 @@ export default function BlissfulPlayer(props: {
   // the player connects to the room over WS and stays in lock-step
   // with the host's timeline.
   roomCode?: string | null;
+  // Canonical query string of the ACTIVE player session (PlayerPageWeb passes
+  // the mini-player session params). In-player URL rewrites (episode change,
+  // party room add/remove, guest source follows) must start from THIS, not
+  // window.location.search — on a short player URL (/player/vidking/…) the
+  // address bar carries no query at all, so mutating location.search would
+  // silently drop type/id/room and break the session.
+  sessionSearch?: string;
 }) {
   const navigate = useNavigate();
   // Two-phase buffering for /player:
@@ -527,6 +535,14 @@ export default function BlissfulPlayer(props: {
   onSelectQualityRef.current = props.onSelectQuality;
   const onSourceDeadRef = useRef(props.onSourceDead);
   onSourceDeadRef.current = props.onSourceDead;
+  // See the sessionSearch prop comment — every in-player URL rewrite starts
+  // from these params. Ref-mirrored so the useCallbacks below stay stable.
+  const sessionSearchRef = useRef(props.sessionSearch);
+  sessionSearchRef.current = props.sessionSearch;
+  const sessionParams = useCallback(
+    () => new URLSearchParams(sessionSearchRef.current ?? window.location.search),
+    []
+  );
   // Live mirrors read inside the HLS 409 handler: the "pick another release"
   // drawer must only auto-open when there is actually something to pick — the
   // Releases list resolves async, and opening before it landed showed an
@@ -752,7 +768,7 @@ export default function BlissfulPlayer(props: {
   const handleHostEpisodeChange = useCallback(
     (videoId: string | null) => {
       if (!videoId) return;
-      const params = new URLSearchParams(window.location.search);
+      const params = sessionParams();
       params.set('url', 'vidking:placeholder');
       params.set('videoId', videoId);
       params.delete('t');
@@ -776,7 +792,7 @@ export default function BlissfulPlayer(props: {
   const handleHostStreamChange = useCallback(
     (streamUrl: string | null) => {
       if (receivedSourceRef.current) return; // v2 `source` supersedes
-      const params = new URLSearchParams(window.location.search);
+      const params = sessionParams();
       const cur = params.get('url') ?? '';
       if (streamUrl) {
         if (cur === streamUrl) return; // already on the host's stream
@@ -806,7 +822,7 @@ export default function BlissfulPlayer(props: {
       receivedSourceRef.current = true;
       void (async () => {
         const resolved = await resolveSourceForWeb(source);
-        const params = new URLSearchParams(window.location.search);
+        const params = sessionParams();
         const cur = params.get('url') ?? '';
         if (resolved) {
           if (cur === resolved.url) return; // already on it
@@ -1043,7 +1059,7 @@ export default function BlissfulPlayer(props: {
           password,
         });
         if (password) stashWatchPartyPassword(code, password);
-        const params = new URLSearchParams(window.location.search);
+        const params = sessionParams();
         params.set('room', code);
         navigate(`/player?${params.toString()}`, { replace: true });
         notifySuccess(
@@ -1066,7 +1082,7 @@ export default function BlissfulPlayer(props: {
   const handleLeaveParty = useCallback(() => {
     if (props.roomCode) clearWatchPartyPassword(props.roomCode);
     watchParty.leave();
-    const params = new URLSearchParams(window.location.search);
+    const params = sessionParams();
     params.delete('room');
     navigate(`/player?${params.toString()}`, { replace: true });
     setPartyDrawerOpen(false);
@@ -1097,7 +1113,7 @@ export default function BlissfulPlayer(props: {
   );
   const handlePasswordCancel = useCallback(() => {
     if (props.roomCode) clearWatchPartyPassword(props.roomCode);
-    const params = new URLSearchParams(window.location.search);
+    const params = sessionParams();
     params.delete('room');
     navigate(`/player?${params.toString()}`, { replace: true });
   }, [props.roomCode, navigate]);
@@ -1134,7 +1150,7 @@ export default function BlissfulPlayer(props: {
   }, []);
   const handleNameCancel = useCallback(() => {
     if (props.roomCode) clearWatchPartyPassword(props.roomCode);
-    const params = new URLSearchParams(window.location.search);
+    const params = sessionParams();
     params.delete('room');
     navigate(`/player?${params.toString()}`, { replace: true });
   }, [props.roomCode, navigate]);
@@ -1517,6 +1533,12 @@ export default function BlissfulPlayer(props: {
       if (mt) { try { return decodeURIComponent(mt[1]); } catch { return u; } }
       return u;
     })();
+    // Never save a videasy stream as "the last stream": the /addon-proxy
+    // manifest is token-bound and expires within hours, so replaying it later
+    // is always a dead link — and saving it under an RD-derived `title` is how
+    // the mixed "videasy url + torrent title" URLs were minted. Videasy
+    // playback needs no saved stream at all (resume re-resolves vidking-first).
+    if (/^(vidking|videasy):/i.test(sourceUrl) || sourceUrl.startsWith('/addon-proxy')) return;
     setLastStreamSelection({
       authKey: props.authKey,
       type: props.type,
@@ -1608,7 +1630,7 @@ export default function BlissfulPlayer(props: {
     qs.set('autoplay', '1');
     const seconds = props.startTimeSeconds && props.startTimeSeconds > 0 ? props.startTimeSeconds : 0;
     if (seconds > 0) qs.set('t', String(Math.floor(seconds)));
-    const incoming = new URLSearchParams(window.location.search);
+    const incoming = sessionParams();
     for (const prev of incoming.getAll('skip')) qs.append('skip', prev);
     if (props.url) qs.append('skip', props.url);
     // `replace` so the dead-stream player URL is removed from history.
@@ -3414,40 +3436,21 @@ export default function BlissfulPlayer(props: {
     // if the user navigates back through it).
     try { sessionStorage.removeItem(`bliss:nextEpisode:${props.type}:${props.id}`); } catch { /* ignore */ }
 
-    // Look up stored stream for the next episode
-    const storedStream = getLastStreamSelection({
-      authKey: props.authKey,
-      type: props.type,
-      id: props.id,
-      videoId: next.nextVideoId,
-    });
-
-    if (storedStream?.url) {
-      // Navigate directly to the player with the stored stream
-      const params = new URLSearchParams();
-      params.set('url', storedStream.url);
-      if (storedStream.title) params.set('title', storedStream.title);
-      if (props.type) params.set('type', props.type);
-      if (props.id) params.set('id', props.id);
-      params.set('videoId', next.nextVideoId);
-      if (props.poster) params.set('poster', props.poster);
-      if (props.metaTitle) params.set('metaTitle', props.metaTitle);
-      if (props.logo) params.set('logo', props.logo);
-      navigate(`/player?${params.toString()}`, { replace: true });
-    } else {
-      // No stored stream — stay in the player and let PlayerPage
-      // resolve the source for the next episode through Videasy
-      // (same path navigateToEpisode uses). Avoids bouncing the
-      // user out to the detail page on devices that haven't played
-      // this episode before.
-      const params = new URLSearchParams(window.location.search);
-      params.set('url', 'vidking:placeholder');
-      params.set('videoId', next.nextVideoId);
-      params.delete('t');
-      params.delete('autoplay');
-      navigate(`/player?${params.toString()}`, { replace: true });
-    }
-  }, [props.nextEpisodeInfo, props.type, props.id, props.authKey, props.poster, props.metaTitle, props.logo, navigate, partyNonHost]);
+    // Always advance vidking-first through the short URL. Replaying the
+    // stored last-stream here is what minted the mixed "videasy manifest url
+    // + torrent title" monster links (the saved entry could be an expired
+    // videasy manifest, or an RD pin from an outage that then shadowed a
+    // recovered vidking). t=0 keeps the deterministic start-at-0 behavior —
+    // an absent t would auto-resume the next episode from stale CW progress.
+    const qs = new URLSearchParams({ t: '0' });
+    // A watch-party HOST advancing the episode keeps the room on the URL
+    // (guests follow via the room's episode-change broadcast).
+    if (props.roomCode) qs.set('room', props.roomCode);
+    navigate(
+      `${buildPlayerPath({ source: 'vidking', id: props.id, videoId: next.nextVideoId, title: props.metaTitle ?? null })}?${qs.toString()}`,
+      { replace: true }
+    );
+  }, [props.nextEpisodeInfo, props.type, props.id, props.metaTitle, props.roomCode, navigate, partyNonHost]);
 
   // Jump to an arbitrary episode by videoId — same URL pattern as
   // DetailPage's handlePlayWithVidking. PlayerPage detects the
@@ -3457,26 +3460,32 @@ export default function BlissfulPlayer(props: {
   // BlissfulPlayer's `onLoadedMetadata` handler seeks there on load.
   const navigateToEpisode = useCallback((videoId: string, resumeSeconds?: number, opts?: { openReleases?: boolean; rdUrl?: string }) => {
     if (!props.type || !props.id) return;
-    const params = new URLSearchParams(window.location.search);
-    // rdUrl (a torrent picked in the unreleased selector) plays directly in
-    // fallback mode; otherwise resolve via Videasy from a placeholder.
-    params.set('url', opts?.rdUrl ?? 'vidking:placeholder');
-    params.set('videoId', videoId);
-    if (resumeSeconds && resumeSeconds > 0) {
-      params.set('t', String(Math.floor(resumeSeconds)));
-    } else {
-      params.delete('t');
-    }
-    params.delete('autoplay');
-    params.delete('pickReleases');
-    params.delete('rdsel');
+    // rdUrl (a torrent picked in the unreleased selector) plays EXACTLY that
+    // stream — needs the legacy query form (rdsel=1). type/id are set
+    // explicitly: the session params carry them, but never trust that a short
+    // path session left them implied.
     if (opts?.rdUrl) {
-      params.set('rdsel', '1'); // RD-selected: skip Videasy, play this torrent
-    } else if (opts?.openReleases) {
-      params.set('pickReleases', '1');
+      const params = sessionParams();
+      params.set('url', opts.rdUrl);
+      params.set('type', props.type);
+      params.set('id', props.id);
+      params.set('videoId', videoId);
+      params.set('rdsel', '1');
+      if (resumeSeconds && resumeSeconds > 0) params.set('t', String(Math.floor(resumeSeconds)));
+      else params.delete('t');
+      params.delete('autoplay');
+      params.delete('pickReleases');
+      navigate(`/player?${params.toString()}`);
+      return;
     }
-    navigate(`/player?${params.toString()}`);
-  }, [navigate, props.type, props.id]);
+    // Everything else is a fresh vidking-first resolve via the short URL.
+    // t is explicit (0 when not resuming) — an absent t would auto-resume
+    // from CW progress, breaking the episode drawer's "start over" choice.
+    const qs = new URLSearchParams({ t: String(resumeSeconds && resumeSeconds > 0 ? Math.floor(resumeSeconds) : 0) });
+    if (opts?.openReleases) qs.set('pickReleases', '1');
+    if (props.roomCode) qs.set('room', props.roomCode); // party host keeps the room
+    navigate(`${buildPlayerPath({ source: 'vidking', id: props.id, videoId, title: props.metaTitle ?? null })}?${qs.toString()}`);
+  }, [navigate, props.type, props.id, props.metaTitle, props.roomCode, sessionParams]);
 
   // Resume-prompt state — when the user picks an episode that has
   // saved watch progress, we surface the ResumeOrStartOverModal

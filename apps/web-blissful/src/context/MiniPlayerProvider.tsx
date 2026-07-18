@@ -21,7 +21,7 @@ import { useAuth } from './AuthProvider';
 // vocabulary unchanged. What the URL deliberately omits, the player looks up:
 // artwork + title from Cinemeta by id, resume position from Continue-Watching
 // progress. See lib/playerUrl.ts for the URL scheme rationale.
-function shortPathToSearch(target: PlayerTarget, authKey: string | null): string {
+function shortPathToSearch(target: PlayerTarget, search: string, authKey: string | null): string {
   const qs = new URLSearchParams();
   qs.set('type', target.type);
   qs.set('id', target.id);
@@ -45,6 +45,14 @@ function shortPathToSearch(target: PlayerTarget, authKey: string | null): string
     // hydration doesn't re-seed the session. If vidking's CDN is down the
     // player's own RD fallback covers it (see PlayerPageWeb).
     qs.set('url', 'vidking:placeholder');
+  }
+  // Query extras riding on the short path refine the expansion: ?t=0
+  // (start-over — without it the player auto-resumes from CW progress),
+  // ?pickReleases=1, ?room=<code> (watch-party invite). They never
+  // OVERRIDE it — url/type/id derived from the path always win, so a
+  // crafted ?url=… can't smuggle a different stream into a short link.
+  for (const [k, v] of new URLSearchParams(search)) {
+    if (!qs.has(k)) qs.set(k, v);
   }
   return qs.toString();
 }
@@ -233,7 +241,7 @@ export function PlayerSeeder() {
     // Short path (/player/vidking/…, /player/rd/…) → expand to the internal
     // query form; legacy /player?… passes through as-is.
     const target = parsePlayerPath(location.pathname);
-    open(target ? shortPathToSearch(target, authKey) : location.search);
+    open(target ? shortPathToSearch(target, location.search, authKey) : location.search);
   }, [open, location.pathname, location.search, authKey]);
   return null;
 }

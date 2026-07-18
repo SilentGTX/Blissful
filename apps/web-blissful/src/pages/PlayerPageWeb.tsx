@@ -1667,6 +1667,7 @@ export default function PlayerPage() {
       selectedServer={selectedServer}
       onSelectServer={handleSelectServer}
       onSourceDead={handleSourceDead}
+      sessionSearch={searchParams.toString()}
       unavailableServers={unavailableServers}
       hideServerPicker={(!!fallbackPlayUrl || pickFirst || rdSelected) && !activeSource}
       releases={(!!fallbackPlayUrl || pickFirst || rdSelected) && !activeSource && addonStreams.length ? addonStreams : undefined}

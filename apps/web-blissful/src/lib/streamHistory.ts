@@ -34,6 +34,11 @@ function isEphemeralStreamingUrl(value: string): boolean {
     const isLocalHost =
       parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost' || parsed.hostname === '::1';
     if (isLocalHost && (parsed.port === '11470' || parsed.port === '12470')) return true;
+    // Proxied videasy manifests/segments (`/addon-proxy?url=…&vd=1`) are
+    // token-bound and expire within hours — a saved one is always a dead
+    // link by the time it's replayed. Entries like this were written before
+    // the save-side guard existed; purge them on read so old profiles heal.
+    if (parsed.pathname.startsWith('/addon-proxy')) return true;
     return parsed.pathname.startsWith('/stremio-server/');
   } catch {
     return false;
