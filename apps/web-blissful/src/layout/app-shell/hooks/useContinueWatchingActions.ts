@@ -5,6 +5,7 @@ import type { MediaType } from '../../../types/media';
 import { normalizeStremioImage } from '../../../lib/mediaTypes';
 import { putBlissfulLibraryItem } from '../../../lib/blissfulAuthApi';
 import { getLastStreamSelection } from '../../../lib/streamHistory';
+import { buildPlayerPath } from '../../../lib/playerUrl';
 import { getResumeSeconds } from '../utils';
 import { fetchMeta } from '../../../lib/stremioAddon';
 import { shellOrigin, isNativeShell } from '../../../lib/desktop';
@@ -43,6 +44,21 @@ export function useContinueWatchingActions({
     // saved progress and start the stream at 0. Default 'resume' keeps
     // the legacy behavior (start at the saved offset).
     const resumeSeconds = options?.mode === 'start-over' ? 0 : getResumeSeconds(item);
+
+    // WEB: Continue-Watching is ALWAYS vidking-first. Go straight to the short
+    // player URL — the player resolves vidking fresh (and self-falls-back to RD
+    // if its CDN is down), and picks up the resume position from CW progress.
+    // This deliberately skips the desktop-only mpv paths below (saved-URL replay,
+    // DMCA HEAD probe, web-progress detail hand-off): on web there's no mpv, and
+    // pinning to a saved RD stream is exactly the "stuck on RD after vidking
+    // recovered" bug we're removing. `start-over` forces t=0 (no resume).
+    if (!isNativeShell()) {
+      const vid = item.type === 'series' && typeof videoId === 'string' ? videoId : null;
+      let link = buildPlayerPath({ source: 'vidking', id: item._id, videoId: vid, title: item.name ?? null });
+      if (options?.mode === 'start-over') link += '?t=0';
+      navigate(link);
+      return;
+    }
 
     // Try localStorage first (fastest), then fall back to the server-
     // stored stream URL from the library entry (persists across devices).

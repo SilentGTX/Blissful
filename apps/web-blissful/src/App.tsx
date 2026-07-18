@@ -137,7 +137,10 @@ export default function App() {
                   }
                 />
                 <Route
-                  path="player"
+                  // Matches both the legacy /player?… query form and the short
+                  // /player/vidking/<id>/<slug> + /player/rd/… paths (the seeder
+                  // reads location.pathname to tell them apart).
+                  path="player/*"
                   element={
                     <ErrorBoundary fallback={<ErrorPage action="go-back" />}>
                       {/* Desktop: the player mounts directly on the route (mpv

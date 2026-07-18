@@ -11,6 +11,7 @@ import { useContinueWatchingContext } from '../context/ContinueWatchingProvider'
 import { showHeroTransition } from '../lib/heroTransition';
 import { consumeClickedPoster, metahubPosterToBackdrop } from '../lib/transitionPoster';
 import { getLastStreamSelection } from '../lib/streamHistory';
+import { buildPlayerPath, parsePlayerPath } from '../lib/playerUrl';
 import { useMetaDetails } from '../models/useMetaDetails';
 import { DesktopActionButtons, MobileActionButtons } from '../features/detail/components/ActionButtons';
 import { MetaPanel } from '../features/detail/components/MetaPanel';
@@ -90,12 +91,22 @@ export default function DetailPage() {
   // season pack), mirroring the in-player picker.
   const lastPlayedPin = useMemo(() => {
     if (!lastStream?.url || !type || !id) return null;
-    const params = new URLSearchParams({ url: lastStream.url, type, id });
-    if (isSeriesLike && selectedVideoId) params.set('videoId', selectedVideoId);
+    const vid = isSeriesLike && selectedVideoId ? selectedVideoId : null;
+    // Web resume is ALWAYS vidking-first: the pin is a short /player/vidking/…
+    // URL, not the exact saved (often RD) stream. When vidking is up you get
+    // vidking; when its CDN is down the player self-falls-back to RD. Desktop
+    // keeps the exact saved container so mpv plays it natively at full quality.
+    const playerLink = isNativeShell()
+      ? `/player?${(() => {
+          const p = new URLSearchParams({ url: lastStream.url, type, id });
+          if (vid) p.set('videoId', vid);
+          return p.toString();
+        })()}`
+      : buildPlayerPath({ source: 'vidking', id, videoId: vid, title: lastStream.title ?? null });
     return {
       url: lastStream.url,
       title: lastStream.title ?? null,
-      playerLink: `/player?${params.toString()}`,
+      playerLink,
     };
   }, [lastStream, type, id, isSeriesLike, selectedVideoId]);
 
@@ -523,21 +534,35 @@ export default function DetailPage() {
   const handleNavigateToPlayer = useCallback(
     (playerLink: string, options?: { replace?: boolean; bypassUnreleased?: boolean; pickReleases?: boolean; rdUrl?: string }) => {
       const url = new URL(playerLink, window.location.origin);
-      // A torrent picked in the unreleased selector → play it directly in
-      // fallback mode (skip Videasy). Implies bypassing the unreleased gate.
+      let shortTarget = parsePlayerPath(url.pathname);
+      // A torrent picked in the unreleased selector → play it EXACTLY (skip
+      // Videasy). That's an explicit stream, so drop to the query form even if
+      // the incoming link was short. Implies bypassing the unreleased gate.
       if (options?.rdUrl) {
-        url.searchParams.set('url', options.rdUrl);
-        url.searchParams.set('rdsel', '1');
+        const q = new URLSearchParams();
+        if (shortTarget) {
+          q.set('type', shortTarget.type);
+          q.set('id', shortTarget.id);
+          if (shortTarget.videoId) q.set('videoId', shortTarget.videoId);
+        } else {
+          for (const [k, v] of url.searchParams) q.set(k, v);
+        }
+        q.set('url', options.rdUrl);
+        q.set('rdsel', '1');
+        url.pathname = '/player';
+        url.search = q.toString();
+        shortTarget = null;
         options = { ...options, bypassUnreleased: true };
       }
       // Block playback of unreleased TV episodes (unless explicitly bypassed
-      // via the modal's "Play with RD"). Only kicks in for /player URLs that
-      // target a series videoId we can look up in meta.videos.
+      // via the modal's "Play with RD"). Works for both the short path (videoId
+      // parsed from the URL) and the legacy query form.
       // Desktop: no block at all — early/leaked torrents often exist before
       // the air date and the stream picker is simply empty when none do
       // (deliberate desktop decision, 402b53c).
-      const targetVideoId = url.searchParams.get('videoId');
-      if (!isNativeShell() && !options?.bypassUnreleased && targetVideoId && url.pathname === '/player') {
+      const targetVideoId = shortTarget?.videoId ?? url.searchParams.get('videoId');
+      const onPlayerRoute = shortTarget != null || url.pathname === '/player';
+      if (!isNativeShell() && !options?.bypassUnreleased && targetVideoId && onPlayerRoute) {
         const vmeta = (meta?.meta?.videos ?? []).find((v) => v.id === targetVideoId);
         const releasedAt = vmeta?.released ? Date.parse(vmeta.released) : NaN;
         if (Number.isFinite(releasedAt) && releasedAt > Date.now()) {
@@ -552,6 +577,16 @@ export default function DetailPage() {
           });
           return;
         }
+      }
+      // Short URL: keep it clean — the player looks up poster/background/title
+      // from Cinemeta (cached from this page, so no veil flash). Just warm the
+      // logo cache and preserve any tiny flag already on it (e.g. ?t=0).
+      if (shortTarget) {
+        if (logo) preloadImage(logo);
+        let dest = url.pathname + (url.search || '');
+        if (options?.pickReleases) dest += (dest.includes('?') ? '&' : '?') + 'pickReleases=1';
+        navigate(dest, { replace: options?.replace === true });
+        return;
       }
       if (poster && !url.searchParams.get('poster')) {
         url.searchParams.set('poster', poster);
@@ -595,12 +630,19 @@ export default function DetailPage() {
   const navigateToPlayer = useCallback(
     (overrideVideoId: string | null, resumeAtSec: number) => {
       if (!type || !id) return;
-      const params = new URLSearchParams({ url: 'vidking:placeholder', type, id });
-      if (overrideVideoId) params.set('videoId', overrideVideoId);
-      if (resumeAtSec > 0) params.set('t', String(Math.floor(resumeAtSec)));
-      handleNavigateToPlayer(`/player?${params.toString()}`);
+      // Short, vidking-first URL. The resume position stays OUT of the URL —
+      // the player looks it up from Continue-Watching progress. `start-over`
+      // (resumeAtSec <= 0) forces t=0 so that lookup is skipped.
+      let link = buildPlayerPath({
+        source: 'vidking',
+        id,
+        videoId: overrideVideoId ?? null,
+        title: meta?.meta?.name ?? null,
+      });
+      if (!(resumeAtSec > 0)) link += '?t=0';
+      handleNavigateToPlayer(link);
     },
-    [handleNavigateToPlayer, id, type]
+    [handleNavigateToPlayer, id, type, meta]
   );
 
   const handlePlayWithVidking = useCallback(

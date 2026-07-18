@@ -10,6 +10,44 @@ import {
 } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getDocPiP, copyStylesToPiP } from '../lib/documentPip';
+import { parsePlayerPath, type PlayerTarget } from '../lib/playerUrl';
+import { getLastStreamSelection } from '../lib/streamHistory';
+import { useAuth } from './AuthProvider';
+
+// Translate a short player path (/player/vidking/<id>/<slug>, /player/rd/…)
+// into the internal query string the persistent player already understands.
+// This is the ONLY place the short form is expanded — everything downstream
+// (PlayerPageWeb, watch party, mini-player) keeps operating on the query
+// vocabulary unchanged. What the URL deliberately omits, the player looks up:
+// artwork + title from Cinemeta by id, resume position from Continue-Watching
+// progress. See lib/playerUrl.ts for the URL scheme rationale.
+function shortPathToSearch(target: PlayerTarget, authKey: string | null): string {
+  const qs = new URLSearchParams();
+  qs.set('type', target.type);
+  qs.set('id', target.id);
+  if (target.videoId) qs.set('videoId', target.videoId);
+  if (target.source === 'rd') {
+    // Warm open (the user's own history): replay the exact saved RD stream.
+    // Cold open (a shared rd link, nothing saved locally): re-resolve and let
+    // the RD releases picker take over rather than guessing a stale URL.
+    const saved = getLastStreamSelection({ authKey, type: target.type, id: target.id, videoId: target.videoId });
+    if (saved?.url && /\/resolve\/realdebrid\//i.test(saved.url)) {
+      qs.set('url', saved.url);
+      qs.set('rdsel', '1');
+      if (saved.title) qs.set('title', saved.title);
+    } else {
+      qs.set('url', 'vidking:placeholder');
+      qs.set('pickReleases', '1');
+    }
+  } else {
+    // vidking (default, and what Continue-Watching emits on web): resolve
+    // fresh, vidking-first. Nothing authKey-dependent here, so a late auth
+    // hydration doesn't re-seed the session. If vidking's CDN is down the
+    // player's own RD fallback covers it (see PlayerPageWeb).
+    qs.set('url', 'vidking:placeholder');
+  }
+  return qs.toString();
+}
 
 // ─────────────────────────────────────────────────────────────────────────
 // Mini-player / persistent-player session.
@@ -189,9 +227,13 @@ export function useMiniPlayer(): MiniPlayerCtx {
  *  nothing — the actual player lives persistently in PersistentPlayerHost. */
 export function PlayerSeeder() {
   const { open } = useMiniPlayer();
+  const { authKey } = useAuth();
   const location = useLocation();
   useEffect(() => {
-    open(location.search);
-  }, [open, location.search]);
+    // Short path (/player/vidking/…, /player/rd/…) → expand to the internal
+    // query form; legacy /player?… passes through as-is.
+    const target = parsePlayerPath(location.pathname);
+    open(target ? shortPathToSearch(target, authKey) : location.search);
+  }, [open, location.pathname, location.search, authKey]);
   return null;
 }

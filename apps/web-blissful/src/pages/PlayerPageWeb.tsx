@@ -464,10 +464,27 @@ export default function PlayerPage() {
 
   const startTime = useMemo(() => {
     const raw = searchParams.get('t');
-    if (!raw) return null;
-    const n = Number.parseFloat(raw);
-    return Number.isFinite(n) && n > 0 ? n : null;
-  }, [searchParams]);
+    if (raw) {
+      const n = Number.parseFloat(raw);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    }
+    // No explicit `t` — this is a short player URL, which keeps the resume
+    // position OUT of the URL. Look it up from the user's Continue-Watching
+    // progress for this exact movie/episode instead. (In-app navigation has
+    // CW already loaded, so this resolves on first render; a cold-loaded
+    // shared link may briefly lack it until CW fetches, then resume.)
+    if (!id || !type) return null;
+    const cw = continueWatching.find((it) => it._id === id && it.type === type);
+    const st = cw?.state;
+    if (!st) return null;
+    // For a series, only honor progress that belongs to THIS episode.
+    if (type === 'series' && videoId) {
+      const cwVideo = st.videoId ?? st.video_id ?? null;
+      if (cwVideo && cwVideo !== videoId) return null;
+    }
+    const off = st.timeOffset;
+    return typeof off === 'number' && off > 0 ? off : null;
+  }, [searchParams, continueWatching, id, type, videoId]);
 
   // Fetch series metadata so we can compute next-episode for chained auto-advance
   // (ep1 → ep2 → ep3 without returning to DetailPage). The metadata is cached in
@@ -702,7 +719,12 @@ export default function PlayerPage() {
       sendPlayerLog('[player-page] videasy gate: no tmdbLookup yet');
       return;
     }
-    const seriesTitle = metaTitle ?? title;
+    // Short player URLs (/player/vidking/…) deliberately carry no title, so
+    // fall back to the Cinemeta meta name (loads async — this effect re-runs
+    // when it arrives). Without this, a short-URL movie has no title for the
+    // videasy query and silently falls through to RD — the opposite of the
+    // vidking-first behavior the short URL is supposed to give.
+    const seriesTitle = metaTitle ?? title ?? meta?.meta?.name ?? null;
     if (!seriesTitle) {
       sendPlayerLog('[player-page] videasy gate: no seriesTitle');
       return;
@@ -825,7 +847,7 @@ export default function PlayerPage() {
   // a trigger for re-running the fetch on its own. Including it
   // would cause an immediate refetch loop on auto-switch.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tmdbLookup, metaTitle, title, imdbId, releaseYear, seriesSeasonEpisode, selectedServer, pickFirst, rdSelected]);
+  }, [tmdbLookup, metaTitle, title, meta?.meta?.name, imdbId, releaseYear, seriesSeasonEpisode, selectedServer, pickFirst, rdSelected]);
 
   // Reset the auto-switch chain whenever the title (imdbId) or
   // episode changes — previous "this server has no source" judgments
