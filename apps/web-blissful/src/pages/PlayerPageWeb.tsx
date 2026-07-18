@@ -453,10 +453,15 @@ export default function PlayerPage() {
   const posterParam = searchParams.get('poster');
   const backgroundParam = searchParams.get('background');
   const metaTitle = searchParams.get('metaTitle');
-  const logo = searchParams.get('logo');
-
   const type = searchParams.get('type');
   const id = searchParams.get('id');
+  // Logo: URL param wins (legacy long links stamp it), else the same metahub
+  // logo DetailPage always used. Short URLs carry NO artwork params, and the
+  // in-player BufferingOverlay is logo-only — without this fallback the
+  // centered buffering image simply vanished on every short-URL session.
+  const logoParam = searchParams.get('logo');
+  const logo = logoParam
+    ?? (id && /^tt\d+$/.test(id) ? `https://images.metahub.space/logo/medium/${id}/img` : null);
 
   // Fallback poster (same source the ResumeOrStartOver modal uses)
   // — reach for the user's library / continue-watching entry when
