@@ -483,7 +483,16 @@ export default function PlayerPage() {
       if (cwVideo && cwVideo !== videoId) return null;
     }
     const off = st.timeOffset;
-    return typeof off === 'number' && off > 0 ? off : null;
+    if (typeof off !== 'number' || off <= 0) return null;
+    // Fully-watched guard: resuming at ~the end makes the video finish
+    // within seconds and binge-advance instantly skip to the next episode
+    // — re-opening a watched episode must RESTART it, not fast-forward
+    // through it. Mirrors the usual >=95% / <60s-left "watched" heuristic.
+    const dur = st.duration;
+    if (typeof dur === 'number' && dur > 0 && (off / dur >= 0.95 || dur - off < 60)) {
+      return null;
+    }
+    return off;
   }, [searchParams, continueWatching, id, type, videoId]);
 
   // Fetch series metadata so we can compute next-episode for chained auto-advance
