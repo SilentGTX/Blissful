@@ -810,6 +810,23 @@ export default function AppShell() {
           onStartOver={() => {
             if (modals.resumeModalItem) runStartOver(modals.resumeModalItem);
           }}
+          onGoToDetail={() => {
+            // "Go to show" — ported from the Android app's ResumeModal. Carry
+            // the episode's videoId so DetailPage lands with that episode
+            // selected (same shape as the UnavailableModal's onPickAnother).
+            const item = modals.resumeModalItem;
+            if (!item) return;
+            const videoId =
+              (item.state as { video_id?: string | null } | undefined)?.video_id ??
+              item.behaviorHints?.defaultVideoId ??
+              null;
+            const base = `/detail/${encodeURIComponent(item.type)}/${encodeURIComponent(item._id)}`;
+            navigate(
+              item.type === 'series' && typeof videoId === 'string'
+                ? `${base}?videoId=${encodeURIComponent(videoId)}`
+                : base,
+            );
+          }}
           onClose={() => modals.setResumeModalItem(null)}
         />
 

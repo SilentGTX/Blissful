@@ -22,6 +22,10 @@ export type ResumeOrStartOverModalProps = {
   resumeSeconds: number;
   onResume: () => void;
   onStartOver: () => void;
+  /** Omit to HIDE the "Go to show" button — e.g. when the modal is already on
+   *  the show's detail page (DetailPage), where it would be redundant.
+   *  Mirrors the Android app's ResumeModal. */
+  onGoToDetail?: () => void;
   onClose: () => void;
 };
 
@@ -49,6 +53,7 @@ export function ResumeOrStartOverModal({
   resumeSeconds,
   onResume,
   onStartOver,
+  onGoToDetail,
   onClose,
 }: ResumeOrStartOverModalProps) {
   const isMobile = useIsMobile();
@@ -114,6 +119,18 @@ export function ResumeOrStartOverModal({
           >
             Start from beginning
           </button>
+          {onGoToDetail ? (
+            <button
+              type="button"
+              onClick={() => {
+                onGoToDetail();
+                onClose();
+              }}
+              className="cursor-pointer rounded-xl bg-white/10 px-4 py-3 text-sm font-semibold text-white/85 ring-1 ring-white/10 transition hover:bg-white/15"
+            >
+              Go to show
+            </button>
+          ) : null}
         </div>
       </div>
     </>
