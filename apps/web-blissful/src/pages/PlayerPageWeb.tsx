@@ -983,6 +983,10 @@ export default function PlayerPage() {
   // UI can show a helpful error overlay instead of a permanent
   // black screen.
   const [fallbackExhausted, setFallbackExhausted] = useState(false);
+  // Consecutive fallback runs that found NO streams at all. Usually a
+  // transient upstream condition (Torrentio/RD 429 throttle, network blip)
+  // that succeeds seconds later — retried before declaring exhaustion.
+  const emptyFallbackRetriesRef = useRef(0);
   // Full list of HTTPS addon streams (Torrentio + Torrentio RD)
   // captured during the fallback fetch. On mobile we surface this
   // directly as a stream picker when Vidking is unavailable — the
@@ -992,6 +996,7 @@ export default function PlayerPage() {
     setFallbackPlayUrl(null);
     setFallbackExhausted(false);
     setAddonStreams([]);
+    emptyFallbackRetriesRef.current = 0;
   }, [imdbId, seriesSeasonEpisode]);
   // Mobile width detection (re-evaluated on resize so rotating
   // the device flips back to the desktop layout).
@@ -1324,9 +1329,23 @@ export default function PlayerPage() {
         return;
       }
       if (labeledHttps.length === 0) {
-        sendPlayerLog('[player-page] addon fallback: no playable HTTPS streams found');
+        // Usually transient — Torrentio/RD throttling (429) or a network
+        // blip returns an empty list once and works seconds later. Retry a
+        // few times via the nonce before declaring exhaustion; giving up on
+        // the first empty answer stranded sessions on an eternal black
+        // screen with no overlay and no retry.
+        const attempt = emptyFallbackRetriesRef.current + 1;
+        emptyFallbackRetriesRef.current = attempt;
+        if (attempt <= 3) {
+          sendPlayerLog(`[player-page] addon fallback: no playable streams — retry ${attempt}/3 in ${attempt * 5}s`);
+          window.setTimeout(() => setVideasyDeadNonce((n) => n + 1), attempt * 5000);
+          return;
+        }
+        sendPlayerLog('[player-page] addon fallback: no playable streams after retries — exhausted');
+        if (!cancelled && !videasyPlayableRef.current) setFallbackExhausted(true);
         return;
       }
+      emptyFallbackRetriesRef.current = 0;
       // Videasy resolved a playable source while we were fetching streams —
       // selection prefers it, so don't spend RD probes or commit a fallback URL.
       if (videasyPlayableRef.current) {
