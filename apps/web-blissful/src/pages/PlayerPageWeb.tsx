@@ -673,6 +673,11 @@ export default function PlayerPage() {
     if (fav && PLAYER_SERVERS.some((s) => s.id === fav)) return fav;
     return DEFAULT_SERVER_ID;
   }, [resolvedPlayerSettings.favoriteServer]);
+  // Profile-level Real-Debrid key (per-profile playerSettings — see
+  // DOCUMENTATION.md §Real-Debrid). Non-empty means this profile plays
+  // RD-first: the videasy resolve is skipped outright and the addon
+  // fallback commits the RD pick directly.
+  const hasProfileRdKey = !!resolvedPlayerSettings.realDebridApiKey?.trim();
   const [selectedServer, setSelectedServer] = useState<string>(initialServer);
   const [unavailableServers, setUnavailableServers] = useState<string[]>([]);
   // Set to true when the user manually picks a server from the
@@ -781,6 +786,18 @@ export default function PlayerPage() {
       // so the chosen stream actually plays and the picker shows torrent
       // releases, not stale Videasy qualities.
       setVideasySources([]);
+      return;
+    }
+    // Profile has its own Real-Debrid key — RD-first, always. Videasy/Vidking
+    // is strictly the no-RD affordance: when this profile can play RD
+    // releases, skip the videasy resolve outright (resolved + zero sources)
+    // so the parallel addon fallback commits the RD pick directly. A manual
+    // pick from the Servers tab still forces a videasy try — same escape
+    // hatch as the cooldown gate below.
+    if (hasProfileRdKey && !userPickedServerRef.current) {
+      sendPlayerLog('[player-page] videasy skip — profile has an RD key (RD-first)');
+      setVideasySources([]);
+      setVideasyResolved(true);
       return;
     }
     // Cooldown after a recent dead videasy source: resolve nothing and let
@@ -927,7 +944,7 @@ export default function PlayerPage() {
   // a trigger for re-running the fetch on its own. Including it
   // would cause an immediate refetch loop on auto-switch.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tmdbLookup, metaTitle, title, meta?.meta?.name, imdbId, releaseYear, seriesSeasonEpisode, selectedServer, pickFirst, rdSelected]);
+  }, [tmdbLookup, metaTitle, title, meta?.meta?.name, imdbId, releaseYear, seriesSeasonEpisode, selectedServer, pickFirst, rdSelected, hasProfileRdKey]);
 
   // Reset the auto-switch chain whenever the title (imdbId) or
   // episode changes — previous "this server has no source" judgments
