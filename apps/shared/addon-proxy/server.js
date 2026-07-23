@@ -276,9 +276,16 @@ function resolveTranscodeSrc(src) {
     const req = lib.get(src, { timeout: 20000 }, (r) => {
       const sc = r.statusCode || 0;
       const loc = r.headers.location;
-      const direct = sc >= 300 && sc < 400 && loc ? new URL(loc, src).toString() : src;
+      const resolved = sc >= 300 && sc < 400 && !!loc;
+      const direct = resolved ? new URL(loc, src).toString() : src;
       r.destroy(); // headers only — don't download the body
-      transcodeSrcCache.set(src, { direct, exp: Date.now() + TRANSCODE_SRC_TTL });
+      // ONLY cache a real resolution. A 5xx (torrentio throttling) or a 2xx
+      // "not cached yet" slate carries no Location, so `direct` falls back to
+      // the torrentio /resolve/ URL — caching THAT poisoned the entry for the
+      // full 25-min TTL, so every later segment reopened the slow torrentio
+      // URL (10-25s re-mint each) and the stream stuttered for ~25 min after a
+      // single transient blip. Leave the entry unset so the next segment retries.
+      if (resolved) transcodeSrcCache.set(src, { direct, exp: Date.now() + TRANSCODE_SRC_TTL });
       resolve(direct);
     });
     req.on('timeout', () => { req.destroy(); resolve(src); });
