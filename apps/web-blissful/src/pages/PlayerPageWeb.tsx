@@ -1263,12 +1263,43 @@ export default function PlayerPage() {
     const streamId = (type === 'series' && videoId) ? videoId : id;
     sendPlayerLog(`[player-page] addon fallback START streamId=${streamId} addons=${addons.length}`);
     let cancelled = false;
+    // An RD stream has been probed + committed to fallbackPlayUrl (by the fast
+    // path below OR the full pipeline). Shared so whichever fires first wins
+    // and the other bails — no double-commit / mid-play reload.
+    let committed = false;
     // baseFromTransportUrl: strip the trailing "/manifest.json" so
     // fetchStreams can append the correct /stream/<type>/<id>.json
     // path. Without this, the fetch hits /manifest.json/stream/...
     // and every addon returns 404 → "no playable streams".
     const stripManifest = (transportUrl: string) =>
       transportUrl.replace(/\/manifest\.json$/, '').replace(/\/$/, '');
+    // Map raw addon streams → the structured picker entries the mobile picker
+    // and in-player Releases drawer render. Shared by the fast path (RD-only
+    // list, populated instantly) and the full pipeline (every addon).
+    const toExposed = (
+      items: Array<{ stream: StremioStream; addonName: string }>,
+    ): AddonStreamEntry[] =>
+      items.map(({ stream, addonName }) => {
+        const description = stream.description ?? stream.title ?? '';
+        const parsed = parseStreamDescription(description);
+        const hay = `${stream.name ?? ''} ${description}`;
+        const qualMatch = hay.match(/\b(2160p|4k|1080p|720p|480p|360p)\b/i);
+        const name = stream.name ?? addonName;
+        const isRd = /\[RD\+?\]|realdebrid|real-?debrid/i.test(name) || /realdebrid/i.test(stream.url ?? '');
+        return {
+          name,
+          torrentName: parsed.torrentName,
+          description,
+          url: stream.url ?? '',
+          quality: qualMatch ? qualMatch[1].toLowerCase() : null,
+          seeders: parsed.seeders,
+          size: parsed.size,
+          site: parsed.site,
+          addonName,
+          isRd,
+          isMagnet: false,
+        };
+      });
     // House Real-Debrid fallback. The proxy resolves Torrentio-RD with a
     // server-side key and hands back key-free direct URLs, so a user with
     // NO RD key of their own still gets a playable stream when Videasy is
@@ -1303,6 +1334,90 @@ export default function PlayerPage() {
         p,
         new Promise<T>((resolve) => { setTimeout(() => resolve(fallback), SOURCE_TIMEOUT_MS); }),
       ]);
+
+    // ── RD fast-path ───────────────────────────────────────────────────
+    // RD-first profiles skip videasy entirely, so the RD stream is the ONLY
+    // thing they're waiting on. Blocking it behind the ~17 other addons'
+    // allSettled barrier + the pre-commit subtitle probe cost 12-30s of black
+    // screen before playback (measured). Race JUST the RD-bearing sources
+    // (House /rd-fallback + any realdebrid= addon), populate the Releases
+    // picker with those RD streams, probe the best one, and commit it — all in
+    // ~1-2s. The full pipeline below still runs for the non-fast case; once
+    // `committed` flips it skips its own auto-pick. Gated on hasProfileRdKey so
+    // non-RD (videasy-first) profiles are completely unchanged.
+    if (hasProfileRdKey && !rdSelected && !resumeUrl && !pickFirst) {
+      const rdAddons = addons.filter(
+        (a) => /realdebrid=|debrid=/i.test(a.transportUrl) || /real-?debrid|\[RD/i.test(a.manifest?.name ?? ''),
+      );
+      const rdSources: Array<Promise<Array<{ stream: StremioStream; addonName: string }>>> = [
+        settleWithin(
+          rdFallbackEntry.then((e) => e.res.streams.map((stream) => ({ stream, addonName: 'Real-Debrid' }))),
+          [],
+        ),
+        ...rdAddons.map((a) =>
+          settleWithin(
+            fetchStreams({ type, id: streamId, baseUrl: stripManifest(a.transportUrl) })
+              .then((res) => (res.streams ?? []).map((stream) => ({
+                stream,
+                addonName: a.manifest?.name ?? new URL(a.transportUrl).hostname,
+              })))
+              .catch(() => [] as Array<{ stream: StremioStream; addonName: string }>),
+            [],
+          ),
+        ),
+      ];
+      void Promise.allSettled(rdSources).then(async (settled) => {
+        if (cancelled || committed) return;
+        const items = settled.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
+        // Web-playable only (direct HTTPS, not a magnet needing local stremio).
+        const usable = items.filter(
+          ({ stream }) =>
+            !!stream.url && /^https?:\/\//i.test(stream.url) && stream.behaviorHints?.notWebReady !== true,
+        );
+        if (usable.length === 0) {
+          sendPlayerLog('[player-page] RD fast-path: no usable RD stream — deferring to full fallback');
+          return;
+        }
+        // Populate the Releases picker with the RD streams NOW, so it isn't
+        // empty after the commit cancels the (slower) full-pipeline run.
+        if (!cancelled) setAddonStreams(toExposed(usable.map(({ stream, addonName }) => ({ stream, addonName }))));
+        // Rank for the auto-pick: non-HEVC first (cheap transcode), then cached
+        // [RD+] over uncached, then 1080p > 720p > 4K.
+        const rank = ({ stream }: { stream: StremioStream }) => {
+          const t = `${stream.name ?? ''} ${stream.title ?? ''}`;
+          const nonHevc = /(^|[^a-z])(x265|h\.?265|hevc)([^a-z]|$)/i.test(t) ? 0 : 1000;
+          const cached = /\[RD\+\]/i.test(stream.name ?? '') ? 100 : 0;
+          const q = /1080p/i.test(t) ? 30 : /720p/i.test(t) ? 25 : /2160p|4k/i.test(t) ? 15 : 10;
+          return nonHevc + cached + q;
+        };
+        const ordered = usable.slice().sort((a, b) => rank(b) - rank(a));
+        for (const { stream } of ordered.slice(0, 4)) {
+          if (cancelled || committed) return;
+          try {
+            const probeResp = await fetch(`/resolve-url?url=${encodeURIComponent(stream.url!)}`);
+            if (!probeResp.ok) continue;
+            const probe = (await probeResp.json()) as { status?: number; finalUrl?: string };
+            if (cancelled || committed) return;
+            // 429 = RD throttled; the probe tells us nothing and the transcode
+            // rides out 429s, so commit rather than pay the full barrier.
+            if (probe.status === 429) {
+              committed = true;
+              sendPlayerLog(`[player-page] RD fast-commit (429, unprobed) url=…${stream.url!.slice(-60)}`);
+              setFallbackPlayUrl(stream.url!);
+              return;
+            }
+            if (typeof probe.status !== 'number' || probe.status >= 400) continue;
+            if (/failed_infringement/i.test(probe.finalUrl ?? '')) continue; // DMCA takedown MP4
+            committed = true;
+            sendPlayerLog(`[player-page] RD fast-commit url=${stream.url}`);
+            setFallbackPlayUrl(stream.url!);
+            return;
+          } catch { /* try next candidate */ }
+        }
+        sendPlayerLog('[player-page] RD fast-path: all candidates probed dead — deferring to full fallback');
+      });
+    }
+
     void Promise.allSettled([
       ...addons.map((a) =>
         settleWithin(
@@ -1371,28 +1486,15 @@ export default function PlayerPage() {
       // Picker list = ALL streams (incl 4K HEVC). Parse the Stremio description
       // into the structured fields the detail-page stream list / Releases
       // picker use (torrent name, seeders, size, site).
-      const exposed: AddonStreamEntry[] = allLabeled.map(({ stream, addonName }) => {
-        const description = stream.description ?? stream.title ?? '';
-        const parsed = parseStreamDescription(description);
-        const hay = `${stream.name ?? ''} ${description}`;
-        const qualMatch = hay.match(/\b(2160p|4k|1080p|720p|480p|360p)\b/i);
-        const name = stream.name ?? addonName;
-        const isRd = /\[RD\+?\]|realdebrid|real-?debrid/i.test(name) || /realdebrid/i.test(stream.url ?? '');
-        return {
-          name,
-          torrentName: parsed.torrentName,
-          description,
-          url: stream.url ?? '',
-          quality: qualMatch ? qualMatch[1].toLowerCase() : null,
-          seeders: parsed.seeders,
-          size: parsed.size,
-          site: parsed.site,
-          addonName,
-          isRd,
-          isMagnet: false,
-        };
-      });
+      const exposed: AddonStreamEntry[] = toExposed(allLabeled);
       if (!cancelled) setAddonStreams(exposed);
+      // Fast path already probed + committed an RD stream (and populated the
+      // picker with the RD releases). Don't re-commit a possibly-different pick
+      // here — that would reload the player mid-play.
+      if (committed) {
+        sendPlayerLog('[player-page] addon fallback: RD fast-path already committed — skipping auto-pick');
+        return;
+      }
       // RD-selected mode: the chosen torrent (`url`) is already playing — just
       // expose the rest for the in-player torrent picker; don't commit.
       if (rdSelected) {
@@ -1445,6 +1547,7 @@ export default function PlayerPage() {
         return;
       }
       void (async () => {
+        if (committed) return; // fast path won while we were building the list
         // For series/anime, OpenSubtitles frequently has nothing — the only
         // subtitles may be EMBEDDED in a specific release. Probe the top
         // candidates (header read, ~fast) and float the ones that carry text
@@ -1481,7 +1584,7 @@ export default function PlayerPage() {
         // 2 MB takedown notice MP4 ("failed_infringement_v2.mp4").
         // Drop any URL that ends up there and walk down the list.
         for (const cand of labeledHttps) {
-          if (cancelled) return;
+          if (cancelled || committed) return;
           // Videasy resolved mid-probe — stop committing an RD fallback.
           if (videasyPlayableRef.current) {
             sendPlayerLog('[player-page] addon fallback: videasy resolved mid-probe — aborting RD commit');
@@ -1500,6 +1603,7 @@ export default function PlayerPage() {
             // on 429 was the "loads forever" bug.
             if (probe.status === 429) {
               sendPlayerLog(`[player-page] addon fallback: RD throttled (429) — committing ${cand.addonName} without probing further`);
+              committed = true;
               setFallbackPlayUrl(cand.stream.url);
               return;
             }
@@ -1512,6 +1616,7 @@ export default function PlayerPage() {
               continue;
             }
             sendPlayerLog(`[player-page] addon fallback PICK addon=${cand.addonName} url=${cand.stream.url}`);
+            committed = true;
             setFallbackPlayUrl(cand.stream.url);
             return;
           } catch (err) {
