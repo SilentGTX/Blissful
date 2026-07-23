@@ -29,6 +29,7 @@ import subprocess
 import threading
 import time
 import urllib.parse
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORT = int(os.environ.get("BLISSFUL_TRANSCODER_PORT", "13098"))
@@ -48,6 +49,22 @@ CACHE_DIR = os.environ.get(
 )
 CACHE_TTL = float(os.environ.get("TRANSCODE_CACHE_TTL", "21600"))  # 6 h
 os.makedirs(CACHE_DIR, exist_ok=True)
+
+# Watchdog: a stalled RD connection leaves ffmpeg blocked on a dead socket
+# forever (observed 2026-07-24: four zombie encodes hours old, each pinning an
+# HTTPS connection). A healthy 6s segment encodes in ~3s; anything past this is
+# dead — kill it so the client's retry gets a fresh connection.
+ENCODE_TIMEOUT = float(os.environ.get("TRANSCODE_ENCODE_TIMEOUT", "45"))
+
+# Prefetch: encode the next N segments in the background whenever a segment is
+# requested. The request-driven cadence alone nets ~1.0x realtime (fresh TLS
+# connection + remote MKV open per segment eats ~40% of each segment's budget),
+# so the client buffer never builds headroom and playback stutters at every
+# hiccup. Prefetch keeps the media engine busy during client idle gaps.
+PREFETCH = int(os.environ.get("TRANSCODE_PREFETCH", "3"))
+_prefetch_slots = threading.BoundedSemaphore(
+    int(os.environ.get("TRANSCODE_PREFETCH_CONCURRENCY", "2"))
+)
 
 # Coalesce concurrent identical encodes (two guests requesting the same segment
 # before it's cached) into ONE — the rest wait, then read the cache.
@@ -69,7 +86,12 @@ def encode_segment(url: str, n: int, audio_idx: int, out_path: str) -> tuple[boo
     try:
         with open(tmp, "wb") as f:
             proc = subprocess.Popen(seg_args(url, n, audio_idx), stdout=f, stderr=subprocess.PIPE)
-            _, err = proc.communicate()
+            try:
+                _, err = proc.communicate(timeout=ENCODE_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.communicate()
+                err = f"watchdog killed encode after {ENCODE_TIMEOUT:.0f}s".encode("utf-8")
         if proc.returncode == 0 and os.path.getsize(tmp) > 0:
             os.replace(tmp, out_path)  # atomic publish
             return True, b""
@@ -80,6 +102,61 @@ def encode_segment(url: str, n: int, audio_idx: int, out_path: str) -> tuple[boo
     except OSError:
         pass
     return False, (err or b"")[-200:]
+
+
+def ensure_segment(url: str, n: int, audio_idx: int, quiet: bool = False) -> tuple[bool, str]:
+    """Make sure (url, n, audio_idx) is in the cache; encode it if needed.
+
+    Coalesces with any in-flight encode of the same key: if another thread is
+    already encoding this segment, wait for it and reuse the result — taking
+    over as encoder if it failed. Returns (ok, cache_path).
+    """
+    key = cache_key(url, n, audio_idx)
+    path = cache_path(key)
+    for _attempt in range(3):
+        if os.path.exists(path) and os.path.getsize(path) > 0:
+            return True, path
+        with _inflight_lock:
+            ev = _inflight.get(key)
+            am_encoder = ev is None
+            if am_encoder:
+                ev = threading.Event()
+                _inflight[key] = ev
+        if not am_encoder:
+            # Another request/prefetch is encoding this exact segment — wait,
+            # then loop: cache hit if it succeeded, else become the encoder.
+            ev.wait(timeout=ENCODE_TIMEOUT + 15)
+            continue
+        try:
+            ok, err = encode_segment(url, n, audio_idx, path)
+        finally:
+            with _inflight_lock:
+                _inflight.pop(key, None)
+            ev.set()
+        if not ok and not quiet:
+            log(f"seg n={n} encode failed: {err.decode('utf-8', 'replace').strip()}")
+        return ok, path
+    return (os.path.exists(path) and os.path.getsize(path) > 0), path
+
+
+def prefetch_segment(url: str, n: int, audio_idx: int) -> None:
+    """Opportunistic background encode of an upcoming segment. Skips work that
+    is already cached or in flight; bounded by _prefetch_slots so a seek can't
+    stampede the media engine. quiet=True — running past the end of the file is
+    expected on the last few segments and shouldn't spam the log."""
+    key = cache_key(url, n, audio_idx)
+    path = cache_path(key)
+    if os.path.exists(path) and os.path.getsize(path) > 0:
+        return
+    with _inflight_lock:
+        if key in _inflight:
+            return
+    if not _prefetch_slots.acquire(blocking=False):
+        return  # engine busy — the on-demand path will pick it up if needed
+    try:
+        ensure_segment(url, n, audio_idx, quiet=True)
+    finally:
+        _prefetch_slots.release()
 
 
 def prune_cache_loop():
@@ -194,46 +271,19 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(400)
             return
 
-        key = cache_key(url, n, audio_idx)
-        path = cache_path(key)
+        # Kick the prefetchers first so the next segments encode WHILE this one
+        # is encoded/served — they dedupe against cache + in-flight and exit
+        # instantly when there's nothing to do.
+        for i in range(1, PREFETCH + 1):
+            threading.Thread(
+                target=prefetch_segment, args=(url, n + i, audio_idx), daemon=True
+            ).start()
 
-        # 1. Cache hit → serve straight from disk (every watch-party guest after
-        #    the first, and any seek-back, lands here — no re-encode).
-        if os.path.exists(path) and os.path.getsize(path) > 0:
-            self._serve_file(path)
-            return
-
-        # 2. Coalesce: if another request is already encoding this exact segment,
-        #    wait for it instead of starting a duplicate encode.
-        with _inflight_lock:
-            ev = _inflight.get(key)
-            am_encoder = ev is None
-            if am_encoder:
-                ev = threading.Event()
-                _inflight[key] = ev
-        if not am_encoder:
-            ev.wait(timeout=60)
-            if os.path.exists(path) and os.path.getsize(path) > 0:
-                self._serve_file(path)
-                return
-            # First encoder failed — fall through and encode it myself.
-            with _inflight_lock:
-                if _inflight.get(key) is None:
-                    ev2 = threading.Event()
-                    _inflight[key] = ev2
-                    ev = ev2
-                    am_encoder = True
-
-        # 3. Encode (once), publish to cache, then serve.
-        try:
-            ok, err = encode_segment(url, n, audio_idx, path)
-        finally:
-            if am_encoder:
-                with _inflight_lock:
-                    _inflight.pop(key, None)
-                ev.set()
+        # Cache hit serves straight from disk (watch-party guests after the
+        # first, seek-backs, and everything the prefetcher got to in time);
+        # otherwise encode — coalesced with any identical in-flight request.
+        ok, path = ensure_segment(url, n, audio_idx)
         if not ok:
-            log(f"seg n={n} encode failed: {err.decode('utf-8', 'replace').strip()}")
             self.send_error(502)
             return
         self._serve_file(path)
@@ -277,6 +327,7 @@ def main():
     signal.signal(signal.SIGINT, lambda *_a: os._exit(0))
     threading.Thread(target=prune_cache_loop, daemon=True).start()
     log(f"segment cache: {CACHE_DIR} (ttl {int(CACHE_TTL/3600)}h)")
+    log(f"prefetch depth {PREFETCH}, encode watchdog {int(ENCODE_TIMEOUT)}s")
     log(f"listening on 0.0.0.0:{PORT}")
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     srv.serve_forever()
