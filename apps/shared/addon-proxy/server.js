@@ -634,6 +634,52 @@ async function tidbIntervals({ tmdbId, imdbId, season, episode, episodeLength })
   return intervals;
 }
 
+const skipdbCache = new Map(); // `${imdbId}:${season}:${episode}:${len}` -> { intervals, exp }
+
+/** SkipDB (skipdb.tv) intro/recap/outro intervals (seconds) for a TV episode,
+ *  keyed by imdb_id (SkipDB has no tmdb lookup for segments). Layered AFTER
+ *  AniSkip + TheIntroDB to widen coverage on titles those miss.
+ *
+ *  SkipDB also serves low-confidence GUESSES — segments tagged match
+ *  "agnostic"/"out-of-range" (observed confidence ~0.6) that would auto-skip to
+ *  the WRONG spot. We keep only trustworthy matches: an `exact` fingerprint, or
+ *  a `shifted` one at high confidence. Same cache shape as tidbIntervals. */
+async function skipdbIntervals({ imdbId, season, episode, episodeLength }) {
+  if (!/^tt\d+$/.test(imdbId || '')) return []; // imdb_id only
+  const durSec = episodeLength > 0 ? Math.round(episodeLength) : 0;
+  const key = `${imdbId}:${season}:${episode}:${durSec}`;
+  const c = skipdbCache.get(key);
+  if (c && c.exp > Date.now()) return c.intervals;
+  const diskSkipdb = await jsonCacheGet('skipdb', key);
+  if (diskSkipdb !== undefined) {
+    skipdbCache.set(key, { intervals: diskSkipdb, exp: Date.now() + TIDB_TTL });
+    return diskSkipdb;
+  }
+  let qs = `imdb_id=${encodeURIComponent(imdbId)}&season=${season}&episode=${episode}`;
+  if (durSec) qs += `&duration=${durSec}`; // SkipDB duration is in SECONDS
+  const resp = await requestJson(`https://api.skipdb.tv/api/segments?${qs}`).catch(() => null);
+  const segs = resp && resp.json && resp.json.segments ? resp.json.segments : null;
+  const intervals = [];
+  const trusted = (seg) =>
+    !!seg && (seg.match === 'exact' || (seg.match === 'shifted' && Number(seg.confidence) >= 0.8));
+  const add = (seg, type) => {
+    if (!trusted(seg)) return;
+    const start = Number(seg.start_ms);
+    const end = Number(seg.end_ms);
+    if (!Number.isFinite(start) || start < 0) return;
+    if (!Number.isFinite(end) || end <= start) return;
+    intervals.push({ type, start: start / 1000, end: end / 1000 });
+  };
+  if (segs) {
+    add(segs.intro, 'intro');
+    add(segs.recap, 'recap');
+    add(segs.outro, 'outro'); // SkipDB "outro" == our credits kind
+  }
+  skipdbCache.set(key, { intervals, exp: Date.now() + TIDB_TTL });
+  jsonCacheSet('skipdb', key, intervals, intervals.length ? 30 * 24 * 60 * 60 * 1000 : TIDB_TTL);
+  return intervals;
+}
+
 const TEXT_SUBTITLE_CODECS = new Set([
   'subrip', 'srt', 'ass', 'ssa', 'mov_text', 'webvtt', 'text',
 ]);
@@ -2004,6 +2050,12 @@ const server = http.createServer((req, res) => {
         if (!intervals.length) {
           const tidb = await tidbIntervals({ tmdbId, imdbId, season, episode, episodeLength });
           if (tidb.length) { intervals = tidb; source = 'tidb'; }
+        }
+        // 3) Still nothing → SkipDB (skipdb.tv), imdb-keyed. Widens coverage on
+        //    titles the first two miss; low-confidence guesses are filtered out.
+        if (!intervals.length && /^tt\d+$/.test(imdbId)) {
+          const sdb = await skipdbIntervals({ imdbId, season, episode, episodeLength });
+          if (sdb.length) { intervals = sdb; source = 'skipdb'; }
         }
         ok({ found: intervals.length > 0, source, intervals });
       } catch (e) {
