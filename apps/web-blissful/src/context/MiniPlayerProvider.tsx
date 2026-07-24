@@ -11,6 +11,7 @@ import {
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getDocPiP, copyStylesToPiP } from '../lib/documentPip';
 import { parsePlayerPath, type PlayerTarget } from '../lib/playerUrl';
+import { readStoredPlayerSettings } from '../lib/playerSettings';
 import { getLastStreamSelection } from '../lib/streamHistory';
 import { useAuth } from './AuthProvider';
 
@@ -26,10 +27,20 @@ function shortPathToSearch(target: PlayerTarget, search: string, authKey: string
   qs.set('type', target.type);
   qs.set('id', target.id);
   if (target.videoId) qs.set('videoId', target.videoId);
-  if (target.source === 'rd') {
-    // Warm open (the user's own history): replay the exact saved RD stream.
-    // Cold open (a shared rd link, nothing saved locally): re-resolve and let
-    // the RD releases picker take over rather than guessing a stale URL.
+  const viewerHasRdKey = (() => {
+    try { return !!readStoredPlayerSettings().realDebridApiKey?.trim(); } catch { return false; }
+  })();
+  if (target.source === 'rd' && viewerHasRdKey) {
+    // THIS profile has its own RD key, so `rd` is just the honest label for its
+    // normal auto-resolve — resolve fresh and let the player's RD fast path
+    // pick a cached stream (~1-2s). No stale saved-link replay, no manual
+    // picker; identical to the `auto`/`vidking` path below.
+    qs.set('url', 'vidking:placeholder');
+  } else if (target.source === 'rd') {
+    // A shared `rd` link opened by a profile WITHOUT its own RD key (can't
+    // auto-resolve RD). Warm open (own history): replay the exact saved RD
+    // stream. Cold open: open the releases picker rather than guessing a stale
+    // URL.
     const saved = getLastStreamSelection({ authKey, type: target.type, id: target.id, videoId: target.videoId });
     if (saved?.url && /\/resolve\/realdebrid\//i.test(saved.url)) {
       qs.set('url', saved.url);

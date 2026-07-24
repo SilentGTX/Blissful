@@ -19,7 +19,7 @@ import { updateBlissfulLibraryProgress } from '../../lib/blissfulAuthApi';
 import { isStremioLinked, syncStremioItem, triggerStremioItemSync } from '../../lib/stremioLinkApi';
 import { clearCurrentActivity, setCurrentActivity } from '../../lib/usePresenceHeartbeat';
 import { setLastStreamSelection } from '../../lib/streamHistory';
-import { buildPlayerPath } from '../../lib/playerUrl';
+import { buildPlayerPath, defaultPlayerSource } from '../../lib/playerUrl';
 import {
   clamp,
   isHttpUrl,
@@ -3477,7 +3477,7 @@ export default function BlissfulPlayer(props: {
     // (guests follow via the room's episode-change broadcast).
     if (props.roomCode) qs.set('room', props.roomCode);
     navigate(
-      `${buildPlayerPath({ source: 'auto', id: props.id, videoId: next.nextVideoId, title: props.metaTitle ?? null })}?${qs.toString()}`,
+      `${buildPlayerPath({ source: defaultPlayerSource(), id: props.id, videoId: next.nextVideoId, title: props.metaTitle ?? null })}?${qs.toString()}`,
       { replace: true }
     );
   }, [props.nextEpisodeInfo, props.type, props.id, props.metaTitle, props.roomCode, navigate, partyNonHost]);
@@ -3514,7 +3514,7 @@ export default function BlissfulPlayer(props: {
     const qs = new URLSearchParams({ t: String(resumeSeconds && resumeSeconds > 0 ? Math.floor(resumeSeconds) : 0) });
     if (opts?.openReleases) qs.set('pickReleases', '1');
     if (props.roomCode) qs.set('room', props.roomCode); // party host keeps the room
-    navigate(`${buildPlayerPath({ source: 'auto', id: props.id, videoId, title: props.metaTitle ?? null })}?${qs.toString()}`);
+    navigate(`${buildPlayerPath({ source: defaultPlayerSource(), id: props.id, videoId, title: props.metaTitle ?? null })}?${qs.toString()}`);
   }, [navigate, props.type, props.id, props.metaTitle, props.roomCode, sessionParams]);
 
   // Resume-prompt state — when the user picks an episode that has

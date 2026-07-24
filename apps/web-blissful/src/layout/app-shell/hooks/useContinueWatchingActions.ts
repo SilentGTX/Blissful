@@ -5,7 +5,7 @@ import type { MediaType } from '../../../types/media';
 import { normalizeStremioImage } from '../../../lib/mediaTypes';
 import { putBlissfulLibraryItem } from '../../../lib/blissfulAuthApi';
 import { getLastStreamSelection } from '../../../lib/streamHistory';
-import { buildPlayerPath } from '../../../lib/playerUrl';
+import { buildPlayerPath, defaultPlayerSource } from '../../../lib/playerUrl';
 import { getResumeSeconds } from '../utils';
 import { fetchMeta } from '../../../lib/stremioAddon';
 import { shellOrigin, isNativeShell } from '../../../lib/desktop';
@@ -54,7 +54,7 @@ export function useContinueWatchingActions({
     // recovered" bug we're removing. `start-over` forces t=0 (no resume).
     if (!isNativeShell()) {
       const vid = item.type === 'series' && typeof videoId === 'string' ? videoId : null;
-      let link = buildPlayerPath({ source: 'auto', id: item._id, videoId: vid, title: item.name ?? null });
+      let link = buildPlayerPath({ source: defaultPlayerSource(), id: item._id, videoId: vid, title: item.name ?? null });
       if (options?.mode === 'start-over') link += '?t=0';
       navigate(link);
       return;

@@ -13,10 +13,11 @@
 //   /player/auto/tt0137523/Fight.Club                  (movie)
 //
 // The path carries only what the player can't re-derive: the SOURCE
-// (auto = resolve fresh — RD-first for profiles with a Real-Debrid key,
-// vidking-first otherwise; rd = a specific Real-Debrid release; `vidking`
-// is the legacy alias for `auto`, still parsed so old links keep working)
-// and the machine id (`<imdbId>` for a movie, `<imdbId>:<season>:<episode>`
+// (rd = this profile has a Real-Debrid key, resolve RD-first; auto = no RD
+// key, resolve vidking-first — the player falls back to RD either way if the
+// primary is down; `vidking` is the legacy alias for `auto`, still parsed so
+// old links keep working) and the machine id (`<imdbId>` for a movie,
+// `<imdbId>:<season>:<episode>`
 // for an episode). The trailing segment is a cosmetic slug — ignored on
 // parse, present only so the URL reads like the thing you're watching.
 // Everything else (artwork, title, resume position, the exact stream)
@@ -24,10 +25,26 @@
 // vidking / rd-fallback resolve. The legacy query form still parses, so
 // old bookmarks and shared links keep working.
 
-// `auto` is the neutral default (resolve fresh; RD-first for RD-key profiles).
-// `vidking` is the legacy alias — identical behavior, kept so old bookmarks and
-// shared links still parse. `rd` targets a specific Real-Debrid release.
+import { readStoredPlayerSettings } from './playerSettings';
+
+// `rd` = this profile plays Real-Debrid (it has an RD key). `auto` = resolve
+// fresh, vidking-first (profiles with no RD key). `vidking` is the legacy alias
+// for `auto`, kept so old bookmarks / shared links still parse.
 export type PlayerSource = 'vidking' | 'rd' | 'auto';
+
+// The source label for a freshly-built player link, chosen from THIS profile's
+// settings: `rd` when it has a Real-Debrid key (so the URL reads /player/rd/…,
+// honest about what plays), else `auto`. Behaviour is identical either way —
+// the player resolves RD-first for RD-key profiles regardless of the label —
+// so this only decides how the address bar reads. Reads the local settings
+// cache (sync); falls back to `auto` if it's unavailable.
+export function defaultPlayerSource(): PlayerSource {
+  try {
+    return readStoredPlayerSettings().realDebridApiKey?.trim() ? 'rd' : 'auto';
+  } catch {
+    return 'auto';
+  }
+}
 
 export type PlayerTarget = {
   source: PlayerSource;

@@ -11,7 +11,7 @@ import { useContinueWatchingContext } from '../context/ContinueWatchingProvider'
 import { showHeroTransition } from '../lib/heroTransition';
 import { consumeClickedPoster, metahubPosterToBackdrop } from '../lib/transitionPoster';
 import { getLastStreamSelection } from '../lib/streamHistory';
-import { buildPlayerPath, parsePlayerPath } from '../lib/playerUrl';
+import { buildPlayerPath, defaultPlayerSource, parsePlayerPath } from '../lib/playerUrl';
 import { useMetaDetails } from '../models/useMetaDetails';
 import { DesktopActionButtons, MobileActionButtons } from '../features/detail/components/ActionButtons';
 import { MetaPanel } from '../features/detail/components/MetaPanel';
@@ -103,7 +103,7 @@ export default function DetailPage() {
           if (vid) p.set('videoId', vid);
           return p.toString();
         })()}`
-      : buildPlayerPath({ source: 'auto', id, videoId: vid, title: lastStream.title ?? null });
+      : buildPlayerPath({ source: defaultPlayerSource(), id, videoId: vid, title: lastStream.title ?? null });
     return {
       url: lastStream.url,
       title: lastStream.title ?? null,
@@ -636,7 +636,7 @@ export default function DetailPage() {
       // it up from Continue-Watching progress. `start-over` (resumeAtSec <= 0)
       // forces t=0 so that lookup is skipped.
       let link = buildPlayerPath({
-        source: 'auto',
+        source: defaultPlayerSource(),
         id,
         videoId: overrideVideoId ?? null,
         title: meta?.meta?.name ?? null,
