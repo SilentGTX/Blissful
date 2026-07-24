@@ -1905,7 +1905,7 @@ export default function PlayerPage() {
       selectedReleaseUrl={fallbackPlayUrl ?? (rdSelected ? url : null)}
       onSelectRelease={setFallbackPlayUrl}
       fallbackActive={!!fallbackPlayUrl && !activeSource}
-      rdMode={pickFirst || rdSelected}
+      rdMode={pickFirst || rdSelected || hasProfileRdKey}
       autoOpenReleases={pickFirst}
       onReleasesDismissed={() => {
         if (pickFirst && !fallbackPlayUrl && pickFirstBestRef.current) {
