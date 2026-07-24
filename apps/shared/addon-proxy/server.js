@@ -710,10 +710,16 @@ async function runFpJob(imdbId, season, episode, key) {
     if (!TRANSCODE_HOST_URL || !TRANSCODE_HOST_SECRET) throw new Error('no host transcoder');
     const targetUrl = await fpResolveEpisode(imdbId, season, episode);
     if (!targetUrl) throw new Error('target episode did not resolve');
-    // Compare against an adjacent episode (same intro, different content).
-    const refEp = episode > 1 ? episode - 1 : episode + 1;
-    const refUrl = await fpResolveEpisode(imdbId, season, refEp);
-    if (!refUrl) throw new Error('sibling episode did not resolve');
+    // Compare against a nearby episode (same intro, different content). Try a
+    // few candidates in turn — the immediate neighbour may not be RD-cached, or
+    // torrentio may throttle a given lookup — and any same-season episode works.
+    let refUrl = null;
+    for (const refEp of [episode - 1, episode + 1, episode - 2, episode + 2]) {
+      if (refEp < 1 || refEp === episode) continue;
+      refUrl = await fpResolveEpisode(imdbId, season, refEp); // eslint-disable-line no-await-in-loop
+      if (refUrl) break;
+    }
+    if (!refUrl) throw new Error('no sibling episode resolved');
     const hostUrl = `${TRANSCODE_HOST_URL.replace(/\/+$/, '')}/detect-skips`
       + `?secret=${encodeURIComponent(TRANSCODE_HOST_SECRET)}`
       + `&url=${encodeURIComponent(targetUrl)}&ref=${encodeURIComponent(refUrl)}`;
