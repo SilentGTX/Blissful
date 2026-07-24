@@ -54,7 +54,7 @@ export function useContinueWatchingActions({
     // recovered" bug we're removing. `start-over` forces t=0 (no resume).
     if (!isNativeShell()) {
       const vid = item.type === 'series' && typeof videoId === 'string' ? videoId : null;
-      let link = buildPlayerPath({ source: 'vidking', id: item._id, videoId: vid, title: item.name ?? null });
+      let link = buildPlayerPath({ source: 'auto', id: item._id, videoId: vid, title: item.name ?? null });
       if (options?.mode === 'start-over') link += '?t=0';
       navigate(link);
       return;

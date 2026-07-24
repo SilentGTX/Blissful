@@ -40,10 +40,14 @@ function shortPathToSearch(target: PlayerTarget, search: string, authKey: string
       qs.set('pickReleases', '1');
     }
   } else {
-    // vidking (default, and what Continue-Watching emits on web): resolve
-    // fresh, vidking-first. Nothing authKey-dependent here, so a late auth
-    // hydration doesn't re-seed the session. If vidking's CDN is down the
-    // player's own RD fallback covers it (see PlayerPageWeb).
+    // auto (default, and what the detail page / Continue-Watching emit on web;
+    // `vidking` is the legacy alias): resolve fresh. Profiles with an RD key go
+    // RD-first, everyone else vidking-first — the player decides from its own
+    // settings, so nothing authKey-dependent here (a late auth hydration
+    // doesn't re-seed the session). If vidking's CDN is down the player's own
+    // RD fallback covers it (see PlayerPageWeb). The internal placeholder token
+    // stays `vidking:placeholder` — it's not user-visible (the address bar
+    // keeps the short /player/auto/… path).
     qs.set('url', 'vidking:placeholder');
   }
   // Query extras riding on the short path refine the expansion: ?t=0

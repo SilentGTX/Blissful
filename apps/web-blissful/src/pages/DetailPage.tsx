@@ -92,17 +92,18 @@ export default function DetailPage() {
   const lastPlayedPin = useMemo(() => {
     if (!lastStream?.url || !type || !id) return null;
     const vid = isSeriesLike && selectedVideoId ? selectedVideoId : null;
-    // Web resume is ALWAYS vidking-first: the pin is a short /player/vidking/…
-    // URL, not the exact saved (often RD) stream. When vidking is up you get
-    // vidking; when its CDN is down the player self-falls-back to RD. Desktop
-    // keeps the exact saved container so mpv plays it natively at full quality.
+    // Web resume is ALWAYS auto-resolve: the pin is a short /player/auto/…
+    // URL, not the exact saved (often RD) stream. RD-key profiles get RD-first;
+    // otherwise vidking-first, with the player self-falling-back to RD if
+    // vidking's CDN is down. Desktop keeps the exact saved container so mpv
+    // plays it natively at full quality.
     const playerLink = isNativeShell()
       ? `/player?${(() => {
           const p = new URLSearchParams({ url: lastStream.url, type, id });
           if (vid) p.set('videoId', vid);
           return p.toString();
         })()}`
-      : buildPlayerPath({ source: 'vidking', id, videoId: vid, title: lastStream.title ?? null });
+      : buildPlayerPath({ source: 'auto', id, videoId: vid, title: lastStream.title ?? null });
     return {
       url: lastStream.url,
       title: lastStream.title ?? null,
@@ -630,11 +631,12 @@ export default function DetailPage() {
   const navigateToPlayer = useCallback(
     (overrideVideoId: string | null, resumeAtSec: number) => {
       if (!type || !id) return;
-      // Short, vidking-first URL. The resume position stays OUT of the URL —
-      // the player looks it up from Continue-Watching progress. `start-over`
-      // (resumeAtSec <= 0) forces t=0 so that lookup is skipped.
+      // Short, auto-resolve URL (RD-first for RD-key profiles, vidking-first
+      // otherwise). The resume position stays OUT of the URL — the player looks
+      // it up from Continue-Watching progress. `start-over` (resumeAtSec <= 0)
+      // forces t=0 so that lookup is skipped.
       let link = buildPlayerPath({
-        source: 'vidking',
+        source: 'auto',
         id,
         videoId: overrideVideoId ?? null,
         title: meta?.meta?.name ?? null,

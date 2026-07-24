@@ -8,12 +8,14 @@
 //
 // These helpers express the SAME playback intent as a short path:
 //
-//   /player/vidking/tt2861424:9:1/Rick.and.Morty.S09E01
+//   /player/auto/tt2861424:9:1/Rick.and.Morty.S09E01
 //   /player/rd/tt2861424:9:1/Rick.and.Morty.S09E01.1080p.Slurpuff
-//   /player/vidking/tt0137523/Fight.Club                (movie)
+//   /player/auto/tt0137523/Fight.Club                  (movie)
 //
 // The path carries only what the player can't re-derive: the SOURCE
-// (vidking = resolve fresh, vidking-first; rd = a Real-Debrid release)
+// (auto = resolve fresh — RD-first for profiles with a Real-Debrid key,
+// vidking-first otherwise; rd = a specific Real-Debrid release; `vidking`
+// is the legacy alias for `auto`, still parsed so old links keep working)
 // and the machine id (`<imdbId>` for a movie, `<imdbId>:<season>:<episode>`
 // for an episode). The trailing segment is a cosmetic slug — ignored on
 // parse, present only so the URL reads like the thing you're watching.
@@ -22,7 +24,10 @@
 // vidking / rd-fallback resolve. The legacy query form still parses, so
 // old bookmarks and shared links keep working.
 
-export type PlayerSource = 'vidking' | 'rd';
+// `auto` is the neutral default (resolve fresh; RD-first for RD-key profiles).
+// `vidking` is the legacy alias — identical behavior, kept so old bookmarks and
+// shared links still parse. `rd` targets a specific Real-Debrid release.
+export type PlayerSource = 'vidking' | 'rd' | 'auto';
 
 export type PlayerTarget = {
   source: PlayerSource;
@@ -82,7 +87,7 @@ export function buildPlayerPath(params: {
 // slash. The id segment decides movie vs series: two colons (`tt…:s:e`) =
 // an episode, otherwise a movie.
 export function parsePlayerPath(pathname: string): PlayerTarget | null {
-  const m = /^\/player\/(vidking|rd)\/([^/]+)(?:\/.*)?$/.exec(pathname);
+  const m = /^\/player\/(vidking|rd|auto)\/([^/]+)(?:\/.*)?$/.exec(pathname);
   if (!m) return null;
   const source = m[1] as PlayerSource;
   let seg: string;

@@ -42,6 +42,11 @@ describe('buildPlayerPath', () => {
       '/player/vidking/tt0137523/Fight.Club',
     );
   });
+  it('builds an auto path (the neutral default — no "vidking" in the URL)', () => {
+    expect(
+      buildPlayerPath({ source: 'auto', id: 'tt11198330', videoId: 'tt11198330:2:6', title: 'House of the Dragon' }),
+    ).toBe('/player/auto/tt11198330:2:6/House.of.the.Dragon');
+  });
   it('builds an rd path from a release name', () => {
     expect(
       buildPlayerPath({ source: 'rd', id: 'tt2861424', videoId: 'tt2861424:9:1', title: 'Rick.and.Morty.S09E01.1080p.Slurpuff' }),
@@ -82,6 +87,14 @@ describe('parsePlayerPath', () => {
   });
   it('returns null for the legacy query form', () => {
     expect(parsePlayerPath('/player')).toBeNull();
+  });
+  it('parses an auto path', () => {
+    expect(parsePlayerPath('/player/auto/tt11198330:2:6/House.of.the.Dragon')).toEqual({
+      source: 'auto',
+      type: 'series',
+      id: 'tt11198330',
+      videoId: 'tt11198330:2:6',
+    });
   });
   it('returns null for an unknown source', () => {
     expect(parsePlayerPath('/player/torrent/tt0137523')).toBeNull();
