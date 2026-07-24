@@ -332,10 +332,12 @@ function requestJson(urlStr, { method = 'GET', headers = {}, body = null, timeou
   return new Promise((resolve, reject) => {
     try {
       const u = new url.URL(urlStr);
-      const req = https.request(
+      const lib = u.protocol === 'http:' ? http : https;
+      const req = lib.request(
         {
           method,
           hostname: u.hostname,
+          port: u.port || undefined,
           path: u.pathname + u.search,
           headers: { 'User-Agent': 'blissful-proxy', Accept: 'application/json', ...headers },
         },
@@ -678,6 +680,78 @@ async function skipdbIntervals({ imdbId, season, episode, episodeLength }) {
   skipdbCache.set(key, { intervals, exp: Date.now() + TIDB_TTL });
   jsonCacheSet('skipdb', key, intervals, intervals.length ? 30 * 24 * 60 * 60 * 1000 : TIDB_TTL);
   return intervals;
+}
+
+// ── Media-fingerprint intro detection (Jellyfin Intro-Skipper style) ─────────
+// Last resort when the crowd DBs miss: the Mac transcoder fpcalc-compares two
+// episodes of the season and returns the audio window they SHARE near the start
+// (the title sequence). Derived from the media itself, so it covers titles no
+// database has. Cost (resolve 2 episodes + fingerprint) is ~30s, so this is
+// ASYNC + cached PER EPISODE: a miss kicks a background job and returns nothing;
+// the window shows on a later fetch — same analyze-then-skip model as Jellyfin.
+const fpskipCache = new Map(); // `${imdb}:${s}:${e}` -> { intervals, exp }
+const FPSKIP_TTL = 6 * 60 * 60 * 1000;
+const fpInflight = new Set();
+
+// Best direct RD URL for one episode, via our own /rd-fallback (reuses its
+// torrentio+RD resolution and DMCA probing). null if nothing resolves.
+async function fpResolveEpisode(imdbId, season, episode) {
+  const id = `${imdbId}:${season}:${episode}`;
+  const r = await requestJson(
+    `http://127.0.0.1:${PORT}/rd-fallback?type=series&id=${encodeURIComponent(id)}`,
+    { timeoutMs: 30000 },
+  ).catch(() => null);
+  const streams = r && r.json && Array.isArray(r.json.streams) ? r.json.streams : [];
+  return streams.length && streams[0].url ? streams[0].url : null;
+}
+
+async function runFpJob(imdbId, season, episode, key) {
+  try {
+    if (!TRANSCODE_HOST_URL || !TRANSCODE_HOST_SECRET) throw new Error('no host transcoder');
+    const targetUrl = await fpResolveEpisode(imdbId, season, episode);
+    if (!targetUrl) throw new Error('target episode did not resolve');
+    // Compare against an adjacent episode (same intro, different content).
+    const refEp = episode > 1 ? episode - 1 : episode + 1;
+    const refUrl = await fpResolveEpisode(imdbId, season, refEp);
+    if (!refUrl) throw new Error('sibling episode did not resolve');
+    const hostUrl = `${TRANSCODE_HOST_URL.replace(/\/+$/, '')}/detect-skips`
+      + `?secret=${encodeURIComponent(TRANSCODE_HOST_SECRET)}`
+      + `&url=${encodeURIComponent(targetUrl)}&ref=${encodeURIComponent(refUrl)}`;
+    const resp = await requestJson(hostUrl, { timeoutMs: 200000 }).catch(() => null);
+    const intro = resp && resp.json && resp.json.intro ? resp.json.intro : null;
+    const intervals = [];
+    if (intro && Number.isFinite(intro.start) && Number.isFinite(intro.end) && intro.end > intro.start) {
+      intervals.push({ type: 'intro', start: intro.start, end: intro.end });
+    }
+    fpskipCache.set(key, { intervals, exp: Date.now() + FPSKIP_TTL });
+    // 30-day cache for a hit; an empty result expires with FPSKIP_TTL so a
+    // later re-analysis (e.g. once the episodes are RD-cached) can still land.
+    jsonCacheSet('fpskip', key, intervals, intervals.length ? 30 * 24 * 60 * 60 * 1000 : FPSKIP_TTL);
+    appendPlayerLog(`[fpskip] ${key} -> ${intervals.length ? `intro ${intervals[0].start}-${intervals[0].end}s` : 'none'}`);
+  } catch (e) {
+    appendPlayerLog(`[fpskip] ${key} job failed: ${String((e && e.message) || e)}`);
+  } finally {
+    fpInflight.delete(key);
+  }
+}
+
+/** Fingerprint-based intro intervals (seconds). Returns a cached result at
+ *  once; on a miss, kicks a background analysis and returns [] for now. */
+async function fpIntroIntervals({ imdbId, season, episode }) {
+  if (!/^tt\d+$/.test(imdbId || '') || !season || !episode) return [];
+  const key = `${imdbId}:${season}:${episode}`;
+  const c = fpskipCache.get(key);
+  if (c && c.exp > Date.now()) return c.intervals;
+  const disk = await jsonCacheGet('fpskip', key);
+  if (disk !== undefined) {
+    fpskipCache.set(key, { intervals: disk, exp: Date.now() + FPSKIP_TTL });
+    return disk;
+  }
+  if (!fpInflight.has(key)) {
+    fpInflight.add(key);
+    void runFpJob(imdbId, season, episode, key);
+  }
+  return [];
 }
 
 const TEXT_SUBTITLE_CODECS = new Set([
@@ -2056,6 +2130,13 @@ const server = http.createServer((req, res) => {
         if (!intervals.length && /^tt\d+$/.test(imdbId)) {
           const sdb = await skipdbIntervals({ imdbId, season, episode, episodeLength });
           if (sdb.length) { intervals = sdb; source = 'skipdb'; }
+        }
+        // 4) STILL nothing → derive it from the media itself (host-side audio
+        //    fingerprinting). Async: first miss kicks a background analysis and
+        //    returns nothing; the intro window appears on a later fetch.
+        if (!intervals.length && /^tt\d+$/.test(imdbId) && episode) {
+          const fp = await fpIntroIntervals({ imdbId, season, episode });
+          if (fp.length) { intervals = fp; source = 'fingerprint'; }
         }
         ok({ found: intervals.length > 0, source, intervals });
       } catch (e) {

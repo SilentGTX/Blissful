@@ -25,6 +25,10 @@
     <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     <key>FFMPEG_BIN</key>
     <string>/opt/homebrew/bin/ffmpeg</string>
+    <!-- Chromaprint's fpcalc, for /detect-skips intro fingerprinting.
+         Install with `brew install chromaprint`. -->
+    <key>FPCALC_BIN</key>
+    <string>/opt/homebrew/bin/fpcalc</string>
   </dict>
 
   <key>RunAtLoad</key>

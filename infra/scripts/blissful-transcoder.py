@@ -23,6 +23,7 @@ Driven by infra/launchd/com.budinoff.blissful-transcoder.plist.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import signal
 import subprocess
@@ -234,6 +235,91 @@ def seg_args(url: str, n: int, audio_idx: int) -> list[str]:
     ]
 
 
+# ── Intro detection (Chromaprint / Jellyfin Intro-Skipper approach) ──────────
+# fpcalc-fingerprint the first N seconds of two episodes of the same season and
+# find the audio segment they SHARE near the start — that's the intro/title
+# sequence. Crowd DBs (TheIntroDB/SkipDB) miss most titles; this derives the
+# window from the media itself, so it works for anything with a repeated intro.
+FPCALC = os.environ.get("FPCALC_BIN", "fpcalc")
+FP_LENGTH = int(os.environ.get("INTRO_FP_LENGTH", "420"))  # seconds analyzed from start
+FP_HAMMING_MAX = 6      # <=6/32 differing bits => same fingerprint point
+FP_GAP_MAX = 16         # ~2s of mismatch ends a shared run
+FP_MIN_RUN_SEC = 10     # a shared run shorter than this isn't an intro
+FP_DENSITY_MIN = 0.6    # matched fraction inside the run (rejects coincidence)
+_fp_cache: dict[str, tuple[list[int], float]] = {}  # url -> (fingerprint, sec/point)
+_fp_lock = threading.Lock()
+
+
+def _fingerprint(url: str) -> tuple[list[int], float]:
+    with _fp_lock:
+        hit = _fp_cache.get(url)
+    if hit is not None:
+        return hit
+    out = subprocess.run(
+        [FPCALC, "-raw", "-length", str(FP_LENGTH), url],
+        capture_output=True, text=True, timeout=180,
+    )
+    dur, fp = None, None
+    for line in out.stdout.splitlines():
+        if line.startswith("DURATION="):
+            try: dur = float(line.split("=", 1)[1])
+            except ValueError: pass
+        elif line.startswith("FINGERPRINT="):
+            fp = [int(x) for x in line.split("=", 1)[1].split(",") if x]
+    if not fp:
+        raise RuntimeError((out.stderr or "fpcalc: no fingerprint")[-200:])
+    # DURATION is the FULL media length; the fingerprint only covers the first
+    # FP_LENGTH seconds, so per-point time = analyzed span / point count.
+    analyzed = min(FP_LENGTH, dur) if dur else FP_LENGTH
+    result = (fp, analyzed / len(fp))
+    with _fp_lock:
+        if len(_fp_cache) > 64:
+            _fp_cache.clear()
+        _fp_cache[url] = result
+    return result
+
+
+def _detect_intro(fp_t: list[int], fp_r: list[int], sec: float):
+    """Return (start_s, end_s, density) of the segment fp_t shares with fp_r
+    near the start, or None. fp_t is the target; the window is in its timeline."""
+    idx: dict[int, list[int]] = {}
+    for j, v in enumerate(fp_r):
+        idx.setdefault(v, []).append(j)
+    offsets: dict[int, int] = {}
+    for i, v in enumerate(fp_t):
+        for j in idx.get(v, ()):
+            offsets[i - j] = offsets.get(i - j, 0) + 1
+    if not offsets:
+        return None
+    best_off = max(offsets, key=offsets.get)
+    best = (0, 0, 0, 0)  # (len, start, end, hits)
+    start = hits = gap = 0
+    have = False
+    n_r = len(fp_r)
+    for i in range(len(fp_t)):
+        j = i - best_off
+        ok = 0 <= j < n_r and bin(fp_t[i] ^ fp_r[j]).count("1") <= FP_HAMMING_MAX
+        if ok:
+            if not have:
+                start, hits, gap, have = i, 0, 0, True
+            hits += 1
+            gap = 0
+            if i - start > best[0]:
+                best = (i - start, start, i, hits)
+        elif have:
+            gap += 1
+            if gap > FP_GAP_MAX:
+                have = False
+    runlen, s_i, e_i, hit = best
+    if runlen <= 0:
+        return None
+    density = hit / runlen
+    length_s = (e_i - s_i) * sec
+    if length_s < FP_MIN_RUN_SEC or density < FP_DENSITY_MIN:
+        return None
+    return (s_i * sec, e_i * sec, density)
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -248,6 +334,40 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if u.path == "/detect-skips":
+            # Intro detection: compare a target episode against a sibling and
+            # return the shared intro window (seconds) in the target's timeline.
+            if not SECRET or q.get("secret", [""])[0] != SECRET:
+                self.send_error(403)
+                return
+            url = q.get("url", [""])[0]      # target episode
+            ref = q.get("ref", [""])[0]      # sibling episode (same season)
+            if not url.startswith("http") or not ref.startswith("http"):
+                self.send_error(400)
+                return
+            payload = {"intro": None}
+            try:
+                fp_t, sec = _fingerprint(url)
+                fp_r, _ = _fingerprint(ref)
+                hit = _detect_intro(fp_t, fp_r, sec)
+                if hit:
+                    start, end, density = hit
+                    payload = {"intro": {"start": round(start, 1), "end": round(end, 1)},
+                               "density": round(density, 3)}
+                    log(f"detect-skips intro {start:.1f}-{end:.1f}s density={density:.2f}")
+                else:
+                    log("detect-skips: no shared intro")
+            except Exception as e:  # noqa: BLE001
+                log(f"detect-skips error: {e}")
+                payload = {"intro": None, "error": str(e)[:200]}
+            body = json.dumps(payload).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(body)
             return
