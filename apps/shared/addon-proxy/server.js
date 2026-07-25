@@ -2092,13 +2092,26 @@ const server = http.createServer((req, res) => {
     // the actual subtitle text is fetched + cached server-side (see
     // /subtitle-text). Applied at SEND time so lists already cached with
     // upstream urls are rewritten too.
+    // ABSOLUTE url, not path-relative: the web player would cope with either,
+    // but the desktop/mpv path wraps a subtitle url into
+    // `/addon-proxy?url=<sub>` and stremio-service's `/subtitles.vtt?from=<sub>`
+    // — both of which need a fetchable absolute URL and fail on a bare path
+    // ("Subtitles failed to load"). Mirrors rewriteHlsPlaylist's publicOrigin:
+    // CF Tunnel + Traefik terminate TLS at the edge, so X-Forwarded-Proto says
+    // "http" while the client is on https — force https for our public host.
+    const subHost = req.headers['x-forwarded-host'] || req.headers.host || '';
+    const subProto = String(subHost).endsWith('blissful.budinoff.com')
+      ? 'https'
+      : (String(req.headers['x-forwarded-proto'] || '').toLowerCase()
+        || (req.socket && req.socket.encrypted ? 'https' : 'http'));
+    const publicOrigin = subHost ? `${subProto}://${subHost}` : '';
     const rewriteUrls = (payload) => {
       if (!provider.proxyContent) return payload;
       return {
         ...payload,
         subtitles: (payload.subtitles || []).map((s) =>
           s && typeof s.url === 'string' && /^https?:\/\//i.test(s.url)
-            ? { ...s, url: `/opensubs?src=${encodeURIComponent(s.url)}` }
+            ? { ...s, url: `${publicOrigin}/opensubs?src=${encodeURIComponent(s.url)}` }
             : s,
         ),
       };
