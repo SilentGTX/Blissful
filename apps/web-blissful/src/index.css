@@ -43,7 +43,9 @@
 
   body {
     margin: 0;
-    font-family: "Inter", system-ui, sans-serif;
+    /* The brand body face (CLAUDE.md), matching the TV app. "Inter" was
+       named here but never loaded, so body text fell back to system-ui. */
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
     /* Stable dark base so the brief gap between route transitions
        (especially navigating into /player while its chunk loads)
        doesn't flash the browser's default white background. */
@@ -194,14 +196,22 @@
       padding 340ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
+  /* TV TopBar: the bar itself carries NO surface — only the search pill and
+     the avatar do — so the immersive backdrop runs unbroken to the top of the
+     window. It used to be an opaque #2a2a2a slab across the full width. */
   .bliss-nav-bar {
-    background: #2a2a2a;
-    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.25);
+    background: transparent;
+    box-shadow: none;
   }
 
+  /* TV TopBar `Glass`: a cool-glass base gradient with a white sheen on top. */
   .bliss-nav-input {
-    background: #1f1f1f;
-    border: 1px solid #2f2f2f;
+    background:
+      linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05)),
+      linear-gradient(135deg, rgba(124, 144, 176, 0.1), rgba(18, 24, 36, 0.18));
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
   }
 
   .bliss-top-nav .bliss-nav-input:focus-within {
@@ -465,7 +475,15 @@ html:not(.dark) .bliss-sidebar {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   box-shadow: none;
-  border: 1px solid #2c2c2c;
+  /* TV NavRail Row: the border is transparent until the row is focused, so the
+     rail reads as a list of labels rather than a stack of boxes. */
+  border: 1px solid transparent;
+}
+
+.bliss-sidebar-link:hover,
+.bliss-sidebar-link:focus-visible,
+.bliss-sidebar-link.is-active {
+  border-color: var(--bliss-accent);
 }
 
 html:not(.dark) .bliss-sidebar-link.solid-surface {
@@ -482,28 +500,18 @@ html:not(.dark) .bliss-sidebar-link {
   color: rgba(15, 22, 40, 0.72);
 }
 
-.bliss-sidebar-link:hover {
-  color: #ffffff;
-  background: transparent;
-  border-color: transparent;
-}
-
-.dark .bliss-sidebar-link:hover {
-  color: #ffffff;
-  background: transparent;
-  border-color: transparent;
-}
-
+.bliss-sidebar-link:hover,
+.dark .bliss-sidebar-link:hover,
 html:not(.dark) .bliss-sidebar-link:hover {
   color: #ffffff;
   background: transparent;
-  border-color: transparent;
+  border-color: var(--bliss-accent);
 }
 
 .bliss-sidebar-link.is-active {
   background: transparent;
   color: var(--bliss-accent);
-  border-color: transparent;
+  border-color: var(--bliss-accent);
 }
 
 /* ── Retro "glitch" hover (port of hermes-agent.nousresearch.com) ────
@@ -730,16 +738,11 @@ html:not(.dark) .bliss-sidebar-link:hover {
   animation: bliss-tooltip-in 120ms ease-out;
 }
 
-.dark .bliss-sidebar-link.is-active {
-  background: transparent;
-  color: var(--bliss-accent);
-  border-color: transparent;
-}
-
+.dark .bliss-sidebar-link.is-active,
 html:not(.dark) .bliss-sidebar-link.is-active {
   background: transparent;
   color: var(--bliss-accent);
-  border-color: transparent;
+  border-color: var(--bliss-accent);
 }
 
 .bliss-sidebar-label {
@@ -1260,7 +1263,7 @@ html:not(.dark) .bliss-sidebar .toggle {
 }
 
 .netflix-hero-title {
-  font-family: "Instrument Serif", serif;
+  font-family: "Fraunces", Georgia, serif;
   font-size: clamp(3rem, 4.6vw, 5.2rem);
   line-height: 1.02;
   color: #fff;
@@ -1522,7 +1525,7 @@ html:not(.dark) .bliss-sidebar .toggle {
 
 /* Netflix UI mode */
 html[data-ui="netflix"] body {
-  font-family: "Inter", sans-serif;
+  font-family: "IBM Plex Sans", sans-serif;
   color: #e6e6e6;
   background: #0b0b0b;
 }
@@ -1890,7 +1893,7 @@ html[data-ui="netflix"] .netflix-detail .action-button-Pn4hZ.is-active {
 }
 
 .netflix-overlay-title {
-  font-family: "Instrument Serif", serif;
+  font-family: "Fraunces", Georgia, serif;
   font-size: clamp(0.95rem, 0.35vw + 0.8rem, 1.25rem);
   font-weight: 600;
   letter-spacing: 0.01em;
@@ -2249,6 +2252,42 @@ html[data-ui="netflix"] .netflix-detail .action-button-Pn4hZ.is-active {
     );
 }
 
+/* Detail-page scrims — TV: DetailScreen.tsx. Directional (left for the text
+   column, bottom for the episode rail) rather than one flat dim, so the art
+   stays bright on the side that isn't carrying text. */
+/* The TV keeps the detail art in the RIGHT 72% so the text column sits on a
+   clean panel. Full-bleed art plus a hard left scrim just erased the left half
+   of the picture, so match the TV and inset the layer instead. Desktop only —
+   the mobile layout uses the art as a top hero. */
+@media (min-width: 1024px) {
+  .background-image-layer-wJa90 {
+    left: 28%;
+  }
+
+  .background-image-tSjYu {
+    object-position: center;
+  }
+}
+
+.bliss-detail-scrims {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      to right,
+      #07090d 32%,
+      rgba(7, 9, 13, 0.55) 52%,
+      transparent 76%
+    ),
+    linear-gradient(
+      to top,
+      #07090d 6%,
+      rgba(7, 9, 13, 0.4) 32%,
+      transparent 60%
+    );
+}
+
 /* ---- Featured info panel (TV: HomeHero.tsx `InfoPanel`) ------------------ */
 .bliss-info-title {
   font-family: var(--bliss-display);
@@ -2424,4 +2463,34 @@ html[data-ui="netflix"] .netflix-detail .action-button-Pn4hZ.is-active {
   display: block;
   height: 100%;
   background: var(--bliss-accent);
+}
+
+/* Brand heading face. Replaces `font-[Instrument_Serif]`, which named a font
+   the app never loaded — every "serif" heading was silently rendering in the
+   browser's default serif. */
+.bliss-heading {
+  font-family: "Fraunces", Georgia, serif;
+}
+
+/* ---- Nav rail (TV: components/NavRail.tsx, expanded state) ---------------
+   Flush to the left edge, full height, rounded on the RIGHT corners only,
+   near-opaque panel + hairline right border. The old sidebar was a floating
+   rounded card with a glass sheen and a drop shadow, which read as a widget
+   sitting on the page rather than the TV's edge-anchored rail. */
+.bliss-rail-panel {
+  background: rgba(10, 11, 15, 0.99);
+  border-right: 1px solid rgba(255, 255, 255, 0.07);
+  border-top-right-radius: var(--bliss-tile-radius);
+  border-bottom-right-radius: var(--bliss-tile-radius);
+}
+
+html:not(.dark) .bliss-rail-panel {
+  background: #f2f2f2;
+  border-right-color: rgba(0, 0, 0, 0.08);
+}
+
+/* The rail owns the left edge, so the wrapper's inset padding goes away. */
+.bliss-vertical-nav:has(.bliss-rail) {
+  padding: 0;
+  width: calc(var(--vertical-nav-bar-size) - var(--horizontal-nav-margin));
 }

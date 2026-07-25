@@ -191,7 +191,7 @@ export default function SettingsPage() {
         <div className="solid-surface rounded-[28px] bg-white/6 p-6 ">
           <div className="flex items-center justify-between">
             <div>
-              <div className="font-[Instrument_Serif] text-2xl font-semibold">Settings</div>
+              <div className="bliss-heading text-2xl font-semibold">Settings</div>
               <div className="text-sm text-foreground/60">Customize your experience</div>
             </div>
           </div>

@@ -59,7 +59,7 @@ export function WhoWatchingModal({
             </BlissModal.Header>
             <BlissModal.Body className="px-0">
               <div className="solid-surface mx-auto w-full max-w-3xl rounded-[28px] bg-white/10 p-6 md:p-8">
-                <div className="text-center font-[Instrument_Serif] text-4xl font-semibold tracking-tight">
+                <div className="text-center bliss-heading text-4xl font-semibold tracking-tight">
                   Who's watching?
                 </div>
 

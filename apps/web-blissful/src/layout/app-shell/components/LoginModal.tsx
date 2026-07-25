@@ -152,7 +152,7 @@ export function LoginModal() {
             <BlissModal.Header className="sr-only"><BlissModal.Heading>Login</BlissModal.Heading></BlissModal.Header>
             <BlissModal.Body className="px-0">
               <div className="solid-surface mx-auto w-full rounded-[28px] bg-white/10 p-6">
-                <div className="font-[Instrument_Serif] text-2xl font-semibold tracking-tight">
+                <div className="bliss-heading text-2xl font-semibold tracking-tight">
                   {isRegisterMode ? 'Create account' : 'Login'}
                 </div>
                 <div className="mt-1 text-sm text-foreground/70">

@@ -175,8 +175,12 @@ export function DesktopNav(props: DesktopNavProps) {
   }, [location.pathname]);
 
   return (
-    <div className={'rounded-[28px] bliss-sidebar relative h-full w-full overflow-visible' + (collapsed ? ' closed' : '')}>
-      <div className="solid-surface relative flex h-full w-full flex-col overflow-hidden rounded-[28px] bg-white/6 shadow-xl antialiased">
+    // The TV app's expanded NavRail: a full-height panel flush to the left
+    // edge, rounded on the RIGHT corners only, with a hairline right border —
+    // "no glass pill / sheen" (NavRail.tsx). The floating rounded card it
+    // replaced fought the full-bleed backdrop behind it.
+    <div className={'bliss-rail relative h-full w-full overflow-visible' + (collapsed ? ' closed' : '')}>
+      <div className="bliss-rail-panel relative flex h-full w-full flex-col overflow-hidden antialiased">
         {/* Logo bar — margin clamps with viewport so the header
             shrinks on shorter screens. The logo itself stays a fixed
             size so the brand mark doesn't get tiny. */}

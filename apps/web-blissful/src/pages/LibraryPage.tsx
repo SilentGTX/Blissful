@@ -167,7 +167,7 @@ export default function LibraryPage() {
     return (
       <div className="mt-4">
         <div className="solid-surface rounded-[28px] bg-white/6 p-6">
-          <div className="font-[Instrument_Serif] text-2xl font-semibold">Library</div>
+          <div className="bliss-heading text-2xl font-semibold">Library</div>
           <div className="mt-1 text-sm text-foreground/60">Login to see your Stremio library.</div>
           <div className="mt-5">
             <BlissButton tone="solid" onPress={openLogin}>

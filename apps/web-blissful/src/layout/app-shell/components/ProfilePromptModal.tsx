@@ -27,7 +27,7 @@ export function ProfilePromptModal({ isOpen, initialName, onSave, onCancel }: Pr
             </BlissModal.Header>
             <BlissModal.Body className="px-0">
               <div className="solid-surface mx-auto w-full max-w-xl rounded-[28px] bg-white/10 p-6">
-                <div className="font-[Instrument_Serif] text-3xl font-semibold">Who's watching?</div>
+                <div className="bliss-heading text-3xl font-semibold">Who's watching?</div>
                 <div className="mt-1 text-sm text-foreground/70">Set your display name and avatar.</div>
 
                 <div className="mt-4">
