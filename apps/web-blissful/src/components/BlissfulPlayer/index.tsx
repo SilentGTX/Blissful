@@ -2033,9 +2033,19 @@ export default function BlissfulPlayer(props: {
       // "OpenSubs" chip in the variants drill-down.
       const OPENSUBS_BASE = 'https://opensubtitles-v3.strem.io';
       const OPENSUBS_KEY = `${OPENSUBS_BASE}::built-in`;
-      const fetchOpenSubs = async () => {
+      // Built-in providers, fetched for EVERY user (no install needed) through
+      // the proxy's cached /opensubs?provider= endpoint. OpenSubtitles' coverage
+      // is uneven per title — Troy, for one, returns 26 subtitles and not a
+      // single English — so a second provider is what keeps a title from having
+      // no usable subs at all.
+      const BUILTIN_SUB_PROVIDERS: Array<{ provider: string; origin: string }> = [
+        { provider: 'opensubtitles', origin: 'OpenSubtitles' },
+        { provider: 'bgsubs', origin: 'Bulgarian Subs' },
+      ];
+      const fetchBuiltinSubs = async ({ provider, origin }: { provider: string; origin: string }) => {
         try {
           const osQs = new URLSearchParams({ type: String(type), id: baseId });
+          if (provider !== 'opensubtitles') osQs.set('provider', provider);
           if (hashInfo?.hash) {
             osQs.set('videoHash', hashInfo.hash);
             osQs.set('videoSize', String(hashInfo.size));
@@ -2053,10 +2063,10 @@ export default function BlissfulPlayer(props: {
             const lang = sub.lang ?? 'unknown';
             if (!uniq.has(sub.url)) {
               uniq.set(sub.url, {
-                key: `${OPENSUBS_KEY}::${sub.id ?? sub.url}`,
+                key: `${OPENSUBS_KEY}::${provider}::${sub.id ?? sub.url}`,
                 lang,
                 label: sub.lang ?? 'Subtitles',
-                origin: 'OpenSubtitles',
+                origin,
                 url: sub.url,
               });
               scheduleFlush();
@@ -2069,7 +2079,7 @@ export default function BlissfulPlayer(props: {
       };
 
       await Promise.allSettled([
-        fetchOpenSubs(),
+        ...BUILTIN_SUB_PROVIDERS.map(fetchBuiltinSubs),
         ...addons.map(async (addon) => {
           const baseUrl = addon.transportUrl.replace(/\/manifest\.json$/, '').replace(/\/$/, '');
           const origin = addon.manifest?.name ?? addon.transportUrl;

@@ -166,6 +166,36 @@ test.describe('Player profile preferences (web)', () => {
     await expect(page.locator('[aria-label="Releases"]')).toHaveCount(1, { timeout: 20_000 });
   });
 
+  test('built-in subtitle providers: both OpenSubtitles and Bulgarian are queried', async ({ page }) => {
+    // Both ship for EVERY user (no install), because OpenSubtitles' per-title
+    // coverage is uneven — Troy returns 26 subtitles and zero English.
+    await seedSettings(page, { subtitlesLanguage: 'eng' });
+
+    const providers: string[] = [];
+    await page.route(/\/opensubs\?/, (route) => {
+      const p = new URLSearchParams(new URL(route.request().url()).search).get('provider') ?? 'opensubtitles';
+      providers.push(p);
+      return route.fulfill({
+        json: {
+          subtitles: p === 'bgsubs'
+            ? [{ id: 'bg1', lang: 'bul', url: 'https://e2e-subs.example/bg.srt' }]
+            : [{ id: 'os1', lang: 'spa', url: 'https://e2e-subs.example/es.srt' }],
+        },
+      });
+    });
+    await page.route(/\/probe-streams\?/, (route) => route.fulfill({ json: { subtitles: [] } }));
+    await page.route(/\/transcode-audio\?/, (route) => route.fulfill({ json: { tracks: [] } }));
+    await page.route(/\/transcode\.m3u8\?/, (route) => route.fulfill({ status: 404 }));
+
+    await page.goto(`/player?${new URLSearchParams({
+      type: 'movie', id: 'tt0332452', url: RD_MKV, rdsel: '1', title: 'E2E Subs Providers',
+    })}`);
+
+    await expect
+      .poll(() => [...new Set(providers)].sort(), { timeout: 40_000 })
+      .toEqual(['bgsubs', 'opensubtitles']);
+  });
+
   test('a keyless profile still resolves Videasy first', async ({ page }) => {
     // The inverse guard — RD-first must not leak into non-RD profiles.
     await seedSettings(page, { realDebridApiKey: '' });

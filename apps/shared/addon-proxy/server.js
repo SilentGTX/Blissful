@@ -1833,6 +1833,32 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Built-in subtitle providers, served to EVERY client whether or not the user
+  // installed the addon themselves. Keyed (not URL-passthrough) so this endpoint
+  // can never be used as an open proxy; each provider caches under its own
+  // namespace so one provider's miss never masks another's hit.
+  //
+  // Why a server-side cache matters per provider:
+  //   opensubtitles — the community instance 504s often (overloaded);
+  //   bgsubs        — hosted on Render's free tier, so a cold instance takes
+  //                   ~30-40s to wake. Both are unusable from the browser's
+  //                   short timeout budget, and both serve immutable data for a
+  //                   released title, so one slow fetch warms it for everyone.
+  const SUBTITLE_PROVIDERS = {
+    opensubtitles: {
+      base: 'https://opensubtitles-v3.strem.io',
+      cacheNs: 'opensubs',
+      supportsHash: true, // videoHash/videoSize hit its fast, perfectly-synced path
+      timeoutMs: 22000,
+    },
+    bgsubs: {
+      base: 'https://bulgarian-subs-addon.onrender.com',
+      cacheNs: 'bgsubs',
+      supportsHash: false, // id-only addon; a hash path would 404
+      timeoutMs: 60000, // free-tier cold start
+    },
+  };
+
   // OpenSubtitles v3 with a PERSISTENT server-side cache. The community
   // opensubtitles-v3.strem.io instance 504s often (overloaded), so a fresh
   // browser session frequently gets nothing while a desktop app shows stale
@@ -1840,7 +1866,8 @@ const server = http.createServer((req, res) => {
   // released episode are immutable) + retry with a generous timeout the browser
   // can't afford, so once any client fetches them they're served instantly
   // forever — riding out the addon's outages. videoHash/videoSize (computed by
-  // the player) hit the addon's fast hash-matched path.
+  // the player) hit the addon's fast hash-matched path. `?provider=` selects a
+  // different built-in provider (see SUBTITLE_PROVIDERS).
   if (req.url === '/opensubs' || req.url.startsWith('/opensubs?')) {
     const q = url.parse(req.url, true).query;
     const stype = String(q.type || '').trim();
@@ -1848,11 +1875,17 @@ const server = http.createServer((req, res) => {
     const vh = String(q.videoHash || '').trim();
     const vs = String(q.videoSize || '').trim();
     const cacheOnly = String(q.cacheOnly || '') === '1';
-    if (!stype || !sid) {
+    // Which built-in subtitle addon to query. Allowlisted by KEY so the
+    // endpoint can never be turned into an open proxy, and each provider gets
+    // its own cache namespace. Default keeps every existing caller working.
+    const providerKey = String(q.provider || 'opensubtitles').trim();
+    const provider = SUBTITLE_PROVIDERS[providerKey];
+    if (!stype || !sid || !provider) {
       res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       res.end(JSON.stringify({ subtitles: [] }));
       return;
     }
+    const cacheNs = provider.cacheNs;
     // Episode-level key (type:id) — shared across EVERY torrent of the episode
     // so the cached subs show on all releases, not just the one file we first
     // hashed. Per-file key (incl the hash) only throttles repeat MISSES so a
@@ -1865,15 +1898,15 @@ const server = http.createServer((req, res) => {
     };
     void (async () => {
       // 1. Episode-level subs cached from ANY release → serve to all.
-      const ep = await jsonCacheGet('opensubs', keyEp);
+      const ep = await jsonCacheGet(cacheNs, keyEp);
       if (ep && Array.isArray(ep.subtitles) && ep.subtitles.length) return send(ep);
       // 2. A recent result for THIS exact file (a pre-migration per-file hit, or
       //    a miss we cached to throttle) → serve it. Promote a hit to
       //    episode-level so other releases of this episode get it too.
-      const h = await jsonCacheGet('opensubs', keyHash);
+      const h = await jsonCacheGet(cacheNs, keyHash);
       if (h !== undefined) {
         if (keyHash !== keyEp && Array.isArray(h.subtitles) && h.subtitles.length) {
-          await jsonCacheSet('opensubs', keyEp, h, 30 * 24 * 60 * 60 * 1000);
+          await jsonCacheSet(cacheNs, keyEp, h, 30 * 24 * 60 * 60 * 1000);
         }
         return send(h);
       }
@@ -1887,13 +1920,16 @@ const server = http.createServer((req, res) => {
       const extra = vh
         ? `videoHash=${encodeURIComponent(vh)}${vs ? `&videoSize=${encodeURIComponent(vs)}` : ''}`
         : '';
-      const target = extra
-        ? `https://opensubtitles-v3.strem.io/subtitles/${stype}/${encodeURIComponent(sid)}/${extra}.json`
-        : `https://opensubtitles-v3.strem.io/subtitles/${stype}/${encodeURIComponent(sid)}.json`;
+      // Hash-matched path only where the provider supports it (OpenSubtitles);
+      // others get the plain id lookup.
+      const useHash = extra && provider.supportsHash;
+      const target = useHash
+        ? `${provider.base}/subtitles/${stype}/${encodeURIComponent(sid)}/${extra}.json`
+        : `${provider.base}/subtitles/${stype}/${encodeURIComponent(sid)}.json`;
       let subs = null;
       for (let attempt = 0; attempt < 2 && subs === null; attempt++) {
         try {
-          const r = await requestJson(target, { timeoutMs: 22000 });
+          const r = await requestJson(target, { timeoutMs: provider.timeoutMs });
           if (r.status === 200 && r.json && Array.isArray(r.json.subtitles)) subs = r.json.subtitles;
         } catch { /* 504 / timeout / parse — retry once, then give up */ }
       }
@@ -1901,11 +1937,11 @@ const server = http.createServer((req, res) => {
       if (subs && subs.length) {
         // Success → cache EPISODE-level (30d), so every release of this episode
         // gets the subs from now on.
-        await jsonCacheSet('opensubs', keyEp, payload, 30 * 24 * 60 * 60 * 1000);
+        await jsonCacheSet(cacheNs, keyEp, payload, 30 * 24 * 60 * 60 * 1000);
       } else {
         // Miss → throttle re-fetch for THIS file only (30 min); leave the
         // episode key open so another release can still populate it.
-        await jsonCacheSet('opensubs', keyHash, payload, 30 * 60 * 1000);
+        await jsonCacheSet(cacheNs, keyHash, payload, 30 * 60 * 1000);
       }
       send(payload);
     })();
