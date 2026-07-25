@@ -896,9 +896,9 @@ const SUBTITLE_PROVIDERS = {
   },
   bgsubs: {
     base: 'https://bulgarian-subs-addon.onrender.com',
-    // ns bumped to invalidate lists cached before entries were verified +
-    // runtime-annotated — those hold dead links and unlabelled rows.
-    cacheNs: 'bgsubs2',
+    // ns bumped when the list contract changes. bgsubs3: only VERIFIED entries
+    // are served (bgsubs2 lists still carry unverified rows that fail on click).
+    cacheNs: 'bgsubs3',
     supportsHash: false, // id-only addon; a hash path would 404
     timeoutMs: 60000, // free-tier cold start
     // Serve the subtitle FILES through us too, not just the list. The list is
@@ -2167,10 +2167,29 @@ const server = http.createServer((req, res) => {
       // attach each one's own runtime, the only thing that distinguishes
       // otherwise-identical rows (theatrical vs Director's Cut timings).
       if (provider.proxyContent && subs && subs.length) {
-        const before = subs.length;
-        subs = await enrichSubtitleEntries(subs);
-        const annotated = subs.filter((s) => typeof s.runtimeSec === 'number').length;
-        console.log(`Subs enrich ${providerKey} ${sid}: ${before} -> ${subs.length} (${annotated} timed)`);
+        const all = subs;
+        const first = await enrichSubtitleEntries(all, { max: 12, deadlineMs: 25000 });
+        const verified = first.filter((s) => typeof s.runtimeSec === 'number');
+        // Serve ONLY verified entries. Unverified ones are not "probably fine":
+        // measured on Troy, every entry past the enrichment budget failed to
+        // fetch, so listing them just hands the user rows that die on click
+        // ("Subtitles failed to load"). Falling back to the unverified list only
+        // if nothing at all verified, so a cold provider still shows something.
+        subs = verified.length ? verified : first;
+        console.log(`Subs enrich ${providerKey} ${sid}: ${all.length} -> ${subs.length} verified`);
+        // Finish the job in the background and replace the cached list with the
+        // complete verified set — each file's text is cached per URL, so this
+        // cost is paid once per title and the next open gets every good entry.
+        void (async () => {
+          try {
+            const full = await enrichSubtitleEntries(all, { max: all.length, deadlineMs: 240000 });
+            const good = full.filter((s) => typeof s.runtimeSec === 'number');
+            if (good.length > verified.length) {
+              await jsonCacheSet(cacheNs, keyEp, { subtitles: good }, 30 * 24 * 60 * 60 * 1000);
+              console.log(`Subs enrich ${providerKey} ${sid}: background pass -> ${good.length} verified`);
+            }
+          } catch { /* best-effort warm-up */ }
+        })();
       }
       const payload = { subtitles: subs || [] };
       if (subs && subs.length) {
