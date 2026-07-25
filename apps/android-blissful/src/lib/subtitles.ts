@@ -96,12 +96,16 @@ export function subtitleLangLabel(lang: string): string {
 }
 
 /** Subtitle LANGUAGE sort priority — ported from the WEB player's `langPriority`
- *  (subtitleUtils.ts): device-local subs first, then English, then everything
- *  else (the caller breaks ties alphabetically). Higher = earlier. */
+ *  (subtitleUtils.ts) and kept identical to it: English, then Bulgarian, then
+ *  device-local subs, then everything else (the caller breaks ties
+ *  alphabetically). Higher = earlier. "Off" is not a language — the drawer
+ *  renders it above this list. */
 export function langPriority(lang: string): number {
   const l = lang.trim().toLowerCase();
+  const label = subtitleLangLabel(l);
+  if (label === 'English') return 4;
+  if (label === 'Bulgarian') return 3;
   if (l === 'local') return 2;
-  if (subtitleLangLabel(l) === 'English') return 1;
   return 0;
 }
 

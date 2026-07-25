@@ -113,12 +113,23 @@ describe('languageMatch', () => {
 });
 
 describe('langPriority', () => {
-  it('ranks every English spelling above other languages, below Local', () => {
-    expect(langPriority('local')).toBe(2);
-    expect(langPriority('en')).toBe(1);
-    expect(langPriority('eng')).toBe(1);
-    expect(langPriority('english')).toBe(1);
-    expect(langPriority('en-US')).toBe(1);
-    expect(langPriority('fr')).toBe(0);
+  // Fixed household order: English, then Bulgarian, ahead of everything else.
+  // ("Off" isn't a language — each player renders it above the list.)
+  it('puts every English spelling first', () => {
+    for (const l of ['en', 'eng', 'english', 'en-US']) {
+      expect(langPriority(l)).toBeGreaterThan(langPriority('bul'));
+    }
+  });
+
+  it('puts Bulgarian second, above local and the alphabetical rest', () => {
+    for (const l of ['bg', 'bul', 'bulgarian']) {
+      expect(langPriority(l)).toBeGreaterThan(langPriority('local'));
+      expect(langPriority(l)).toBeGreaterThan(langPriority('fr'));
+    }
+  });
+
+  it('keeps local above the unpinned languages', () => {
+    expect(langPriority('local')).toBeGreaterThan(langPriority('fr'));
+    expect(langPriority('fr')).toBe(langPriority('spa'));
   });
 });

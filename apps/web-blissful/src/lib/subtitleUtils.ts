@@ -210,10 +210,21 @@ export function subtitleLangLabel(lang: string): string {
   return l.length <= 4 ? l.toUpperCase() : l.charAt(0).toUpperCase() + l.slice(1);
 }
 
+/**
+ * Sort weight for a subtitle LANGUAGE row (higher first). Fixed household
+ * order — English, then Bulgarian — ahead of everything else, which stays
+ * alphabetical. "Off" isn't a language; each player renders it above the list.
+ *
+ * `local` (a subtitle file sitting next to the media) used to outrank English;
+ * it now sits just below the two pinned languages so those two are always the
+ * first things reachable.
+ */
 export function langPriority(lang: string): number {
   const l = lang.trim().toLowerCase();
+  const label = subtitleLangLabel(l);
+  if (label === 'English') return 4;
+  if (label === 'Bulgarian') return 3;
   if (l === 'local') return 2;
-  if (subtitleLangLabel(l) === 'English') return 1;
   return 0;
 }
 

@@ -53,7 +53,7 @@ import { SkipChapterButton } from './NativeMpvPlayer/SkipChapterButton';
 import { useChapterSkip } from './NativeMpvPlayer/useChapterSkip';
 import { useSkipSegments } from './NativeMpvPlayer/useSkipSegments';
 import { subtitleLangLabel } from './NativeMpvPlayer/subtitleHelpers';
-import { subtitleSyncScore } from '../lib/subtitleUtils';
+import { langPriority, subtitleSyncScore } from '../lib/subtitleUtils';
 import { EpisodesDrawer, type EpisodeVideo, type DrawerSeasonInfo } from './NativeMpvPlayer/EpisodesDrawer';
 import { useNavigate } from 'react-router-dom';
 import { ChromePicker, type ColorResult } from 'react-color';
@@ -2921,7 +2921,14 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         out.push(lang);
       }
     }
-    return out;
+    // Same fixed order as the web + TV pickers (Off is rendered above this
+    // list): English, then Bulgarian, then local, then alphabetical. This list
+    // used to come out in raw track order, so the household languages could
+    // land anywhere in it.
+    return out.sort((a, b) => {
+      const p = langPriority(b) - langPriority(a);
+      return p !== 0 ? p : subtitleLangLabel(a).localeCompare(subtitleLangLabel(b));
+    });
   }, [tracks, addonSubs]);
 
   // Canonical language of the subtitle track that is ACTUALLY active,
