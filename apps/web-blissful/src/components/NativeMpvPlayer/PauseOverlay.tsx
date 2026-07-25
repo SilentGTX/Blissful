@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { Rating } from '../Rating';
+import { proxiedImage } from '../../lib/imageProxy';
 
 export type PauseOverlayVideo = {
   id: string;
@@ -70,7 +71,13 @@ export function PauseOverlay({
         className="pointer-events-none absolute z-15"
         style={{ bottom: 'clamp(8rem, 14vh, 18rem)', left: 'clamp(1.25rem, 3vw, 4rem)', maxWidth: 'clamp(20rem, 45vw, 60rem)' }}>
         {logo ? (
-          <img src={logo} alt={metaTitle ?? title ?? ''}
+          // Through the image proxy, like every other logo surface (detail
+          // page, buffering veil, web PauseOverlay). Rendering the raw URL here
+          // was the one exception, and it broke: metahub/fanart logos don't
+          // load directly inside the shell's WebView, so the pause overlay
+          // showed a broken-image icon while the same logo appeared fine on the
+          // detail page and behind the buffering screen.
+          <img src={proxiedImage(logo)} alt={metaTitle ?? title ?? ''}
             className="w-auto object-contain drop-shadow-2xl" draggable={false}
             style={{ maxHeight: 'clamp(5rem, 9vw, 14rem)', marginBottom: 'clamp(0.75rem, 1.2vw, 1.75rem)' }} />
         ) : (

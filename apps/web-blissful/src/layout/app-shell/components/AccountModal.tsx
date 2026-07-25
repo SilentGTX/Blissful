@@ -119,6 +119,18 @@ export function AccountModal({
         </div>
 
         <div className="mt-6 space-y-2">
+          {/* Explicit row for the profile picker — the avatar above opens it
+              too, but that affordance isn't discoverable on its own. */}
+          <BlissButton
+            variant="ghost"
+            className="w-full justify-start rounded-2xl bg-white/20"
+            onPress={() => {
+              onOpenChange(false);
+              onOpenProfiles();
+            }}
+          >
+            Switch profile
+          </BlissButton>
           <BlissButton
             variant="ghost"
             className="w-full justify-start rounded-2xl bg-white/20"

@@ -45,8 +45,12 @@ const AREAS = {
     filter: 'addons.',
   },
   'auth-library': {
-    paths: [/BlissfulAuthProvider/, /LoginModal/, /LibraryPage/, /blissfulAuthApi/, /useLibraryState/, /useContinueWatching/],
-    filter: 'auth.',
+    // 'auth' (no dot) so the multi-account suite counts too: accounts.web.
+    paths: [
+      /BlissfulAuthProvider/, /LoginModal/, /LibraryPage/, /blissfulAuthApi/, /useLibraryState/,
+      /useContinueWatching/, /lib\/accounts/, /WhoWatchingModal/, /AccountModal/,
+    ],
+    filter: '(auth|accounts)\\.',
   },
   social: {
     paths: [/Friends\//, /useSocial/, /usePresence/, /PartyInviteListener/, /friendsApi/],

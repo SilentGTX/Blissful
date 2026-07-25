@@ -753,6 +753,7 @@ export default function AppShell() {
           profileDisplayName={userProfile.displayName ?? null}
           profileAvatar={userProfile.avatar ?? null}
           onEditProfile={() => modals.openProfilePrompt(userProfile.displayName ?? user?.displayName ?? '')}
+          onAddAccount={() => modals.openLogin()}
           onSignOut={() => {
             logout();
           }}
