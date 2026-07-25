@@ -1821,6 +1821,14 @@ export default function PlayerPage() {
     playableSources.find((s) => s.quality === selectedQuality) ??
     playableSources[0] ??
     null;
+  // "This session plays a torrent/RD stream, not Videasy" — drives the settings
+  // drawer: hide the Videasy "Servers" tab, show "Releases" instead.
+  // `hasProfileRdKey` is in here so an RD-first profile NEVER sees the Videasy
+  // server list: the other flags only flip once a stream is COMMITTED (~1-2s),
+  // and in that window the drawer offered "Servers" — a picker for the very
+  // source this profile deliberately skips. It also surfaces "Releases" as soon
+  // as the RD fast path lists them, instead of waiting for the commit.
+  const rdSourceUi = (!!fallbackPlayUrl || pickFirst || rdSelected || hasProfileRdKey) && !activeSource;
   // Resolution priority: Videasy source → addon-stream fallback (when
   // Videasy is down) → raw URL from query params (back-compat with
   // direct ?url=… entry points). The raw URL is dropped if it's a
@@ -1922,8 +1930,8 @@ export default function PlayerPage() {
       onSourceDead={handleSourceDead}
       sessionSearch={searchParams.toString()}
       unavailableServers={unavailableServers}
-      hideServerPicker={(!!fallbackPlayUrl || pickFirst || rdSelected) && !activeSource}
-      releases={(!!fallbackPlayUrl || pickFirst || rdSelected) && !activeSource && addonStreams.length ? addonStreams : undefined}
+      hideServerPicker={rdSourceUi}
+      releases={rdSourceUi && addonStreams.length ? addonStreams : undefined}
       selectedReleaseUrl={fallbackPlayUrl ?? (rdSelected ? url : null)}
       onSelectRelease={setFallbackPlayUrl}
       fallbackActive={!!fallbackPlayUrl && !activeSource}

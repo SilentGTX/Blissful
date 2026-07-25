@@ -123,6 +123,49 @@ test.describe('Player profile preferences (web)', () => {
     expect(videasyCalls, 'no Videasy resolve may fire for an RD-key profile').toBe(0);
   });
 
+  test('an RD-key profile is never offered the Videasy Servers picker', async ({ page }) => {
+    // Regression: the drawer's Servers/Releases swap was gated on a COMMITTED
+    // stream, so for the ~1-2s before RD committed an RD-first profile was
+    // offered "Servers" — a picker for the source it deliberately skips.
+    await seedSettings(page, { realDebridApiKey: 'E2E-RD-KEY' });
+
+    await page.route(/\/tmdb-find\?/, (route) => route.fulfill({ json: { tmdbId: 999906, mediaType: 'movie' } }));
+    await page.route(/\/videasy-sources\?/, (route) => route.fulfill({ json: { sources: [], subtitles: [] } }));
+    // Hold the RD list back so the test sits squarely in the pre-commit window.
+    await page.route(/\/rd-fallback\?/, async (route) => {
+      await new Promise((r) => setTimeout(r, 4000));
+      return route.fulfill({ json: { streams: [{ name: '[RD+] Torrentio 1080p', title: 'E2E RD release', url: RD_MKV }] } });
+    });
+    await page.route(/\/resolve-url\?/, (route) =>
+      route.fulfill({ json: { status: 200, finalUrl: RD_MKV, contentLength: 2_000_000 } }));
+    await page.route(/\/transcode-audio\?/, (route) => route.fulfill({ json: { tracks: [] } }));
+    await page.route(/\/probe-streams\?/, (route) => route.fulfill({ json: { subtitles: [] } }));
+    await page.route(/\/transcode\.m3u8\?/, (route) => route.fulfill({ status: 404 }));
+
+    await page.goto(`/player?${new URLSearchParams({
+      type: 'movie', id: 'tt9990006', url: 'vidking:placeholder', title: 'E2E No Servers',
+    })}`);
+
+    // Anchor on a control that is ALWAYS in the bar. Without this the
+    // absence-assertion below passes vacuously whenever the controls happen to
+    // be hidden — which is exactly how the first version of this test went
+    // green against the unfixed code.
+    const anchor = page.locator('[aria-label="Toggle fullscreen"]');
+    const servers = page.locator('[aria-label="Servers"]');
+    await expect(anchor, 'player controls must be on screen').toBeVisible({ timeout: 30_000 });
+
+    // Through the whole pre-commit window, the Servers affordance must not exist
+    // while the bar is demonstrably up (mouse move defeats the 2.5s auto-hide).
+    for (let i = 0; i < 6; i += 1) {
+      await page.mouse.move(400 + i, 300);
+      await expect(anchor).toBeVisible();
+      await expect(servers, 'Videasy Servers must never be offered to an RD profile').toHaveCount(0);
+      await page.waitForTimeout(400);
+    }
+    // Once the RD releases land, the same control becomes "Releases".
+    await expect(page.locator('[aria-label="Releases"]')).toHaveCount(1, { timeout: 20_000 });
+  });
+
   test('a keyless profile still resolves Videasy first', async ({ page }) => {
     // The inverse guard — RD-first must not leak into non-RD profiles.
     await seedSettings(page, { realDebridApiKey: '' });
