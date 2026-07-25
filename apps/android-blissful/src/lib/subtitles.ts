@@ -291,8 +291,23 @@ export async function loadSubtitles(params: LoadSubtitlesParams): Promise<LoadSu
     // web/desktop player; without this a fresh TV account only sees embedded subs.
     // Deduped by URL below, so a user who ALSO installed OpenSubtitles won't see
     // doubles. Listed first so it's the reliable external source.
-    fetchProxyOpenSubs({ type, id: baseId, videoHash: params.videoHash, videoSize: params.videoSize, signal })
-      .then((subs) => { merged.push(...subs); }),
+    ...[
+      { provider: 'opensubtitles', origin: 'OpenSubtitles' },
+      // Second built-in provider: OpenSubtitles' per-title coverage is uneven
+      // (Troy returns 26 entries and not one English), so a single source is a
+      // single point of failure. Same set the web + desktop players fetch.
+      { provider: 'bgsubs', origin: 'Bulgarian Subs' },
+    ].map((p) =>
+      fetchProxyOpenSubs({
+        type,
+        id: baseId,
+        videoHash: params.videoHash,
+        videoSize: params.videoSize,
+        signal,
+        provider: p.provider,
+        origin: p.origin,
+      }).then((subs) => { merged.push(...subs); }),
+    ),
     ...transportUrls.map(async (transportUrl) => {
       // Per-addon timeout, chained to the caller's signal.
       const ctrl = new AbortController();
@@ -346,34 +361,51 @@ async function fetchProxyOpenSubs(params: {
   videoHash?: string;
   videoSize?: number;
   signal?: AbortSignal;
+  /** Built-in provider key (see the proxy's SUBTITLE_PROVIDERS). Omit for
+   *  OpenSubtitles. */
+  provider?: string;
+  /** Display origin for the picker row. */
+  origin?: string;
 }): Promise<SubtitleTrack[]> {
   const proxy = proxyBaseUrl();
   if (!proxy) return [];
+  const provider = params.provider ?? 'opensubtitles';
+  const origin = params.origin ?? 'OpenSubtitles';
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), ADDON_TIMEOUT_MS);
   const onAbort = () => ctrl.abort();
   params.signal?.addEventListener('abort', onAbort);
   try {
     const qs = new URLSearchParams({ type: String(params.type), id: params.id });
+    if (provider !== 'opensubtitles') qs.set('provider', provider);
     if (params.videoHash) {
       qs.set('videoHash', params.videoHash);
       qs.set('videoSize', String(params.videoSize ?? 0));
     }
     const res = await fetch(`${proxy}/opensubs?${qs.toString()}`, { signal: ctrl.signal });
     if (!res.ok) return [];
-    const data = (await res.json()) as { subtitles?: Array<{ id?: string; lang?: string; url?: string }> };
+    const data = (await res.json()) as {
+      subtitles?: Array<{ id?: string; lang?: string; url?: string; runtimeSec?: number }>;
+    };
     const out: SubtitleTrack[] = [];
     for (const sub of data.subtitles ?? []) {
       if (!sub?.url) continue;
       const lang = (sub.lang ?? 'unknown').trim() || 'unknown';
       const langName = subtitleLangLabel(lang);
+      // Same-language rows are otherwise indistinguishable; the proxy measures
+      // each file's own runtime, which is what separates a subtitle timed for a
+      // theatrical cut from one timed for a director's cut.
+      const rt = typeof sub.runtimeSec === 'number' && sub.runtimeSec > 0 ? sub.runtimeSec : null;
+      const rtLabel = rt
+        ? `${Math.floor(rt / 3600)}:${String(Math.floor((rt % 3600) / 60)).padStart(2, '0')}`
+        : null;
       out.push({
-        id: `OpenSubtitles::${sub.id ?? sub.url}`,
+        id: `${origin}::${sub.id ?? sub.url}`,
         lang,
         langName,
-        label: `${langName} - OpenSubtitles`,
+        label: rtLabel ? `${langName} - ${origin} · ${rtLabel}` : `${langName} - ${origin}`,
         url: sub.url,
-        source: 'OpenSubtitles',
+        source: origin,
         rating: 0,
       });
     }

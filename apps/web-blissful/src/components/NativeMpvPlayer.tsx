@@ -2457,12 +2457,21 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       // embedded "Built-in" subs (OpenSubtitles is NOT a default addon). This is
       // what makes external subs appear out of the box; deduped by URL so a user
       // who ALSO installed OpenSubtitles doesn't get doubles.
-      const fetchOpenSubs = async (
+      // Every built-in provider, same set the web player uses — OpenSubtitles'
+      // per-title coverage is uneven (Troy: 26 entries, zero English), so one
+      // source is a single point of failure.
+      const BUILTIN_SUB_PROVIDERS: Array<{ provider: string; origin: string }> = [
+        { provider: 'opensubtitles', origin: 'OpenSubtitles' },
+        { provider: 'bgsubs', origin: 'Bulgarian Subs' },
+      ];
+      const fetchBuiltinSubs = async (
+        { provider, origin }: { provider: string; origin: string },
         withHash: { hash: string; size: number } | null,
         opts?: { cacheOnly?: boolean },
       ) => {
         try {
           const osQs = new URLSearchParams({ type: String(props.type), id: baseId });
+          if (provider !== 'opensubtitles') osQs.set('provider', provider);
           if (withHash?.hash) {
             osQs.set('videoHash', withHash.hash);
             osQs.set('videoSize', String(withHash.size));
@@ -2470,14 +2479,23 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
           if (opts?.cacheOnly) osQs.set('cacheOnly', '1');
           const osRes = await fetch(`/opensubs?${osQs.toString()}`, { signal: controller.signal });
           if (!osRes.ok) return;
-          const resp = (await osRes.json()) as { subtitles?: Array<{ id?: string; lang?: string; url?: string }> };
+          const resp = (await osRes.json()) as {
+            subtitles?: Array<{ id?: string; lang?: string; url?: string; runtimeSec?: number }>;
+          };
           for (const sub of resp.subtitles ?? []) {
             if (!sub?.url || uniq.has(sub.url)) continue;
+            // A provider can return dozens of same-language rows with nothing to
+            // tell them apart; when the proxy measured the file's own runtime,
+            // show it (a 2:32 subtitle can never be offset into a 3:12 cut).
+            const rt = typeof sub.runtimeSec === 'number' && sub.runtimeSec > 0 ? sub.runtimeSec : null;
+            const rtLabel = rt
+              ? `${Math.floor(rt / 3600)}:${String(Math.floor((rt % 3600) / 60)).padStart(2, '0')}`
+              : null;
             uniq.set(sub.url, {
-              key: `opensubtitles-v3::built-in::${sub.id ?? sub.url}`,
+              key: `${provider}::built-in::${sub.id ?? sub.url}`,
               lang: sub.lang ?? 'unknown',
-              label: sub.lang ?? 'Subtitles',
-              origin: 'OpenSubtitles',
+              label: rtLabel ? `${sub.lang ?? 'Subtitles'} · ${rtLabel}` : (sub.lang ?? 'Subtitles'),
+              origin,
               rating: 0,
               url: sub.url,
             });
@@ -2494,7 +2512,9 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       // stremio-service isn't running and every /opensubHash probe fails.
       // cacheOnly leaves a cold cache untouched: the post-poll fetch still
       // does the real hash-matched, upstream-retried pass and caches that.
-      const earlyOpenSubs = fetchOpenSubs(null, { cacheOnly: true });
+      const earlyOpenSubs = Promise.allSettled(
+        BUILTIN_SUB_PROVIDERS.map((p) => fetchBuiltinSubs(p, null, { cacheOnly: true })),
+      );
       let hashInfo: { hash: string; size: number } | null = null;
       const isRealUrl = props.url && /^https?:\/\/|^magnet:/i.test(props.url);
       if (isRealUrl) {
@@ -2516,7 +2536,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       if (cancelled) return;
       await Promise.allSettled([
         earlyOpenSubs,
-        fetchOpenSubs(hashInfo),
+        ...BUILTIN_SUB_PROVIDERS.map((p) => fetchBuiltinSubs(p, hashInfo)),
         ...candidates.map(async (addon) => {
           const baseUrl = addon.transportUrl.replace(/\/manifest\.json$/, '').replace(/\/$/, '');
           const origin = addon.manifest?.name ?? addon.transportUrl;
