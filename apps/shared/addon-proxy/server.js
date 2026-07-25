@@ -911,6 +911,65 @@ const SUBTITLE_PROVIDERS = {
 // as a generic open proxy.
 const SUBTITLE_CONTENT_HOSTS = new Set(['bulgarian-subs-addon.onrender.com']);
 
+/** Fetch a subtitle file with retry, caching the text forever-ish. Returns the
+ *  text, or null when upstream has nothing usable (dead attachment, error page,
+ *  cold-start timeout). Shared by the file route and the list enrichment. */
+async function fetchSubtitleTextCached(src) {
+  const key = crypto.createHash('sha1').update(src).digest('hex');
+  const hit = await jsonCacheGet('subtext', key);
+  if (hit && typeof hit.text === 'string' && hit.text.length > 0) return hit.text;
+  let body = null;
+  for (let attempt = 0; attempt < 2 && body === null; attempt++) {
+    try {
+      const r = await requestText(src, { timeoutMs: 60000 });
+      if (r.status === 200 && r.text && r.text.length > 0) body = r.text;
+    } catch { /* cold start / refused / timeout — retry once */ }
+  }
+  // No cues → a dead attachment or an HTML error page. Never cache it: another
+  // entry (or a later retry) may work.
+  if (!body || !/-->/.test(body)) return null;
+  await jsonCacheSet('subtext', key, { text: body }, 30 * 24 * 60 * 60 * 1000);
+  return body;
+}
+
+/** Last cue timestamp in seconds — i.e. roughly the RUNTIME the subtitle was
+ *  timed for. This is the only signal that separates otherwise-identical
+ *  entries: Troy's theatrical cut runs ~163 min and the Director's Cut ~196,
+ *  and a subtitle for the wrong one can never be fixed by an offset. */
+function subtitleRuntimeSec(text) {
+  let max = 0;
+  const re = /(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const s = Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
+    if (s > max) max = s;
+  }
+  return max;
+}
+
+/** Verify + annotate subtitle entries: drop the ones that don't load, and
+ *  attach `runtimeSec` so the player can label them and prefer the one that
+ *  matches the release being played. Bounded so a flaky free-tier host can't
+ *  stall the list response; whatever isn't enriched in time stays usable. */
+async function enrichSubtitleEntries(entries, { max = 16, deadlineMs = 30000 } = {}) {
+  const deadline = Date.now() + deadlineMs;
+  const out = [];
+  const queue = entries.slice(0, max);
+  const rest = entries.slice(max);
+  const worker = async () => {
+    while (queue.length && Date.now() < deadline) {
+      const e = queue.shift();
+      if (!e || typeof e.url !== 'string') continue;
+      const text = await fetchSubtitleTextCached(e.url).catch(() => null);
+      if (!text) continue; // dead entry — drop it from the list entirely
+      out.push({ ...e, runtimeSec: subtitleRuntimeSec(text) });
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  // Anything past the cap or the deadline is kept unannotated rather than lost.
+  return [...out, ...queue, ...rest];
+}
+
 // Extract ONE embedded subtitle track from a remote container as WebVTT.
 //
 // Cost: ffmpeg must demux the whole file to collect every cue (subtitle packets
@@ -1870,35 +1929,18 @@ const server = http.createServer((req, res) => {
       res.end('Bad or disallowed src');
       return;
     }
-    const key = crypto.createHash('sha1').update(src).digest('hex');
-    const sendText = (body) => {
+    void (async () => {
+      const body = await fetchSubtitleTextCached(src).catch(() => null);
+      if (!body) {
+        res.writeHead(502, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
+        res.end('Subtitle unavailable upstream');
+        return;
+      }
       res.writeHead(200, {
         'Content-Type': 'text/plain; charset=utf-8',
         'Access-Control-Allow-Origin': '*',
       });
       res.end(body);
-    };
-    void (async () => {
-      const hit = await jsonCacheGet('subtext', key);
-      if (hit && typeof hit.text === 'string' && hit.text.length > 0) return sendText(hit.text);
-      // Two attempts: the first often just wakes a sleeping free-tier instance.
-      let body = null;
-      for (let attempt = 0; attempt < 2 && body === null; attempt++) {
-        try {
-          const r = await requestText(src, { timeoutMs: 60000 });
-          if (r.status === 200 && r.text && r.text.length > 0) body = r.text;
-        } catch { /* cold start / refused / timeout — retry once */ }
-      }
-      if (!body || !/-->/.test(body)) {
-        // No cues: a dead attachment or an error page. Don't cache — another
-        // entry (or a later retry) may well work.
-        res.writeHead(502, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
-        res.end('Subtitle unavailable upstream');
-        return;
-      }
-      await jsonCacheSet('subtext', key, { text: body }, 30 * 24 * 60 * 60 * 1000);
-      console.log(`Subtitle text cached ${key} (${body.length}B) ${src.slice(0, 80)}`);
-      sendText(body);
     })();
     return;
   }
@@ -2105,6 +2147,15 @@ const server = http.createServer((req, res) => {
           const r = await requestJson(target, { timeoutMs: provider.timeoutMs });
           if (r.status === 200 && r.json && Array.isArray(r.json.subtitles)) subs = r.json.subtitles;
         } catch { /* 504 / timeout / parse — retry once, then give up */ }
+      }
+      // Verify + annotate before caching: drop entries that don't load and
+      // attach each one's own runtime, the only thing that distinguishes
+      // otherwise-identical rows (theatrical vs Director's Cut timings).
+      if (provider.proxyContent && subs && subs.length) {
+        const before = subs.length;
+        subs = await enrichSubtitleEntries(subs);
+        const annotated = subs.filter((s) => typeof s.runtimeSec === 'number').length;
+        console.log(`Subs enrich ${providerKey} ${sid}: ${before} -> ${subs.length} (${annotated} timed)`);
       }
       const payload = { subtitles: subs || [] };
       if (subs && subs.length) {

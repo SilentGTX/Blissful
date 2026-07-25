@@ -2057,15 +2057,27 @@ export default function BlissfulPlayer(props: {
           // while a desktop app shows stale in-memory cache).
           const osRes = await fetch(`/opensubs?${osQs.toString()}`, { signal: controller.signal });
           if (!osRes.ok) return;
-          const resp = (await osRes.json()) as { subtitles?: Array<{ id?: string; lang?: string; url?: string }> };
+          const resp = (await osRes.json()) as {
+            subtitles?: Array<{ id?: string; lang?: string; url?: string; runtimeSec?: number }>;
+          };
           for (const sub of resp.subtitles ?? []) {
             if (!sub?.url) continue;
             const lang = sub.lang ?? 'unknown';
             if (!uniq.has(sub.url)) {
+              // A provider can return dozens of same-language entries with no
+              // distinguishing metadata (28 Bulgarian rows for Troy, all
+              // labelled "bul"). When the proxy has measured the subtitle's own
+              // runtime, show it: a file timed for the 2:43 theatrical cut can
+              // never be nudged into sync with the 3:12 Director's Cut, so this
+              // is the difference between guessing and choosing.
+              const rt = typeof sub.runtimeSec === 'number' && sub.runtimeSec > 0 ? sub.runtimeSec : null;
+              const rtLabel = rt
+                ? `${Math.floor(rt / 3600)}:${String(Math.floor((rt % 3600) / 60)).padStart(2, '0')}`
+                : null;
               uniq.set(sub.url, {
                 key: `${OPENSUBS_KEY}::${provider}::${sub.id ?? sub.url}`,
                 lang,
-                label: sub.lang ?? 'Subtitles',
+                label: rtLabel ? `${sub.lang ?? 'Subtitles'} · ${rtLabel}` : (sub.lang ?? 'Subtitles'),
                 origin,
                 url: sub.url,
               });
