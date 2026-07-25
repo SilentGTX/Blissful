@@ -53,6 +53,7 @@ import { SkipChapterButton } from './NativeMpvPlayer/SkipChapterButton';
 import { useChapterSkip } from './NativeMpvPlayer/useChapterSkip';
 import { useSkipSegments } from './NativeMpvPlayer/useSkipSegments';
 import { subtitleLangLabel } from './NativeMpvPlayer/subtitleHelpers';
+import { subtitleSyncScore } from '../lib/subtitleUtils';
 import { EpisodesDrawer, type EpisodeVideo, type DrawerSeasonInfo } from './NativeMpvPlayer/EpisodesDrawer';
 import { useNavigate } from 'react-router-dom';
 import { ChromePicker, type ColorResult } from 'react-color';
@@ -196,6 +197,10 @@ type AddonSubtitleTrack = {
    *  multiple subs exist for the same language — matches Stremio's
    *  selection behavior. Missing → treated as 0. */
   rating: number;
+  /** Runtime this subtitle was timed for (its last cue), when the proxy
+   *  measured it. Matched against the file's duration to auto-pick one that is
+   *  actually in sync. */
+  runtimeSec?: number | null;
 };
 
 const LANGUAGE_ALIASES: Record<string, string[]> = {
@@ -235,13 +240,22 @@ function languageMatch(target: string | null, candidate: string | null): boolean
   return subtitleLangLabel(t) === subtitleLangLabel(c);
 }
 
-function scoreSubtitleTrack(t: AddonSubtitleTrack): number {
+function scoreSubtitleTrack(
+  t: AddonSubtitleTrack,
+  ctx?: { videoDurationSec?: number | null },
+): number {
   const origin = t.origin.toLowerCase();
   let s = 0;
   if (origin.includes('opensubtitles')) s += 50;
   if (origin.includes('subtitles')) s += 20;
   if (t.url.endsWith('.vtt')) s += 10;
   if (t.url.endsWith('.srt')) s += 5;
+  // Sync outranks provenance: a provider can offer a dozen files for one title
+  // (other cuts, wrong episode, PAL-speed transfers) and someone who doesn't
+  // speak the audio language can't tell them apart by ear. Comparing the
+  // subtitle's own runtime with the file's real duration can. Shared with the
+  // web player so both apps auto-pick identically.
+  s += subtitleSyncScore(t.runtimeSec, ctx?.videoDurationSec);
   return s;
 }
 
@@ -2504,6 +2518,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
               origin,
               rating: 0,
               url: sub.url,
+              runtimeSec: rt,
             });
             scheduleFlush();
           }
@@ -3041,7 +3056,11 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     const addonVariants = addonSubs
       .filter((t) => sameCanon(t.lang))
       .slice()
-      .sort((a, b) => scoreSubtitleTrack(b) - scoreSubtitleTrack(a))
+      .sort(
+        (a, b) =>
+          scoreSubtitleTrack(b, { videoDurationSec: duration })
+          - scoreSubtitleTrack(a, { videoDurationSec: duration }),
+      )
       .map((t) => ({
         key: `addon:${t.key}`,
         label: t.label,
@@ -3049,7 +3068,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         embedded: false,
       }));
     return [...embeddedVariants, ...addonVariants];
-  }, [selectedSubLang, tracks, addonSubs]);
+  }, [selectedSubLang, tracks, addonSubs, duration]);
 
   // Helper for the Languages-column click handler: computes the first
   // variant (same priority order as variantsForLanguage — embedded
@@ -3129,7 +3148,11 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     const addon = addonSubs
       .filter((t) => sameCanon(t.lang))
       .slice()
-      .sort((a, b) => scoreSubtitleTrack(b) - scoreSubtitleTrack(a))[0];
+      .sort(
+        (a, b) =>
+          scoreSubtitleTrack(b, { videoDurationSec: durationRef.current })
+          - scoreSubtitleTrack(a, { videoDurationSec: durationRef.current }),
+      )[0];
     if (addon) {
       appliedHostSubRef.current = hostWantSubLang;
       setSelectedSubLang(hostWantSubLang);

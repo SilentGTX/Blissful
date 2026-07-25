@@ -12,6 +12,10 @@ export type SubtitleTrack = {
   label: string;
   origin: string;
   url: string;
+  /** Runtime the subtitle was timed for, in seconds (its last cue), when the
+   *  proxy measured it. Compared against the video's real duration to auto-pick
+   *  a subtitle that is actually in sync — see `subtitleSyncScore`. */
+  runtimeSec?: number | null;
 };
 
 // ── SRT/VTT parse + transform ──────────────────────────────────────────
@@ -307,7 +311,36 @@ export function isEmbeddedOrigin(origin: string): boolean {
 // SRT (no parse step needed). Generic enough that both players can
 // share it: takes the minimum SubtitleTrack shape, ignores any extra
 // fields the caller adds (e.g. NativeMpvPlayer's `rating`).
-export function scoreSubtitleTrack(t: { origin: string; url: string }): number {
+/**
+ * How well a subtitle's own runtime matches the video, as a score contribution.
+ *
+ * This is the only sync signal available without understanding the language:
+ * a subtitle timed for a different cut, a different episode, or a PAL-speed
+ * transfer has a last cue that lands nowhere near the video's real end. A
+ * correctly-timed file ends slightly BEFORE the video (credits carry no
+ * dialogue), so "shorter by a few minutes" is normal and "longer than the
+ * video" is a strong negative.
+ *
+ * Returns 0 when either side is unknown, so tracks without a measured runtime
+ * are ranked on origin alone rather than being punished for missing data.
+ */
+export function subtitleSyncScore(
+  runtimeSec: number | null | undefined,
+  videoDurationSec: number | null | undefined,
+): number {
+  if (!runtimeSec || !videoDurationSec || runtimeSec <= 0 || videoDurationSec <= 0) return 0;
+  const diff = videoDurationSec - runtimeSec; // >0 = subtitle ends before the video
+  const ratio = Math.abs(diff) / videoDurationSec;
+  if (diff < -60) return -500; // ends well after the video → wrong cut/episode
+  if (ratio <= 0.03) return 400; // within 3% — the match we want
+  if (ratio <= 0.08) return 150; // plausible (long credits / trimmed intro)
+  return -400; // a different cut entirely; no offset can rescue it
+}
+
+export function scoreSubtitleTrack(
+  t: { origin: string; url: string; runtimeSec?: number | null },
+  ctx?: { videoDurationSec?: number | null },
+): number {
   const origin = t.origin.toLowerCase();
   const url = t.url.toLowerCase();
   let score = 0;
@@ -316,5 +349,9 @@ export function scoreSubtitleTrack(t: { origin: string; url: string }): number {
   if (origin.includes('subtitles')) score += 20;
   if (url.endsWith('.vtt')) score += 10;
   if (url.endsWith('.srt')) score += 5;
+  // Sync dominates provenance: a perfectly-sourced subtitle for the wrong cut
+  // is useless, and a viewer who doesn't speak the audio language cannot tell
+  // the difference by ear — which is exactly who auto-pick is for.
+  score += subtitleSyncScore(t.runtimeSec, ctx?.videoDurationSec);
   return score;
 }

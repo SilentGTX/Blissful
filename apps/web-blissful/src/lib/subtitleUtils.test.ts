@@ -8,7 +8,61 @@
 // with built-in OpenSubtitles results tagged eng).
 
 import { describe, expect, it } from 'vitest';
-import { langPriority, languageMatch, subtitleLangLabel } from './subtitleUtils';
+import {
+  langPriority,
+  languageMatch,
+  scoreSubtitleTrack,
+  subtitleLangLabel,
+  subtitleSyncScore,
+} from './subtitleUtils';
+
+// Auto-pick sync matching. The user this exists for cannot hear whether a
+// subtitle is in sync (they don't speak the audio language), so the app has to
+// decide from the only language-independent signal: how the subtitle's own
+// runtime compares with the video's real duration.
+describe('subtitleSyncScore', () => {
+  const EP = 67 * 60; // a ~1:07 episode
+
+  it('rewards a subtitle whose runtime matches the video', () => {
+    expect(subtitleSyncScore(EP - 30, EP)).toBeGreaterThan(0);
+    expect(subtitleSyncScore(EP, EP)).toBeGreaterThan(0);
+  });
+
+  it('rejects a subtitle timed for a different cut', () => {
+    // 1:09 subs against a 1:07 episode, and a theatrical sub on a longer cut.
+    expect(subtitleSyncScore(69 * 60, EP)).toBeLessThan(0);
+    expect(subtitleSyncScore(163 * 60, 196 * 60)).toBeLessThan(0);
+  });
+
+  it('is neutral when either side is unknown, never punishing missing data', () => {
+    expect(subtitleSyncScore(null, EP)).toBe(0);
+    expect(subtitleSyncScore(EP, null)).toBe(0);
+    expect(subtitleSyncScore(0, EP)).toBe(0);
+  });
+});
+
+describe('scoreSubtitleTrack with a video duration', () => {
+  const EP = 67 * 60;
+  const track = (origin: string, runtimeSec: number | null) => ({
+    origin, url: 'https://x/s.srt', runtimeSec,
+  });
+
+  it('prefers an in-sync subtitle over a better-sourced out-of-sync one', () => {
+    const inSync = scoreSubtitleTrack(track('Bulgarian Subs', EP - 20), { videoDurationSec: EP });
+    const outOfSync = scoreSubtitleTrack(track('OpenSubtitles', 90 * 60), { videoDurationSec: EP });
+    expect(inSync).toBeGreaterThan(outOfSync);
+  });
+
+  it('falls back to provenance when no runtime is known', () => {
+    const os = scoreSubtitleTrack(track('OpenSubtitles', null), { videoDurationSec: EP });
+    const other = scoreSubtitleTrack(track('Some Addon', null), { videoDurationSec: EP });
+    expect(os).toBeGreaterThan(other);
+  });
+
+  it('keeps working with no duration at all (early in playback)', () => {
+    expect(scoreSubtitleTrack(track('OpenSubtitles', EP))).toBeGreaterThan(0);
+  });
+});
 
 describe('subtitleLangLabel', () => {
   it('maps ISO codes and full names onto the canonical label', () => {

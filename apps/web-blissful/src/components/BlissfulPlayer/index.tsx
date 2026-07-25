@@ -582,6 +582,10 @@ export default function BlissfulPlayer(props: {
   const [hasPlayedOnce, setHasPlayedOnce] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  // Live mirror for callbacks that must NOT re-run when the duration lands
+  // (the subtitle auto-retry reads it to rank candidates by sync).
+  const durationRef = useRef(0);
+  durationRef.current = duration;
   const [volume, setVolume] = useState(0.6);
   const [muted, setMuted] = useState(false);
   const [showControls, setShowControls] = useState(true);
@@ -2080,6 +2084,11 @@ export default function BlissfulPlayer(props: {
                 label: rtLabel ? `${sub.lang ?? 'Subtitles'} · ${rtLabel}` : (sub.lang ?? 'Subtitles'),
                 origin,
                 url: sub.url,
+                // Kept on the track (not just in the label) so the auto-pick can
+                // compare it against the video's real duration — the only way to
+                // tell an in-sync subtitle from a wrong-cut one WITHOUT
+                // understanding the audio.
+                runtimeSec: rt,
               });
               scheduleFlush();
             }
@@ -2264,12 +2273,17 @@ export default function BlissfulPlayer(props: {
       allSubtitleTracks.find((t) => isEmbeddedOrigin(t.origin))?.lang ??
       allSubtitleTracks[0].lang;
     const targetCanon = subtitleLangLabel(preferredLang);
+    // Pass the video's real duration so the pick prefers a subtitle actually
+    // timed for THIS cut. A provider can offer a dozen files for one title
+    // (different cuts, wrong episode, PAL-speed transfers) and a viewer who
+    // doesn't speak the audio language has no way to judge which is right —
+    // matching runtimes is the language-independent way to decide.
     const best = allSubtitleTracks
       .filter((t) => subtitleLangLabel(t.lang) === targetCanon)
       .slice()
       .sort((a, b) => {
-        const sa = scoreSubtitleTrack(a);
-        const sb = scoreSubtitleTrack(b);
+        const sa = scoreSubtitleTrack(a, { videoDurationSec: duration });
+        const sb = scoreSubtitleTrack(b, { videoDurationSec: duration });
         if (sb !== sa) return sb - sa;
         return a.origin.localeCompare(b.origin) || a.label.localeCompare(b.label);
       })[0];
@@ -2278,7 +2292,10 @@ export default function BlissfulPlayer(props: {
     setSelectedLanguage(preferredLang);
     autoPickedSubtitleKeyRef.current = best.key;
     setSelectedSubtitleKey(best.key);
-  }, [allSubtitleTracks, props.playerSettings.subtitlesLanguage, selectedSubtitleKey]);
+    // `duration` is a dep: it arrives AFTER the track list (metadata loads
+    // later), and re-running with it is what upgrades an initial provenance-only
+    // pick to the correctly-timed file.
+  }, [allSubtitleTracks, props.playerSettings.subtitlesLanguage, selectedSubtitleKey, duration]);
 
   // Load src + apply start time
   // Reset the retry counter whenever the caller hands us a genuinely
@@ -3176,8 +3193,8 @@ export default function BlissfulPlayer(props: {
             .filter((t) => t.lang === selectedSubtitle.lang)
             .slice()
             .sort((a, b) => {
-              const sa = scoreSubtitleTrack(a);
-              const sb = scoreSubtitleTrack(b);
+              const sa = scoreSubtitleTrack(a, { videoDurationSec: durationRef.current });
+              const sb = scoreSubtitleTrack(b, { videoDurationSec: durationRef.current });
               if (sb !== sa) return sb - sa;
               return a.origin.localeCompare(b.origin) || a.label.localeCompare(b.label);
             });
