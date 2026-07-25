@@ -359,6 +359,43 @@ function requestJson(urlStr, { method = 'GET', headers = {}, body = null, timeou
   });
 }
 
+// Fetch a text body (subtitle files), following redirects. Sibling of
+// requestJson — subtitle hosts redirect to a CDN/attachment and answer
+// text/plain, so JSON.parse would throw on a perfectly good SRT.
+function requestText(urlStr, { timeoutMs = 30000, redirects = 0 } = {}) {
+  return new Promise((resolve, reject) => {
+    try {
+      if (redirects > 5) return reject(new Error('too many redirects'));
+      const u = new url.URL(urlStr);
+      const lib = u.protocol === 'http:' ? http : https;
+      const req = lib.request(
+        {
+          method: 'GET',
+          hostname: u.hostname,
+          port: u.port || undefined,
+          path: u.pathname + u.search,
+          headers: { 'User-Agent': 'blissful-proxy', Accept: '*/*' },
+        },
+        (r) => {
+          if ([301, 302, 303, 307, 308].includes(r.statusCode) && r.headers.location) {
+            r.resume();
+            const next = new url.URL(r.headers.location, urlStr).toString();
+            resolve(requestText(next, { timeoutMs, redirects: redirects + 1 }));
+            return;
+          }
+          let buf = '';
+          r.setEncoding('utf8');
+          r.on('data', (c) => { buf += c; });
+          r.on('end', () => resolve({ status: r.statusCode, text: buf }));
+        }
+      );
+      req.on('error', reject);
+      req.setTimeout(timeoutMs, () => req.destroy(new Error('timeout')));
+      req.end();
+    } catch (e) { reject(e); }
+  });
+}
+
 // IMDb rating for a title, resolved server-side. Cinemeta's `imdbRating` IS
 // the IMDb number (no fragile www.imdb.com scraping needed); TMDB's
 // `vote_average` is the fallback for brand-new titles Cinemeta hasn't synced.
@@ -1778,6 +1815,53 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Subtitle FILE fetch + persistent cache, for providers whose file host is
+  // unreliable (see SUBTITLE_PROVIDERS.proxyContent). The text of a released
+  // title's subtitle never changes, so one successful fetch serves everyone
+  // forever — the provider's cold starts, dead attachments and
+  // connection-refusals stop reaching the player.
+  if (req.url.startsWith('/subtitle-text?')) {
+    const src = String(url.parse(req.url, true).query.src || '').trim();
+    let host = null;
+    try { host = new URL(src).hostname; } catch { /* not a url */ }
+    if (!src || !host || !SUBTITLE_CONTENT_HOSTS.has(host)) {
+      res.writeHead(400, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
+      res.end('Bad or disallowed src');
+      return;
+    }
+    const key = crypto.createHash('sha1').update(src).digest('hex');
+    const sendText = (body) => {
+      res.writeHead(200, {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Access-Control-Allow-Origin': '*',
+      });
+      res.end(body);
+    };
+    void (async () => {
+      const hit = await jsonCacheGet('subtext', key);
+      if (hit && typeof hit.text === 'string' && hit.text.length > 0) return sendText(hit.text);
+      // Two attempts: the first often just wakes a sleeping free-tier instance.
+      let body = null;
+      for (let attempt = 0; attempt < 2 && body === null; attempt++) {
+        try {
+          const r = await requestText(src, { timeoutMs: 60000 });
+          if (r.status === 200 && r.text && r.text.length > 0) body = r.text;
+        } catch { /* cold start / refused / timeout — retry once */ }
+      }
+      if (!body || !/-->/.test(body)) {
+        // No cues: a dead attachment or an error page. Don't cache — another
+        // entry (or a later retry) may well work.
+        res.writeHead(502, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
+        res.end('Subtitle unavailable upstream');
+        return;
+      }
+      await jsonCacheSet('subtext', key, { text: body }, 30 * 24 * 60 * 60 * 1000);
+      console.log(`Subtitle text cached ${key} (${body.length}B) ${src.slice(0, 80)}`);
+      sendText(body);
+    })();
+    return;
+  }
+
   if (req.url.startsWith('/extract-subtitle.vtt?')) {
     const parsed = url.parse(req.url, true);
     const targetUrl = parsed.query.url;
@@ -1915,8 +1999,19 @@ const server = http.createServer((req, res) => {
       cacheNs: 'bgsubs',
       supportsHash: false, // id-only addon; a hash path would 404
       timeoutMs: 60000, // free-tier cold start
+      // Serve the subtitle FILES through us too (/subtitle-text), not just the
+      // list. The list is cached for 30d so it always renders, but the .srt
+      // behind each entry lives on the same free-tier host: it cold-starts,
+      // individual attachments 404, and under a burst of requests it stops
+      // accepting connections outright (measured). That combination is exactly
+      // "the subtitle is listed but never loads". Proxying + caching the file
+      // means playback touches that host at most once per subtitle, ever.
+      proxyContent: true,
     },
   };
+  // Hosts /subtitle-text is allowed to fetch from. Keyed allowlist so the
+  // endpoint can't be used as a generic open proxy.
+  const SUBTITLE_CONTENT_HOSTS = new Set(['bulgarian-subs-addon.onrender.com']);
 
   // OpenSubtitles v3 with a PERSISTENT server-side cache. The community
   // opensubtitles-v3.strem.io instance 504s often (overloaded), so a fresh
@@ -1945,6 +2040,21 @@ const server = http.createServer((req, res) => {
       return;
     }
     const cacheNs = provider.cacheNs;
+    // For providers whose file host is unreliable, hand the client OUR url so
+    // the actual subtitle text is fetched + cached server-side (see
+    // /subtitle-text). Applied at SEND time so lists already cached with
+    // upstream urls are rewritten too.
+    const rewriteUrls = (payload) => {
+      if (!provider.proxyContent) return payload;
+      return {
+        ...payload,
+        subtitles: (payload.subtitles || []).map((s) =>
+          s && typeof s.url === 'string' && /^https?:\/\//i.test(s.url)
+            ? { ...s, url: `/subtitle-text?src=${encodeURIComponent(s.url)}` }
+            : s,
+        ),
+      };
+    };
     // Episode-level key (type:id) — shared across EVERY torrent of the episode
     // so the cached subs show on all releases, not just the one file we first
     // hashed. Per-file key (incl the hash) only throttles repeat MISSES so a
@@ -1953,7 +2063,7 @@ const server = http.createServer((req, res) => {
     const keyHash = `${stype}:${sid}:${vh}:${vs}`;
     const send = (obj) => {
       res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-      res.end(JSON.stringify(obj));
+      res.end(JSON.stringify(rewriteUrls(obj)));
     };
     void (async () => {
       // 1. Episode-level subs cached from ANY release → serve to all.
