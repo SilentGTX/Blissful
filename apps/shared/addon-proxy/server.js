@@ -836,8 +836,44 @@ function probeStreams(targetUrl, done) {
   });
 }
 
-function extractSubtitleVtt(targetUrl, trackIndex, res) {
+// Extract ONE embedded subtitle track from a remote container as WebVTT.
+//
+// Cost: ffmpeg must demux the whole file to collect every cue (subtitle packets
+// are interleaved throughout), so this reads the entire release over the
+// network — ~2 min for a 1080p remux, longer for a 4K one. Two consequences the
+// old version got wrong:
+//   • the 120s SIGKILL cut big files off mid-extraction, so a 4K release could
+//     NEVER produce subtitles: the track showed in the drawer and silently
+//     never rendered (mpv/Stremio don't have this problem — they demux locally
+//     as they play);
+//   • nothing was cached, so every selection paid the full cost again.
+// Now: serve from a persistent cache when warm, and give a cold extraction room
+// to finish. The result is immutable for a given release file + track.
+async function extractSubtitleVtt(targetUrl, trackIndex, res) {
   targetUrl = rewriteLoopback(targetUrl);
+  // Key on the release FILENAME, not the URL: a Real-Debrid link's host and
+  // token rotate on every resolve, so URL-keyed caching would miss every time.
+  let cacheKey = null;
+  try {
+    const p = decodeURIComponent(new URL(targetUrl).pathname);
+    const base = p.slice(p.lastIndexOf('/') + 1);
+    if (base) cacheKey = `${base}::${trackIndex}`;
+  } catch { /* not a URL (local path) — run uncached */ }
+  const sendVtt = (body) => {
+    res.writeHead(200, {
+      'Content-Type': 'text/vtt; charset=utf-8',
+      'Access-Control-Allow-Origin': '*',
+    });
+    res.end(body);
+  };
+  if (cacheKey) {
+    const hit = await jsonCacheGet('embedsubs', cacheKey);
+    if (hit && typeof hit.vtt === 'string' && hit.vtt.length > 0) {
+      console.log(`Embedded sub cache HIT ${cacheKey}`);
+      return sendVtt(hit.vtt);
+    }
+  }
+  console.log(`Extracting embedded sub track ${trackIndex} from ${targetUrl.slice(0, 90)}`);
   const ff = spawn('ffmpeg', [
     '-loglevel', 'error',
     '-i', targetUrl,
@@ -850,10 +886,25 @@ function extractSubtitleVtt(targetUrl, trackIndex, res) {
   ff.stderr.on('data', (b) => { stderr += b.toString(); });
   res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
   res.setHeader('Access-Control-Allow-Origin', '*');
+  // Tee to the client (progressive) AND to a buffer so a successful run can be
+  // cached — the next viewer of this release gets it instantly.
+  const chunks = [];
+  ff.stdout.on('data', (b) => { chunks.push(b); });
   ff.stdout.pipe(res);
-  const killer = setTimeout(() => ff.kill('SIGKILL'), 120000);
-  ff.on('close', (code) => {
+  // 15 min: enough for a 4K remux over the RD link. The old 120s cap silently
+  // truncated exactly the files most likely to carry embedded subs.
+  const killer = setTimeout(() => ff.kill('SIGKILL'), 900000);
+  ff.on('close', async (code) => {
     clearTimeout(killer);
+    if (code === 0 && cacheKey && chunks.length) {
+      const vtt = Buffer.concat(chunks).toString('utf8');
+      // Only cache a real cue list — a header-only VTT means the track was
+      // empty (or the run died early) and must not be pinned.
+      if (vtt.includes('-->')) {
+        await jsonCacheSet('embedsubs', cacheKey, { vtt }, 30 * 24 * 60 * 60 * 1000);
+        console.log(`Embedded sub cached ${cacheKey} (${vtt.length}B)`);
+      }
+    }
     if (code !== 0 && !res.headersSent) {
       res.writeHead(502, { 'Content-Type': 'text/plain' });
       res.end('ffmpeg extract failed: ' + stderr.trim().slice(0, 300));
@@ -1736,7 +1787,15 @@ const server = http.createServer((req, res) => {
       res.end('Missing url or track');
       return;
     }
-    extractSubtitleVtt(targetUrl, trackIndex, res);
+    void extractSubtitleVtt(targetUrl, trackIndex, res).catch((e) => {
+      console.error('extract-subtitle failed:', e && e.message);
+      if (!res.headersSent) {
+        res.writeHead(502, { 'Content-Type': 'text/plain' });
+        res.end('extract failed');
+      } else {
+        res.end();
+      }
+    });
     return;
   }
 
