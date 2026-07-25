@@ -14,7 +14,7 @@ export type BlissfulStorageState = {
   addons?: string[];
   darkGradient?: string;
   lightGradient?: string;
-  uiStyle?: 'classic' | 'netflix' | 'modern';
+  uiStyle?: 'classic' | 'netflix';
   profile?: StoredProfile;
 };
 

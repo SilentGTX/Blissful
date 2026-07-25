@@ -1,11 +1,8 @@
 import { Button, Modal } from '@heroui/react';
-import { motion } from 'framer-motion';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ErrorBoundary, ErrorRow } from '../components/ErrorBoundary';
 import { SkeletonHomeRow } from '../components/Skeleton';
-import MediaRail from '../components/MediaRail';
-import MediaRailMobile from '../components/MediaRailMobile';
 import { useAddons } from '../context/AddonsProvider';
 import { useAuth } from '../context/AuthProvider';
 import { useContinueWatchingContext } from '../context/ContinueWatchingProvider';
@@ -14,13 +11,7 @@ import { useStorage } from '../context/StorageProvider';
 import { useUI } from '../context/UIProvider';
 import type { MediaItem, MediaType } from '../types/media';
 import type { AddonDescriptor } from '../lib/mediaTypes';
-import { normalizeStremioImage, type LibraryItem } from '../lib/mediaTypes';
-import {
-  fetchBlissfulLibrary,
-  putBlissfulLibraryItem,
-} from '../lib/blissfulAuthApi';
 import { triggerStremioFullSync } from '../lib/stremioLinkApi';
-import { isInLibrary as isInLibraryStored, toggleLibrary } from '../lib/libraryStore';
 import {
   HOME_ROW_POPULAR_MOVIE,
   HOME_ROW_POPULAR_SERIES,
@@ -28,10 +19,11 @@ import {
 } from '../lib/homeRows';
 import { NetflixRow } from '../features/home/components/NetflixRow';
 import { NetflixHero } from '../features/home/components/NetflixHero';
-import { NowPopular } from '../features/home/components/NowPopular';
-import { ModernHomePage } from '../features/home/components/ModernHomePage';
-import { isMobile, libraryProgressPercent, libraryItemToMediaItem } from '../features/home/utils';
+import { libraryProgressPercent, libraryItemToMediaItem } from '../features/home/utils';
 import { useAddonRows } from '../features/home/hooks/useAddonRows';
+import { ImmersiveBackdrop, ImmersiveInfoPanel } from '../features/home/immersive/ImmersiveBackdrop';
+import { LandscapeRail } from '../features/home/immersive/LandscapeRail';
+import { useHoveredMeta } from '../features/home/immersive/useHoveredMeta';
 import { useNetflixHero } from '../features/home/hooks/useNetflixHero';
 import { useNetflixReveal } from '../features/home/hooks/useNetflixReveal';
 
@@ -46,8 +38,10 @@ export default function HomePage() {
   const { continueWatching } = useContinueWatchingContext();
   const navigate = useNavigate();
   const isNetflix = uiStyle === 'netflix';
-  const isModern = uiStyle === 'modern';
   const revealRootRef = useRef<HTMLDivElement | null>(null);
+  // Immersive home: the hovered tile drives the backdrop + featured panel.
+  const [hovered, setHovered] = useState<MediaItem | null>(null);
+  const hoveredMeta = useHoveredMeta(hovered);
 
   // Stremio sync trigger: every time the home page mounts, kick off a
   // full sync so Continue Watching reflects progress made elsewhere
@@ -57,37 +51,12 @@ export default function HomePage() {
     triggerStremioFullSync(authKey ?? null);
   }, [authKey]);
   const [heroTrailerId, setHeroTrailerId] = useState<string | null>(null);
-  const [heroInLibrary, setHeroInLibrary] = useState(false);
   const { hero, heroMeta, heroPrev, heroPrevMeta, heroIsFading, heroFadeIn } = useNetflixHero(
     isNetflix,
     movieItems,
     seriesItems
   );
 
-  useEffect(() => {
-    if (!hero) {
-      setHeroInLibrary(false);
-      return;
-    }
-    if (!authKey) {
-      setHeroInLibrary(isInLibraryStored({ type: hero.type, id: hero.id }));
-      return;
-    }
-    let cancelled = false;
-    fetchBlissfulLibrary<LibraryItem>(authKey)
-      .then((items) => {
-        if (cancelled) return;
-        const item = items.find((it) => it._id === hero.id);
-        setHeroInLibrary(Boolean(item && !item.removed));
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setHeroInLibrary(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [authKey, hero]);
 
   const metaLookup = useMemo(() => {
     const map = new Map<string, MediaItem>();
@@ -111,6 +80,15 @@ export default function HomePage() {
     });
     return map;
   }, [continueWatching]);
+
+  // Seed the featured item as soon as there is anything to feature, so the
+  // backdrop + panel arrive fully populated instead of waiting for the first
+  // hover (the meta fetch is keyed off this state).
+  useEffect(() => {
+    if (hovered) return;
+    const first = continueItems[0] ?? movieItems[0] ?? seriesItems[0] ?? null;
+    if (first) setHovered(first);
+  }, [hovered, continueItems, movieItems, seriesItems]);
 
   const addonRows = useAddonRows(addons, maxRowItems);
 
@@ -198,47 +176,6 @@ export default function HomePage() {
     await saveHomeRowPrefs(nextPrefs);
   };
 
-  const handleAddToLibrary = async () => {
-    if (!hero) return;
-    const name = heroMeta?.meta?.name ?? hero.title ?? '';
-    if (!name) return;
-    const poster = normalizeStremioImage(heroMeta?.meta?.poster) ?? hero.posterUrl ?? null;
-
-    if (!authKey) {
-      toggleLibrary({ type: hero.type, id: hero.id, name, poster: poster ?? undefined });
-      setHeroInLibrary((prev) => !prev);
-      return;
-    }
-
-    try {
-      const items = await fetchBlissfulLibrary<LibraryItem>(authKey);
-      const existing = items.find((it) => it._id === hero.id);
-      const inLibrary =
-        Boolean(existing && !existing.removed)
-        || isInLibraryStored({ type: hero.type, id: hero.id });
-      // Soft-toggle by upserting `removed`: progress survives if the
-      // user re-adds later. New items get a minimal stub doc.
-      const base: Partial<LibraryItem> & { _id: string } = existing
-        ? { ...existing }
-        : { _id: hero.id, type: hero.type, name, poster: poster ?? null, state: {} };
-      base.removed = inLibrary;
-      await putBlissfulLibraryItem(authKey, hero.id, base);
-      setHeroInLibrary(!inLibrary);
-    } catch {
-      // ignore
-    }
-  };
-
-  if (isModern) {
-    return (
-      <ModernHomePage
-        rows={rowsToRender}
-        continueItems={continueItems}
-        onItemClick={(item) => navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`)}
-      />
-    );
-  }
-
   if (isNetflix) {
     const heroTrailer = heroMeta?.meta?.trailerStreams?.find((t) => t?.ytId)?.ytId ?? null;
     return (
@@ -322,92 +259,77 @@ export default function HomePage() {
     );
   }
 
-  return (
-    <div className="board-container ">
-      <div className="board-content space-y-10">
-        <NowPopular
-          hero={hero ?? null}
-          heroMeta={heroMeta}
-          inLibrary={heroInLibrary}
-          onWatch={() => {
-            if (hero) navigate(`/detail/${hero.type}/${encodeURIComponent(hero.id)}`);
-          }}
-          onAddToList={handleAddToLibrary}
-          onGenreClick={(g) => {
-            if (!hero) return;
-            const qs = new URLSearchParams({ genre: g });
-            navigate(
-              `/discover/${encodeURIComponent('https://v3-cinemeta.strem.io/manifest.json')}/${hero.type}/top?${qs.toString()}`
-            );
-          }}
-        />
+  // ---- Immersive home (the Android TV design, driven by the pointer) -------
+  // Hovering a tile swaps the full-bleed backdrop + featured panel, exactly as
+  // D-pad focus does on the TV. Before anything is hovered we feature the first
+  // Continue Watching entry, falling back to the first popular title.
+  const defaultFeatured = continueItems[0] ?? movieItems[0] ?? seriesItems[0] ?? null;
+  const featured = hovered ?? defaultFeatured;
+  const featuredKey = featured ? `${featured.type}:${featured.id}` : null;
+  // Only trust meta that belongs to the item on screen (see useHoveredMeta).
+  const featuredMeta = hoveredMeta && hoveredMeta.key === featuredKey ? hoveredMeta.meta : null;
+  const openItem = (item: MediaItem) =>
+    navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`);
 
-        {showRowsLoading ? (
-          <div className="space-y-8">
-            <SkeletonHomeRow />
-            <SkeletonHomeRow />
-            <SkeletonHomeRow />
-          </div>
-        ) : (
-          rowsToRender.map((row, rowIndex) => (
-            <ErrorBoundary key={row.id} fallback={<ErrorRow />}>
-              <motion.div
-                className="board-row"
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{
-                  duration: 0.32,
-                  delay: Math.min(rowIndex, 6) * 0.06,
-                  ease: [0.4, 0, 0.2, 1],
-                }}
-              >
-                {isMobile() ? (
-                  <MediaRailMobile
+  return (
+    <div className="relative -mx-4 md:-mx-5">
+      <ImmersiveBackdrop item={featured} meta={featuredMeta} fixed />
+
+      <div className="relative z-10 flex min-h-[calc(100vh-8rem)] flex-col">
+        {/* Featured panel — the upper band of the TV design. */}
+        <div
+          className="hidden shrink-0 md:block"
+          style={{ padding: 'clamp(2rem,6vh,5rem) var(--bliss-safe-x) clamp(1.5rem,4vh,3rem)' }}
+        >
+          <ImmersiveInfoPanel item={featured} meta={featuredMeta} />
+        </div>
+
+        {/* Rows band. */}
+        <div className="mt-auto pb-24 md:pb-8">
+          {continueItems.length > 0 ? (
+            <LandscapeRail
+              title="Continue Watching"
+              items={continueItems}
+              progressById={continueProgress}
+              onHover={setHovered}
+              onOpen={openItem}
+            />
+          ) : null}
+
+          {showRowsLoading ? (
+            <div className="space-y-8 px-5">
+              <SkeletonHomeRow />
+              <SkeletonHomeRow />
+              <SkeletonHomeRow />
+            </div>
+          ) : (
+            rowsToRender.map((row) => (
+              <ErrorBoundary key={row.id} fallback={<ErrorRow />}>
+                <div className={homeRowPrefs.hidden.includes(row.id) ? 'opacity-40' : undefined}>
+                  {homeEditMode ? (
+                    <div className="px-5 pb-1">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="rounded-full bg-white/10 text-foreground/70"
+                        onPress={() => toggleVisibility(row.id)}
+                      >
+                        {homeRowPrefs.hidden.includes(row.id) ? 'Show' : 'Hide'} {row.title}
+                      </Button>
+                    </div>
+                  ) : null}
+                  <LandscapeRail
                     title={row.title}
                     items={row.items}
-                    onItemPress={(item) => navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`)}
+                    onHover={setHovered}
+                    onOpen={openItem}
                     onSeeAll={() => handleSeeAll(row)}
-                    dimmed={homeRowPrefs.hidden.includes(row.id)}
-                    actions={
-                      homeEditMode ? (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="rounded-full bg-white/10 text-foreground/70 text-xs px-2 py-1"
-                          onPress={() => toggleVisibility(row.id)}
-                        >
-                          {homeRowPrefs.hidden.includes(row.id) ? 'Show' : 'Hide'}
-                        </Button>
-                      ) : null
-                    }
                   />
-                ) : (
-                  <MediaRail
-                    title={row.title}
-                    items={row.items}
-                    onItemPress={(item) => navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`)}
-                    onSeeAll={() => handleSeeAll(row)}
-                    dimmed={homeRowPrefs.hidden.includes(row.id)}
-                    noScroll
-                    className="board-row-poster"
-                    actions={
-                      homeEditMode ? (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="rounded-full bg-white/10 text-foreground/70"
-                          onPress={() => toggleVisibility(row.id)}
-                        >
-                          {homeRowPrefs.hidden.includes(row.id) ? 'Show' : 'Hide'}
-                        </Button>
-                      ) : null
-                    }
-                  />
-                )}
-              </motion.div>
-            </ErrorBoundary>
-          ))
-        )}
+                </div>
+              </ErrorBoundary>
+            ))
+          )}
+        </div>
       </div>
     </div>
   );

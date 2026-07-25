@@ -38,7 +38,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
 
   const [uiStyle, setUiStyleRaw] = useState<UiStyle>(() => {
     const stored = localStorage.getItem('uiStyle');
-    if (stored === 'netflix' || stored === 'modern') return stored;
+    if (stored === 'netflix') return stored;
     return 'classic';
   });
   const [query, setQuery] = useState('');

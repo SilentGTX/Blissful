@@ -1,1 +1,1 @@
-export type UiStyle = 'classic' | 'netflix' | 'modern';
+export type UiStyle = 'classic' | 'netflix';

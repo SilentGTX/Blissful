@@ -22,6 +22,18 @@
        change the site hue from the Settings page. */
     --bliss-accent: #95a2ff;
     --bliss-accent-glow: rgba(149, 162, 255, 0.55);
+
+    /* ---- Immersive design layer -------------------------------------------
+       The Android TV app's look, ported to mouse. Its theme/colors.ts was
+       copied 1:1 FROM this file, so the palette already matches; what the TV
+       design adds is the display serif, the 16:9 landscape tile, and the
+       full-bleed backdrop + scrim stack. Sizes are authored against a 1920px
+       canvas (the TV's design width) and expressed as clamp(min, vw, max) so
+       they hold up on a laptop and on a 4K monitor alike. */
+    --bliss-display: "Spectral", "Fraunces", Georgia, serif;
+    --bliss-ink: #05070a; /* text on an accent-filled control */
+    --bliss-tile-radius: clamp(10px, 0.84vw, 16px);
+    --bliss-safe-x: clamp(1.5rem, 3vw, 4rem);
   }
 
   html,
@@ -2157,4 +2169,259 @@ html[data-ui="netflix"] .netflix-detail .action-button-Pn4hZ.is-active {
     left: 100%;
     width: 40%;
   }
+}
+
+/* ===========================================================================
+   IMMERSIVE DESIGN LAYER — the Android TV app's look, adapted to the mouse.
+   Ported from apps/android-blissful: home/HomeHero.tsx (Backdrop + InfoPanel),
+   home/LandscapeRail.tsx, PosterCard.tsx (landscape variant). Every value here
+   is the TV's 1920-canvas px turned into a clamp() so it scales with the
+   window instead of the TV's fixed viewport.
+
+   Interaction differs on purpose: the TV drives everything from D-pad FOCUS,
+   we drive it from HOVER (plus :focus-visible so keyboard users keep parity).
+   =========================================================================== */
+
+.bliss-display {
+  font-family: var(--bliss-display);
+}
+
+/* ---- Full-bleed backdrop of the hovered item + legibility scrims ---------
+   TV: HomeHero.tsx `Backdrop`. Same four layers in the same order — art, the
+   0.12 accent wash, then the top / left / bottom scrims. */
+.bliss-backdrop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #07090d;
+}
+
+/* Viewport-pinned variant (Home): stays full-bleed behind the scrolling rails
+   and reaches under the glass sidebar, exactly like the TV's band layout. */
+.bliss-backdrop--fixed {
+  position: fixed;
+  z-index: 0;
+}
+
+.bliss-backdrop-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Cross-fade when the hovered tile changes (TV: Img transition={350}). */
+  transition: opacity 350ms ease;
+}
+
+.bliss-backdrop-wash {
+  position: absolute;
+  inset: 0;
+  background: var(--bliss-accent);
+  opacity: 0.12;
+  pointer-events: none;
+}
+
+.bliss-backdrop-scrims {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    /* top — keeps the top bar legible over a light backdrop (e.g. anime) */
+    linear-gradient(
+      to bottom,
+      rgba(6, 8, 12, 0.85) 0%,
+      rgba(6, 8, 12, 0.3) 20%,
+      transparent 45%
+    ),
+    /* left — legibility for the info panel */
+    linear-gradient(
+      to right,
+      rgba(6, 8, 12, 0.96) 12%,
+      rgba(6, 8, 12, 0.55) 42%,
+      transparent 74%
+    ),
+    /* bottom — under the rows band */
+    linear-gradient(
+      to bottom,
+      transparent 32%,
+      rgba(6, 8, 12, 0.72) 64%,
+      rgba(6, 8, 12, 0.98) 100%
+    );
+}
+
+/* ---- Featured info panel (TV: HomeHero.tsx `InfoPanel`) ------------------ */
+.bliss-info-title {
+  font-family: var(--bliss-display);
+  font-weight: 700;
+  font-size: clamp(2rem, 4.2vw, 5rem);
+  line-height: 1.05;
+  color: #fff;
+  text-shadow: 0 2px 24px rgba(0, 0, 0, 0.55);
+}
+
+.bliss-info-meta {
+  font-size: clamp(0.875rem, 1.25vw, 1.5rem);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.bliss-info-blurb {
+  font-size: clamp(0.8125rem, 1.05vw, 1.35rem);
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.78);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Genre pill — TV `GenreChip`, hover-lit instead of focus-lit. */
+.bliss-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1.5px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.1);
+  padding: clamp(0.3rem, 0.47vw, 0.56rem) clamp(0.7rem, 1.04vw, 1.25rem);
+  font-size: clamp(0.75rem, 1.04vw, 1.25rem);
+  font-weight: 600;
+  color: #fff;
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+
+.bliss-chip:hover,
+.bliss-chip:focus-visible {
+  border-color: var(--bliss-accent);
+  background: rgba(255, 255, 255, 0.16);
+  outline: none;
+}
+
+/* ---- Landscape rail (TV: LandscapeRail.tsx) ------------------------------ */
+.bliss-rail-title {
+  font-family: var(--bliss-display);
+  font-weight: 600;
+  font-size: clamp(1.05rem, 1.56vw, 1.875rem);
+  color: #fff;
+}
+
+.bliss-rail-scroller {
+  display: flex;
+  gap: clamp(0.65rem, 1.56vw, 1.875rem);
+  overflow-x: auto;
+  scroll-behavior: smooth;
+  /* Room for the hover scale so the tiles aren't clipped by the scroll box. */
+  padding: clamp(0.4rem, 0.73vw, 0.875rem) var(--bliss-safe-x)
+    clamp(0.4rem, 0.73vw, 0.875rem) clamp(0.6rem, 1.04vw, 1.25rem);
+  scrollbar-width: none;
+}
+
+.bliss-rail-scroller::-webkit-scrollbar {
+  display: none;
+}
+
+/* Right-edge vignette — TV uses a radial gradient so the fade blends out on
+   the left and feathers top/bottom instead of leaving hard edges. */
+.bliss-rail-fade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: clamp(3rem, 6.25vw, 7.5rem);
+  pointer-events: none;
+  background: radial-gradient(
+    100% 58% at 100% 50%,
+    rgba(8, 10, 14, 0.62) 0%,
+    rgba(8, 10, 14, 0.32) 60%,
+    rgba(8, 10, 14, 0) 100%
+  );
+}
+
+/* ---- Landscape tile (TV: PosterCard.tsx, variant="landscape") ------------ */
+.bliss-tile {
+  position: relative;
+  flex: 0 0 auto;
+  width: clamp(13rem, 22.5vw, 27rem); /* TV POSTER_W.land = 432 / 1920 */
+  aspect-ratio: 16 / 9;
+  border-radius: var(--bliss-tile-radius);
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.bliss-tile:hover,
+.bliss-tile:focus-visible {
+  transform: scale(1.045);
+  outline: none;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.5);
+  z-index: 1;
+}
+
+/* The art zooms slightly under the ring, like the TV's Animated zoom. */
+.bliss-tile-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 220ms ease;
+}
+
+.bliss-tile:hover .bliss-tile-art {
+  transform: scale(1.06);
+}
+
+/* Accent ring — drawn as an inset shadow so it isn't clipped by overflow. */
+.bliss-tile::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 3px var(--bliss-accent);
+  opacity: 0;
+  transition: opacity 150ms ease;
+  pointer-events: none;
+}
+
+.bliss-tile:hover::after,
+.bliss-tile:focus-visible::after {
+  opacity: 1;
+}
+
+.bliss-tile-scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent 45%, rgba(5, 7, 11, 0.85) 100%);
+}
+
+.bliss-tile-title {
+  position: absolute;
+  left: clamp(0.5rem, 0.94vw, 1.125rem);
+  right: clamp(0.5rem, 0.94vw, 1.125rem);
+  bottom: clamp(0.5rem, 0.94vw, 1.125rem);
+  font-family: var(--bliss-display);
+  font-weight: 600;
+  font-size: clamp(0.8125rem, 1.3vw, 1.5625rem);
+  line-height: 1.08;
+  color: #fff;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Watch-progress bar pinned to the tile's bottom edge (TV: same). */
+.bliss-tile-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: clamp(3px, 0.26vw, 5px);
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.bliss-tile-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--bliss-accent);
 }

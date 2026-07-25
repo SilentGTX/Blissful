@@ -80,7 +80,9 @@ export function useStoredStateSync({
         setIsDark(state.theme === 'dark');
       }
       if (state.uiStyle) {
-        const normalized = state.uiStyle === 'netflix' || state.uiStyle === 'modern' ? state.uiStyle : 'classic';
+        // 'modern' was removed; anything unrecognised (including profiles
+        // still storing it) falls back to the default look.
+        const normalized = state.uiStyle === 'netflix' ? state.uiStyle : 'classic';
         setUiStyle(normalized);
         localStorage.setItem('uiStyle', normalized);
       }

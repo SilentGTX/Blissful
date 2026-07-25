@@ -218,7 +218,6 @@ export default function AppShell() {
   const navigate = useNavigate();
   const isFullscreenRoute = location.pathname.startsWith('/detail') || location.pathname.startsWith('/player');
   const isNetflix = uiStyle === 'netflix';
-  const isModern = uiStyle === 'modern';
 
   // Default to expanded sidebar
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -466,7 +465,7 @@ export default function AppShell() {
         className={`min-h-dvh ${isNetflix ? 'netflix-root' : ''}`}
         style={{ background: 'var(--dynamic-bg)' }}
       >
-        {!isFullscreenRoute && !isNetflix && !isModern ? (
+        {!isFullscreenRoute && !isNetflix ? (
           <>
             <div className="min-h-dvh w-full">
               <div className="min-w-0 bliss-shell" style={navSizeStyle}>
@@ -635,36 +634,6 @@ export default function AppShell() {
             <RouteTransition>
               <Outlet />
             </RouteTransition>
-          </div>
-        ) : isModern ? (
-          <div className="h-screen w-full flex overflow-hidden" style={{ background: 'rgb(18 24 30)' }}>
-            <nav className="hidden md:flex flex-col w-52 shrink-0 border-r border-white/15 px-6 pt-8 pb-8">
-              <button
-                className="text-left text-base text-white font-medium mb-10 hover:text-white/60 transition"
-                onClick={() => navigate('/search')}
-              >
-                Search
-              </button>
-              {[
-                { label: 'Home', path: '/' },
-                { label: 'Discover', path: '/discover' },
-                { label: 'Library', path: '/library' },
-                { label: 'Settings', path: '/settings' },
-              ].map(({ label, path }) => (
-                <button
-                  key={label}
-                  className="text-left text-[15px] text-white font-normal py-2.5 hover:text-white/60 transition"
-                  onClick={() => navigate(path)}
-                >
-                  {label}
-                </button>
-              ))}
-            </nav>
-            <div className="flex-1 min-w-0 h-screen overflow-hidden">
-              <RouteTransition>
-                <Outlet />
-              </RouteTransition>
-            </div>
           </div>
         ) : null}
 
