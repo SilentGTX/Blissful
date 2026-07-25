@@ -44,6 +44,7 @@ export default function DetailPage() {
   const location = useLocation();
   const heroImageFromNav: string | undefined = (location.state as { heroImage?: string } | null)?.heroImage;
   const isNetflix = uiStyle === 'netflix';
+  const isTv = uiStyle === 'tv';
 
   const type = (params.type ?? 'movie') as string;
   const id = params.id ? decodeURIComponent(params.id) : '';
@@ -976,7 +977,7 @@ export default function DetailPage() {
   if (!metaLoading && !meta?.meta && !fallbackPoster) {
     return (
       <div className="relative z-10 flex min-h-dvh w-full flex-col items-center justify-center gap-4 bg-black px-6 text-center">
-        <div className="bliss-heading text-2xl font-semibold text-white">
+        <div className="font-[Instrument_Serif] text-2xl font-semibold text-white">
           Title unavailable
         </div>
         <div className="max-w-md text-sm text-foreground/60">
@@ -1026,14 +1027,20 @@ export default function DetailPage() {
           />
         </div>
       ) : null}
-      {/* Desktop scrim stack — the TV app's detail treatment (DetailScreen.tsx):
-          a lavender accent wash over the art, then a left→right scrim for the
-          text column and a bottom→top scrim under the episode rail. Replaces a
-          flat top-to-bottom dim, which washed the whole backdrop out evenly. */}
-      {(background ?? heroImageFromNav) ? (
-        <div className="bliss-backdrop-wash z-[1] hidden lg:left-[28%] lg:block" />
-      ) : null}
-      <div className="bliss-detail-scrims z-[1] hidden lg:block" />
+      {/* Desktop scrim. Classic dims the whole backdrop evenly; the TV theme
+          uses the Android app's directional stack (accent wash + left scrim for
+          the text column + bottom scrim under the rail) with the art inset to
+          the right 72%, which is what DetailScreen.tsx does. */}
+      {isTv ? (
+        <>
+          {(background ?? heroImageFromNav) ? (
+            <div className="bliss-backdrop-wash z-[1] hidden lg:left-[28%] lg:block" />
+          ) : null}
+          <div className="bliss-detail-scrims z-[1] hidden lg:block" />
+        </>
+      ) : (
+        <div className="absolute inset-0 z-[1] hidden bg-gradient-to-b from-black/65 via-black/40 to-black/80 lg:block" />
+      )}
 
       <div className="relative z-[2] min-h-full lg:h-full">
         {/* Back button - visible on all sizes */}

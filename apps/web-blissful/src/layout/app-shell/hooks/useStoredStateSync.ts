@@ -82,7 +82,10 @@ export function useStoredStateSync({
       if (state.uiStyle) {
         // 'modern' was removed; anything unrecognised (including profiles
         // still storing it) falls back to the default look.
-        const normalized = state.uiStyle === 'netflix' ? state.uiStyle : 'classic';
+        // 'modern' was replaced IN PLACE by the TV design, so profiles that
+        // still have it stored land on the new theme, not back on Classic.
+        const raw = state.uiStyle === 'modern' ? 'tv' : state.uiStyle;
+        const normalized = raw === 'netflix' || raw === 'tv' ? raw : 'classic';
         setUiStyle(normalized);
         localStorage.setItem('uiStyle', normalized);
       }

@@ -115,9 +115,12 @@ export const LandscapeRail = memo(function LandscapeRail({
 
   return (
     <section className="mb-8">
-      <div className="mb-3 flex items-center justify-between pr-8 pl-5">
+      <div className="group/rail mb-3 flex items-center justify-between pr-8 pl-5">
         <h2 className="bliss-rail-title">{title}</h2>
-        <div className="flex items-center gap-2">
+        {/* The TV rail has no arrows (D-pad scrolls it). Keep them for the
+            mouse, but only once the pointer is on the rail, so at rest the
+            header looks like the TV's. */}
+        <div className="flex items-center gap-2 opacity-0 transition-opacity group-hover/rail:opacity-100 focus-within:opacity-100">
           {onSeeAll ? (
             <button type="button" className="bliss-chip" onClick={onSeeAll}>
               See all

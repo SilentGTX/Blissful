@@ -191,15 +191,15 @@ export default function SettingsPage() {
         <div className="solid-surface rounded-[28px] bg-white/6 p-6 ">
           <div className="flex items-center justify-between">
             <div>
-              <div className="bliss-heading text-2xl font-semibold">Settings</div>
+              <div className="font-[Instrument_Serif] text-2xl font-semibold">Settings</div>
               <div className="text-sm text-foreground/60">Customize your experience</div>
             </div>
           </div>
 
           <ScrollShadow className="mt-6 max-h-[calc(100vh-14rem)] space-y-6 pr-1" hideScrollBar>
             <div>
-              <div className="bliss-heading text-xl font-semibold mb-3">Style</div>
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="text-lg font-semibold mb-3">Style</div>
+              <div className="grid gap-3 sm:grid-cols-3">
                 <button
                   type="button"
                   className={
@@ -230,6 +230,21 @@ export default function SettingsPage() {
                     Dark UI with Kecflix-style navigation and rails.
                   </div>
                 </button>
+                <button
+                  type="button"
+                  className={
+                    'rounded-2xl border px-4 py-4 text-left transition ' +
+                    (uiStyle === 'tv'
+                      ? 'border-white bg-white/15 text-white'
+                      : 'border-white/10 bg-white/5 text-foreground/70 hover:bg-white/10')
+                  }
+                  onClick={() => setUiStyle('tv')}
+                >
+                  <div className="text-sm font-semibold">TV</div>
+                  <div className="mt-1 text-xs text-foreground/60">
+                    The Android TV look: full-bleed backdrop that follows your pointer, landscape rails.
+                  </div>
+                </button>
               </div>
             </div>
 
@@ -238,7 +253,7 @@ export default function SettingsPage() {
             </div>
 
             <div>
-              <div className="bliss-heading text-xl font-semibold mb-3">Accent color</div>
+              <div className="text-lg font-semibold mb-3">Accent color</div>
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <div>
@@ -269,7 +284,7 @@ export default function SettingsPage() {
             </div>
 
             <div>
-              <div className="bliss-heading text-xl font-semibold mb-3">Player</div>
+              <div className="text-lg font-semibold mb-3">Player</div>
               <div className="space-y-6">
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                   <div className="text-sm font-semibold mb-3">Subtitles</div>
@@ -582,7 +597,7 @@ export default function SettingsPage() {
 
             {user ? (
               <div>
-                <div className="bliss-heading text-xl font-semibold mb-3">Account</div>
+                <div className="text-lg font-semibold mb-3">Account</div>
                 <div className="space-y-4">
                   <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                     <div className="text-sm font-semibold mb-3">Profile</div>
@@ -686,7 +701,7 @@ export default function SettingsPage() {
             ) : null}
 
             <div>
-              <div className="bliss-heading text-xl font-semibold mb-3">Linked accounts</div>
+              <div className="text-lg font-semibold mb-3">Linked accounts</div>
               <div className="space-y-6">
                 <SettingsStremioPanel />
               </div>

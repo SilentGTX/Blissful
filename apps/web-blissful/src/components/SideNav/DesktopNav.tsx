@@ -14,6 +14,7 @@ import { FriendsAccordion } from '../Friends';
 import { BlissTooltip } from '../base/BlissTooltip';
 import { useFriends } from '../../context/FriendsProvider';
 import { useAuth } from '../../context/AuthProvider';
+import { useUI } from '../../context/UIProvider';
 import { desktop, isNativeShell } from '../../lib/desktop';
 import { useFooterAccordionHeights } from './useFooterAccordionHeights';
 import { useViewportShorterThan } from './useViewportHeight';
@@ -35,6 +36,9 @@ export type DesktopNavProps = Pick<
 
 export function DesktopNav(props: DesktopNavProps) {
   const { collapsed } = props;
+  // The TV theme mirrors the Android app, down to its logo mark.
+  const { uiStyle } = useUI();
+  const isTvTheme = uiStyle === 'tv';
   const [isContinueOpen, setIsContinueOpen] = useState(false);
   // Both bottom accordions are controlled here so the surrounding
   // `<div>` for each box can flip between `flex-1 min-h-0` (when
@@ -175,12 +179,11 @@ export function DesktopNav(props: DesktopNavProps) {
   }, [location.pathname]);
 
   return (
-    // The TV app's expanded NavRail: a full-height panel flush to the left
-    // edge, rounded on the RIGHT corners only, with a hairline right border —
-    // "no glass pill / sheen" (NavRail.tsx). The floating rounded card it
-    // replaced fought the full-bleed backdrop behind it.
-    <div className={'bliss-rail relative h-full w-full overflow-visible' + (collapsed ? ' closed' : '')}>
-      <div className="bliss-rail-panel relative flex h-full w-full flex-col overflow-hidden antialiased">
+    // `bliss-rail` is a hook for the TV theme only (html[data-ui="tv"]), which
+    // restyles this floating card into the TV app's edge-anchored NavRail.
+    // Classic keeps the card exactly as it was.
+    <div className={'rounded-[28px] bliss-sidebar bliss-rail relative h-full w-full overflow-visible' + (collapsed ? ' closed' : '')}>
+      <div className="bliss-rail-panel solid-surface relative flex h-full w-full flex-col overflow-hidden rounded-[28px] bg-white/6 shadow-xl antialiased">
         {/* Logo bar — margin clamps with viewport so the header
             shrinks on shorter screens. The logo itself stays a fixed
             size so the brand mark doesn't get tiny. */}
@@ -198,7 +201,11 @@ export function DesktopNav(props: DesktopNavProps) {
               aria-label="Home"
               onClick={() => handleNavChange('home')}
             >
-              <img src="/blissful-small-logo.png" alt="Blissful" className="h-full w-full object-contain" />
+              <img
+                src={isTvTheme ? '/blissful-tv-logo.png' : '/blissful-small-logo.png'}
+                alt="Blissful"
+                className={'h-full w-full object-contain' + (isTvTheme ? ' rounded-[22%]' : '')}
+              />
             </button>
           </div>
 

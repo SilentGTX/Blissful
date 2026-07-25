@@ -1,6 +1,8 @@
 import { BlissButton, BlissSelect, BlissSpinner } from '../components/base';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import MediaCard from '../components/MediaCard';
+import { useUI } from '../context/UIProvider';
 import { ImmersiveBackdrop } from '../features/home/immersive/ImmersiveBackdrop';
 import { LandscapeGridCard } from '../features/home/immersive/LandscapeRail';
 import { useHoveredMeta } from '../features/home/immersive/useHoveredMeta';
@@ -51,14 +53,24 @@ function typeLabel(type: string): string {
   return raw.slice(0, 1).toUpperCase() + raw.slice(1);
 }
 
+/** Detail link for a library row, resuming the last-watched episode. */
+function hrefFor(item: LibraryItem, videoId: string | null): string {
+  const base = `/detail/${encodeURIComponent(item.type)}/${encodeURIComponent(item._id)}`;
+  return item.type === 'series' && typeof videoId === 'string'
+    ? `${base}?videoId=${encodeURIComponent(videoId)}`
+    : base;
+}
+
 export default function LibraryPage() {
   const { authKey } = useAuth();
   const { openLogin } = useModals();
+  const { uiStyle } = useUI();
   const navigate = useNavigate();
 
   const [items, setItems] = useState<LibraryItem[]>([]);
-  // Immersive backdrop following the hovered card — the TV's Library renders
-  // the same `Backdrop` as Home (LibraryScreen.tsx).
+  // TV theme only: LibraryScreen.tsx renders the same immersive Backdrop as
+  // Home, following the focused card.
+  const isTv = uiStyle === 'tv';
   const [hovered, setHovered] = useState<MediaItem | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -172,7 +184,7 @@ export default function LibraryPage() {
     return (
       <div className="mt-4">
         <div className="solid-surface rounded-[28px] bg-white/6 p-6">
-          <div className="bliss-heading text-2xl font-semibold">Library</div>
+          <div className="font-[Instrument_Serif] text-2xl font-semibold">Library</div>
           <div className="mt-1 text-sm text-foreground/60">Login to see your Stremio library.</div>
           <div className="mt-5">
             <BlissButton tone="solid" onPress={openLogin}>
@@ -184,15 +196,15 @@ export default function LibraryPage() {
     );
   }
 
-  const hoveredMeta = useHoveredMeta(hovered);
+  const hoveredMeta = useHoveredMeta(isTv ? hovered : null);
   const hoveredKey = hovered ? `${hovered.type}:${hovered.id}` : null;
   const backdropMeta = hoveredMeta && hoveredMeta.key === hoveredKey ? hoveredMeta.meta : null;
 
   return (
-    // Backdrop and content are SIBLINGS (as on Home): the fixed backdrop sits at
-    // z-0 and the content wrapper at z-10, so the art can't paint over the text.
+    // Backdrop and content are SIBLINGS (as on Home): the fixed backdrop sits
+    // at z-0 and the content at z-10, so the art can't paint over the text.
     <div className="relative">
-      <ImmersiveBackdrop item={hovered} meta={backdropMeta} fixed />
+      {isTv ? <ImmersiveBackdrop item={hovered} meta={backdropMeta} fixed /> : null}
       <div className="relative z-10 mt-4 space-y-6">
       <div className="mt-5 flex flex-nowrap items-center gap-3 overflow-x-auto hide-scrollbar">
         <div className="flex-none">
@@ -254,7 +266,13 @@ export default function LibraryPage() {
       ) : null}
 
 
-      <div className="bliss-tile-grid grid gap-5 [grid-template-columns:repeat(auto-fill,minmax(clamp(200px,15vw,420px),1fr))]">
+      <div
+        className={
+          isTv
+            ? 'bliss-tile-grid grid gap-5 [grid-template-columns:repeat(auto-fill,minmax(clamp(200px,15vw,420px),1fr))]'
+            : 'grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(clamp(160px,16vw,420px),1fr))]'
+        }
+      >
         {!loading && filtered.length === 0 ? (
           <div className="text-sm text-foreground/60">No library items found.</div>
         ) : null}
@@ -293,22 +311,25 @@ export default function LibraryPage() {
                 <CloseIcon size={16} />
               </button>
 
-              <LandscapeGridCard
-                item={mediaItem}
-                progress={progress ?? undefined}
-                onHover={setHovered}
-                onOpen={() => {
-                  const base = `/detail/${encodeURIComponent(item.type)}/${encodeURIComponent(item._id)}`;
-                  const href = item.type === 'series' && typeof videoId === 'string'
-                    ? `${base}?videoId=${encodeURIComponent(videoId)}`
-                    : base;
-                  navigate(href);
-                }}
-              />
+              {isTv ? (
+                <LandscapeGridCard
+                  item={mediaItem}
+                  progress={progress ?? undefined}
+                  onHover={setHovered}
+                  onOpen={() => navigate(hrefFor(item, videoId))}
+                />
+              ) : (
+                <MediaCard
+                  item={mediaItem}
+                  variant="poster"
+                  progress={progress}
+                  onPress={() => navigate(hrefFor(item, videoId))}
+                />
+              )}
             </div>
           );
         })}
-      </div>
+        </div>
       </div>
     </div>
   );

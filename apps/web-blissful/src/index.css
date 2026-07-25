@@ -196,22 +196,14 @@
       padding 340ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
-  /* TV TopBar: the bar itself carries NO surface — only the search pill and
-     the avatar do — so the immersive backdrop runs unbroken to the top of the
-     window. It used to be an opaque #2a2a2a slab across the full width. */
   .bliss-nav-bar {
-    background: transparent;
-    box-shadow: none;
+    background: #2a2a2a;
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.25);
   }
 
-  /* TV TopBar `Glass`: a cool-glass base gradient with a white sheen on top. */
   .bliss-nav-input {
-    background:
-      linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05)),
-      linear-gradient(135deg, rgba(124, 144, 176, 0.1), rgba(18, 24, 36, 0.18));
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    background: #1f1f1f;
+    border: 1px solid #2f2f2f;
   }
 
   .bliss-top-nav .bliss-nav-input:focus-within {
@@ -475,15 +467,7 @@ html:not(.dark) .bliss-sidebar {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   box-shadow: none;
-  /* TV NavRail Row: the border is transparent until the row is focused, so the
-     rail reads as a list of labels rather than a stack of boxes. */
-  border: 1px solid transparent;
-}
-
-.bliss-sidebar-link:hover,
-.bliss-sidebar-link:focus-visible,
-.bliss-sidebar-link.is-active {
-  border-color: var(--bliss-accent);
+  border: 1px solid #2c2c2c;
 }
 
 html:not(.dark) .bliss-sidebar-link.solid-surface {
@@ -505,13 +489,13 @@ html:not(.dark) .bliss-sidebar-link {
 html:not(.dark) .bliss-sidebar-link:hover {
   color: #ffffff;
   background: transparent;
-  border-color: var(--bliss-accent);
+  border-color: transparent;
 }
 
 .bliss-sidebar-link.is-active {
   background: transparent;
   color: var(--bliss-accent);
-  border-color: var(--bliss-accent);
+  border-color: transparent;
 }
 
 /* ── Retro "glitch" hover (port of hermes-agent.nousresearch.com) ────
@@ -742,7 +726,7 @@ html:not(.dark) .bliss-sidebar-link:hover {
 html:not(.dark) .bliss-sidebar-link.is-active {
   background: transparent;
   color: var(--bliss-accent);
-  border-color: var(--bliss-accent);
+  border-color: transparent;
 }
 
 .bliss-sidebar-label {
@@ -2260,11 +2244,11 @@ html[data-ui="netflix"] .netflix-detail .action-button-Pn4hZ.is-active {
    of the picture, so match the TV and inset the layer instead. Desktop only —
    the mobile layout uses the art as a top hero. */
 @media (min-width: 1024px) {
-  .background-image-layer-wJa90 {
+  html[data-ui="tv"] .background-image-layer-wJa90 {
     left: 28%;
   }
 
-  .background-image-tSjYu {
+  html[data-ui="tv"] .background-image-tSjYu {
     object-position: center;
   }
 }
@@ -2477,21 +2461,31 @@ html[data-ui="netflix"] .netflix-detail .action-button-Pn4hZ.is-active {
    near-opaque panel + hairline right border. The old sidebar was a floating
    rounded card with a glass sheen and a drop shadow, which read as a widget
    sitting on the page rather than the TV's edge-anchored rail. */
-.bliss-rail-panel {
+html[data-ui="tv"] .bliss-rail-panel {
   background: rgba(10, 11, 15, 0.99);
+  border: 0;
   border-right: 1px solid rgba(255, 255, 255, 0.07);
-  border-top-right-radius: var(--bliss-tile-radius);
-  border-bottom-right-radius: var(--bliss-tile-radius);
+  /* Rounded on the RIGHT corners only — the rail is anchored to the window
+     edge, so left corners would show a sliver of page behind them. */
+  border-radius: 0 var(--bliss-tile-radius) var(--bliss-tile-radius) 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
-html:not(.dark) .bliss-rail-panel {
+html[data-ui="tv"]:not(.dark) .bliss-rail-panel {
   background: #f2f2f2;
   border-right-color: rgba(0, 0, 0, 0.08);
 }
 
-/* The rail owns the left edge, so the wrapper's inset padding goes away. */
-.bliss-vertical-nav:has(.bliss-rail) {
-  padding: 0;
+/* The rail owns the left edge. Drop the wrapper's left/top/bottom padding so
+   the panel is flush and full height, but KEEP the right padding and shrink
+   the wrapper by the same amount — that leaves the panel's content box exactly
+   as wide as before (var - 2 * margin), which `.nav-icon-slot` hard-codes in
+   its centering math. Zeroing all four sides made the collapsed rail 2rem too
+   wide and pushed the icons off-centre. */
+html[data-ui="tv"] .bliss-vertical-nav:has(.bliss-rail) {
+  padding: 0 var(--horizontal-nav-margin) 0 0;
   width: calc(var(--vertical-nav-bar-size) - var(--horizontal-nav-margin));
 }
 
@@ -2520,4 +2514,41 @@ html:not(.dark) .bliss-rail-panel {
 .bliss-tile-grid .bliss-tile:hover + .bliss-tile-title-below,
 .bliss-tile-grid .bliss-tile.is-selected + .bliss-tile-title-below {
   color: var(--bliss-accent);
+}
+
+/* ===========================================================================
+   TV THEME CHROME (html[data-ui="tv"])
+   Classic keeps its floating glass card + opaque top bar; the TV theme
+   restyles the same markup into the Android TV app's chrome.
+   =========================================================================== */
+
+/* Rail rows: the TV NavRail Row border is transparent until focus, and the
+   accent ring is the hover/active signal. */
+html[data-ui="tv"] .bliss-sidebar-link {
+  border-color: transparent;
+}
+
+html[data-ui="tv"] .bliss-sidebar-link:hover,
+html[data-ui="tv"] .dark .bliss-sidebar-link:hover,
+html[data-ui="tv"] .bliss-sidebar-link:focus-visible,
+html[data-ui="tv"] .bliss-sidebar-link.is-active,
+html[data-ui="tv"].dark .bliss-sidebar-link.is-active {
+  border-color: var(--bliss-accent);
+}
+
+/* Top bar carries no surface of its own — only the search pill and the avatar
+   do — so the immersive backdrop runs unbroken to the top of the window. */
+html[data-ui="tv"] .bliss-nav-bar {
+  background: transparent;
+  box-shadow: none;
+}
+
+/* TV TopBar `Glass`: cool-glass base gradient with a white sheen on top. */
+html[data-ui="tv"] .bliss-nav-input {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05)),
+    linear-gradient(135deg, rgba(124, 144, 176, 0.1), rgba(18, 24, 36, 0.18));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }

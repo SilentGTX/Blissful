@@ -1,21 +1,40 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
 // Home + browse (web). Asserts STRUCTURE on the real home / search / discover
 // pages, using a search term guaranteed to have Cinemeta results ('Batman').
 // Content is live — we assert that the hero / rows / grid RENDER, not specific titles.
+//
+// Two themes are covered because they render completely different homes:
+// Classic (the default: NOW POPULAR hero card + poster rails) and TV (the
+// Android TV design: immersive backdrop + landscape rails).
+
+/** Boot the app with a given uiStyle, the way the Settings page persists it. */
+async function useTheme(page: Page, theme: 'classic' | 'tv') {
+  await page.addInitScript((t) => localStorage.setItem('uiStyle', t), theme);
+}
 
 test.describe('Home + browse (web)', () => {
-  test('home renders the immersive featured panel, search bar, and landscape rails', async ({ page }) => {
+  test('classic home renders the hero card, search bar, and media rails', async ({ page }) => {
+    await useTheme(page, 'classic');
     await page.goto('/');
     await expect(page.getByPlaceholder('Search everything')).toBeVisible({ timeout: 20_000 });
-    // The Android-TV-style home: full-bleed backdrop + featured panel driven by
-    // the hovered tile, over rails of 16:9 landscape tiles.
+    await expect(page.getByTestId('home-hero-card')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('media-rail').first()).toBeVisible({ timeout: 30_000 });
+    // The TV theme's chrome must NOT leak into Classic.
+    await expect(page.locator('.bliss-backdrop--fixed')).toHaveCount(0);
+  });
+
+  test('tv home renders the immersive featured panel and landscape rails', async ({ page }) => {
+    await useTheme(page, 'tv');
+    await page.goto('/');
+    await expect(page.getByPlaceholder('Search everything')).toBeVisible({ timeout: 20_000 });
     await expect(page.locator('.bliss-backdrop--fixed')).toBeVisible({ timeout: 30_000 });
     await expect(page.locator('.bliss-info-title')).not.toBeEmpty({ timeout: 30_000 });
     await expect(page.getByTestId('bliss-tile').first()).toBeVisible({ timeout: 30_000 });
   });
 
-  test('hovering a tile swaps the featured title', async ({ page }) => {
+  test('tv home: hovering a tile swaps the featured title', async ({ page }) => {
+    await useTheme(page, 'tv');
     await page.goto('/');
     const tiles = page.getByTestId('bliss-tile');
     await expect(tiles.first()).toBeVisible({ timeout: 30_000 });
@@ -41,8 +60,7 @@ test.describe('Home + browse (web)', () => {
     await search.fill('Batman');
     await search.press('Enter');
     await page.waitForURL(/\/search/, { timeout: 15_000 });
-    // Results render as landscape rails (the TV design), same tile as Home.
-    await expect(page.getByTestId('bliss-tile').first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('media-rail').first()).toBeVisible({ timeout: 30_000 });
   });
 
   test('discover renders the catalog grid', async ({ page }) => {

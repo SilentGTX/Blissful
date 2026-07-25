@@ -5,6 +5,7 @@ import { proxiedImage } from '../../../lib/imageProxy';
 import { normalizeStremioImage } from '../../../lib/mediaTypes';
 import { metahubPosterToBackdrop } from '../../../lib/transitionPoster';
 import type { MediaItem } from '../../../types/media';
+import { formatDate } from '../../detail/utils';
 import type { Meta } from './useHoveredMeta';
 
 const IMDB_RE = /^tt\d{5,}$/;
@@ -86,8 +87,12 @@ export const ImmersiveInfoPanel = memo(function ImmersiveInfoPanel({
   if (!item) return null;
 
   const runtime = meta?.runtime ?? '';
+  // Full release date, like the TV's InfoPanel (formatFullDate) and the detail
+  // page — a bare year reads as much less information at this size.
   const released =
-    meta?.releaseInfo ?? (meta?.year != null ? String(meta.year) : item.year ? String(item.year) : '');
+    formatDate(meta?.released) ??
+    meta?.releaseInfo ??
+    (meta?.year != null ? String(meta.year) : item.year ? String(item.year) : '');
   const genres = (meta?.genres ?? meta?.genre ?? []).slice(0, 4);
   const blurb = meta?.description ?? item.blurb ?? '';
   const rating = meta?.imdbRating ?? item.rating;

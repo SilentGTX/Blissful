@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import MediaRail from '../components/MediaRail';
 import { ImmersiveBackdrop } from '../features/home/immersive/ImmersiveBackdrop';
 import { LandscapeRail } from '../features/home/immersive/LandscapeRail';
 import { useHoveredMeta } from '../features/home/immersive/useHoveredMeta';
@@ -69,9 +70,10 @@ function isKitsuAddon(manifest?: { id?: string; name?: string } | null): boolean
 
 export default function SearchPage() {
   const { addons } = useAddons();
-  const { setQuery } = useUI();
+  const { setQuery, uiStyle } = useUI();
   const navigate = useNavigate();
-  // Immersive backdrop following the hovered result, like Home and Discover.
+  // TV theme only: results become landscape rails over an immersive backdrop.
+  const isTv = uiStyle === 'tv';
   const [hovered, setHovered] = useState<MediaItem | null>(null);
   const [searchParams] = useSearchParams();
   const q = (searchParams.get('search') ?? searchParams.get('query') ?? '').trim();
@@ -291,17 +293,18 @@ export default function SearchPage() {
     };
   }, [addonList, q]);
 
-  const hoveredMeta = useHoveredMeta(hovered);
+  const hoveredMeta = useHoveredMeta(isTv ? hovered : null);
   const hoveredKey = hovered ? `${hovered.type}:${hovered.id}` : null;
   const backdropMeta = hoveredMeta && hoveredMeta.key === hoveredKey ? hoveredMeta.meta : null;
 
   return (
-    <div className="board-container relative mt-4 overflow-x-hidden px-4 sm:px-0">
-      <ImmersiveBackdrop item={hovered} meta={backdropMeta} fixed />
-      <div className="board-content relative z-10 space-y-10">
+    <div className="relative">
+      {isTv ? <ImmersiveBackdrop item={hovered} meta={backdropMeta} fixed /> : null}
+      <div className="board-container relative z-10 mt-4 overflow-x-hidden px-4 sm:px-0">
+        <div className="board-content space-y-10">
         {!q ? (
           <div className="solid-surface rounded-[28px] bg-white/6 p-8">
-            <div className="bliss-heading text-2xl font-semibold tracking-tight">Search anything</div>
+            <div className="font-[Instrument_Serif] text-2xl font-semibold tracking-tight">Search anything</div>
             <div className="mt-2 text-sm text-foreground/70">
               Movies, series, actors, or paste a link.
             </div>
@@ -314,22 +317,38 @@ export default function SearchPage() {
           <div className="text-sm text-foreground/60">No results.</div>
         ) : null}
 
-        {rows.map((row) => (
-          <LandscapeRail
-            key={row.id}
-            title={row.title}
-            items={row.items}
-            onHover={setHovered}
-            onOpen={(item) => navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`)}
-            onSeeAll={() => {
-              const qs = new URLSearchParams({ search: q });
-              navigate(
-                `/discover/${encodeURIComponent(row.transportUrl)}/${row.type}/${row.catalogId}?${qs.toString()}`,
-                { state: { seedItems: row.items } }
-              );
-            }}
-          />
-        ))}
+        {rows.map((row) => {
+          const seeAll = () => {
+            const qs = new URLSearchParams({ search: q });
+            navigate(
+              `/discover/${encodeURIComponent(row.transportUrl)}/${row.type}/${row.catalogId}?${qs.toString()}`,
+              { state: { seedItems: row.items } }
+            );
+          };
+          const open = (item: MediaItem) =>
+            navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`);
+          return isTv ? (
+            <LandscapeRail
+              key={row.id}
+              title={row.title}
+              items={row.items}
+              onHover={setHovered}
+              onOpen={open}
+              onSeeAll={seeAll}
+            />
+          ) : (
+            <MediaRail
+              key={row.id}
+              title={row.title}
+              items={row.items}
+              noScroll
+              className="board-row-poster"
+              onItemPress={open}
+              onSeeAll={seeAll}
+            />
+          );
+        })}
+        </div>
       </div>
     </div>
   );

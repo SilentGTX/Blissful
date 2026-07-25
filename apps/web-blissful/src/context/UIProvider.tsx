@@ -38,7 +38,9 @@ export function UIProvider({ children }: { children: ReactNode }) {
 
   const [uiStyle, setUiStyleRaw] = useState<UiStyle>(() => {
     const stored = localStorage.getItem('uiStyle');
-    if (stored === 'netflix') return stored;
+    if (stored === 'netflix' || stored === 'tv') return stored;
+    // The old coverflow 'modern' theme was replaced in place by 'tv'.
+    if (stored === 'modern') return 'tv';
     return 'classic';
   });
   const [query, setQuery] = useState('');

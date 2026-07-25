@@ -4,6 +4,7 @@ import { BlissTooltip } from '../../components/base/BlissTooltip';
 import { PenIcon } from '../../icons/PenIcon';
 import { CloseIcon } from '../../icons/CloseIcon';
 import { SearchIcon } from '../../icons/SearchIcon';
+import { useUI } from '../../context/UIProvider';
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { renderProfileAvatar } from '../../lib/profileAvatars';
 import { proxiedImage } from '../../lib/imageProxy';
@@ -68,6 +69,9 @@ export function TopNav({
   accountDisplayName,
   isWhoWatchingOpen = false,
 }: TopNavProps) {
+  // The TV theme mirrors the Android app, down to its logo mark.
+  const { uiStyle } = useUI();
+  const isTvTheme = uiStyle === 'tv';
   const [isDesktopAccountMenuOpen, setIsDesktopAccountMenuOpen] = useState(false);
   const [isMobileAccountMenuOpen, setIsMobileAccountMenuOpen] = useState(false);
   const fsLockedRef = useRef(false);
@@ -182,7 +186,11 @@ export function TopNav({
             aria-label="Home"
             onClick={onNavigateHome}
           >
-            <img src="/blissful-small-logo.png" alt="Blissful" className="h-10 w-auto object-contain" />
+            <img
+              src={isTvTheme ? '/blissful-tv-logo.png' : '/blissful-small-logo.png'}
+              alt="Blissful"
+              className={isTvTheme ? 'h-10 w-10 rounded-[22%] object-contain' : 'h-10 w-auto object-contain'}
+            />
           </button>
 
           <div
