@@ -1720,9 +1720,15 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       if (props.logo) params.set('logo', props.logo);
       navigate(`/player?${params.toString()}`, { replace: true });
     } else {
+      // No stored stream for the next episode (the normal case — you haven't
+      // watched it yet). Route through the detail page's AUTOPLAY path rather
+      // than dumping the user on the releases picker: it resolves streams and
+      // forwards straight to the player with the best cached release. Without
+      // `autoplay=1` this landed on the picker and playback stopped dead.
       params.set('videoId', next.nextVideoId);
       if (next.nextSeason !== null) params.set('season', String(next.nextSeason));
       if (next.nextEpisode !== null) params.set('episode', String(next.nextEpisode));
+      params.set('autoplay', '1');
       navigate(
         `/detail/${encodeURIComponent(props.type)}/${encodeURIComponent(props.id)}?${params.toString()}`,
         { replace: true },

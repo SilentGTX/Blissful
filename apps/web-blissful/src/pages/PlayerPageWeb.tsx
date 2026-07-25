@@ -42,6 +42,8 @@ function clearVideasyCooldown(): void {
 }
 import { getResumeSeconds, openInVlc } from '../layout/app-shell/utils';
 import { pickPreferredAudioTrack } from '../lib/audioTracks';
+import { extractInfohash, releaseCacheTier, scoreReleaseForAutoPick } from '../lib/rdCache';
+import { getLastStreamSelection } from '../lib/streamHistory';
 import { parseStreamDescription } from '../features/detail/utils';
 import { releaseMatchesShow } from '../lib/fallbackReleases';
 import BottomDrawer from '../components/BottomDrawer';
@@ -679,6 +681,16 @@ export default function PlayerPage() {
   // RD-first: the videasy resolve is skipped outright and the addon
   // fallback commits the RD pick directly.
   const hasProfileRdKey = !!resolvedPlayerSettings.realDebridApiKey?.trim();
+  // The release this profile last played for THIS episode. Used ONLY as a
+  // tiebreaker in the auto-pick (resume the same release while it's still
+  // cached) — never to force an uncached one. Held in a ref so the pick effects
+  // don't re-run when it changes.
+  const savedStreamUrlRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!type || !id) { savedStreamUrlRef.current = null; return; }
+    savedStreamUrlRef.current =
+      getLastStreamSelection({ authKey, type, id, videoId: videoId ?? null })?.url ?? null;
+  }, [authKey, type, id, videoId]);
   const [selectedServer, setSelectedServer] = useState<string>(initialServer);
   const [unavailableServers, setUnavailableServers] = useState<string[]>([]);
   // Set to true when the user manually picks a server from the
@@ -1403,15 +1415,20 @@ export default function PlayerPage() {
         // Populate the Releases picker with the RD streams NOW, so it isn't
         // empty after the commit cancels the (slower) full-pipeline run.
         if (!cancelled) setAddonStreams(toExposed(usable.map(({ stream, addonName }) => ({ stream, addonName }))));
-        // Rank for the auto-pick: non-HEVC first (cheap transcode), then cached
-        // [RD+] over uncached, then 1080p > 720p > 4K.
-        const rank = ({ stream }: { stream: StremioStream }) => {
-          const t = `${stream.name ?? ''} ${stream.title ?? ''}`;
-          const nonHevc = /(^|[^a-z])(x265|h\.?265|hevc)([^a-z]|$)/i.test(t) ? 0 : 1000;
-          const cached = /\[RD\+\]/i.test(stream.name ?? '') ? 100 : 0;
-          const q = /1080p/i.test(t) ? 30 : /720p/i.test(t) ? 25 : /2160p|4k/i.test(t) ? 15 : 10;
-          return nonHevc + cached + q;
-        };
+        // Rank for the auto-pick. Cache state DOMINATES: an uncached release
+        // makes RD download the torrent first, so the player just sits there —
+        // previously the codec weight (1000) outranked the cached bonus (100)
+        // and an uncached H.264 could win over a cached release. Within a tier,
+        // the release the user already has progress on wins (resume continuity),
+        // then cheap-to-transcode codec, then quality. See lib/rdCache.
+        const savedInfohash = extractInfohash(savedStreamUrlRef.current);
+        const rank = ({ stream }: { stream: StremioStream }) =>
+          scoreReleaseForAutoPick({
+            name: stream.name,
+            title: stream.title,
+            url: stream.url,
+            savedInfohash,
+          });
         const ordered = usable.slice().sort((a, b) => rank(b) - rank(a));
         for (const { stream } of ordered.slice(0, 4)) {
           if (cancelled || committed) return;
@@ -1483,13 +1500,21 @@ export default function PlayerPage() {
         }
       }
       // Quality preference for the AUTO-pick: 1080p > 720p > 2160p/4K > 480p.
+      const savedInfohashFull = extractInfohash(savedStreamUrlRef.current);
       const scoreStream = (s: StremioStream) => {
         const t = `${s.name ?? ''} ${s.title ?? ''}`;
-        let base = 60;
-        if (/1080p/i.test(t)) base = 100;
-        else if (/720p/i.test(t)) base = 85;
-        else if (/2160p|4k/i.test(t)) base = 65;
-        else if (/480p/i.test(t)) base = 50;
+        // Cache state first, on the same scale the fast path uses: an uncached
+        // release means waiting on an RD download, which no quality advantage
+        // makes up for. Continuity with the release the user already has
+        // progress on breaks ties WITHIN a tier (never across).
+        const tier = releaseCacheTier(s.name);
+        let base = (tier === 'cached' ? 100_000 : tier === 'unknown' ? 50_000 : 0)
+          + (savedInfohashFull && extractInfohash(s.url) === savedInfohashFull ? 20_000 : 0);
+        if (/1080p/i.test(t)) base += 100;
+        else if (/720p/i.test(t)) base += 85;
+        else if (/2160p|4k/i.test(t)) base += 65;
+        else if (/480p/i.test(t)) base += 50;
+        else base += 60;
         // Container preference: .avi (XviD / ancient fansub) is the lowest
         // quality AND the flakiest source to transcode (mp3-in-avi seek glitches,
         // cold-RD-link segment failures). Sink it well below mkv/mp4 of the same

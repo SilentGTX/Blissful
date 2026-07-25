@@ -31,6 +31,7 @@ import { UnreleasedEpisodeModal } from '../components/UnreleasedEpisodeModal';
 import { type BananaOption } from '../components/BananasPicker';
 import { fetchFallbackReleases } from '../lib/fallbackReleases';
 import { getResumeSeconds } from '../layout/app-shell/utils';
+import { scoreReleaseForAutoPick } from '../lib/rdCache';
 import { isNativeShell } from '../lib/desktop';
 
 export default function DetailPage() {
@@ -701,7 +702,7 @@ export default function DetailPage() {
     // the loop-breaker: without it, the same top row keeps getting
     // re-selected and the player keeps bouncing back to detail.
     const skipSet = new Set(autoplaySkipUrls.filter((s) => s && s.length > 0));
-    const top = desktopRows.find((row) => {
+    const playableRows = desktopRows.filter((row) => {
       const link =
         (row.stream as { deepLinks?: { player?: string | null } }).deepLinks?.player ?? null;
       if (!link) return false;
@@ -713,6 +714,20 @@ export default function DetailPage() {
         return true;
       }
     });
+    // Pick the best CACHED release, not merely the first row. An uncached one
+    // makes Real-Debrid download the torrent before anything plays — on an
+    // auto-advance to the next episode that reads as "it just hangs". Cache
+    // state outranks quality here (see lib/rdCache); the row list's own order
+    // is quality/seeder-based and doesn't know about caching.
+    const top = playableRows
+      .slice()
+      .sort((a, b) => {
+        const s = (row: typeof a) => {
+          const st = row.stream as { name?: string | null; title?: string | null; url?: string | null };
+          return scoreReleaseForAutoPick({ name: st.name, title: st.title, url: st.url });
+        };
+        return s(b) - s(a);
+      })[0];
     if (!top) {
       autoplayConsumedRef.current = true;
       // Every ranked stream was already proven dead. Strip the autoplay /
