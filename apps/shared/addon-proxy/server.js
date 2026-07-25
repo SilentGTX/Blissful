@@ -896,7 +896,9 @@ const SUBTITLE_PROVIDERS = {
   },
   bgsubs: {
     base: 'https://bulgarian-subs-addon.onrender.com',
-    cacheNs: 'bgsubs',
+    // ns bumped to invalidate lists cached before entries were verified +
+    // runtime-annotated — those hold dead links and unlabelled rows.
+    cacheNs: 'bgsubs2',
     supportsHash: false, // id-only addon; a hash path would 404
     timeoutMs: 60000, // free-tier cold start
     // Serve the subtitle FILES through us too, not just the list. The list is
