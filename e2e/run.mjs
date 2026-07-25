@@ -16,8 +16,13 @@ import { execSync, spawnSync } from 'node:child_process';
 // area -> { paths: source-path patterns that affect it, filter: suite filename filter }
 const AREAS = {
   player: {
-    paths: [/BlissfulPlayer/, /NativeMpvPlayer/, /\/player\//, /lib\/desktop\.ts/, /useChapterSkip/],
-    filter: 'player.',
+    paths: [
+      /BlissfulPlayer/, /NativeMpvPlayer/, /\/player\//, /lib\/desktop\.ts/, /useChapterSkip/,
+      /PlayerPageWeb/, /lib\/playerUrl/, /lib\/playerSettings/, /lib\/audioTracks/,
+    ],
+    // 'player' (no dot) so the player-* suites count too: player-prefs,
+    // player-short-url, player-videasy-fallback, player-tracks.desktop.
+    filter: 'player',
   },
   'watch-party': {
     paths: [/watchParty/i, /useWatchParty/, /components\/WatchParty/, /party-relay/, /host_relay/, /blissful-storage/, /addon-proxy/],

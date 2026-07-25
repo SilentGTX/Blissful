@@ -41,6 +41,7 @@ function clearVideasyCooldown(): void {
   try { sessionStorage.removeItem(VIDEASY_COOLDOWN_KEY); } catch { /* noop */ }
 }
 import { getResumeSeconds, openInVlc } from '../layout/app-shell/utils';
+import { pickPreferredAudioTrack } from '../lib/audioTracks';
 import { parseStreamDescription } from '../features/detail/utils';
 import { releaseMatchesShow } from '../lib/fallbackReleases';
 import BottomDrawer from '../components/BottomDrawer';
@@ -1036,36 +1037,57 @@ export default function PlayerPage() {
   // &a=N`) — extract the inner http URL (so the probe works) and the baked-in
   // `&a=N` (so the picker + playback honor it instead of resetting to 0, which
   // was desyncing host↔guest audio).
-  const { transcodeAudioSrc, urlAudioIdx } = (() => {
+  const { transcodeAudioSrc, urlAudioIdx, urlPinnedAudio } = (() => {
     const c = fallbackPlayUrl || (url && !/^(vidking|videasy):/i.test(url) ? url : null);
-    if (!c) return { transcodeAudioSrc: null as string | null, urlAudioIdx: 0 };
+    if (!c) return { transcodeAudioSrc: null as string | null, urlAudioIdx: 0, urlPinnedAudio: false };
     const m = c.match(/^\/transcode(?:\.m3u8)?\?url=([^&]+)(?:&a=(\d+))?/);
     if (m) {
       let inner = m[1];
       try { inner = decodeURIComponent(m[1]); } catch { /* keep raw */ }
       const ok = /^https?:\/\//i.test(inner) && TRANSCODE_CONTAINER_RE.test(inner);
-      return { transcodeAudioSrc: ok ? inner : null, urlAudioIdx: m[2] ? parseInt(m[2], 10) : 0 };
+      // `urlPinnedAudio` separates "&a=0 was explicitly asked for" from "no &a=
+      // at all" — both give index 0, but only the former must survive the
+      // language-preference pass below (a watch-party guest inherits the host's
+      // exact audio track through the URL).
+      return { transcodeAudioSrc: ok ? inner : null, urlAudioIdx: m[2] ? parseInt(m[2], 10) : 0, urlPinnedAudio: !!m[2] };
     }
     const ok = /^https?:\/\//i.test(c) && TRANSCODE_CONTAINER_RE.test(c);
-    return { transcodeAudioSrc: ok ? c : null, urlAudioIdx: 0 };
+    return { transcodeAudioSrc: ok ? c : null, urlAudioIdx: 0, urlPinnedAudio: false };
   })();
   const [audioTracks, setAudioTracks] = useState<
     { i: number; lang: string | null; title: string | null; channels: number | null; codec: string | null }[]
   >([]);
   const [audioTrackIdx, setAudioTrackIdx] = useState(0);
+  // Set once the user picks a track in the drawer — their choice outranks the
+  // profile's language preference for the rest of this stream.
+  const userPickedAudioRef = useRef(false);
   useEffect(() => {
     setAudioTracks([]);
     setAudioTrackIdx(urlAudioIdx); // honor the track baked into the URL
+    userPickedAudioRef.current = false; // new stream → the preference applies again
     if (!transcodeAudioSrc) return;
     let cancelled = false;
     fetch(`/transcode-audio?url=${encodeURIComponent(transcodeAudioSrc)}`)
       .then((r) => (r.ok ? r.json() : { tracks: [] }))
       .then((d: { tracks?: typeof audioTracks }) => {
-        if (!cancelled) setAudioTracks(Array.isArray(d.tracks) ? d.tracks : []);
+        if (cancelled) return;
+        const probed = Array.isArray(d.tracks) ? d.tracks : [];
+        setAudioTracks(probed);
+        // Apply the profile's audio language. The transcoder muxes ONE track
+        // (&a=N), so unlike a multi-audio HLS ladder nothing downstream can do
+        // this for us — without it every multi-audio release played track 0
+        // (a French release playing French to an English-preferring profile).
+        if (urlPinnedAudio || userPickedAudioRef.current) return;
+        const preferred = pickPreferredAudioTrack(probed, resolvedPlayerSettings.audioLanguage);
+        if (preferred != null) setAudioTrackIdx(preferred);
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [transcodeAudioSrc, urlAudioIdx]);
+  }, [transcodeAudioSrc, urlAudioIdx, urlPinnedAudio, resolvedPlayerSettings.audioLanguage]);
+  const handleSelectAudioTrack = useCallback((i: number) => {
+    userPickedAudioRef.current = true;
+    setAudioTrackIdx(i);
+  }, []);
   // When Real-Debrid has no working stream for the title (every
   // candidate 302s to the takedown notice), set this flag so the
   // UI can show a helpful error overlay instead of a permanent
@@ -1893,7 +1915,7 @@ export default function PlayerPage() {
       onSelectQuality={setSelectedQuality}
       audioTracks={audioTracks.length > 1 ? audioTracks : undefined}
       selectedAudioTrack={audioTrackIdx}
-      onSelectAudioTrack={setAudioTrackIdx}
+      onSelectAudioTrack={handleSelectAudioTrack}
       builtinSubtitles={builtinSubtitles}
       selectedServer={selectedServer}
       onSelectServer={handleSelectServer}
