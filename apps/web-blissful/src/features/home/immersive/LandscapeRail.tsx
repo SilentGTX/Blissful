@@ -41,6 +41,49 @@ const LandscapeTile = memo(function LandscapeTile({
   );
 });
 
+/** Grid cell: the same 16:9 tile with the title BELOW, left-aligned — the TV's
+ *  `titlePlacement="below"` content-grid layout (Discover / Library / Search).
+ *  `selected` mirrors the TV's focused ring for the card the preview pane is
+ *  currently showing, which on the TV is always the focused one. */
+export const LandscapeGridCard = memo(function LandscapeGridCard({
+  item,
+  progress,
+  selected,
+  onHover,
+  onOpen,
+}: {
+  item: MediaItem;
+  progress?: number;
+  selected?: boolean;
+  onHover?: (item: MediaItem) => void;
+  onOpen: (item: MediaItem) => void;
+}) {
+  const art = landscapeArt(item.posterUrl);
+  return (
+    <div className="flex flex-col">
+      <button
+        type="button"
+        className={selected ? 'bliss-tile is-selected' : 'bliss-tile'}
+        data-testid="bliss-tile"
+        title={item.title}
+        onMouseEnter={onHover ? () => onHover(item) : undefined}
+        onFocus={onHover ? () => onHover(item) : undefined}
+        onClick={() => onOpen(item)}
+      >
+        {art ? (
+          <img src={proxiedImage(art)} alt="" className="bliss-tile-art" draggable={false} loading="lazy" />
+        ) : null}
+        {progress != null && progress > 0 ? (
+          <span className="bliss-tile-progress">
+            <span style={{ width: `${Math.min(100, progress)}%` }} />
+          </span>
+        ) : null}
+      </button>
+      <div className="bliss-tile-title-below">{item.title}</div>
+    </div>
+  );
+});
+
 /** A titled horizontal rail of landscape tiles — port of the TV app's
  *  `LandscapeRail`. The TV focus-scrolls with the D-pad; here the pointer
  *  scrolls the rail, with arrow buttons for the trackpad-less case. */

@@ -198,7 +198,7 @@ export default function SettingsPage() {
 
           <ScrollShadow className="mt-6 max-h-[calc(100vh-14rem)] space-y-6 pr-1" hideScrollBar>
             <div>
-              <div className="text-lg font-semibold mb-3">Style</div>
+              <div className="bliss-heading text-xl font-semibold mb-3">Style</div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <button
                   type="button"
@@ -238,7 +238,7 @@ export default function SettingsPage() {
             </div>
 
             <div>
-              <div className="text-lg font-semibold mb-3">Accent color</div>
+              <div className="bliss-heading text-xl font-semibold mb-3">Accent color</div>
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <div>
@@ -269,7 +269,7 @@ export default function SettingsPage() {
             </div>
 
             <div>
-              <div className="text-lg font-semibold mb-3">Player</div>
+              <div className="bliss-heading text-xl font-semibold mb-3">Player</div>
               <div className="space-y-6">
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                   <div className="text-sm font-semibold mb-3">Subtitles</div>
@@ -582,7 +582,7 @@ export default function SettingsPage() {
 
             {user ? (
               <div>
-                <div className="text-lg font-semibold mb-3">Account</div>
+                <div className="bliss-heading text-xl font-semibold mb-3">Account</div>
                 <div className="space-y-4">
                   <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                     <div className="text-sm font-semibold mb-3">Profile</div>
@@ -686,7 +686,7 @@ export default function SettingsPage() {
             ) : null}
 
             <div>
-              <div className="text-lg font-semibold mb-3">Linked accounts</div>
+              <div className="bliss-heading text-xl font-semibold mb-3">Linked accounts</div>
               <div className="space-y-6">
                 <SettingsStremioPanel />
               </div>

@@ -2494,3 +2494,30 @@ html:not(.dark) .bliss-rail-panel {
   padding: 0;
   width: calc(var(--vertical-nav-bar-size) - var(--horizontal-nav-margin));
 }
+
+/* Grid variant of the tile: fills its grid cell instead of the rail's fixed
+   width, with the title below (TV: PosterCard titlePlacement="below"). */
+.bliss-tile-grid .bliss-tile {
+  width: 100%;
+}
+
+.bliss-tile.is-selected::after {
+  opacity: 1;
+}
+
+.bliss-tile-title-below {
+  margin-top: 0.5rem;
+  font-size: clamp(0.75rem, 1vw, 1.35rem);
+  font-weight: 500;
+  line-height: 1.25;
+  color: rgba(255, 255, 255, 0.72);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.bliss-tile-grid .bliss-tile:hover + .bliss-tile-title-below,
+.bliss-tile-grid .bliss-tile.is-selected + .bliss-tile-title-below {
+  color: var(--bliss-accent);
+}

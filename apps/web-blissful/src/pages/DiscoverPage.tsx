@@ -9,7 +9,6 @@ import { useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import BottomDrawer from '../components/BottomDrawer';
 import { SkeletonSearchGrid } from '../components/Skeleton';
-import MediaCard from '../components/MediaCard';
 import StremioIcon from '../components/StremioIcon';
 import { useAddons } from '../context/AddonsProvider';
 import { useUI } from '../context/UIProvider';
@@ -20,6 +19,9 @@ import { formatDate } from '../features/discover/utils';
 import { isInLibrary as isInLibraryStored, toggleLibrary } from '../lib/libraryStore';
 import { useImdbRating } from '../lib/useImdbRating';
 import type { MediaItem, MediaType } from '../types/media';
+import { ImmersiveBackdrop } from '../features/home/immersive/ImmersiveBackdrop';
+import { LandscapeGridCard } from '../features/home/immersive/LandscapeRail';
+import { useHoveredMeta } from '../features/home/immersive/useHoveredMeta';
 
 export default function DiscoverPage() {
   const { addons } = useAddons();
@@ -138,6 +140,20 @@ export default function DiscoverPage() {
     ? [filterKey]
     : [];
 
+  // Immersive backdrop, like the TV's Discover (which renders the same
+   // `Backdrop` the Home uses, following the focused card). Falls back to the
+   // selected item so the art is right before the pointer touches anything.
+  const [hovered, setHovered] = useState<MediaItem | null>(null);
+  const backdropItem = hovered ?? (selected ? ({
+    id: selected.id,
+    type: discoverType,
+    title: selected.name ?? '',
+    posterUrl: selected.poster ?? undefined,
+  } as MediaItem) : null);
+  const hoveredMeta = useHoveredMeta(backdropItem);
+  const backdropKey = backdropItem ? `${backdropItem.type}:${backdropItem.id}` : null;
+  const backdropMeta = hoveredMeta && hoveredMeta.key === backdropKey ? hoveredMeta.meta : null;
+
   const bg = selected?.background || selected?.poster;
   void libraryVersion;
   const selectedInLibrary = selected ? isInLibraryStored({ type: discoverType, id: selected.id }) : false;
@@ -147,7 +163,8 @@ export default function DiscoverPage() {
 
   return (
     <div className="catalog-container">
-      <div className="lg:mr-[360px]">
+      <ImmersiveBackdrop item={backdropItem} meta={backdropMeta} fixed />
+      <div className="relative z-10 lg:mr-[360px]">
         <div className="h-full overflow-hidden">
           {/* Desktop: Select dropdowns */}
           <div className="hidden sm:flex flex-wrap gap-3">
@@ -325,20 +342,26 @@ export default function DiscoverPage() {
               // we keep ~5 columns at 1920w (matches the old fixed
               // breakpoints) and get ~6-7 bigger cards at 4K instead
               // of shrinking each card down to nothing.
-              <div data-testid="discover-grid" className="grid gap-5 p-1 [grid-template-columns:repeat(auto-fit,minmax(clamp(160px,16vw,420px),1fr))]">
+              // Landscape tiles with the title below, the TV's content-grid
+              // layout (PosterCard titlePlacement="below"). Auto-fit keeps the
+              // column count sane from a laptop up to 4K.
+              <div
+                data-testid="discover-grid"
+                className="bliss-tile-grid grid gap-5 p-1 [grid-template-columns:repeat(auto-fit,minmax(clamp(200px,15vw,420px),1fr))]"
+              >
                 {filteredItems.map((item) => (
-                  <MediaCard
+                  <LandscapeGridCard
                     key={item.id}
                     item={item}
-                    variant="poster"
                     selected={selectedId === item.id}
-                    onPress={() => {
-                      // On mobile, navigate to detail page directly
-                      // On desktop, show the sidebar preview
+                    onHover={setHovered}
+                    onOpen={(it) => {
+                      // Mobile has no preview pane, so a tap goes straight to
+                      // the detail page.
                       if (window.innerWidth < 1024) {
-                        navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`);
+                        navigate(`/detail/${it.type}/${encodeURIComponent(it.id)}`);
                       } else {
-                        setSelectedId(item.id);
+                        setSelectedId(it.id);
                       }
                     }}
                   />

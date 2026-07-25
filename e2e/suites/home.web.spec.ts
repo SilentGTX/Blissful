@@ -41,7 +41,8 @@ test.describe('Home + browse (web)', () => {
     await search.fill('Batman');
     await search.press('Enter');
     await page.waitForURL(/\/search/, { timeout: 15_000 });
-    await expect(page.getByTestId('media-rail').first()).toBeVisible({ timeout: 30_000 });
+    // Results render as landscape rails (the TV design), same tile as Home.
+    await expect(page.getByTestId('bliss-tile').first()).toBeVisible({ timeout: 30_000 });
   });
 
   test('discover renders the catalog grid', async ({ page }) => {
