@@ -873,6 +873,44 @@ function probeStreams(targetUrl, done) {
   });
 }
 
+// Built-in subtitle providers, served to EVERY client whether or not the user
+// installed the addon themselves. Keyed (not URL-passthrough) so the endpoint
+// can never be used as an open proxy; each provider caches under its own
+// namespace so one provider's miss never masks another's hit.
+//
+// Why a server-side cache matters per provider:
+//   opensubtitles — the community instance 504s often (overloaded);
+//   bgsubs        — on Render's free tier, so a cold instance takes ~30-40s to
+//                   wake. Both are unusable from the browser's timeout budget,
+//                   and both serve immutable data for a released title, so one
+//                   slow fetch warms it for everyone.
+// MODULE scope on purpose: the subtitle-file handler runs earlier in the
+// request chain than the list handler, so a block-scoped const here would be a
+// ReferenceError at runtime (which `node --check` does not catch).
+const SUBTITLE_PROVIDERS = {
+  opensubtitles: {
+    base: 'https://opensubtitles-v3.strem.io',
+    cacheNs: 'opensubs',
+    supportsHash: true, // videoHash/videoSize hit its fast, perfectly-synced path
+    timeoutMs: 22000,
+  },
+  bgsubs: {
+    base: 'https://bulgarian-subs-addon.onrender.com',
+    cacheNs: 'bgsubs',
+    supportsHash: false, // id-only addon; a hash path would 404
+    timeoutMs: 60000, // free-tier cold start
+    // Serve the subtitle FILES through us too, not just the list. The list is
+    // cached 30d so it always renders, but each entry's .srt lives on the same
+    // free-tier host: it cold-starts, individual attachments 404, and under a
+    // burst of requests it stops accepting connections outright (all measured).
+    // That combination is exactly "the subtitle is listed but never loads".
+    proxyContent: true,
+  },
+};
+// Hosts the subtitle-file fetcher may read from. Allowlisted so it can't serve
+// as a generic open proxy.
+const SUBTITLE_CONTENT_HOSTS = new Set(['bulgarian-subs-addon.onrender.com']);
+
 // Extract ONE embedded subtitle track from a remote container as WebVTT.
 //
 // Cost: ffmpeg must demux the whole file to collect every cue (subtitle packets
@@ -1820,7 +1858,10 @@ const server = http.createServer((req, res) => {
   // title's subtitle never changes, so one successful fetch serves everyone
   // forever — the provider's cold starts, dead attachments and
   // connection-refusals stop reaching the player.
-  if (req.url.startsWith('/subtitle-text?')) {
+  // NOTE: served under /opensubs (not its own path) because only a fixed set of
+  // path prefixes is routed to this proxy at the edge — a new top-level path
+  // would be swallowed by the SPA's index.html. Distinguished by `?src=`.
+  if (req.url.startsWith('/opensubs?') && /[?&]src=/.test(req.url)) {
     const src = String(url.parse(req.url, true).query.src || '').trim();
     let host = null;
     try { host = new URL(src).hostname; } catch { /* not a url */ }
@@ -1976,43 +2017,6 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Built-in subtitle providers, served to EVERY client whether or not the user
-  // installed the addon themselves. Keyed (not URL-passthrough) so this endpoint
-  // can never be used as an open proxy; each provider caches under its own
-  // namespace so one provider's miss never masks another's hit.
-  //
-  // Why a server-side cache matters per provider:
-  //   opensubtitles — the community instance 504s often (overloaded);
-  //   bgsubs        — hosted on Render's free tier, so a cold instance takes
-  //                   ~30-40s to wake. Both are unusable from the browser's
-  //                   short timeout budget, and both serve immutable data for a
-  //                   released title, so one slow fetch warms it for everyone.
-  const SUBTITLE_PROVIDERS = {
-    opensubtitles: {
-      base: 'https://opensubtitles-v3.strem.io',
-      cacheNs: 'opensubs',
-      supportsHash: true, // videoHash/videoSize hit its fast, perfectly-synced path
-      timeoutMs: 22000,
-    },
-    bgsubs: {
-      base: 'https://bulgarian-subs-addon.onrender.com',
-      cacheNs: 'bgsubs',
-      supportsHash: false, // id-only addon; a hash path would 404
-      timeoutMs: 60000, // free-tier cold start
-      // Serve the subtitle FILES through us too (/subtitle-text), not just the
-      // list. The list is cached for 30d so it always renders, but the .srt
-      // behind each entry lives on the same free-tier host: it cold-starts,
-      // individual attachments 404, and under a burst of requests it stops
-      // accepting connections outright (measured). That combination is exactly
-      // "the subtitle is listed but never loads". Proxying + caching the file
-      // means playback touches that host at most once per subtitle, ever.
-      proxyContent: true,
-    },
-  };
-  // Hosts /subtitle-text is allowed to fetch from. Keyed allowlist so the
-  // endpoint can't be used as a generic open proxy.
-  const SUBTITLE_CONTENT_HOSTS = new Set(['bulgarian-subs-addon.onrender.com']);
-
   // OpenSubtitles v3 with a PERSISTENT server-side cache. The community
   // opensubtitles-v3.strem.io instance 504s often (overloaded), so a fresh
   // browser session frequently gets nothing while a desktop app shows stale
@@ -2050,7 +2054,7 @@ const server = http.createServer((req, res) => {
         ...payload,
         subtitles: (payload.subtitles || []).map((s) =>
           s && typeof s.url === 'string' && /^https?:\/\//i.test(s.url)
-            ? { ...s, url: `/subtitle-text?src=${encodeURIComponent(s.url)}` }
+            ? { ...s, url: `/opensubs?src=${encodeURIComponent(s.url)}` }
             : s,
         ),
       };
