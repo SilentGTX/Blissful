@@ -2785,10 +2785,6 @@ html[data-ui="tv"] .bliss-rail-panel {
 }
 
 /* Active nav icon is accent-tinted, with no pill or border behind it. */
-html[data-ui="tv"] .bliss-sidebar-link {
-  border-color: transparent;
-}
-
 html[data-ui="tv"] .bliss-sidebar-link.is-active,
 html[data-ui="tv"].dark .bliss-sidebar-link.is-active {
   color: var(--bliss-accent);
@@ -2805,14 +2801,6 @@ html[data-ui="tv"] .bliss-sidebar-link:focus-visible {
 
 /* Rail icons in the TV theme are larger and further apart than Classic's — the
    old TV app is a 10-foot UI and its rail reads as a column of big glyphs. */
-html[data-ui="tv"] .nav-icon-slot svg {
-  width: clamp(1.35rem, 1.5vw, 1.75rem);
-  height: clamp(1.35rem, 1.5vw, 1.75rem);
-}
-
-html[data-ui="tv"] .bliss-sidebar-link {
-  height: clamp(2.6rem, 3.6vh, 3.5rem);
-}
 
 /* ---- Old TV app chrome, measured off the emulator ------------------------
    Sampled from com.blissful.tv at 1920x1080: the rail spans x16..176 (160px,
@@ -2864,11 +2852,10 @@ html[data-ui="tv"] .bliss-tv-avatar {
    needs !important to land. `.nav-icon-slot` hard-codes the SAME expression for
    its centring math, so it has to be widened in lockstep or the icons sit off
    to one side. */
-html[data-ui="tv"] .bliss-shell {
-  --vertical-nav-bar-size: clamp(160px, 10vw, 250px) !important;
-}
-
-html[data-ui="tv"] .nav-icon-slot {
+/* Matches TV_SIDEBAR_COLLAPSED_WIDTH; only while collapsed, since that is the
+   only state this theme widens. `.nav-icon-slot` hard-codes the width
+   expression for its centring, so the two must stay in step. */
+html[data-ui="tv"] .bliss-sidebar.closed .nav-icon-slot {
   width: calc(clamp(160px, 10vw, 250px) - 4.5rem - 2px);
 }
 
@@ -2878,4 +2865,20 @@ html[data-ui="tv"] .bliss-tv-avatar {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.14);
   font-size: clamp(1.1rem, 1.9vw, 2rem);
+}
+
+/* Rail glyphs are much larger in the old TV app — it is a 10-foot UI and the
+   rail reads as a column of big icons, with no pill behind the active one. */
+html[data-ui="tv"] .bliss-sidebar.closed .nav-icon-slot svg {
+  /* ~44px at 1920, matching the old app's glyphs (measured ~41-48px). */
+  width: clamp(1.9rem, 2.3vw, 3rem);
+  height: clamp(1.9rem, 2.3vw, 3rem);
+}
+
+html[data-ui="tv"] .bliss-sidebar.closed .bliss-sidebar-link {
+  height: clamp(3rem, 4.6vh, 4.25rem);
+}
+
+html[data-ui="tv"] .bliss-sidebar-link.is-active > .absolute {
+  display: none;
 }

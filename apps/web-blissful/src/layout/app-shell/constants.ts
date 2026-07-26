@@ -44,5 +44,8 @@ export const SIDEBAR_COLLAPSED_KEY = 'blissfulSidebarCollapsed';
 // around the 20px icon at any viewport size.
 export const SIDEBAR_EXPANDED_WIDTH = 'clamp(280px, 18vw, 520px)';
 export const SIDEBAR_COLLAPSED_WIDTH = 'clamp(128px, 7vw, 200px)';
+/** The TV theme's rail is icon-only and wider than the stock collapsed rail —
+ *  the old TV app's is 160px at 1920 (8.3vw), plus the wrapper's 2x1rem margin. */
+export const TV_SIDEBAR_COLLAPSED_WIDTH = 'clamp(160px, 10vw, 250px)';
 export const SEARCH_HISTORY_KEY = 'blissfulSearchHistory';
 export const SEARCH_HISTORY_LIMIT = 8;

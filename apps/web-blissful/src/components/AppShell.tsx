@@ -63,6 +63,7 @@ import {
   HOME_PREFS_KEY,
   SIDEBAR_COLLAPSED_KEY,
   SIDEBAR_COLLAPSED_WIDTH,
+  TV_SIDEBAR_COLLAPSED_WIDTH,
   SIDEBAR_EXPANDED_WIDTH,
 } from '../layout/app-shell/constants';
 import { ResumeOrStartOverModal } from './ResumeOrStartOverModal';
@@ -222,11 +223,15 @@ export default function AppShell() {
   // Default to expanded sidebar
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try {
-      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, 'false');
+      // Read the theme straight from storage rather than waiting for an effect:
+      // the TV theme's rail is icon-only, and collapsing it after mount made it
+      // visibly animate shut on every load.
+      const collapsed = localStorage.getItem('uiStyle') === 'tv';
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? 'true' : 'false');
+      return collapsed;
     } catch {
-      // ignore
+      return false;
     }
-    return false;
   });
 
   // The TV theme's rail is icon-only by design (it mirrors the TV app, where the
@@ -436,7 +441,9 @@ export default function AppShell() {
 
   const navSizeStyle = {
     '--horizontal-nav-bar-size': '72px',
-    '--vertical-nav-bar-size': sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_EXPANDED_WIDTH,
+    '--vertical-nav-bar-size': sidebarCollapsed
+      ? (uiStyle === 'tv' ? TV_SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_COLLAPSED_WIDTH)
+      : SIDEBAR_EXPANDED_WIDTH,
   } as React.CSSProperties;
 
   const netflixNavItems = useMemo(

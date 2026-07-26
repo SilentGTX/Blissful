@@ -72,3 +72,29 @@ test.describe('Theme chrome is scoped', () => {
     await expect(page.locator('.bliss-sidebar.closed')).toHaveCount(0);
   });
 });
+
+// The TV theme widens the COLLAPSED rail. A first attempt pinned the width via
+// an !important custom property, which also applied while expanded — the labels
+// and the Friends / Continue Watching panels were then crushed into a 160px
+// column, i.e. "the sidebar is not working". Guard the round-trip.
+test('tv rail expands and re-collapses', async ({ page }) => {
+  await useTheme(page, 'tv');
+  await page.goto('/');
+  const rail = page.locator('.bliss-rail-panel');
+  await expect(rail).toBeVisible({ timeout: 20_000 });
+  const widthOf = async () => Math.round((await rail.boundingBox())!.width);
+
+  const collapsed = await widthOf();
+  await page.getByLabel('Expand sidebar').click();
+  await expect(page.getByText('Discover', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
+  // The rail animates its width over ~340ms, so poll rather than sampling once.
+  await expect
+    .poll(widthOf, { timeout: 5_000, message: 'expanding must actually widen the rail' })
+    .toBeGreaterThan(collapsed + 80);
+
+  const expanded = await widthOf();
+  await page.getByLabel('Collapse sidebar').click();
+  // Assert it returns to "narrow" rather than to an exact px baseline — the
+  // baseline can be sampled mid-animation and is scrollbar-sensitive.
+  await expect.poll(widthOf, { timeout: 5_000 }).toBeLessThan(expanded - 80);
+});
