@@ -2759,18 +2759,17 @@ html[data-ui="tv"] .bliss-nav-bar {
    `git show android-tv:apps/blissful-mvs/src/index.css`, the html[data-tv]
    layer, re-gated to html[data-ui="tv"].
 
-   One deliberate deviation: the shell ran its WebView at ~1152 CSS px on a
-   1920 panel (a ~1.67x zoom), so its clamp() bounds are authored against that
-   viewport — pasted verbatim onto a real 1920 desktop they'd render about 40%
-   smaller than what the TV shows. The px bounds below are therefore scaled to
-   keep the SIZE the app actually displays; every colour, gradient, shadow and
-   ratio is the original.
+   Values are the originals, unscaled. The shell ran its WebView at ~1152 CSS
+   px on a 1920 panel (~1.67x zoom), so on a desktop monitor these render
+   smaller than the TV shows them — which is correct: a 10-foot UI blown up to
+   its on-TV pixel size is oversized at desk distance. Scaling them up was
+   tried and looked absurd.
    =========================================================================== */
 html[data-ui="tv"] {
   --tv-safe-x: 5vw;
   --tv-safe-y: 4vh;
-  --tv-rail-collapsed: clamp(160px, 8.3vw, 220px); /* orig clamp(96px,5vw,132px) */
-  --tv-topbar-h: clamp(78px, 5.8vw, 116px); /* orig clamp(56px,7vh,84px) */
+  --tv-rail-collapsed: clamp(96px, 5vw, 132px);
+  --tv-topbar-h: clamp(56px, 7vh, 84px);
   --bliss-glass-top: rgba(40, 47, 64, 0.97);
   --bliss-glass-bottom: rgba(17, 21, 31, 0.985);
 }
@@ -2788,8 +2787,8 @@ html[data-ui="tv"] .bliss-sidebar.closed .bliss-sidebar-link {
 }
 
 html[data-ui="tv"] .bliss-sidebar.closed .nav-icon-slot svg {
-  width: clamp(43px, 2.3vw, 50px); /* orig clamp(26px,1.6vw,30px) */
-  height: clamp(43px, 2.3vw, 50px);
+  width: clamp(26px, 1.6vw, 30px);
+  height: clamp(26px, 1.6vw, 30px);
 }
 
 /* FAKED "liquid glass" — deliberately NO backdrop-filter. The original notes
