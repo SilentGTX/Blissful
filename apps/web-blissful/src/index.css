@@ -2768,7 +2768,7 @@ html[data-ui="tv"] .bliss-nav-bar {
 html[data-ui="tv"] {
   --tv-safe-x: 5vw;
   --tv-safe-y: 4vh;
-  --tv-rail-collapsed: clamp(96px, 5vw, 132px);
+  --tv-rail-collapsed: clamp(160px, 8.3vw, 220px); /* = TV_SIDEBAR_COLLAPSED_WIDTH */
   --tv-topbar-h: clamp(56px, 7vh, 84px);
   --bliss-glass-top: rgba(40, 47, 64, 0.97);
   --bliss-glass-bottom: rgba(17, 21, 31, 0.985);
@@ -2783,12 +2783,14 @@ html[data-ui="tv"] .bliss-vertical-nav:has(.bliss-sidebar.closed) {
 }
 
 html[data-ui="tv"] .bliss-sidebar.closed .bliss-sidebar-link {
-  height: clamp(60px, 4.4vh, 76px);
+  height: clamp(64px, 6vh, 92px);
 }
 
 html[data-ui="tv"] .bliss-sidebar.closed .nav-icon-slot svg {
-  width: clamp(26px, 1.6vw, 30px);
-  height: clamp(26px, 1.6vw, 30px);
+  /* Scaled to the 160px band, which is the size the shell actually shows
+     (its 26-30px is against a ~1152px-wide WebView viewport). */
+  width: clamp(38px, 2.3vw, 48px);
+  height: clamp(38px, 2.3vw, 48px);
 }
 
 /* FAKED "liquid glass" — deliberately NO backdrop-filter. The original notes
