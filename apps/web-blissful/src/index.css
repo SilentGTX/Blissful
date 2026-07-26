@@ -2783,7 +2783,7 @@ html[data-ui="tv"] .bliss-vertical-nav:has(.bliss-sidebar.closed) {
 }
 
 html[data-ui="tv"] .bliss-sidebar.closed .bliss-sidebar-link {
-  height: clamp(64px, 6vh, 92px);
+  height: clamp(72px, 11vh, 130px);
 }
 
 html[data-ui="tv"] .bliss-sidebar.closed .nav-icon-slot svg {
@@ -2887,4 +2887,19 @@ html[data-ui="tv"] .bliss-top-nav-inner {
 
 html[data-ui="tv"] .bliss-top-nav-inner > * {
   pointer-events: auto;
+}
+
+/* Missed on the first port. The desktop rail caps its nav at 33dvh to leave
+   room for the Friends / Continue Watching footer; the original TV layer
+   overrides that ("on TV the footer is hidden, so let the nav use the height it
+   needs"). Without it the six icons were squeezed into the top third of the rail
+   with a dead gap below them. */
+html[data-ui="tv"] .bliss-sidebar nav {
+  max-height: none;
+}
+
+/* Hairline above the bottom group, as the old app has. */
+html[data-ui="tv"] .bliss-sidebar.closed .footer {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 0.75rem;
 }
