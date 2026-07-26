@@ -2754,131 +2754,136 @@ html[data-ui="tv"] .bliss-nav-bar {
   background-image: none;
 }
 
-/* ---- Old TV shell chrome (html[data-ui="tv"]) ---------------------------
-   Ported from the Tauri TV app still installed on the emulator
-   (com.blissful.tv). Its body is Classic's — hero card + poster rails — so
-   only the chrome differs: an icon-only floating rail, one wide pill for
-   search, a circular avatar, and an accent-filled primary action. */
+/* ===========================================================================
+   OLD TV SHELL CHROME — lifted from the actual source, not eyeballed.
+   `git show android-tv:apps/blissful-mvs/src/index.css`, the html[data-tv]
+   layer, re-gated to html[data-ui="tv"].
 
-/* Search: one wide rounded-full pill with a roomy hit area, rather than
-   Classic's narrower rounded-rect field. */
-html[data-ui="tv"] .bliss-nav-input {
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+   One deliberate deviation: the shell ran its WebView at ~1152 CSS px on a
+   1920 panel (a ~1.67x zoom), so its clamp() bounds are authored against that
+   viewport — pasted verbatim onto a real 1920 desktop they'd render about 40%
+   smaller than what the TV shows. The px bounds below are therefore scaled to
+   keep the SIZE the app actually displays; every colour, gradient, shadow and
+   ratio is the original.
+   =========================================================================== */
+html[data-ui="tv"] {
+  --tv-safe-x: 5vw;
+  --tv-safe-y: 4vh;
+  --tv-rail-collapsed: clamp(160px, 8.3vw, 220px); /* orig clamp(96px,5vw,132px) */
+  --tv-topbar-h: clamp(78px, 5.8vw, 116px); /* orig clamp(56px,7vh,84px) */
+  --bliss-glass-top: rgba(40, 47, 64, 0.97);
+  --bliss-glass-bottom: rgba(17, 21, 31, 0.985);
 }
 
-html[data-ui="tv"] .bliss-nav-input input {
-  font-size: clamp(0.95rem, 1.05vw, 1.25rem);
-}
-
-/* Rail: the TV app's is a narrow floating card of icons with a hairline under
-   the logo. Classic's rail is already a floating card, so this is tone + a
-   rounder radius; the icon-only state is set by collapsing it in AppShell. */
-html[data-ui="tv"] .bliss-rail-panel {
-  background: rgb(14, 15, 20);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 28px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
-}
-
-/* Active nav icon is accent-tinted, with no pill or border behind it. */
-html[data-ui="tv"] .bliss-sidebar-link.is-active,
-html[data-ui="tv"].dark .bliss-sidebar-link.is-active {
-  color: var(--bliss-accent);
-  border-color: transparent;
-}
-
-html[data-ui="tv"] .bliss-sidebar-link:hover,
-html[data-ui="tv"] .dark .bliss-sidebar-link:hover,
-html[data-ui="tv"] .bliss-sidebar-link:focus-visible {
-  color: #fff;
-  border-color: transparent;
-  background: rgba(255, 255, 255, 0.06);
-}
-
-/* Rail icons in the TV theme are larger and further apart than Classic's — the
-   old TV app is a 10-foot UI and its rail reads as a column of big glyphs. */
-
-/* ---- Old TV app chrome, measured off the emulator ------------------------
-   Sampled from com.blissful.tv at 1920x1080: the rail spans x16..176 (160px,
-   8.3vw) and is a GLASS panel with a vertical gradient — rgb(52,55,70) near
-   the top, rgb(31,33,40) mid — not the flat near-black I had. The search pill
-   is 112px tall (5.8vw) with a diagonal glass wash, light at the left and
-   fading out to the right. The avatar is a plain ~117px (6.1vw) circle. */
-
-html[data-ui="tv"] .bliss-rail-panel {
-  /* Blissful's own glass recipe, which is what the old TV app renders. */
-  background-image: linear-gradient(
-    to bottom,
-    rgba(52, 55, 70, 0.92),
-    rgba(20, 22, 30, 0.96)
-  );
-  background-color: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 28px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-}
-
-html[data-ui="tv"] .bliss-nav-input {
-  height: clamp(3.25rem, 5.8vw, 6rem);
-  border-radius: 999px;
-  /* Diagonal glass: bright at the left where the magnifier sits, fading out
-     to the right — the same falloff the TV app's pill has. */
-  background:
-    linear-gradient(100deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.04) 55%, rgba(255, 255, 255, 0.01) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-}
-
-html[data-ui="tv"] .bliss-nav-input input {
-  font-size: clamp(1rem, 1.35vw, 1.6rem);
-}
-
-/* Plain circular avatar, no ring, no edit button beside it. */
-html[data-ui="tv"] .bliss-tv-avatar {
-  width: clamp(2.75rem, 5vw, 5rem);
-  height: clamp(2.75rem, 5vw, 5rem);
-  border-radius: 999px;
-}
-
-/* The old app's rail is 160px wide at 1920 (8.3vw); the stock collapsed rail is
-   about half that. `--vertical-nav-bar-size` is set inline by AppShell, so this
-   needs !important to land. `.nav-icon-slot` hard-codes the SAME expression for
-   its centring math, so it has to be widened in lockstep or the icons sit off
-   to one side. */
-/* Matches TV_SIDEBAR_COLLAPSED_WIDTH; only while collapsed, since that is the
-   only state this theme widens. `.nav-icon-slot` hard-codes the width
-   expression for its centring, so the two must stay in step. */
-html[data-ui="tv"] .bliss-sidebar.closed .nav-icon-slot {
-  width: calc(clamp(160px, 10vw, 250px) - 4.5rem - 2px);
-}
-
-/* Guest fallback needs a visible disc — the old app's avatar is always a filled
-   circle, whether it holds a picture or an initial. */
-html[data-ui="tv"] .bliss-tv-avatar {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  font-size: clamp(1.1rem, 1.9vw, 2rem);
-}
-
-/* Rail glyphs are much larger in the old TV app — it is a 10-foot UI and the
-   rail reads as a column of big icons, with no pill behind the active one. */
-html[data-ui="tv"] .bliss-sidebar.closed .nav-icon-slot svg {
-  /* ~44px at 1920, matching the old app's glyphs (measured ~41-48px). */
-  width: clamp(1.9rem, 2.3vw, 3rem);
-  height: clamp(1.9rem, 2.3vw, 3rem);
+/* Tighter symmetric inset than the desktop 1.25rem so the centred glass column
+   fills more of the band. */
+html[data-ui="tv"] .bliss-vertical-nav:has(.bliss-sidebar.closed) {
+  overflow: visible;
+  padding-left: clamp(8px, 0.7vw, 14px);
+  padding-right: clamp(8px, 0.7vw, 14px);
 }
 
 html[data-ui="tv"] .bliss-sidebar.closed .bliss-sidebar-link {
-  height: clamp(3rem, 4.6vh, 4.25rem);
+  height: clamp(60px, 4.4vh, 76px);
+}
+
+html[data-ui="tv"] .bliss-sidebar.closed .nav-icon-slot svg {
+  width: clamp(43px, 2.3vw, 50px); /* orig clamp(26px,1.6vw,30px) */
+  height: clamp(43px, 2.3vw, 50px);
+}
+
+/* FAKED "liquid glass" — deliberately NO backdrop-filter. The original notes
+   that live blur has nothing to frost behind a uniform dark rail, is the
+   pathological perf case on TV GPUs, and hits a repaint bug in the Android
+   WebView. The glass is BAKED instead: a bright translucent tint over a
+   cool-blue→dark legibility layer, a specular top lip, a right-edge
+   catchlight, and a float shadow. I had used backdrop-filter here. */
+html[data-ui="tv"] .bliss-sidebar > .solid-surface {
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.02)),
+    linear-gradient(165deg, var(--bliss-glass-top), var(--bliss-glass-bottom)) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    inset -1px 0 0 rgba(255, 255, 255, 0.05),
+    0 24px 60px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Drop the per-icon border/box — the active tint and the focus ring are the
+   only chrome. */
+html[data-ui="tv"] .bliss-sidebar-link {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Active nav icon: lavender + soft glow, no pill. */
+html[data-ui="tv"] .bliss-sidebar-link.is-active .nav-icon-slot svg {
+  color: var(--bliss-accent);
+  filter: drop-shadow(0 0 10px var(--bliss-accent-glow));
 }
 
 html[data-ui="tv"] .bliss-sidebar-link.is-active > .absolute {
   display: none;
+}
+
+/* Search pill — the same two-gradient glass + specular lip as the rail. */
+html[data-ui="tv"] .bliss-nav-input {
+  height: var(--tv-topbar-h);
+  border-radius: 999px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05)),
+    linear-gradient(135deg, rgba(124, 144, 176, 0.1), rgba(18, 24, 36, 0.18));
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 12px 40px rgba(0, 0, 0, 0.35);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html[data-ui="tv"] .bliss-nav-input input {
+  font-size: clamp(1.1rem, 1.3vw, 1.5rem);
+}
+
+html[data-ui="tv"] .bliss-nav-input input::placeholder {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+html[data-ui="tv"] .bliss-nav-input:focus-within {
+  outline: none !important;
+  box-shadow: inset 0 0 0 3px var(--bliss-accent) !important;
+}
+
+/* Profile avatar — top-right glass circle, same recipe again. */
+html[data-ui="tv"] .bliss-tv-avatar {
+  width: var(--tv-topbar-h);
+  height: var(--tv-topbar-h);
+  border-radius: 999px;
+  font-family: 'Fraunces', serif;
+  font-size: clamp(1.2rem, 1.4vw, 1.7rem);
+  font-weight: 600;
+  color: #fff;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05)),
+    linear-gradient(135deg, rgba(124, 144, 176, 0.1), rgba(18, 24, 36, 0.18));
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+/* The original bar is `pointer-events: none` with only the pill and avatar
+   re-enabling it, so the empty bar area never blocks what's underneath. That
+   matters more here than on the TV: this bar is tall enough to sit over the
+   rail's collapse toggle, and without it the toggle became unclickable. */
+html[data-ui="tv"] .bliss-top-nav,
+html[data-ui="tv"] .bliss-top-nav-inner {
+  pointer-events: none;
+}
+
+html[data-ui="tv"] .bliss-top-nav-inner > * {
+  pointer-events: auto;
 }
