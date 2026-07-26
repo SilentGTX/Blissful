@@ -2903,3 +2903,69 @@ html[data-ui="tv"] .bliss-sidebar.closed .logo {
   height: clamp(2.75rem, 3.4vw, 4.5rem) !important;
   width: clamp(2.75rem, 3.4vw, 4.5rem) !important;
 }
+
+/* Dead-centre the icon in every collapsed row — ported verbatim. The source's
+   comment is worth keeping: use FLEX, not grid, because a single implicit auto
+   track shrink-wraps on legacy WebViews and `place-items:center` then leaves the
+   cell pinned at the START (icons hug the left). A full-width flex box centres a
+   lone child on every engine. This is the rule I had missed, which is why the
+   glyphs sat left of centre. */
+html[data-ui="tv"] .bliss-sidebar.closed .bliss-sidebar-link {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 100% !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+html[data-ui="tv"] .bliss-sidebar.closed .nav-icon-slot {
+  width: auto !important;
+  flex: 0 0 auto !important;
+  margin: 0 !important;
+}
+
+/* The hidden label must leave the flow entirely or it nudges the row off-centre. */
+html[data-ui="tv"] .bliss-sidebar.closed .bliss-sidebar-label {
+  display: none !important;
+}
+
+/* Rows SHARE the space left after the logo and footer instead of each taking a
+   fixed 11vh. A fixed height overflowed the rail on shorter windows and clipped
+   the last icon; flexing can't overflow at any height. */
+html[data-ui="tv"] .bliss-sidebar.closed nav {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+html[data-ui="tv"] .bliss-sidebar.closed nav > ul {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+}
+
+html[data-ui="tv"] .bliss-sidebar.closed .bliss-sidebar-link {
+  height: auto !important;
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  max-height: clamp(72px, 11vh, 130px);
+}
+
+/* The footer is `flex-1` in the markup (it shares slack with the nav on the
+   expanded rail). Collapsed, both it and the nav claimed the slack and the two
+   footer glyphs ended up overlapping and clipped at the rail's bottom edge.
+   Pin the footer to its natural height and let the nav take what's left. */
+html[data-ui="tv"] .bliss-sidebar.closed .footer {
+  flex: 0 0 auto !important;
+}
+
+html[data-ui="tv"] .bliss-sidebar.closed .footer > div {
+  min-height: clamp(58px, 7vh, 84px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

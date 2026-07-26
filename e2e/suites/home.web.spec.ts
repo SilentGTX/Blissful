@@ -98,3 +98,27 @@ test('tv rail expands and re-collapses', async ({ page }) => {
   // baseline can be sampled mid-animation and is scrollbar-sensitive.
   await expect.poll(widthOf, { timeout: 5_000 }).toBeLessThan(expanded - 80);
 });
+
+// Regressed three times by hand-tuning: icons drifted left of centre, and fixed
+// row heights overflowed the rail on shorter windows so the bottom glyph got
+// clipped. Assert both, at several heights.
+for (const [w, h] of [[1870, 1008], [1280, 720]] as const) {
+  test(`tv rail: icons centred and unclipped at ${w}x${h}`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    await useTheme(page, 'tv');
+    await page.goto('/');
+    await expect(page.locator('.bliss-rail-panel')).toBeVisible({ timeout: 20_000 });
+    const r = await page.evaluate(() => {
+      const p = document.querySelector('.bliss-rail-panel')!.getBoundingClientRect();
+      const cx = p.left + p.width / 2;
+      const g = [...document.querySelectorAll('.bliss-sidebar .nav-icon-slot svg')].map((el) => {
+        const b = el.getBoundingClientRect();
+        return { off: Math.abs(b.left + b.width / 2 - cx), over: b.bottom - p.bottom };
+      });
+      return { count: g.length, maxOff: Math.max(...g.map((x) => x.off)), maxOver: Math.max(...g.map((x) => x.over)) };
+    });
+    expect(r.count).toBeGreaterThan(3);
+    expect(r.maxOff, 'glyphs must sit on the rail centre line').toBeLessThanOrEqual(2);
+    expect(r.maxOver, 'no glyph may spill past the rail').toBeLessThanOrEqual(0);
+  });
+}
