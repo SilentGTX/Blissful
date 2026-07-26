@@ -137,11 +137,32 @@ test('tv rail: icons do not move while the rail animates', async ({ page }) => {
       return +(b.left + b.width / 2).toFixed(1);
     });
 
+  const glyph = () =>
+    page.evaluate(() =>
+      Math.round(
+        document.querySelector('.bliss-sidebar nav .nav-icon-slot svg')!.getBoundingClientRect().width,
+      ),
+    );
+
   const collapsed = await iconCx();
+  const collapsedSize = await glyph();
   await page.getByLabel('Expand sidebar').click();
   await page.waitForTimeout(120); // mid-transition
   expect(Math.abs((await iconCx()) - collapsed), 'glyph must not travel mid-animation').toBeLessThanOrEqual(1);
   await expect(page.getByText('Discover', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
   await page.waitForTimeout(600);
   expect(Math.abs((await iconCx()) - collapsed), 'glyph must not travel when expanded').toBeLessThanOrEqual(1);
+  // Size must hold too: scoping the size rule to .closed snapped the glyphs
+  // from ~50px down to the base ~20px on expand, and once they were unscoped
+  // the base row height was too short and they overlapped each other.
+  expect(await glyph(), 'glyph must not resize when expanded').toBe(collapsedSize);
+  const overlap = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('.bliss-sidebar nav .bliss-sidebar-link')].map((el) =>
+      el.getBoundingClientRect(),
+    );
+    let worst = 0;
+    for (let i = 1; i < rows.length; i++) worst = Math.max(worst, rows[i - 1].bottom - rows[i].top);
+    return Math.round(worst);
+  });
+  expect(overlap, 'expanded rows must not overlap').toBeLessThanOrEqual(1);
 });

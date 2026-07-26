@@ -2786,9 +2786,11 @@ html[data-ui="tv"] .bliss-sidebar.closed .bliss-sidebar-link {
   height: clamp(72px, 11vh, 130px);
 }
 
-html[data-ui="tv"] .bliss-sidebar.closed .nav-icon-slot svg {
-  /* Scaled to the 160px band, which is the size the shell actually shows
-     (its 26-30px is against a ~1152px-wide WebView viewport). */
+/* NOT scoped to .closed — the source isn't either. Gating it on the collapsed
+   state made the glyphs snap from ~50px down to the base ~20px on expand.
+   Scaled to the 160px band, which is the size the shell actually shows (its
+   26-30px is against a ~1152px-wide WebView viewport). */
+html[data-ui="tv"] .nav-icon-slot svg {
   width: clamp(42px, 2.6vw, 54px);
   height: clamp(42px, 2.6vw, 54px);
 }
@@ -2965,4 +2967,12 @@ html[data-ui="tv"] .nav-icon-slot {
   width: calc(
     var(--tv-rail-collapsed) - 2 * clamp(8px, 0.7vw, 14px) - 2rem - 2px
   );
+}
+
+/* The base row height (clamp(2rem, max(3vh,1.6vw), 3.25rem)) is shorter than
+   this theme's 49px glyph, so on the EXPANDED rail the icons overflowed their
+   rows and piled on top of each other. Give every row room for the glyph.
+   Collapsed rows already flex taller than this, so it only affects expanded. */
+html[data-ui="tv"] .bliss-sidebar-link {
+  min-height: clamp(56px, 5.5vh, 76px);
 }
