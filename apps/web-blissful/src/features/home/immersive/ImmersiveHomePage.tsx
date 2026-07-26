@@ -48,7 +48,19 @@ export function ImmersiveHomePage({
   onSeeAll: (row: ImmersiveRow) => void;
   onItemClick: (item: MediaItem) => void;
 }) {
+  // `pointed` tracks the pointer immediately; `hovered` is what the backdrop and
+  // panel actually show. Sweeping the pointer across a rail crosses a dozen tiles
+  // in a few hundred ms, and feeding every one of those straight through made the
+  // whole hero restyle per tile. Settling first means only the tile you land on
+  // is rendered. The TV has no equivalent problem — D-pad focus is discrete.
+  const [pointed, setPointed] = useState<MediaItem | null>(null);
   const [hovered, setHovered] = useState<MediaItem | null>(null);
+
+  useEffect(() => {
+    if (!pointed || pointed === hovered) return;
+    const t = setTimeout(() => setHovered(pointed), 120);
+    return () => clearTimeout(t);
+  }, [pointed, hovered]);
 
   // Feature something as soon as there is anything to feature, so the backdrop
   // and panel arrive populated instead of waiting for the first hover (the meta
@@ -70,9 +82,16 @@ export function ImmersiveHomePage({
 
       <div className="relative z-10 flex min-h-[calc(100vh-8rem)] flex-col">
         {/* Featured panel — the upper band of the TV design. */}
+        {/* Fixed height on purpose: the TV positions its InfoPanel absolutely,
+            so swapping titles never moves the rows band. In normal flow a title
+            wrapping to two lines (or genres appearing) re-flowed the band and
+            the rails jumped under the pointer. */}
         <div
-          className="hidden shrink-0 md:block"
-          style={{ padding: 'clamp(2rem,7vh,6rem) var(--bliss-safe-x) clamp(2rem,6vh,5rem)' }}
+          className="hidden shrink-0 overflow-hidden md:block"
+          style={{
+            height: 'clamp(20rem,46vh,34rem)',
+            padding: 'clamp(2rem,7vh,6rem) var(--bliss-safe-x) clamp(2rem,6vh,5rem)',
+          }}
         >
           <ImmersiveInfoPanel item={hovered} meta={featuredMeta} />
         </div>
@@ -84,7 +103,7 @@ export function ImmersiveHomePage({
               title="Continue Watching"
               items={continueItems}
               progressById={continueProgress}
-              onHover={setHovered}
+              onHover={setPointed}
               onOpen={onItemClick}
             />
           ) : null}
@@ -114,7 +133,7 @@ export function ImmersiveHomePage({
                   <LandscapeRail
                     title={TV_ROW_TITLES[row.title] ?? row.title}
                     items={row.items}
-                    onHover={setHovered}
+                    onHover={setPointed}
                     onOpen={onItemClick}
                     onSeeAll={() => onSeeAll(row)}
                   />

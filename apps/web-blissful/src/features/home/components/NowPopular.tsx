@@ -6,6 +6,7 @@ import type { StremioMetaDetail } from '../../../lib/stremioAddon';
 import { normalizeStremioImage } from '../../../lib/mediaTypes';
 import { proxiedImage } from '../../../lib/imageProxy';
 import { GenreChips } from '../../detail/components/GenreChips';
+import { useUI } from '../../../context/UIProvider';
 
 type NowPopularProps = {
   hero: MediaItem | null;
@@ -24,6 +25,8 @@ export function NowPopular({
   onAddToList,
   onGenreClick,
 }: NowPopularProps) {
+  const { uiStyle } = useUI();
+  const isTvTheme = uiStyle === 'tv';
   const [lockedBg, setLockedBg] = useState('');
 
   useEffect(() => {
@@ -50,12 +53,23 @@ export function NowPopular({
   //     buttons.
   const actionButtonsText = (
     <>
+      {/* The TV theme fills this with the accent (that's what the TV app does);
+          Classic keeps it white. Swapped here rather than in CSS because the
+          white comes from Tailwind `!bg-white`, and a layered !important beats
+          an unlayered one no matter how specific the override. */}
       <button
         type="button"
-        className="action-button-Pn4hZ group mb-0 cursor-pointer !border-0 !bg-white !text-[#212121] hover:!bg-[#212121] hover:!text-white !h-11 !px-4 !text-sm"
+        className={
+          'action-button-Pn4hZ group mb-0 cursor-pointer !border-0 !h-11 !px-4 !text-sm ' +
+          (isTvTheme
+            ? '!bg-[var(--bliss-accent)] !text-[var(--bliss-ink)]'
+            : '!bg-white !text-[#212121] hover:!bg-[#212121] hover:!text-white')
+        }
         onClick={onWatch}
       >
-        <span className="text !text-[#212121] group-hover:!text-white">Watch now</span>
+        <span className={isTvTheme ? 'text !text-[var(--bliss-ink)]' : 'text !text-[#212121] group-hover:!text-white'}>
+          Watch now
+        </span>
       </button>
       <LibraryActionButton
         inLibrary={inLibrary}

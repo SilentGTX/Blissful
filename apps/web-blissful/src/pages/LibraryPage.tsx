@@ -2,10 +2,6 @@ import { BlissButton, BlissSelect, BlissSpinner } from '../components/base';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import MediaCard from '../components/MediaCard';
-import { useUI } from '../context/UIProvider';
-import { ImmersiveBackdrop } from '../features/home/immersive/ImmersiveBackdrop';
-import { LandscapeGridCard } from '../features/home/immersive/LandscapeRail';
-import { useHoveredMeta } from '../features/home/immersive/useHoveredMeta';
 import { useAuth } from '../context/AuthProvider';
 import { useModals } from '../context/ModalsProvider';
 import { CloseIcon } from '../icons/CloseIcon';
@@ -64,14 +60,9 @@ function hrefFor(item: LibraryItem, videoId: string | null): string {
 export default function LibraryPage() {
   const { authKey } = useAuth();
   const { openLogin } = useModals();
-  const { uiStyle } = useUI();
   const navigate = useNavigate();
 
   const [items, setItems] = useState<LibraryItem[]>([]);
-  // TV theme only: LibraryScreen.tsx renders the same immersive Backdrop as
-  // Home, following the focused card.
-  const isTv = uiStyle === 'tv';
-  const [hovered, setHovered] = useState<MediaItem | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useErrorToast(error, 'Library error');
@@ -196,16 +187,8 @@ export default function LibraryPage() {
     );
   }
 
-  const hoveredMeta = useHoveredMeta(isTv ? hovered : null);
-  const hoveredKey = hovered ? `${hovered.type}:${hovered.id}` : null;
-  const backdropMeta = hoveredMeta && hoveredMeta.key === hoveredKey ? hoveredMeta.meta : null;
-
   return (
-    // Backdrop and content are SIBLINGS (as on Home): the fixed backdrop sits
-    // at z-0 and the content at z-10, so the art can't paint over the text.
-    <div className="relative">
-      {isTv ? <ImmersiveBackdrop item={hovered} meta={backdropMeta} fixed /> : null}
-      <div className="relative z-10 mt-4 space-y-6">
+    <div className="mt-4 space-y-6">
       <div className="mt-5 flex flex-nowrap items-center gap-3 overflow-x-auto hide-scrollbar">
         <div className="flex-none">
           <BlissSelect
@@ -266,13 +249,7 @@ export default function LibraryPage() {
       ) : null}
 
 
-      <div
-        className={
-          isTv
-            ? 'bliss-tile-grid grid gap-5 [grid-template-columns:repeat(auto-fill,minmax(clamp(200px,15vw,420px),1fr))]'
-            : 'grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(clamp(160px,16vw,420px),1fr))]'
-        }
-      >
+      <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(clamp(160px,16vw,420px),1fr))]">
         {!loading && filtered.length === 0 ? (
           <div className="text-sm text-foreground/60">No library items found.</div>
         ) : null}
@@ -311,25 +288,15 @@ export default function LibraryPage() {
                 <CloseIcon size={16} />
               </button>
 
-              {isTv ? (
-                <LandscapeGridCard
-                  item={mediaItem}
-                  progress={progress ?? undefined}
-                  onHover={setHovered}
-                  onOpen={() => navigate(hrefFor(item, videoId))}
-                />
-              ) : (
-                <MediaCard
-                  item={mediaItem}
-                  variant="poster"
-                  progress={progress}
-                  onPress={() => navigate(hrefFor(item, videoId))}
-                />
-              )}
+              <MediaCard
+                item={mediaItem}
+                variant="poster"
+                progress={progress}
+                onPress={() => navigate(hrefFor(item, videoId))}
+              />
             </div>
           );
         })}
-        </div>
       </div>
     </div>
   );

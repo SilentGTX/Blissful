@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import MediaRail from '../components/MediaRail';
-import { ImmersiveBackdrop } from '../features/home/immersive/ImmersiveBackdrop';
-import { LandscapeRail } from '../features/home/immersive/LandscapeRail';
-import { useHoveredMeta } from '../features/home/immersive/useHoveredMeta';
 import { SkeletonSearchGrid } from '../components/Skeleton';
 import { useAddons } from '../context/AddonsProvider';
 import { useUI } from '../context/UIProvider';
@@ -70,11 +67,8 @@ function isKitsuAddon(manifest?: { id?: string; name?: string } | null): boolean
 
 export default function SearchPage() {
   const { addons } = useAddons();
-  const { setQuery, uiStyle } = useUI();
+  const { setQuery } = useUI();
   const navigate = useNavigate();
-  // TV theme only: results become landscape rails over an immersive backdrop.
-  const isTv = uiStyle === 'tv';
-  const [hovered, setHovered] = useState<MediaItem | null>(null);
   const [searchParams] = useSearchParams();
   const q = (searchParams.get('search') ?? searchParams.get('query') ?? '').trim();
 
@@ -293,15 +287,9 @@ export default function SearchPage() {
     };
   }, [addonList, q]);
 
-  const hoveredMeta = useHoveredMeta(isTv ? hovered : null);
-  const hoveredKey = hovered ? `${hovered.type}:${hovered.id}` : null;
-  const backdropMeta = hoveredMeta && hoveredMeta.key === hoveredKey ? hoveredMeta.meta : null;
-
   return (
-    <div className="relative">
-      {isTv ? <ImmersiveBackdrop item={hovered} meta={backdropMeta} fixed /> : null}
-      <div className="board-container relative z-10 mt-4 overflow-x-hidden px-4 sm:px-0">
-        <div className="board-content space-y-10">
+    <div className="board-container mt-4 overflow-x-hidden px-4 sm:px-0">
+      <div className="board-content space-y-10">
         {!q ? (
           <div className="solid-surface rounded-[28px] bg-white/6 p-8">
             <div className="font-[Instrument_Serif] text-2xl font-semibold tracking-tight">Search anything</div>
@@ -327,16 +315,7 @@ export default function SearchPage() {
           };
           const open = (item: MediaItem) =>
             navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`);
-          return isTv ? (
-            <LandscapeRail
-              key={row.id}
-              title={row.title}
-              items={row.items}
-              onHover={setHovered}
-              onOpen={open}
-              onSeeAll={seeAll}
-            />
-          ) : (
+          return (
             <MediaRail
               key={row.id}
               title={row.title}
@@ -348,7 +327,6 @@ export default function SearchPage() {
             />
           );
         })}
-        </div>
       </div>
     </div>
   );

@@ -2244,13 +2244,6 @@ html[data-ui="netflix"] .netflix-detail .action-button-Pn4hZ.is-active {
    of the picture, so match the TV and inset the layer instead. Desktop only —
    the mobile layout uses the art as a top hero. */
 @media (min-width: 1024px) {
-  html[data-ui="tv"] .background-image-layer-wJa90 {
-    left: 28%;
-  }
-
-  html[data-ui="tv"] .background-image-tSjYu {
-    object-position: center;
-  }
 }
 
 .bliss-detail-scrims {
@@ -2456,38 +2449,214 @@ html[data-ui="netflix"] .netflix-detail .action-button-Pn4hZ.is-active {
   font-family: "Fraunces", Georgia, serif;
 }
 
-/* ---- Nav rail (TV: components/NavRail.tsx, expanded state) ---------------
-   Flush to the left edge, full height, rounded on the RIGHT corners only,
-   near-opaque panel + hairline right border. The old sidebar was a floating
-   rounded card with a glass sheen and a drop shadow, which read as a widget
-   sitting on the page rather than the TV's edge-anchored rail. */
-html[data-ui="tv"] .bliss-rail-panel {
-  background: rgba(10, 11, 15, 0.99);
-  border: 0;
-  border-right: 1px solid rgba(255, 255, 255, 0.07);
-  /* Rounded on the RIGHT corners only — the rail is anchored to the window
-     edge, so left corners would show a sliver of page behind them. */
-  border-radius: 0 var(--bliss-tile-radius) var(--bliss-tile-radius) 0;
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+.bliss-detail-scrims {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      to right,
+      #07090d 32%,
+      rgba(7, 9, 13, 0.55) 52%,
+      transparent 76%
+    ),
+    linear-gradient(
+      to top,
+      #07090d 6%,
+      rgba(7, 9, 13, 0.4) 32%,
+      transparent 60%
+    );
 }
 
-html[data-ui="tv"]:not(.dark) .bliss-rail-panel {
-  background: #f2f2f2;
-  border-right-color: rgba(0, 0, 0, 0.08);
+/* ---- Featured info panel (TV: HomeHero.tsx `InfoPanel`) ------------------ */
+.bliss-info-title {
+  font-family: var(--bliss-display);
+  font-weight: 700;
+  font-size: clamp(2rem, 4.2vw, 5rem);
+  line-height: 1.05;
+  color: #fff;
+  text-shadow: 0 2px 24px rgba(0, 0, 0, 0.55);
 }
 
-/* The rail owns the left edge. Drop the wrapper's left/top/bottom padding so
-   the panel is flush and full height, but KEEP the right padding and shrink
-   the wrapper by the same amount — that leaves the panel's content box exactly
-   as wide as before (var - 2 * margin), which `.nav-icon-slot` hard-codes in
-   its centering math. Zeroing all four sides made the collapsed rail 2rem too
-   wide and pushed the icons off-centre. */
-html[data-ui="tv"] .bliss-vertical-nav:has(.bliss-rail) {
-  padding: 0 var(--horizontal-nav-margin) 0 0;
-  width: calc(var(--vertical-nav-bar-size) - var(--horizontal-nav-margin));
+.bliss-info-meta {
+  font-size: clamp(0.875rem, 1.25vw, 1.5rem);
+  color: rgba(255, 255, 255, 0.85);
 }
+
+.bliss-info-blurb {
+  font-size: clamp(0.8125rem, 1.05vw, 1.35rem);
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.78);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Genre pill — TV `GenreChip`, hover-lit instead of focus-lit. */
+.bliss-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1.5px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.1);
+  padding: clamp(0.3rem, 0.47vw, 0.56rem) clamp(0.7rem, 1.04vw, 1.25rem);
+  font-size: clamp(0.75rem, 1.04vw, 1.25rem);
+  font-weight: 600;
+  color: #fff;
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+
+.bliss-chip:hover,
+.bliss-chip:focus-visible {
+  border-color: var(--bliss-accent);
+  background: rgba(255, 255, 255, 0.16);
+  outline: none;
+}
+
+/* ---- Landscape rail (TV: LandscapeRail.tsx) ------------------------------ */
+.bliss-rail-title {
+  font-family: var(--bliss-display);
+  font-weight: 600;
+  font-size: clamp(1.05rem, 1.56vw, 1.875rem);
+  color: #fff;
+}
+
+.bliss-rail-scroller {
+  display: flex;
+  gap: clamp(0.65rem, 1.56vw, 1.875rem);
+  overflow-x: auto;
+  scroll-behavior: smooth;
+  /* Room for the hover scale so the tiles aren't clipped by the scroll box. */
+  padding: clamp(0.4rem, 0.73vw, 0.875rem) var(--bliss-safe-x)
+    clamp(0.4rem, 0.73vw, 0.875rem) clamp(0.6rem, 1.04vw, 1.25rem);
+  scrollbar-width: none;
+}
+
+.bliss-rail-scroller::-webkit-scrollbar {
+  display: none;
+}
+
+/* Right-edge vignette — TV uses a radial gradient so the fade blends out on
+   the left and feathers top/bottom instead of leaving hard edges. */
+.bliss-rail-fade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: clamp(3rem, 6.25vw, 7.5rem);
+  pointer-events: none;
+  background: radial-gradient(
+    100% 58% at 100% 50%,
+    rgba(8, 10, 14, 0.62) 0%,
+    rgba(8, 10, 14, 0.32) 60%,
+    rgba(8, 10, 14, 0) 100%
+  );
+}
+
+/* ---- Landscape tile (TV: PosterCard.tsx, variant="landscape") ------------ */
+.bliss-tile {
+  position: relative;
+  flex: 0 0 auto;
+  width: clamp(13rem, 22.5vw, 27rem); /* TV POSTER_W.land = 432 / 1920 */
+  aspect-ratio: 16 / 9;
+  border-radius: var(--bliss-tile-radius);
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.bliss-tile:hover,
+.bliss-tile:focus-visible {
+  transform: scale(1.045);
+  outline: none;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.5);
+  z-index: 1;
+}
+
+/* The art zooms slightly under the ring, like the TV's Animated zoom. */
+.bliss-tile-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 220ms ease;
+}
+
+.bliss-tile:hover .bliss-tile-art {
+  transform: scale(1.06);
+}
+
+/* Accent ring — drawn as an inset shadow so it isn't clipped by overflow. */
+.bliss-tile::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 3px var(--bliss-accent);
+  opacity: 0;
+  transition: opacity 150ms ease;
+  pointer-events: none;
+}
+
+.bliss-tile:hover::after,
+.bliss-tile:focus-visible::after {
+  opacity: 1;
+}
+
+.bliss-tile-scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent 45%, rgba(5, 7, 11, 0.85) 100%);
+}
+
+.bliss-tile-title {
+  position: absolute;
+  left: clamp(0.5rem, 0.94vw, 1.125rem);
+  right: clamp(0.5rem, 0.94vw, 1.125rem);
+  bottom: clamp(0.5rem, 0.94vw, 1.125rem);
+  font-family: var(--bliss-display);
+  font-weight: 600;
+  font-size: clamp(0.8125rem, 1.3vw, 1.5625rem);
+  line-height: 1.08;
+  color: #fff;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Watch-progress bar pinned to the tile's bottom edge (TV: same). */
+.bliss-tile-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: clamp(3px, 0.26vw, 5px);
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.bliss-tile-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--bliss-accent);
+}
+
+/* Brand heading face. Replaces `font-[Instrument_Serif]`, which named a font
+   the app never loaded — every "serif" heading was silently rendering in the
+   browser's default serif. */
+.bliss-heading {
+  font-family: "Fraunces", Georgia, serif;
+}
+
+
+
+
+
+
 
 /* Grid variant of the tile: fills its grid cell instead of the rail's fixed
    width, with the title below (TV: PosterCard titlePlacement="below"). */
@@ -2566,23 +2735,70 @@ html[data-ui="tv"] .bliss-nav-input {
 html[data-ui="tv"] .solid-surface,
 html[data-ui="tv"] .bliss-bottom-drawer,
 html[data-ui="tv"] .bliss-menu-panel {
-  background-color: rgba(28, 33, 46, 0.97);
-  background-image: linear-gradient(
-    to bottom,
-    rgba(40, 47, 64, 0.97),
-    rgba(17, 21, 31, 0.985)
-  );
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  /* Sampled off the app running on the emulator rather than taken from the
+     token file: the rendered panel is rgb(16,17,22) and the nav rail rgb(3,3,4)
+     — near-neutral, with blue only ~5 above red. The documented glass stops
+     (rgba(40,47,64,.97) → rgba(17,21,31,.985)) are both lighter and about 4x
+     more saturated than what actually reaches the screen, and using them as a
+     gradient made every panel read blue. */
+  background-color: rgb(18, 19, 24);
+  background-image: none;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* The rail panel is the one surface that stays flat + edge-anchored (it is the
-   TV's NAV_PANEL, not its glass), so keep it out of the rule above. */
-html[data-ui="tv"] .bliss-rail-panel {
-  background-image: none;
-}
+
 
 /* Inputs and select triggers inside those panels: the same glass, one step
    lighter, so fields stay readable against the surface behind them. */
 html[data-ui="tv"] .bliss-nav-bar {
   background-image: none;
+}
+
+/* ---- Old TV shell chrome (html[data-ui="tv"]) ---------------------------
+   Ported from the Tauri TV app still installed on the emulator
+   (com.blissful.tv). Its body is Classic's — hero card + poster rails — so
+   only the chrome differs: an icon-only floating rail, one wide pill for
+   search, a circular avatar, and an accent-filled primary action. */
+
+/* Search: one wide rounded-full pill with a roomy hit area, rather than
+   Classic's narrower rounded-rect field. */
+html[data-ui="tv"] .bliss-nav-input {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+html[data-ui="tv"] .bliss-nav-input input {
+  font-size: clamp(0.95rem, 1.05vw, 1.25rem);
+}
+
+/* Rail: the TV app's is a narrow floating card of icons with a hairline under
+   the logo. Classic's rail is already a floating card, so this is tone + a
+   rounder radius; the icon-only state is set by collapsing it in AppShell. */
+html[data-ui="tv"] .bliss-rail-panel {
+  background: rgb(14, 15, 20);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 28px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+/* Active nav icon is accent-tinted, with no pill or border behind it. */
+html[data-ui="tv"] .bliss-sidebar-link {
+  border-color: transparent;
+}
+
+html[data-ui="tv"] .bliss-sidebar-link.is-active,
+html[data-ui="tv"].dark .bliss-sidebar-link.is-active {
+  color: var(--bliss-accent);
+  border-color: transparent;
+}
+
+html[data-ui="tv"] .bliss-sidebar-link:hover,
+html[data-ui="tv"] .dark .bliss-sidebar-link:hover,
+html[data-ui="tv"] .bliss-sidebar-link:focus-visible {
+  color: #fff;
+  border-color: transparent;
+  background: rgba(255, 255, 255, 0.06);
 }

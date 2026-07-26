@@ -229,6 +229,20 @@ export default function AppShell() {
     return false;
   });
 
+  // The TV theme's rail is icon-only by design (it mirrors the TV app, where the
+  // rail is a narrow strip of icons). Collapse it when that theme is picked; the
+  // user can still expand it with the toggle.
+  const tvCollapseAppliedRef = useRef(false);
+  useEffect(() => {
+    if (uiStyle !== 'tv') {
+      tvCollapseAppliedRef.current = false;
+      return;
+    }
+    if (tvCollapseAppliedRef.current) return;
+    tvCollapseAppliedRef.current = true;
+    setSidebarCollapsed(true);
+  }, [uiStyle]);
+
   useEffect(() => {
     document.documentElement.style.setProperty('--bliss-sidebar-left', '1.25rem');
     document.documentElement.style.setProperty(

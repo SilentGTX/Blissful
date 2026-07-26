@@ -20,13 +20,10 @@ import { formatDate } from '../features/discover/utils';
 import { isInLibrary as isInLibraryStored, toggleLibrary } from '../lib/libraryStore';
 import { useImdbRating } from '../lib/useImdbRating';
 import type { MediaItem, MediaType } from '../types/media';
-import { ImmersiveBackdrop } from '../features/home/immersive/ImmersiveBackdrop';
-import { LandscapeGridCard } from '../features/home/immersive/LandscapeRail';
-import { useHoveredMeta } from '../features/home/immersive/useHoveredMeta';
 
 export default function DiscoverPage() {
   const { addons } = useAddons();
-  const { query, isDark, setQuery, uiStyle } = useUI();
+  const { query, isDark, setQuery } = useUI();
   const params = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -141,14 +138,6 @@ export default function DiscoverPage() {
     ? [filterKey]
     : [];
 
-  // TV theme only: an immersive backdrop following the hovered card, which is
-  // what DiscoverScreen.tsx renders (the same Backdrop the Home uses).
-  const isTv = uiStyle === 'tv';
-  const [hovered, setHovered] = useState<MediaItem | null>(null);
-  const hoveredMeta = useHoveredMeta(isTv ? hovered : null);
-  const hoveredKey = hovered ? `${hovered.type}:${hovered.id}` : null;
-  const backdropMeta = hoveredMeta && hoveredMeta.key === hoveredKey ? hoveredMeta.meta : null;
-
   const bg = selected?.background || selected?.poster;
   void libraryVersion;
   const selectedInLibrary = selected ? isInLibraryStored({ type: discoverType, id: selected.id }) : false;
@@ -157,9 +146,8 @@ export default function DiscoverPage() {
   const firstTrailerId = trailerStreams[0]?.ytId ?? trailers[0]?.source ?? null;
 
   return (
-    <div className="catalog-container relative">
-      {isTv ? <ImmersiveBackdrop item={hovered} meta={backdropMeta} fixed /> : null}
-      <div className="relative z-10 lg:mr-[360px]">
+    <div className="catalog-container">
+      <div className="lg:mr-[360px]">
         <div className="h-full overflow-hidden">
           {/* Desktop: Select dropdowns */}
           <div className="hidden sm:flex flex-wrap gap-3">
@@ -337,44 +325,23 @@ export default function DiscoverPage() {
               // we keep ~5 columns at 1920w (matches the old fixed
               // breakpoints) and get ~6-7 bigger cards at 4K instead
               // of shrinking each card down to nothing.
-              <div
-                data-testid="discover-grid"
-                className={
-                  'grid gap-5 p-1 ' +
-                  (isTv
-                    ? 'bliss-tile-grid [grid-template-columns:repeat(auto-fit,minmax(clamp(200px,15vw,420px),1fr))]'
-                    : '[grid-template-columns:repeat(auto-fit,minmax(clamp(160px,16vw,420px),1fr))]')
-                }
-              >
-                {filteredItems.map((item) => {
-                  const open = () => {
-                    // Mobile has no preview pane, so a tap goes straight to detail.
-                    if (window.innerWidth < 1024) {
-                      navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`);
-                    } else {
-                      setSelectedId(item.id);
-                    }
-                  };
-                  // TV theme: landscape tiles with the title below (the TV's
-                  // PosterCard titlePlacement="below" content grid).
-                  return isTv ? (
-                    <LandscapeGridCard
-                      key={item.id}
-                      item={item}
-                      selected={selectedId === item.id}
-                      onHover={setHovered}
-                      onOpen={open}
-                    />
-                  ) : (
-                    <MediaCard
-                      key={item.id}
-                      item={item}
-                      variant="poster"
-                      selected={selectedId === item.id}
-                      onPress={open}
-                    />
-                  );
-                })}
+              <div data-testid="discover-grid" className="grid gap-5 p-1 [grid-template-columns:repeat(auto-fit,minmax(clamp(160px,16vw,420px),1fr))]">
+                {filteredItems.map((item) => (
+                  <MediaCard
+                    key={item.id}
+                    item={item}
+                    variant="poster"
+                    selected={selectedId === item.id}
+                    onPress={() => {
+                      // Mobile has no preview pane, so a tap goes straight to detail.
+                      if (window.innerWidth < 1024) {
+                        navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`);
+                      } else {
+                        setSelectedId(item.id);
+                      }
+                    }}
+                  />
+                ))}
               </div>
             )}
           </div>

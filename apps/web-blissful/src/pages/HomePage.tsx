@@ -29,7 +29,6 @@ import {
 import { NetflixRow } from '../features/home/components/NetflixRow';
 import { NetflixHero } from '../features/home/components/NetflixHero';
 import { NowPopular } from '../features/home/components/NowPopular';
-import { ImmersiveHomePage } from '../features/home/immersive/ImmersiveHomePage';
 import { isMobile, libraryProgressPercent, libraryItemToMediaItem } from '../features/home/utils';
 import { useAddonRows } from '../features/home/hooks/useAddonRows';
 import { useNetflixHero } from '../features/home/hooks/useNetflixHero';
@@ -46,8 +45,6 @@ export default function HomePage() {
   const { continueWatching } = useContinueWatchingContext();
   const navigate = useNavigate();
   const isNetflix = uiStyle === 'netflix';
-  // The TV theme took over the slot the old 'modern' coverflow theme had.
-  const isTv = uiStyle === 'tv';
   const revealRootRef = useRef<HTMLDivElement | null>(null);
 
   // Stremio sync trigger: every time the home page mounts, kick off a
@@ -229,24 +226,6 @@ export default function HomePage() {
       // ignore
     }
   };
-
-  if (isTv) {
-    return (
-      <ImmersiveHomePage
-        rows={rowsToRender}
-        continueItems={continueItems}
-        continueProgress={continueProgress}
-        movieItems={movieItems}
-        seriesItems={seriesItems}
-        loading={showRowsLoading}
-        hiddenRowIds={homeRowPrefs.hidden}
-        homeEditMode={homeEditMode}
-        onToggleRowVisibility={toggleVisibility}
-        onSeeAll={handleSeeAll}
-        onItemClick={(item) => navigate(`/detail/${item.type}/${encodeURIComponent(item.id)}`)}
-      />
-    );
-  }
 
   if (isNetflix) {
     const heroTrailer = heroMeta?.meta?.trailerStreams?.find((t) => t?.ytId)?.ytId ?? null;

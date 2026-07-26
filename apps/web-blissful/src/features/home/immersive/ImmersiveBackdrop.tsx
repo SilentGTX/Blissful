@@ -56,19 +56,45 @@ export const ImmersiveBackdrop = memo(function ImmersiveBackdrop({
   if (real) lastRealRef.current = real;
   const art = real ?? lastRealRef.current ?? landscapeArt(item?.posterUrl);
 
+  // Swap only once the NEW art has decoded, and keep painting the old one until
+  // then. Rendering `art` straight into the <img> (worse: with `key={art}`, which
+  // remounts it) blanked the layer for a frame on every change — sweeping the
+  // pointer across a rail strobed the whole screen.
+  const [shownArt, setShownArt] = useState<string | undefined>(art);
+  useEffect(() => {
+    if (!art) {
+      setShownArt(undefined);
+      return;
+    }
+    let cancelled = false;
+    const img = new Image();
+    img.src = proxiedImage(art);
+    const commit = () => {
+      if (!cancelled) setShownArt(art);
+    };
+    // decode() resolves once the bitmap is ready to paint; onload is the fallback
+    // for browsers/images where decode rejects (e.g. some SVG or CORS cases).
+    img.decode().then(commit, () => {
+      if (img.complete) commit();
+      else img.onload = commit;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [art]);
+
   return (
     <div className={fixed ? 'bliss-backdrop bliss-backdrop--fixed' : 'bliss-backdrop'} aria-hidden>
-      {art ? (
+      {shownArt ? (
         <img
-          key={art}
-          src={proxiedImage(art)}
+          src={proxiedImage(shownArt)}
           alt=""
           className="bliss-backdrop-art"
           draggable={false}
           onError={() => setIdx((i) => i + 1)}
         />
       ) : null}
-      {art ? <div className="bliss-backdrop-wash" /> : null}
+      {shownArt ? <div className="bliss-backdrop-wash" /> : null}
       <div className="bliss-backdrop-scrims" />
     </div>
   );
