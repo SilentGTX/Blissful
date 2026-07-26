@@ -2552,3 +2552,37 @@ html[data-ui="tv"] .bliss-nav-input {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
+
+/* ---- TV theme surfaces --------------------------------------------------
+   Classic paints every panel a flat neutral #2c2c2c. The TV app instead uses
+   one glass recipe everywhere (theme/colors.ts `glassSurface` + `deriveGlass`):
+   a cool dark-navy gradient from rgba(40,47,64,.97) to rgba(17,21,31,.985)
+   with a white hairline. Without this the Settings page, the modals and the
+   account menu kept the old grey while everything around them went navy.
+
+   These win over the Tailwind `bg-white/N` tints those panels also carry
+   (two-class selector vs one), which is intended — the TV look is one uniform
+   surface rather than a set of per-panel alphas. */
+html[data-ui="tv"] .solid-surface,
+html[data-ui="tv"] .bliss-bottom-drawer,
+html[data-ui="tv"] .bliss-menu-panel {
+  background-color: rgba(28, 33, 46, 0.97);
+  background-image: linear-gradient(
+    to bottom,
+    rgba(40, 47, 64, 0.97),
+    rgba(17, 21, 31, 0.985)
+  );
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* The rail panel is the one surface that stays flat + edge-anchored (it is the
+   TV's NAV_PANEL, not its glass), so keep it out of the rule above. */
+html[data-ui="tv"] .bliss-rail-panel {
+  background-image: none;
+}
+
+/* Inputs and select triggers inside those panels: the same glass, one step
+   lighter, so fields stay readable against the surface behind them. */
+html[data-ui="tv"] .bliss-nav-bar {
+  background-image: none;
+}

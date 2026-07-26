@@ -351,7 +351,7 @@ export function TopNav({
             ) : (
               <BlissDropdown isOpen={isDesktopAccountMenuOpen} onOpenChange={(open) => { if (!fsLockedRef.current) setIsDesktopAccountMenuOpen(open); }}>
                 <BlissDropdown.Trigger className="rounded-full">{accountTrigger}</BlissDropdown.Trigger>
-                <BlissDropdown.Popover className="mt-3 min-w-[260px] -translate-x-[10px] translate-y-[3px] bg-[#2a2a2a] p-2">
+                <BlissDropdown.Popover className="bliss-menu-panel mt-3 min-w-[260px] -translate-x-[10px] translate-y-[3px] bg-[#2a2a2a] p-2">
                   <BlissDropdown.Menu onAction={handleAccountAction}>
                     <BlissDropdown.Item id="profiles" textValue="Profiles" className="hover:bg-white/15 data-[hovered=true]:bg-white/15">
                       <div className="flex items-center gap-2">
@@ -397,7 +397,7 @@ export function TopNav({
               <BlissDropdown.Trigger className="rounded-full">
                 <div className="md:hidden flex-shrink-0">{accountTrigger}</div>
               </BlissDropdown.Trigger>
-              <BlissDropdown.Popover className="mt-3 min-w-[240px] bg-[#2a2a2a] p-2">
+              <BlissDropdown.Popover className="bliss-menu-panel mt-3 min-w-[240px] bg-[#2a2a2a] p-2">
                 <BlissDropdown.Menu onAction={handleAccountAction}>
                   <BlissDropdown.Item id="profiles" textValue="Profiles" className="hover:bg-white/15 data-[hovered=true]:bg-white/15">
                     <div className="flex items-center gap-2">
