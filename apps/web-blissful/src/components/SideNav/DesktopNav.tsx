@@ -253,13 +253,6 @@ export function DesktopNav(props: DesktopNavProps) {
               collapsed={collapsed}
               onPress={() => handleNavChange('library')}
             />
-            <NavItem
-              label="Join Party"
-              icon={ICONS.watchParty}
-              active={false}
-              collapsed={collapsed}
-              onPress={() => props.onOpenJoinParty()}
-            />
             {/* Desktop-only: the dedicated AddonsPage. Web manages addons
                 via the in-shell modal flow. */}
             {isNativeShell() ? (
@@ -271,6 +264,13 @@ export function DesktopNav(props: DesktopNavProps) {
                 onPress={() => handleNavChange('addons')}
               />
             ) : null}
+            <NavItem
+              label="Join Party"
+              icon={ICONS.watchParty}
+              active={false}
+              collapsed={collapsed}
+              onPress={() => props.onOpenJoinParty()}
+            />
             <NavItem
               label="Settings"
               icon={ICONS.settings}
