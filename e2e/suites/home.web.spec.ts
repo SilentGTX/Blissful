@@ -19,7 +19,9 @@ test.describe('Home + browse (web)', () => {
     test(`${theme} home renders the hero, search bar, and media rails`, async ({ page }) => {
       await useTheme(page, theme);
       await page.goto('/');
-      await expect(page.getByPlaceholder('Search everything')).toBeVisible({ timeout: 20_000 });
+      // The TV theme uses the old TV app's wording for the search placeholder.
+      const placeholder = theme === 'tv' ? 'Search movies, series, actors...' : 'Search everything';
+      await expect(page.getByPlaceholder(placeholder)).toBeVisible({ timeout: 20_000 });
       await expect(page.getByTestId('home-hero-card')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('media-rail').first()).toBeVisible({ timeout: 30_000 });
     });

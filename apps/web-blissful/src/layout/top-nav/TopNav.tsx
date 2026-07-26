@@ -160,10 +160,16 @@ export function TopNav({
 
   const accountTrigger = (
     <div
-      className="h-10 w-10 cursor-pointer overflow-hidden bg-transparent p-0"
+      className={
+        'cursor-pointer overflow-hidden rounded-full bg-transparent p-0 ' +
+        (isTvTheme ? 'bliss-tv-avatar' : 'h-10 w-10')
+      }
       aria-label="Account"
     >
-      <BlissAvatar key={isLoggedIn ? `user-${safeDisplayName}` : 'guest'} className="h-10 w-10">
+      <BlissAvatar
+        key={isLoggedIn ? `user-${safeDisplayName}` : 'guest'}
+        className={isTvTheme ? 'bliss-tv-avatar' : 'h-10 w-10'}
+      >
           {accountAvatarView.kind === 'image' ? (
             <BlissAvatar.Image alt={safeDisplayName} src={accountAvatarView.value} />
           ) : null}
@@ -195,17 +201,31 @@ export function TopNav({
 
           <div
             ref={searchMenuRef}
-            className="relative flex-1 md:w-[360px] md:max-w-[60vw] md:justify-self-center md:mx-auto"
+            className={
+              'relative flex-1 md:justify-self-center md:mx-auto ' +
+              // The old TV app's search is one wide pill spanning much of the bar.
+              (isTvTheme ? 'md:w-[640px] md:max-w-[52vw]' : 'md:w-[360px] md:max-w-[60vw]')
+            }
           >
             <div className="relative flex items-center">
+              {/* TV theme: a large magnifier sits INSIDE the pill on the left,
+                  as in the old TV app. Classic keeps its right-hand icon. */}
+              {isTvTheme ? (
+                <div className="pointer-events-none absolute left-5 top-1/2 z-10 -translate-y-1/2 text-foreground/55">
+                  <SearchIcon size={22} />
+                </div>
+              ) : null}
               <Input
                 value={query}
                 onChange={(e) => {
                   onQueryChange(e.target.value);
                   setSearchMenuOpen(true);
                 }}
-                placeholder="Search everything"
-                className="bliss-nav-input w-full rounded-full h-11 px-4 pr-12"
+                placeholder={isTvTheme ? 'Search movies, series, actors...' : 'Search everything'}
+                className={
+                  'bliss-nav-input w-full rounded-full ' +
+                  (isTvTheme ? 'h-14 pl-14 pr-14 text-base' : 'h-11 px-4 pr-12')
+                }
                 onFocus={() => setSearchMenuOpen(true)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
@@ -229,7 +249,7 @@ export function TopNav({
                   >
                     <CloseIcon size={16} />
                   </button>
-                ) : (
+                ) : isTvTheme ? null : (
                   <div className="grid h-8 w-8 place-items-center text-foreground/50">
                     <SearchIcon size={16} />
                   </div>
@@ -333,7 +353,7 @@ export function TopNav({
           </div>
 
           <div className="hidden md:flex items-center justify-self-end gap-3 flex-shrink-0">
-            {isHomeRoute ? (
+            {isHomeRoute && !isTvTheme ? (
               <BlissTooltip content="Show/Hide Addons" placement="bottom">
                 <BlissButton
                   isIconOnly

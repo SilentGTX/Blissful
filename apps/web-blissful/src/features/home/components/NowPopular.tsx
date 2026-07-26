@@ -60,10 +60,10 @@ export function NowPopular({
       <button
         type="button"
         className={
-          'action-button-Pn4hZ group mb-0 cursor-pointer !border-0 !h-11 !px-4 !text-sm ' +
+          'action-button-Pn4hZ group mb-0 cursor-pointer !border-0 ' +
           (isTvTheme
-            ? '!bg-[var(--bliss-accent)] !text-[var(--bliss-ink)]'
-            : '!bg-white !text-[#212121] hover:!bg-[#212121] hover:!text-white')
+            ? '!h-14 !px-8 !text-base !bg-[var(--bliss-accent)] !text-[var(--bliss-ink)]'
+            : '!h-11 !px-4 !text-sm !bg-white !text-[#212121] hover:!bg-[#212121] hover:!text-white')
         }
         onClick={onWatch}
       >
@@ -74,7 +74,7 @@ export function NowPopular({
       <LibraryActionButton
         inLibrary={inLibrary}
         onToggleLibrary={onAddToList}
-        className="mb-0 cursor-pointer !h-11 !px-4 !text-sm"
+        className={'mb-0 cursor-pointer ' + (isTvTheme ? '!h-14 !px-7 !text-base' : '!h-11 !px-4 !text-sm')}
       />
     </>
   );

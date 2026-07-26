@@ -2802,3 +2802,80 @@ html[data-ui="tv"] .bliss-sidebar-link:focus-visible {
   border-color: transparent;
   background: rgba(255, 255, 255, 0.06);
 }
+
+/* Rail icons in the TV theme are larger and further apart than Classic's — the
+   old TV app is a 10-foot UI and its rail reads as a column of big glyphs. */
+html[data-ui="tv"] .nav-icon-slot svg {
+  width: clamp(1.35rem, 1.5vw, 1.75rem);
+  height: clamp(1.35rem, 1.5vw, 1.75rem);
+}
+
+html[data-ui="tv"] .bliss-sidebar-link {
+  height: clamp(2.6rem, 3.6vh, 3.5rem);
+}
+
+/* ---- Old TV app chrome, measured off the emulator ------------------------
+   Sampled from com.blissful.tv at 1920x1080: the rail spans x16..176 (160px,
+   8.3vw) and is a GLASS panel with a vertical gradient — rgb(52,55,70) near
+   the top, rgb(31,33,40) mid — not the flat near-black I had. The search pill
+   is 112px tall (5.8vw) with a diagonal glass wash, light at the left and
+   fading out to the right. The avatar is a plain ~117px (6.1vw) circle. */
+
+html[data-ui="tv"] .bliss-rail-panel {
+  /* Blissful's own glass recipe, which is what the old TV app renders. */
+  background-image: linear-gradient(
+    to bottom,
+    rgba(52, 55, 70, 0.92),
+    rgba(20, 22, 30, 0.96)
+  );
+  background-color: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 28px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+html[data-ui="tv"] .bliss-nav-input {
+  height: clamp(3.25rem, 5.8vw, 6rem);
+  border-radius: 999px;
+  /* Diagonal glass: bright at the left where the magnifier sits, fading out
+     to the right — the same falloff the TV app's pill has. */
+  background:
+    linear-gradient(100deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.04) 55%, rgba(255, 255, 255, 0.01) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+html[data-ui="tv"] .bliss-nav-input input {
+  font-size: clamp(1rem, 1.35vw, 1.6rem);
+}
+
+/* Plain circular avatar, no ring, no edit button beside it. */
+html[data-ui="tv"] .bliss-tv-avatar {
+  width: clamp(2.75rem, 5vw, 5rem);
+  height: clamp(2.75rem, 5vw, 5rem);
+  border-radius: 999px;
+}
+
+/* The old app's rail is 160px wide at 1920 (8.3vw); the stock collapsed rail is
+   about half that. `--vertical-nav-bar-size` is set inline by AppShell, so this
+   needs !important to land. `.nav-icon-slot` hard-codes the SAME expression for
+   its centring math, so it has to be widened in lockstep or the icons sit off
+   to one side. */
+html[data-ui="tv"] .bliss-shell {
+  --vertical-nav-bar-size: clamp(160px, 10vw, 250px) !important;
+}
+
+html[data-ui="tv"] .nav-icon-slot {
+  width: calc(clamp(160px, 10vw, 250px) - 4.5rem - 2px);
+}
+
+/* Guest fallback needs a visible disc — the old app's avatar is always a filled
+   circle, whether it holds a picture or an initial. */
+html[data-ui="tv"] .bliss-tv-avatar {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: clamp(1.1rem, 1.9vw, 2rem);
+}

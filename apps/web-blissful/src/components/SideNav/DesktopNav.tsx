@@ -36,7 +36,7 @@ export type DesktopNavProps = Pick<
 
 export function DesktopNav(props: DesktopNavProps) {
   const { collapsed } = props;
-  // The TV theme mirrors the Android app, down to its logo mark.
+  // The TV theme keeps the blue chrome-B mark; Classic keeps the green one.
   const { uiStyle } = useUI();
   const isTvTheme = uiStyle === 'tv';
   const [isContinueOpen, setIsContinueOpen] = useState(false);
