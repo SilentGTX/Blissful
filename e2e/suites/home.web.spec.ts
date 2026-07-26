@@ -122,3 +122,26 @@ for (const [w, h] of [[1870, 1008], [1280, 720]] as const) {
     expect(r.maxOver, 'no glyph may spill past the rail').toBeLessThanOrEqual(0);
   });
 }
+
+// Collapse/expand must animate the WIDTH while the glyphs stand still, as
+// Classic does. That only holds if the icon slot is exactly as wide as the
+// collapsed row's content AND the rail's padding is identical in both states —
+// scoping either to the collapsed state alone reintroduces a visible jump.
+test('tv rail: icons do not move while the rail animates', async ({ page }) => {
+  await useTheme(page, 'tv');
+  await page.goto('/');
+  await expect(page.locator('.bliss-rail-panel')).toBeVisible({ timeout: 20_000 });
+  const iconCx = () =>
+    page.evaluate(() => {
+      const b = document.querySelector('.bliss-sidebar nav .nav-icon-slot svg')!.getBoundingClientRect();
+      return +(b.left + b.width / 2).toFixed(1);
+    });
+
+  const collapsed = await iconCx();
+  await page.getByLabel('Expand sidebar').click();
+  await page.waitForTimeout(120); // mid-transition
+  expect(Math.abs((await iconCx()) - collapsed), 'glyph must not travel mid-animation').toBeLessThanOrEqual(1);
+  await expect(page.getByText('Discover', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
+  await page.waitForTimeout(600);
+  expect(Math.abs((await iconCx()) - collapsed), 'glyph must not travel when expanded').toBeLessThanOrEqual(1);
+});

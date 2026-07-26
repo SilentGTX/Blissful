@@ -2768,7 +2768,7 @@ html[data-ui="tv"] .bliss-nav-bar {
 html[data-ui="tv"] {
   --tv-safe-x: 5vw;
   --tv-safe-y: 4vh;
-  --tv-rail-collapsed: clamp(160px, 8.3vw, 220px); /* = TV_SIDEBAR_COLLAPSED_WIDTH */
+  --tv-rail-collapsed: clamp(160px, 10vw, 250px); /* MUST match TV_SIDEBAR_COLLAPSED_WIDTH */
   --tv-topbar-h: clamp(56px, 7vh, 84px);
   --bliss-glass-top: rgba(40, 47, 64, 0.97);
   --bliss-glass-bottom: rgba(17, 21, 31, 0.985);
@@ -2776,7 +2776,7 @@ html[data-ui="tv"] {
 
 /* Tighter symmetric inset than the desktop 1.25rem so the centred glass column
    fills more of the band. */
-html[data-ui="tv"] .bliss-vertical-nav:has(.bliss-sidebar.closed) {
+html[data-ui="tv"] .bliss-vertical-nav {
   overflow: visible;
   padding-left: clamp(8px, 0.7vw, 14px);
   padding-right: clamp(8px, 0.7vw, 14px);
@@ -2910,23 +2910,6 @@ html[data-ui="tv"] .bliss-sidebar.closed .logo {
    cell pinned at the START (icons hug the left). A full-width flex box centres a
    lone child on every engine. This is the rule I had missed, which is why the
    glyphs sat left of centre. */
-html[data-ui="tv"] .bliss-sidebar.closed .bliss-sidebar-link {
-  display: flex !important;
-  flex-direction: row !important;
-  align-items: center !important;
-  justify-content: center !important;
-  width: 100% !important;
-  margin-left: 0 !important;
-  margin-right: 0 !important;
-  padding-left: 0 !important;
-  padding-right: 0 !important;
-}
-
-html[data-ui="tv"] .bliss-sidebar.closed .nav-icon-slot {
-  width: auto !important;
-  flex: 0 0 auto !important;
-  margin: 0 !important;
-}
 
 /* The hidden label must leave the flow entirely or it nudges the row off-centre. */
 html[data-ui="tv"] .bliss-sidebar.closed .bliss-sidebar-label {
@@ -2968,4 +2951,18 @@ html[data-ui="tv"] .bliss-sidebar.closed .footer > div {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* Classic's trick, re-derived for this rail's width: the icon slot is a fixed
+   box exactly as wide as the collapsed row's content, and the glyph is centred
+   INSIDE it. Because the slot keeps that width when the label appears, the
+   glyph's centre is at the same x collapsed and expanded — so the width
+   transition animates with the icons standing still. Applies in BOTH states;
+   scoping it to .closed is what made them jump.
+     panel = --tv-rail-collapsed - 2x nav padding
+     row   = panel - 2rem (mx-4) - 2px (1px border each side) */
+html[data-ui="tv"] .nav-icon-slot {
+  width: calc(
+    var(--tv-rail-collapsed) - 2 * clamp(8px, 0.7vw, 14px) - 2rem - 2px
+  );
 }
