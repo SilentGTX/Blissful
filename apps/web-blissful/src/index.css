@@ -2898,50 +2898,8 @@ html[data-ui="tv"] .bliss-sidebar nav {
   max-height: none;
 }
 
-/* Hairline above the bottom group, as the old app has. */
-html[data-ui="tv"] .bliss-sidebar.closed .footer {
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  padding-top: 0.75rem;
-}
-
-/* Collapsed footer (Friends / Continue Watching). Measured against the old app:
-   its nav rows sit ~123px apart on a ~1040px rail and its single bottom entry is
-   the same size as a nav row. Web has two entries and they were packed into the
-   last 250px with the count badges floating ABOVE the glyphs, overlapping the
-   divider — visibly a different rhythm from the six rows above. Give them the
-   nav row's height and pin the badge to the glyph's top-right corner. */
-html[data-ui="tv"] .bliss-sidebar.closed .footer {
-  gap: 0;
-  padding-bottom: clamp(0.75rem, 2vh, 1.5rem);
-}
-
-html[data-ui="tv"] .bliss-sidebar.closed .footer > div {
-  height: clamp(72px, 11vh, 130px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-html[data-ui="tv"] .bliss-sidebar.closed .footer .nav-icon-slot svg {
-  width: clamp(42px, 2.6vw, 54px);
-  height: clamp(42px, 2.6vw, 54px);
-}
-
-/* Badge rides the glyph instead of floating over the divider above it. */
-html[data-ui="tv"] .bliss-sidebar.closed .footer [class*="absolute"] {
-  top: 50%;
-  right: 50%;
-  transform: translate(1.35em, -1.5em);
-}
-
 /* Logo sits bigger and centred in the collapsed rail, as the old app's does. */
 html[data-ui="tv"] .bliss-sidebar.closed .logo {
   height: clamp(2.75rem, 3.4vw, 4.5rem) !important;
   width: clamp(2.75rem, 3.4vw, 4.5rem) !important;
-}
-
-/* Count badges are accent-filled with light text in the old app, not white. */
-html[data-ui="tv"] .bliss-sidebar.closed .footer [class*="absolute"] {
-  background: var(--bliss-accent) !important;
-  color: var(--bliss-ink) !important;
 }
