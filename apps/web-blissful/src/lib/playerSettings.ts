@@ -98,9 +98,26 @@ export const STREAMING_CACHE_SIZE_OPTIONS: Array<{
 
 const LANGUAGE_NAMES = languageNames as Record<string, string>;
 
+/** Pinned to the top of every language picker, in this order. Matched on the
+ *  ISO 639-2 code (languageNames.json is keyed 'eng'/'bul', not 'en'/'bg'),
+ *  not the label — the labels are native names ("български език"), so a label
+ *  match would be wrong and locale-dependent. Mirrors the player's
+ *  own Off / English / Bulgarian ordering (see lib/subtitleUtils langPriority). */
+export const PINNED_LANGUAGE_CODES = ['eng', 'bul'] as const;
+
 const languageOptions = Object.entries(LANGUAGE_NAMES)
   .map(([value, label]) => ({ value, label }))
-  .sort((a, b) => a.label.localeCompare(b.label));
+  .sort((a, b) => {
+    const ai = (PINNED_LANGUAGE_CODES as readonly string[]).indexOf(a.value);
+    const bi = (PINNED_LANGUAGE_CODES as readonly string[]).indexOf(b.value);
+    if (ai !== -1 || bi !== -1) {
+      // Pinned entries lead, in PINNED order; everything else keeps A-Z below.
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+      return ai - bi;
+    }
+    return a.label.localeCompare(b.label);
+  });
 
 export const PLAYER_LANGUAGE_OPTIONS = [{ value: null, label: 'None' }, ...languageOptions];
 
