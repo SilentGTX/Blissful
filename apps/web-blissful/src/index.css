@@ -2782,10 +2782,6 @@ html[data-ui="tv"] .bliss-vertical-nav {
   padding-right: clamp(8px, 0.7vw, 14px);
 }
 
-html[data-ui="tv"] .bliss-sidebar.closed .bliss-sidebar-link {
-  height: clamp(72px, 11vh, 130px);
-}
-
 /* NOT scoped to .closed — the source isn't either. Gating it on the collapsed
    state made the glyphs snap from ~50px down to the base ~20px on expand.
    Scaled to the 160px band, which is the size the shell actually shows (its
@@ -2900,8 +2896,10 @@ html[data-ui="tv"] .bliss-sidebar nav {
   max-height: none;
 }
 
-/* Logo sits bigger and centred in the collapsed rail, as the old app's does. */
-html[data-ui="tv"] .bliss-sidebar.closed .logo {
+/* Logo sizing applies in BOTH states — scoping it to .closed made the logo row
+   taller when collapsed, which pushed every nav icon down by 30px relative to
+   the expanded rail. */
+html[data-ui="tv"] .logo {
   height: clamp(2.75rem, 3.4vw, 4.5rem) !important;
   width: clamp(2.75rem, 3.4vw, 4.5rem) !important;
 }
@@ -2918,27 +2916,6 @@ html[data-ui="tv"] .bliss-sidebar.closed .bliss-sidebar-label {
   display: none !important;
 }
 
-/* Rows SHARE the space left after the logo and footer instead of each taking a
-   fixed 11vh. A fixed height overflowed the rail on shorter windows and clipped
-   the last icon; flexing can't overflow at any height. */
-html[data-ui="tv"] .bliss-sidebar.closed nav {
-  flex: 1 1 auto;
-  min-height: 0;
-}
-
-html[data-ui="tv"] .bliss-sidebar.closed nav > ul {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-evenly;
-}
-
-html[data-ui="tv"] .bliss-sidebar.closed .bliss-sidebar-link {
-  height: auto !important;
-  flex: 1 1 0 !important;
-  min-height: 0 !important;
-  max-height: clamp(72px, 11vh, 130px);
-}
 
 /* The footer is `flex-1` in the markup (it shares slack with the nav on the
    expanded rail). Collapsed, both it and the nav claimed the slack and the two

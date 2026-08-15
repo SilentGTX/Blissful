@@ -166,3 +166,28 @@ test('tv rail: icons do not move while the rail animates', async ({ page }) => {
   });
   expect(overlap, 'expanded rows must not overlap').toBeLessThanOrEqual(1);
 });
+
+// Collapsing must change the WIDTH only. Rules that sized rows or the logo for
+// the collapsed state alone moved every glyph vertically — 277px of drift from
+// spreading the rows, plus 30px from a taller collapsed logo row.
+test('tv rail: glyphs hold their vertical position across collapse', async ({ page }) => {
+  await useTheme(page, 'tv');
+  await page.goto('/');
+  await expect(page.locator('.bliss-rail-panel')).toBeVisible({ timeout: 20_000 });
+  const ys = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll('.bliss-sidebar nav .nav-icon-slot svg')].map((el) => {
+        const r = el.getBoundingClientRect();
+        return Math.round(r.top + r.height / 2);
+      }),
+    );
+
+  const collapsed = await ys();
+  await page.getByLabel('Expand sidebar').click();
+  await expect(page.getByText('Discover', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
+  await page.waitForTimeout(700);
+  const expanded = await ys();
+  expect(expanded.length).toBe(collapsed.length);
+  const drift = Math.max(...collapsed.map((y, i) => Math.abs(y - expanded[i])));
+  expect(drift, 'glyphs must not move vertically when the rail collapses').toBeLessThanOrEqual(1);
+});
