@@ -2768,7 +2768,7 @@ html[data-ui="tv"] .bliss-nav-bar {
 html[data-ui="tv"] {
   --tv-safe-x: 5vw;
   --tv-safe-y: 4vh;
-  --tv-rail-collapsed: clamp(160px, 10vw, 250px); /* MUST match TV_SIDEBAR_COLLAPSED_WIDTH */
+  --tv-rail-collapsed: clamp(120px, 7.5vw, 170px); /* MUST match TV_SIDEBAR_COLLAPSED_WIDTH */
   --tv-topbar-h: clamp(56px, 7vh, 84px);
   --bliss-glass-top: rgba(40, 47, 64, 0.97);
   --bliss-glass-bottom: rgba(17, 21, 31, 0.985);
