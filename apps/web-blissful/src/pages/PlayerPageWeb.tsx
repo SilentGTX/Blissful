@@ -43,6 +43,7 @@ function clearVideasyCooldown(): void {
 import { getResumeSeconds, openInVlc } from '../layout/app-shell/utils';
 import { pickPreferredAudioTrack } from '../lib/audioTracks';
 import { extractInfohash, releaseCacheTier, scoreReleaseForAutoPick } from '../lib/rdCache';
+import { expectedEpisodeFor, scoreEpisodeMatch } from '../lib/episodeMatch';
 import { getLastStreamSelection } from '../lib/streamHistory';
 import { parseStreamDescription } from '../features/detail/utils';
 import { releaseMatchesShow } from '../lib/fallbackReleases';
@@ -458,13 +459,7 @@ export default function PlayerPage() {
   const metaTitleParam = searchParams.get('metaTitle');
   const type = searchParams.get('type');
   const id = searchParams.get('id');
-  // Logo: URL param wins (legacy long links stamp it), else the same metahub
-  // logo DetailPage always used. Short URLs carry NO artwork params, and the
-  // in-player BufferingOverlay is logo-only — without this fallback the
-  // centered buffering image simply vanished on every short-URL session.
   const logoParam = searchParams.get('logo');
-  const logo = logoParam
-    ?? (id && /^tt\d+$/.test(id) ? `https://images.metahub.space/logo/medium/${id}/img` : null);
 
   // Fallback poster (same source the ResumeOrStartOver modal uses)
   // — reach for the user's library / continue-watching entry when
@@ -575,6 +570,20 @@ export default function PlayerPage() {
   const poster = posterParam ?? metaPoster ?? libraryFallbackPoster;
   const background =
     backgroundParam ?? metaBackground ?? metaPoster ?? libraryFallbackPoster;
+
+  // Logo: URL param wins (legacy long links stamp it), then the addon meta's own
+  // logo, then metahub. Short URLs carry NO artwork params, and the in-player
+  // BufferingOverlay is logo-only — without a fallback the centered buffering
+  // image simply vanishes. Metahub is keyed by IMDb id, so it can't serve
+  // anything for addon ids (`kitsu:244`), which is why those sessions used to
+  // buffer against a bare black screen; the meta logo covers them (and is how
+  // desktop's PlayerPage has always done it).
+  const metaLogo: string | null = meta?.meta?.logo
+    ? normalizeStremioImage(meta.meta.logo) ?? null
+    : null;
+  const logo = logoParam
+    ?? metaLogo
+    ?? (id && /^tt\d+$/.test(id) ? `https://images.metahub.space/logo/medium/${id}/img` : null);
 
   // Compute next-episode info from the full episode list when available.
   // Falls back to sessionStorage (written by DetailPage) for the initial play.
@@ -726,6 +735,22 @@ export default function PlayerPage() {
     if (!Number.isFinite(season) || !Number.isFinite(episode)) return null;
     return { season, episode };
   }, [isSeriesLike, videoId]);
+
+  // Which episode the addon streams are SUPPOSED to contain, used to rank the
+  // auto-pick (see lib/episodeMatch). Torrentio's id→file mapping is regularly
+  // wrong for absolute-numbered anime ids — asking for kitsu:244:2 (Bleach
+  // episode 2) put a Thousand-Year Blood War S17E02 file at the top of the
+  // list, indistinguishable from the right one by cache/codec/quality alone.
+  const expectedEpisode = useMemo(
+    () => (isSeriesLike ? expectedEpisodeFor(videoId, meta?.meta?.videos) : null),
+    [isSeriesLike, videoId, meta?.meta?.videos],
+  );
+  // Read through a ref inside the fallback pipeline: it sharpens when the addon
+  // meta lands (id shape → real season/episode/title), and listing it as a
+  // dependency would restart the whole resolve mid-flight for a value the
+  // ranking only reads once the stream fetches settle.
+  const expectedEpisodeRef = useRef(expectedEpisode);
+  useEffect(() => { expectedEpisodeRef.current = expectedEpisode; }, [expectedEpisode]);
 
   // Per-episode rating override fetched from TMDB. Cinemeta ships
   // "0" for shows it doesn't track — when that happens we hit
@@ -1419,8 +1444,11 @@ export default function PlayerPage() {
         // makes RD download the torrent first, so the player just sits there —
         // previously the codec weight (1000) outranked the cached bonus (100)
         // and an uncached H.264 could win over a cached release. Within a tier,
-        // the release the user already has progress on wins (resume continuity),
-        // then cheap-to-transcode codec, then quality. See lib/rdCache.
+        // the release that actually CONTAINS this episode wins (see
+        // lib/episodeMatch — the addon's id→file mapping is often wrong for
+        // absolute-numbered anime), then the release the user already has
+        // progress on (resume continuity), then cheap-to-transcode codec, then
+        // quality. See lib/rdCache.
         const savedInfohash = extractInfohash(savedStreamUrlRef.current);
         const rank = ({ stream }: { stream: StremioStream }) =>
           scoreReleaseForAutoPick({
@@ -1428,7 +1456,10 @@ export default function PlayerPage() {
             title: stream.title,
             url: stream.url,
             savedInfohash,
-          });
+          }) + scoreEpisodeMatch(
+            `${stream.name ?? ''} ${stream.title ?? ''} ${(stream.behaviorHints as { filename?: string } | undefined)?.filename ?? ''}`,
+            expectedEpisodeRef.current,
+          );
         const ordered = usable.slice().sort((a, b) => rank(b) - rank(a));
         for (const { stream } of ordered.slice(0, 4)) {
           if (cancelled || committed) return;
@@ -1508,8 +1539,12 @@ export default function PlayerPage() {
         // makes up for. Continuity with the release the user already has
         // progress on breaks ties WITHIN a tier (never across).
         const tier = releaseCacheTier(s.name);
+        const filenameHint = (s.behaviorHints as { filename?: string } | undefined)?.filename ?? '';
         let base = (tier === 'cached' ? 100_000 : tier === 'unknown' ? 50_000 : 0)
-          + (savedInfohashFull && extractInfohash(s.url) === savedInfohashFull ? 20_000 : 0);
+          + (savedInfohashFull && extractInfohash(s.url) === savedInfohashFull ? 20_000 : 0)
+          // Does this release actually contain the episode we asked for? Ranks
+          // inside a cache tier only — see lib/episodeMatch.
+          + scoreEpisodeMatch(`${t} ${filenameHint}`, expectedEpisodeRef.current);
         if (/1080p/i.test(t)) base += 100;
         else if (/720p/i.test(t)) base += 85;
         else if (/2160p|4k/i.test(t)) base += 65;
@@ -1521,8 +1556,7 @@ export default function PlayerPage() {
         // sub-tier — but don't exclude it, since some old anime episodes only
         // have an .avi sub rip. Checks filename + url too (the resolution/codec
         // tags live in the name/title, the extension often only in the file).
-        const filename = (s.behaviorHints as { filename?: string } | undefined)?.filename ?? '';
-        if (/\.avi(\b|$)/i.test(`${t} ${filename} ${s.url ?? ''}`)) base -= 45;
+        if (/\.avi(\b|$)/i.test(`${t} ${filenameHint} ${s.url ?? ''}`)) base -= 45;
         return base;
       };
       // Auto-pick candidates: prefer non-HEVC (smooth transcode); if the title

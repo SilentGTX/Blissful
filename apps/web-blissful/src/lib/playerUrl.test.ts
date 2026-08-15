@@ -99,6 +99,35 @@ describe('parsePlayerPath', () => {
   it('returns null for an unknown source', () => {
     expect(parsePlayerPath('/player/torrent/tt0137523')).toBeNull();
   });
+  it('keeps the scheme prefix on an addon episode id (kitsu:244:2 = ep 2 of kitsu:244)', () => {
+    expect(parsePlayerPath('/player/rd/kitsu:244:2/BLEACH')).toEqual({
+      source: 'rd',
+      type: 'series',
+      id: 'kitsu:244',
+      videoId: 'kitsu:244:2',
+    });
+  });
+  it('parses a scheme-prefixed movie id', () => {
+    expect(parsePlayerPath('/player/auto/kitsu:12345/Some.Anime.Movie')).toEqual({
+      source: 'auto',
+      type: 'movie',
+      id: 'kitsu:12345',
+      videoId: null,
+    });
+  });
+  it('parses a scheme-prefixed season/episode id', () => {
+    expect(parsePlayerPath('/player/auto/tmdb:1399:2:3')).toEqual({
+      source: 'auto',
+      type: 'series',
+      id: 'tmdb:1399',
+      videoId: 'tmdb:1399:2:3',
+    });
+  });
+  it('round-trips build → parse for a scheme-prefixed episode', () => {
+    const path = buildPlayerPath({ source: 'rd', id: 'kitsu:244', videoId: 'kitsu:244:2', title: 'BLEACH' });
+    expect(path).toBe('/player/rd/kitsu:244:2/BLEACH');
+    expect(parsePlayerPath(path)).toMatchObject({ id: 'kitsu:244', videoId: 'kitsu:244:2' });
+  });
   it('round-trips build → parse for an episode', () => {
     const path = buildPlayerPath({ source: 'rd', id: 'tt2861424', videoId: 'tt2861424:9:1', title: 'x' });
     const parsed = parsePlayerPath(path);

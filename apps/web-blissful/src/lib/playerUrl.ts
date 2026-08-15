@@ -115,9 +115,18 @@ export function parsePlayerPath(pathname: string): PlayerTarget | null {
   }
   // `tt2861424:9:1` → id=tt2861424, videoId=tt2861424:9:1, series.
   // `tt0137523`     → id=tt0137523, movie.
+  // `kitsu:244:2`   → id=kitsu:244,  videoId=kitsu:244:2,  series.
+  //
+  // Non-Cinemeta addons hand out SCHEME-PREFIXED ids (`kitsu:244`, `mal:1735`,
+  // `tmdb:1399`, `debtv:…`), so the series id spans two segments and the split
+  // point can't come from the segment count alone: `kitsu:244:2` is episode 2
+  // of the series `kitsu:244`, NOT season 244 of a series called "kitsu".
+  // Getting this wrong stranded the player on a meta lookup for the id
+  // "kitsu" — no title, no logo, no artwork, just black until playback began.
   const parts = seg.split(':');
+  const idParts = parts.length > 1 && !/\d/.test(parts[0]) ? 2 : 1;
   if (parts.length >= 3) {
-    return { source, type: 'series', id: parts[0], videoId: seg };
+    return { source, type: 'series', id: parts.slice(0, idParts).join(':'), videoId: seg };
   }
   return { source, type: 'movie', id: seg, videoId: null };
 }

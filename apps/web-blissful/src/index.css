@@ -2892,7 +2892,12 @@ html[data-ui="tv"] .bliss-top-nav-inner > * {
    overrides that ("on TV the footer is hidden, so let the nav use the height it
    needs"). Without it the six icons were squeezed into the top third of the rail
    with a dead gap below them. */
-html[data-ui="tv"] .bliss-sidebar nav {
+/* COLLAPSED only. The desktop rail caps its nav at 33dvh so the Friends /
+   Continue Watching accordions have room; the TV shell overrides that because
+   its footer is hidden. Web keeps the footer, so lifting the cap on the
+   EXPANDED rail let the nav eat the accordions' space and both lists rendered
+   zero rows. Collapsed, the footer is just two icon buttons and can spare it. */
+html[data-ui="tv"] .bliss-sidebar.closed nav {
   max-height: none;
 }
 
