@@ -2950,6 +2950,20 @@ html[data-ui="tv"] .nav-icon-slot {
    this theme's 49px glyph, so on the EXPANDED rail the icons overflowed their
    rows and piled on top of each other. Give every row room for the glyph.
    Collapsed rows already flex taller than this, so it only affects expanded. */
-html[data-ui="tv"] .bliss-sidebar-link {
+/* NAV rows only. `.bliss-sidebar-link` is also worn by the footer's Friends and
+   Continue Watching header buttons; giving those a min-height made them taller,
+   and useFooterAccordionHeights then had no room left to allot to the lists —
+   the Friends accordion rendered its header and search box with zero rows. */
+html[data-ui="tv"] .bliss-sidebar nav .bliss-sidebar-link {
   min-height: clamp(56px, 5.5vh, 76px);
+}
+
+/* Dropdown popovers portal to <body> with a normal z-index, but the collapsed
+   rail's Friends / Continue Watching drawer sits at z-index 2147483647 — the
+   maximum — so a menu opened from inside it rendered BEHIND the drawer and was
+   invisible (clicking a friend appeared to do nothing). Nothing can stack above
+   the max, so match it: the popover is appended to <body> after the drawer, and
+   equal z-index resolves on DOM order, putting the menu on top. */
+[data-slot="dropdown-popover"] {
+  z-index: 2147483647;
 }
