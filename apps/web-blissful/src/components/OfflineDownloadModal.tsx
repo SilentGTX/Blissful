@@ -300,6 +300,60 @@ export function OfflineDownloadModal({
       .map((s) => s.r);
   };
 
+  // ── The original file, untouched ───────────────────────────────────────────
+  // The fast path, and usually the right one on a laptop. The release is a plain
+  // HTTP file: the browser pulls it at line speed (measured: a 1.7 GB episode is
+  // seconds on a 500 Mbit link) instead of the ~0.8 MB/s the transcode pipeline
+  // can produce, because nothing is decoded or re-encoded. It plays in VLC/IINA,
+  // which handle MKV/HEVC/AC3 natively — the codecs a browser can't.
+  //
+  // The trade-off is explicit in the UI: this file lands in the OS downloads
+  // folder, not in Blissful's offline library, so it won't play in the app or on
+  // the phone. That's what the size rungs above are for.
+
+  const bestOriginalUrl = (): string | null => rankedCandidates()[0]?.url ?? null;
+
+  const handleDownloadOriginal = () => {
+    const url = bestOriginalUrl();
+    if (!url) {
+      notifyError('No release available', 'Nothing downloadable was found for this episode.');
+      return;
+    }
+    // A plain navigation: Real-Debrid serves the file as an attachment, and a
+    // torrentio /resolve/ URL 302s to it. The `download` attribute is ignored
+    // cross-origin, so don't pretend otherwise — let the browser do its thing.
+    window.open(url, '_blank', 'noopener');
+    notifySuccess('Downloading the original file', 'Your browser is handling it — play it in VLC.');
+    onClose();
+  };
+
+  const handleOpenInVlc = () => {
+    const url = bestOriginalUrl();
+    if (!url) {
+      notifyError('No release available', 'Nothing downloadable was found for this episode.');
+      return;
+    }
+    // VLC registers the `vlc://` scheme on macOS and Windows. If it isn't
+    // installed nothing happens, so also hand over an .m3u — double-clicking that
+    // opens VLC (the same trick the detail page's external-player prompt uses).
+    try {
+      window.location.href = `vlc://${url}`;
+    } catch {
+      // ignore — the playlist below is the fallback
+    }
+    const safeTitle = `${title}${subtitle ? ` - ${subtitle}` : ''}`.replace(/[\\/:*?"<>|]+/g, '-').trim();
+    const body = `#EXTM3U\n#EXTINF:-1,${safeTitle}\n${url}\n`;
+    const href = URL.createObjectURL(new Blob([body], { type: 'audio/x-mpegurl' }));
+    const a = document.createElement('a');
+    a.href = href;
+    a.download = `${safeTitle || 'stream'}.m3u`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(href), 1000);
+    onClose();
+  };
+
   /** Download with no questions: walk the ranked candidates until one starts.
    *  A 409 means "RD hasn't got this torrent yet" — that's a reason to try the
    *  next release, not to fail. */
@@ -489,11 +543,48 @@ export function OfflineDownloadModal({
               </div>
             ) : null}
 
+            {/* Fast path first, because on a laptop it's usually the right
+                answer: no re-encode, so it runs at line speed instead of the
+                pipeline's ~0.8 MB/s. */}
+            {!isBatch ? (
+              <div className="mt-4 rounded-xl bg-white/5 p-3 ring-1 ring-white/10">
+                <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/50">
+                  Original file — fastest
+                </div>
+                <div className="mb-2 text-[11px] leading-relaxed text-white/45">
+                  The release as-is, at full speed. Plays in VLC / IINA, which handle
+                  MKV, HEVC and AC3 natively. Saved by your browser, so it won’t
+                  appear in Blissful or on your phone.
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleDownloadOriginal}
+                    disabled={releases.length === 0}
+                    className="flex-1 cursor-pointer rounded-xl bg-white px-3 py-2.5 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-default disabled:opacity-50"
+                  >
+                    Download file
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleOpenInVlc}
+                    disabled={releases.length === 0}
+                    className="cursor-pointer rounded-xl bg-white/10 px-3 py-2.5 text-sm font-semibold text-white/85 ring-1 ring-white/10 transition hover:bg-white/15 disabled:cursor-default disabled:opacity-50"
+                  >
+                    Open in VLC
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
             {/* The ONE question worth asking: how much space it takes. Which
                 release delivers it is picked automatically (cached first, then
                 smallest file), because the source only has to be at least as
                 tall as this rung — everything is re-encoded to it anyway. */}
             <div className="mt-4">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/40">
+                Or download into Blissful
+              </div>
               <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/50">
                 Download size
               </div>
