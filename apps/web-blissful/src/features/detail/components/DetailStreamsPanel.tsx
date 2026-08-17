@@ -72,6 +72,13 @@ type DetailStreamsPanelProps = {
   onSelectEpisode: (id: string) => void;
   /** Per-episode offline download (web). See EpisodePanel.onDownloadVideo. */
   onDownloadEpisode?: ((id: string) => void) | null;
+  /** Batch download selection — passed straight through to EpisodePanel. */
+  episodeSelectionMode?: boolean;
+  selectedEpisodeIds?: ReadonlySet<string>;
+  onToggleEpisodeSelect?: (id: string) => void;
+  onStartEpisodeSelection?: () => void;
+  onCancelEpisodeSelection?: () => void;
+  onDownloadSelectedEpisodes?: () => void;
   getEpisodeProgressInfo: (id: string) => {
     percent: number;
     hasProgress: boolean;
@@ -134,6 +141,12 @@ export function DetailStreamsPanel({
   episodeStillsPending,
   onSelectEpisode,
   onDownloadEpisode,
+  episodeSelectionMode,
+  selectedEpisodeIds,
+  onToggleEpisodeSelect,
+  onStartEpisodeSelection,
+  onCancelEpisodeSelection,
+  onDownloadSelectedEpisodes,
   getEpisodeProgressInfo,
   normalizeImage,
   formatDate,
@@ -266,6 +279,12 @@ export function DetailStreamsPanel({
           videosForSeason={videosForSeason}
           onSelectVideo={onSelectEpisode}
           onDownloadVideo={onDownloadEpisode ?? null}
+          selectionMode={episodeSelectionMode}
+          selectedIds={selectedEpisodeIds}
+          onToggleSelect={onToggleEpisodeSelect}
+          onStartSelection={onStartEpisodeSelection}
+          onCancelSelection={onCancelEpisodeSelection}
+          onDownloadSelected={onDownloadSelectedEpisodes}
           getEpisodeProgressInfo={getEpisodeProgressInfo}
           normalizeImage={normalizeImage}
           formatDate={formatDate}

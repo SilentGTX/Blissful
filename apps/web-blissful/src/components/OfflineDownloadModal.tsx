@@ -63,6 +63,11 @@ export type OfflineDownloadModalProps = {
   /** Fired once a download has been queued — the caller usually routes to
    *  /downloads so progress is visible. */
   onQueued?: (download: OfflineDownload) => void;
+  /** BATCH mode: several episodes at once. The release list is irrelevant here
+   *  (each episode has its own), so the dialog asks for size only and hands the
+   *  list to `onBatchStart`. */
+  batchEpisodes?: Array<{ videoId: string; label: string }>;
+  onBatchStart?: (quality: OfflineQuality) => Promise<void> | void;
 };
 
 function useIsMobile(breakpoint = 768): boolean {
@@ -102,7 +107,10 @@ export function OfflineDownloadModal({
   releasesLoading = false,
   onClose,
   onQueued,
+  batchEpisodes,
+  onBatchStart,
 }: OfflineDownloadModalProps) {
+  const isBatch = (batchEpisodes?.length ?? 0) > 0 && !!onBatchStart;
   const isMobile = useIsMobile();
   const caps = useMemo(() => detectOfflineCapabilities(), []);
   const [quality, setQuality] = useState<OfflineQuality>(defaultQuality);
@@ -121,6 +129,11 @@ export function OfflineDownloadModal({
   const [audios, setAudios] = useState<EmbeddedAudio[] | null>(null);
   const [chosenAudio, setChosenAudio] = useState(0);
   const { playerSettings } = useStorage();
+  // One-tap path: pick the release, audio and subtitles automatically. The
+  // manual picker is still available behind a link for when a specific release
+  // is wanted.
+  const [showManual, setShowManual] = useState(false);
+  const [autoStatus, setAutoStatus] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -167,6 +180,14 @@ export function OfflineDownloadModal({
     setSubtitles(foundSubs);
     setAudios(foundAudio);
 
+    // Clamp the size choice to what this release can actually produce — an SD
+    // release offers only 360p, and the device default (540p/720p) would
+    // otherwise leave nothing highlighted.
+    const options = sizeOptionsFor(url).map((o) => o.q);
+    if (options.length > 0 && !options.includes(quality)) {
+      setQuality(options[options.length - 1]);
+    }
+
     const english = foundSubs.filter(
       (s) => /^en/i.test(s.lang ?? '') || /english/i.test(s.title ?? '')
     );
@@ -192,6 +213,153 @@ export function OfflineDownloadModal({
     const japanese = pickPreferredAudioTrack(foundAudio, 'Japanese');
     const preferred = pickPreferredAudioTrack(foundAudio, playerSettings.audioLanguage);
     setChosenAudio(japanese ?? preferred ?? 0);
+  };
+
+  /** Source quality bucket of a release, from its name — same buckets the
+   *  release list groups by, so the size options can be expressed relative to
+   *  what was actually picked. */
+  const sourceHeightOf = (url: string | null): number => {
+    const rel = releases.find((r) => r.url === url);
+    const hay = `${rel?.name ?? ''} ${rel?.torrentName ?? ''} ${rel?.quality ?? ''}`.toLowerCase();
+    if (/\b(2160p|4k|uhd)\b/.test(hay)) return 2160;
+    if (/\b(1440p|2k|1080p|fhd|full ?hd)\b/.test(hay)) return 1080;
+    if (/\b(720p|hd)\b/.test(hay)) return 720;
+    if (/\b(480p|360p|sd)\b/.test(hay)) return 480;
+    return 1080; // unlabelled: assume 1080p, the common case
+  };
+
+  /** Size options for the chosen release: never larger than the source (the
+   *  transcode only ever downscales, so offering more would be a lie), and the
+   *  largest one is labelled as matching the release. */
+  const sizeOptionsFor = (url: string | null): Array<{ q: OfflineQuality; note: string }> => {
+    const srcH = sourceHeightOf(url);
+    const heights: Record<OfflineQuality, number> = { '360p': 360, '540p': 540, '720p': 720, '1080p': 1080 };
+    const usable = OFFLINE_QUALITIES.filter((q) => heights[q] <= srcH);
+    const list = usable.length > 0 ? usable : (['360p'] as OfflineQuality[]);
+    return list.map((q, i) => ({
+      q,
+      note: i === list.length - 1 ? 'same as release' : 'smaller',
+    }));
+  };
+
+  // ── Automatic release choice ───────────────────────────────────────────────
+
+  const sizeBytesOf = (raw: string | null): number | null => {
+    if (!raw) return null;
+    const m = raw.trim().match(/^([0-9]+(?:\.[0-9]+)?)\s*(GB|MB|GiB|MiB)$/i);
+    if (!m) return null;
+    const n = Number.parseFloat(m[1]);
+    if (!Number.isFinite(n)) return null;
+    const base = m[2].toUpperCase().endsWith('IB') ? 1024 : 1000;
+    return m[2].toUpperCase().startsWith('G') ? n * base ** 3 : n * base ** 2;
+  };
+
+  /** Candidate releases, best first.
+   *
+   *  Ordering: Real-Debrid CACHED first, then SMALLEST source file. Cached is a
+   *  hard practical requirement — an uncached torrent makes the proxy answer
+   *  409 (RD hasn't fetched the file yet), so it can't be downloaded at all
+   *  until it is. Smallest-first is what the user asked for and costs nothing in
+   *  output quality: every segment is re-encoded to the chosen rung anyway, so
+   *  the source only has to be at least that tall. Explicitly uncached rows go
+   *  last rather than being dropped, so a title that has nothing cached can
+   *  still be attempted. */
+  const rankedCandidates = (): BananaOption[] => {
+    const minHeight = { '360p': 360, '540p': 540, '720p': 720, '1080p': 1080 }[quality];
+    const scored = releases.map((r) => {
+      const hay = `${r.name} ${r.torrentName ?? ''}`;
+      const cached = /\[\s*RD\s*[+⚡]/iu.test(hay) || /cached/i.test(hay);
+      const uncached = /\[\s*RD\s*(?:download|↓|⬇)/iu.test(hay);
+      const bytes = sizeBytesOf(r.size) ?? Number.MAX_SAFE_INTEGER;
+      return { r, rank: uncached ? 2 : cached ? 0 : 1, bytes, height: sourceHeightOf(r.url) };
+    });
+    // Sources too small for the chosen rung are still usable (they just won't be
+    // upscaled), so keep them — but after the ones that can actually deliver it.
+    return scored
+      .sort(
+        (a, b) =>
+          a.rank - b.rank ||
+          Number(a.height < minHeight) - Number(b.height < minHeight) ||
+          a.bytes - b.bytes
+      )
+      .map((s) => s.r);
+  };
+
+  /** Download with no questions: walk the ranked candidates until one starts.
+   *  A 409 means "RD hasn't got this torrent yet" — that's a reason to try the
+   *  next release, not to fail. */
+  const handleAutoDownload = async () => {
+    if (starting) return;
+    setStarting(true);
+    const candidates = rankedCandidates();
+    let lastError: string | null = null;
+    for (let i = 0; i < Math.min(candidates.length, 4); i += 1) {
+      const cand = candidates[i];
+      setAutoStatus(
+        i === 0 ? 'Preparing the download…' : `That release wasn’t ready — trying another (${i + 1})…`
+      );
+      try {
+        const [subs, auds] = await Promise.all([
+          fetchEmbeddedSubtitles(cand.url),
+          fetchAudioTracks(cand.url),
+        ]);
+        const subTrack = autoSubtitleFor(subs);
+        const audioIdx = autoAudioFor(auds);
+        await requestPersistentStorage();
+        const download = await startDownload({
+          metaId,
+          type,
+          videoId,
+          title,
+          subtitle: subtitle ?? null,
+          poster: poster ?? null,
+          sourceUrl: cand.url,
+          quality,
+          audioTrackIdx: audioIdx,
+          subtitleTrack: subTrack,
+          subtitleLabel: subTrack ? subtitleLabelFor(subTrack) : null,
+        });
+        notifySuccess(
+          'Download started',
+          `${subtitle ? `${title} - ${subtitle}` : title} · ${quality}`
+            + `${subTrack ? ` · ${subtitleLabelFor(subTrack)} subs` : ''}`
+        );
+        onQueued?.(download);
+        onClose();
+        return;
+      } catch (err: unknown) {
+        lastError = err instanceof Error ? err.message : 'Could not start the download.';
+      }
+    }
+    notifyError('Download failed to start', lastError ?? 'No release could be prepared.');
+    setAutoStatus(null);
+    setStarting(false);
+  };
+
+  /** Subtitle default: an English full-dialogue track, preferring a text one
+   *  (stored as VTT, switchable) over an image one (burned in). */
+  const autoSubtitleFor = (subs: EmbeddedSubtitle[]): EmbeddedSubtitle | null => {
+    const english = subs.filter(
+      (s) => /^en/i.test(s.lang ?? '') || /english/i.test(s.title ?? '')
+    );
+    const notSigns = english.filter((s) => !/sign|song/i.test(s.title ?? ''));
+    const pool = notSigns.length > 0 ? notSigns : english;
+    return pool.find((s) => s.textBased) ?? pool[0] ?? null;
+  };
+
+  /** Audio default: Japanese when the release says so — by language tag, or by
+   *  track title for the releases that label tracks instead of tagging them.
+   *  Some releases tag nothing at all (`lang: null` on every track), and then
+   *  there is genuinely nothing to go on, so track 0 stands and the manual
+   *  picker is the way to change it. */
+  const autoAudioFor = (auds: EmbeddedAudio[]): number => {
+    const byTitle = auds.find((a) => /jap|jpn|\bjp\b/i.test(a.title ?? ''));
+    return (
+      pickPreferredAudioTrack(auds, 'Japanese')
+      ?? byTitle?.i
+      ?? pickPreferredAudioTrack(auds, playerSettings.audioLanguage)
+      ?? 0
+    );
   };
 
   const audioLabelFor = (a: EmbeddedAudio): string => {
@@ -264,7 +432,10 @@ export function OfflineDownloadModal({
             className="pointer-events-none absolute inset-0 bg-cover bg-center"
             style={{ backgroundImage: `url(${proxiedImage(poster)})` }}
           />
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/35 via-black/75 to-[#101116]" />
+          {/* Darker than the other modals' hero wash: this panel is short and
+              dense (labels, chips, a primary button) sitting straight over the
+              artwork, and the lighter gradient left the size chips washed out. */}
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/55 via-black/85 to-[#101116]" />
         </>
       ) : null}
 
@@ -301,20 +472,14 @@ export function OfflineDownloadModal({
               </div>
             ) : null}
 
+            {/* The ONE question worth asking: how much space it takes. Which
+                release delivers it is picked automatically (cached first, then
+                smallest file), because the source only has to be at least as
+                tall as this rung — everything is re-encoded to it anyway. */}
             <div className="mt-4">
-              {/* Called "Save as", NOT "Quality": the release list below is also
-                  grouped by quality (4K/1080p/720p), and having two things
-                  labelled quality in one dialog read as being asked twice. This
-                  one is what the file is re-encoded to — i.e. its size. */}
               <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/50">
-                Save as
+                Download size
               </div>
-              <div className="mb-2 text-[11px] leading-relaxed text-white/40">
-                How it's stored on this device — the release you pick below can be
-                any source quality.
-              </div>
-              {/* Even 2x2 grid rather than wrapping flex — four chips in a
-                  340px column otherwise orphan 1080p onto its own row. */}
               <div className="grid grid-cols-2 gap-2">
                 {OFFLINE_QUALITIES.map((q) => (
                   <button
@@ -328,9 +493,7 @@ export function OfflineDownloadModal({
                     }`}
                   >
                     <div className="text-sm font-semibold">{q}</div>
-                    <div
-                      className={`text-[10px] ${quality === q ? 'text-black/65' : 'text-white/50'}`}
-                    >
+                    <div className={`text-[10px] ${quality === q ? 'text-black/65' : 'text-white/50'}`}>
                       ~{perHour(q)}/h
                     </div>
                   </button>
@@ -342,6 +505,58 @@ export function OfflineDownloadModal({
                 </div>
               ) : null}
             </div>
+
+            {isBatch ? (
+              <div className="mt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (starting) return;
+                    setStarting(true);
+                    setAutoStatus(`Queueing ${batchEpisodes?.length ?? 0} episodes…`);
+                    void (async () => {
+                      await onBatchStart?.(quality);
+                      onClose();
+                    })();
+                  }}
+                  disabled={starting}
+                  className="w-full cursor-pointer rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-default disabled:opacity-50"
+                >
+                  {starting ? autoStatus ?? 'Queueing…' : `Download ${batchEpisodes?.length ?? 0} episodes`}
+                </button>
+                <div className="mt-2 text-[11px] leading-relaxed text-white/40">
+                  Each episode gets a cached release (smallest file), Japanese audio
+                  when tagged, and English subtitles. They download one at a time —
+                  keep Blissful open.
+                </div>
+              </div>
+            ) : !showManual ? (
+              <div className="mt-4">
+                <button
+                  type="button"
+                  onClick={() => void handleAutoDownload()}
+                  disabled={starting || releases.length === 0}
+                  className="w-full cursor-pointer rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-default disabled:opacity-50"
+                >
+                  {starting
+                    ? autoStatus ?? 'Preparing…'
+                    : releasesLoading && releases.length === 0
+                      ? 'Finding releases…'
+                      : 'Download'}
+                </button>
+                <div className="mt-2 text-[11px] leading-relaxed text-white/40">
+                  Picks a cached release automatically (smallest file), Japanese audio
+                  when the release has it, and English subtitles.
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowManual(true)}
+                  className="mt-2 cursor-pointer text-[11px] font-medium text-white/55 underline decoration-white/25 underline-offset-2 hover:text-white/80"
+                >
+                  Choose release, audio and subtitles myself
+                </button>
+              </div>
+            ) : null}
 
             {bootWarning ? (
               <div className="mt-4 rounded-xl bg-red-500/12 px-4 py-3 text-[12px] leading-relaxed text-red-200 ring-1 ring-red-400/30">
@@ -367,7 +582,9 @@ export function OfflineDownloadModal({
     </>
   );
 
-  const choicePanel = caps.blockedReason ? null : (
+  // Only rendered when the user asks to choose things themselves — the default
+  // path needs no release list at all.
+  const choicePanel = caps.blockedReason || !showManual ? null : (
     <div className="relative px-5 pb-5 md:px-0 md:pb-0">
             <div className="mt-4 md:mt-0">
               <div className="mb-2 flex items-center gap-2">
@@ -392,7 +609,35 @@ export function OfflineDownloadModal({
                     </div>
                   ) : (
                     <>
-                      {/* Audio first: on a dual-audio anime release track 0 is
+                      {/* Size, asked once and only here — the release above
+                          establishes the source quality, so these are expressed
+                          relative to it and never offer more than it has. */}
+                      <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/50">
+                        Download size
+                      </div>
+                      <div className="mb-3 grid grid-cols-2 gap-2">
+                        {sizeOptionsFor(pendingRelease).map(({ q, note }) => (
+                          <button
+                            key={q}
+                            type="button"
+                            onClick={() => setQuality(q)}
+                            className={`cursor-pointer rounded-lg px-3 py-2 text-left transition ${
+                              quality === q
+                                ? 'bg-[var(--bliss-accent)] text-black'
+                                : 'bg-white/[0.06] text-white/80 hover:bg-white/10'
+                            }`}
+                          >
+                            <div className="text-sm font-semibold">
+                              ~{perHour(q)}/h
+                            </div>
+                            <div className={`text-[10px] ${quality === q ? 'text-black/65' : 'text-white/45'}`}>
+                              {q} · {note}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Audio next: on a dual-audio anime release track 0 is
                           usually the English dub, so this is the setting most
                           likely to be wrong if left alone. */}
                       {audios.length > 1 ? (
@@ -555,11 +800,23 @@ export function OfflineDownloadModal({
                   release list scrolling on its own on the right. The previous
                   single 460px column made a 600-release list unusable and
                   wrapped the four quality chips onto two rows. */}
-              <div className="solid-surface relative mx-auto grid max-h-[86vh] w-full max-w-[900px] grid-cols-[minmax(0,340px)_minmax(0,1fr)] overflow-hidden rounded-[24px] bg-[#101116]">
+              {/* Compact single column by default (one size choice + Download);
+                  widens to two columns only when the user opens the manual
+                  release picker, which is the thing that needs the room. */}
+              <div
+                className={
+                  'solid-surface relative mx-auto grid max-h-[86vh] w-full overflow-hidden rounded-[24px] bg-[#101116] '
+                  + (choicePanel
+                    ? 'max-w-[900px] grid-cols-[minmax(0,340px)_minmax(0,1fr)]'
+                    : 'max-w-[380px] grid-cols-1')
+                }
+              >
                 <div className="relative overflow-y-auto">{infoPanel}</div>
-                <div className="relative flex min-h-0 flex-col overflow-y-auto border-l border-white/10 p-5">
-                  {choicePanel}
-                </div>
+                {choicePanel ? (
+                  <div className="relative flex min-h-0 flex-col overflow-y-auto border-l border-white/10 p-5">
+                    {choicePanel}
+                  </div>
+                ) : null}
               </div>
             </BlissModal.Body>
           </BlissModal.Dialog>

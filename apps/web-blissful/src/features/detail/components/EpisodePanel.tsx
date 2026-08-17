@@ -117,6 +117,15 @@ type EpisodePanelProps = {
    *  there is no moment where an episode is "selected" on the detail page — a
    *  series would otherwise have no reachable download entry point at all. */
   onDownloadVideo?: ((id: string) => void) | null;
+  /** Multi-select for batch downloads. When `selectionMode` is on, the card's
+   *  download control becomes a checkbox and tapping the card toggles selection
+   *  instead of playing. */
+  selectionMode?: boolean;
+  selectedIds?: ReadonlySet<string>;
+  onToggleSelect?: (id: string) => void;
+  onStartSelection?: () => void;
+  onCancelSelection?: () => void;
+  onDownloadSelected?: () => void;
   getEpisodeProgressInfo: (id: string) => { percent: number; hasProgress: boolean; watched: boolean };
   normalizeImage: (value?: string | null) => string | null | undefined;
   formatDate: (value?: string) => string | null;
@@ -132,6 +141,12 @@ export function EpisodePanel({
   videosForSeason,
   onSelectVideo,
   onDownloadVideo,
+  selectionMode = false,
+  selectedIds,
+  onToggleSelect,
+  onStartSelection,
+  onCancelSelection,
+  onDownloadSelected,
   getEpisodeProgressInfo,
   normalizeImage,
   formatDate,
@@ -149,6 +164,43 @@ export function EpisodePanel({
   return (
     <>
       <div data-testid="detail-episode-list" className={listContainerClassName}>
+        {/* Batch-download toolbar. Only offered where downloads exist at all
+            (same condition as the per-card button), and it stays out of the way
+            as a single small link until it's used. */}
+        {onDownloadVideo && onStartSelection ? (
+          <div className="mb-2 flex items-center gap-2 px-1">
+            {selectionMode ? (
+              <>
+                <span className="text-[12px] font-semibold text-white/80">
+                  {selectedIds?.size ?? 0} selected
+                </span>
+                <button
+                  type="button"
+                  onClick={onDownloadSelected}
+                  disabled={(selectedIds?.size ?? 0) === 0}
+                  className="ml-auto cursor-pointer rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-black transition hover:bg-white/90 disabled:cursor-default disabled:opacity-40"
+                >
+                  Download {selectedIds?.size ?? 0}
+                </button>
+                <button
+                  type="button"
+                  onClick={onCancelSelection}
+                  className="cursor-pointer rounded-full bg-white/10 px-3 py-1.5 text-[12px] font-semibold text-white/80 transition hover:bg-white/15"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={onStartSelection}
+                className="ml-auto cursor-pointer text-[12px] font-medium text-white/55 underline decoration-white/25 underline-offset-2 hover:text-white/85"
+              >
+                Select episodes to download
+              </button>
+            )}
+          </div>
+        ) : null}
         {videosForSeason.length === 0 ? emptyState : null}
         {/* Stacked 16:9 cards with text overlaid on the image — same
             visual language as the player's episode picker (poster fills
@@ -193,7 +245,9 @@ export function EpisodePanel({
               <button
                 type="button"
                 className="block w-full cursor-pointer text-left"
-                onClick={() => onSelectVideo(v.id)}
+                onClick={() =>
+                  selectionMode ? onToggleSelect?.(v.id) : onSelectVideo(v.id)
+                }
               >
                 <div
                   className="relative w-full overflow-hidden bg-white/5"
@@ -268,17 +322,25 @@ export function EpisodePanel({
                   // under the ~44px touch-target guidance, and this control sits
                   // on top of a card that is itself tappable, so a cramped
                   // version would mean mis-taps into playback.
-                  className="absolute right-2 top-2 z-30 grid h-10 w-10 cursor-pointer place-items-center rounded-full bg-black/55 text-white backdrop-blur transition-colors hover:bg-black/80 sm:h-8 sm:w-8"
+                  className={
+                    'absolute right-2 top-2 z-30 grid h-10 w-10 cursor-pointer place-items-center rounded-full backdrop-blur transition-colors sm:h-8 sm:w-8 '
+                    + (selectionMode && selectedIds?.has(v.id)
+                      ? 'bg-[var(--bliss-accent)] text-black'
+                      : 'bg-black/55 text-white hover:bg-black/80')
+                  }
                   onClick={(e) => {
                     e.stopPropagation();
-                    onDownloadVideo(v.id);
+                    if (selectionMode) onToggleSelect?.(v.id);
+                    else onDownloadVideo(v.id);
                   }}
                   aria-label={
-                    episodeNumber != null
-                      ? `Download episode ${episodeNumber} for offline`
-                      : 'Download for offline'
+                    selectionMode
+                      ? `${selectedIds?.has(v.id) ? 'Deselect' : 'Select'} episode ${episodeNumber ?? ''}`.trim()
+                      : episodeNumber != null
+                        ? `Download episode ${episodeNumber} for offline`
+                        : 'Download for offline'
                   }
-                  title="Download for offline"
+                  title={selectionMode ? 'Select for download' : 'Download for offline'}
                 >
                   <svg
                     className="h-4 w-4"
@@ -290,7 +352,15 @@ export function EpisodePanel({
                     strokeLinejoin="round"
                     aria-hidden="true"
                   >
-                    <path d="M12 3v11m0 0 4-4m-4 4-4-4M4 18.5h16" />
+                    {selectionMode ? (
+                      selectedIds?.has(v.id) ? (
+                        <path d="m5 12.5 4.5 4.5L19 7" />
+                      ) : (
+                        <circle cx="12" cy="12" r="8" />
+                      )
+                    ) : (
+                      <path d="M12 3v11m0 0 4-4m-4 4-4-4M4 18.5h16" />
+                    )}
                   </svg>
                 </button>
               ) : null}

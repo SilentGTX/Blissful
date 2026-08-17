@@ -31,6 +31,7 @@ import { UnreleasedEpisodeModal } from '../components/UnreleasedEpisodeModal';
 import { type BananaOption } from '../components/BananasPicker';
 import { OfflineDownloadModal } from '../components/OfflineDownloadModal';
 import { offlineSupported } from '../lib/offlineCapabilities';
+import { notifyError } from '../lib/toastQueues';
 import { fetchFallbackReleases } from '../lib/fallbackReleases';
 import { getResumeSeconds } from '../layout/app-shell/utils';
 import { scoreReleaseForAutoPick } from '../lib/rdCache';
@@ -291,6 +292,10 @@ export default function DetailPage() {
   }, [streamsViewDownload.rows]);
 
   const [isDownloadOpen, setIsDownloadOpen] = useState(false);
+  // Batch download: pick several episodes, queue them in one action.
+  const [episodeSelectionMode, setEpisodeSelectionMode] = useState(false);
+  const [selectedEpisodeIds, setSelectedEpisodeIds] = useState<Set<string>>(new Set());
+  const [batchOpen, setBatchOpen] = useState(false);
   // Downloads are a WEB feature: the desktop shell plays local files through mpv
   // and has no browser storage budget to manage.
   const offlineAvailable = !isNativeShell() && offlineSupported();
@@ -314,6 +319,34 @@ export default function DetailPage() {
     },
     [setSelectedVideoId]
   );
+  const toggleEpisodeSelect = useCallback((videoId: string) => {
+    setSelectedEpisodeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(videoId)) next.delete(videoId);
+      else next.add(videoId);
+      return next;
+    });
+  }, []);
+  const cancelEpisodeSelection = useCallback(() => {
+    setEpisodeSelectionMode(false);
+    setSelectedEpisodeIds(new Set());
+  }, []);
+  // Selected episodes in the order they air, with the labels the Downloads list
+  // will show.
+  const batchEpisodes = useMemo(() => {
+    const byId = new Map(videos.map((v) => [v.id, v]));
+    return [...selectedEpisodeIds]
+      .map((id) => byId.get(id))
+      .filter((v): v is NonNullable<typeof v> => v != null)
+      .sort((a, b) => (a.season ?? 0) - (b.season ?? 0) || (a.episode ?? 0) - (b.episode ?? 0))
+      .map((v) => ({
+        videoId: v.id,
+        label:
+          v.season != null && v.episode != null
+            ? `S${v.season}E${v.episode}${v.title ? ` ${v.title}` : ''}`
+            : v.title ?? v.id,
+      }));
+  }, [selectedEpisodeIds, videos]);
 
   const mobileTorrentioRows = useMemo(
     () => streamsViewMobile.rows.filter((row) => row.addonName === 'Torrentio RD'),
@@ -948,6 +981,12 @@ export default function DetailPage() {
           }
         : onSelectEpisode,
     onDownloadEpisode: offlineAvailable && isSeriesLike ? handleDownloadEpisode : null,
+    episodeSelectionMode,
+    selectedEpisodeIds,
+    onToggleEpisodeSelect: toggleEpisodeSelect,
+    onStartEpisodeSelection: () => setEpisodeSelectionMode(true),
+    onCancelEpisodeSelection: cancelEpisodeSelection,
+    onDownloadSelectedEpisodes: () => setBatchOpen(true),
     getEpisodeProgressInfo,
     normalizeImage: normalizeStremioImage,
     formatDate,
@@ -1321,6 +1360,45 @@ export default function DetailPage() {
             releasesLoading={releasesLoading}
             onClose={() => setIsDownloadOpen(false)}
             onQueued={() => navigate('/downloads')}
+          />
+        ) : null}
+
+        {/* Batch download: same dialog, size-only, queues every selected
+            episode. Each one needs its own release lookup, which happens in
+            lib/offlineBatch. */}
+        {batchOpen && batchEpisodes.length > 0 ? (
+          <OfflineDownloadModal
+            isOpen={batchOpen}
+            metaId={id}
+            type={type}
+            videoId={null}
+            title={meta?.meta?.name ?? 'Untitled'}
+            subtitle={`${batchEpisodes.length} episodes`}
+            poster={poster ?? normalizeStremioImage(meta?.meta?.poster ?? null) ?? null}
+            releases={[]}
+            batchEpisodes={batchEpisodes}
+            onBatchStart={async (quality) => {
+              const { queueEpisodes } = await import('../lib/offlineBatch');
+              const result = await queueEpisodes({
+                addons,
+                type,
+                metaId: id,
+                title: meta?.meta?.name ?? 'Untitled',
+                poster: poster ?? normalizeStremioImage(meta?.meta?.poster ?? null) ?? null,
+                episodes: batchEpisodes,
+                quality,
+              });
+              cancelEpisodeSelection();
+              setBatchOpen(false);
+              if (result.failed.length > 0) {
+                notifyError(
+                  `${result.failed.length} episode${result.failed.length === 1 ? '' : 's'} couldn’t be queued`,
+                  `No cached release was available for: ${result.failed.slice(0, 3).join(', ')}${result.failed.length > 3 ? '…' : ''}`
+                );
+              }
+              navigate('/downloads');
+            }}
+            onClose={() => setBatchOpen(false)}
           />
         ) : null}
       </div>
