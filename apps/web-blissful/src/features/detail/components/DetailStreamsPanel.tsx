@@ -70,6 +70,8 @@ type DetailStreamsPanelProps = {
   /** Optional TMDB id for per-season metadata enrichment. */
   tmdbId?: number | null;
   onSelectEpisode: (id: string) => void;
+  /** Per-episode offline download (web). See EpisodePanel.onDownloadVideo. */
+  onDownloadEpisode?: ((id: string) => void) | null;
   getEpisodeProgressInfo: (id: string) => {
     percent: number;
     hasProgress: boolean;
@@ -131,6 +133,7 @@ export function DetailStreamsPanel({
   episodeStills,
   episodeStillsPending,
   onSelectEpisode,
+  onDownloadEpisode,
   getEpisodeProgressInfo,
   normalizeImage,
   formatDate,
@@ -262,6 +265,7 @@ export function DetailStreamsPanel({
         <EpisodePanel
           videosForSeason={videosForSeason}
           onSelectVideo={onSelectEpisode}
+          onDownloadVideo={onDownloadEpisode ?? null}
           getEpisodeProgressInfo={getEpisodeProgressInfo}
           normalizeImage={normalizeImage}
           formatDate={formatDate}

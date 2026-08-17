@@ -264,6 +264,17 @@ export function DesktopNav(props: DesktopNavProps) {
                 onPress={() => handleNavChange('addons')}
               />
             ) : null}
+            {/* Web-only: offline downloads live in browser storage. The desktop
+                shell plays files through mpv and has no such budget. */}
+            {!isNativeShell() ? (
+              <NavItem
+                label="Downloads"
+                icon={ICONS.downloads}
+                active={props.active === 'downloads'}
+                collapsed={collapsed}
+                onPress={() => handleNavChange('downloads')}
+              />
+            ) : null}
             <NavItem
               label="Join Party"
               icon={ICONS.watchParty}

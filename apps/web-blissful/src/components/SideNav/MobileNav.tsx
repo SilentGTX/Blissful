@@ -13,6 +13,7 @@ import BottomDrawer from '../BottomDrawer';
 import { FriendsAccordion } from '../Friends';
 import { useFriends } from '../../context/FriendsProvider';
 import { useAuth } from '../../context/AuthProvider';
+import { isNativeShell } from '../../lib/desktop';
 
 export type MobileNavProps = Pick<
   SideNavProps,
@@ -209,6 +210,17 @@ export function MobileNav(props: MobileNavProps) {
             active={props.active === 'library'}
             onPress={() => handleNavChange('library')}
           />
+          {/* Web-only, and the phone is exactly where it matters: downloads
+              live in browser storage, which the desktop shell doesn't use.
+              Labelled "Offline" — it fits the 10px bar and says what it's for. */}
+          {!isNativeShell() ? (
+            <MobileNavItem
+              label="Offline"
+              icon={ICONS.downloads}
+              active={props.active === 'downloads'}
+              onPress={() => handleNavChange('downloads')}
+            />
+          ) : null}
           <MobileNavItem
             label="Party"
             icon={ICONS.watchParty}

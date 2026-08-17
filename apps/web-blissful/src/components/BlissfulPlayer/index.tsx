@@ -19,6 +19,9 @@ import { updateBlissfulLibraryProgress } from '../../lib/blissfulAuthApi';
 import { isStremioLinked, syncStremioItem, triggerStremioItemSync } from '../../lib/stremioLinkApi';
 import { clearCurrentActivity, setCurrentActivity } from '../../lib/usePresenceHeartbeat';
 import { setLastStreamSelection } from '../../lib/streamHistory';
+import { expectedEpisodeFor } from '../../lib/episodeMatch';
+import { OfflineHlsLoader } from '../../lib/offlineHlsLoader';
+import { offlineIdFromUrl, offlinePlaylistUrl } from '../../lib/offlineUrls';
 import { buildPlayerPath, defaultPlayerSource } from '../../lib/playerUrl';
 import {
   clamp,
@@ -1440,19 +1443,33 @@ export default function BlissfulPlayer(props: {
     return Array.from(set).sort((a, b) => a - b);
   }, [props.videos]);
 
-  const currentEpisodeSeason = useMemo(() => {
-    if (!props.videoId) return null;
-    const parts = props.videoId.split(':');
-    const s = parts.length >= 3 ? Number.parseInt(parts[parts.length - 2], 10) : NaN;
-    return Number.isFinite(s) ? s : null;
-  }, [props.videoId]);
+  const currentEpisodeSeason = useMemo(
+    () =>
+      // Meta-first via the shared resolver, NOT a positional parse of the id.
+      // Scheme-prefixed anime ids are `<scheme>:<seriesId>:<episode>` with no
+      // season segment, so reading the second-to-last segment returns the SERIES
+      // id: Bleach (`kitsu:244:3`) yielded season 244, which matched none of its
+      // 366 season-1 episodes and left the drawer showing "No episodes found".
+      // `expectedEpisodeFor` already handles both shapes (and is tested against
+      // this exact kitsu:244 case).
+      expectedEpisodeFor(props.videoId, props.videos)?.season ?? null,
+    [props.videoId, props.videos]
+  );
 
   // Initialize seasonSelect to current episode's season when the
   // drawer first opens, falling back to the smallest season.
   useEffect(() => {
     if (!episodesOpen) return;
     if (episodesSeason != null) return;
-    setEpisodesSeason(currentEpisodeSeason ?? seriesSeasons[0] ?? null);
+    // Only honour the current episode's season if that season actually HAS
+    // episodes — otherwise the drawer opens filtered to nothing with no way
+    // back (the season picker only lists real seasons). Belt to the braces of
+    // the id parse above.
+    const preferred =
+      currentEpisodeSeason != null && seriesSeasons.includes(currentEpisodeSeason)
+        ? currentEpisodeSeason
+        : seriesSeasons[0] ?? currentEpisodeSeason;
+    setEpisodesSeason(preferred ?? null);
   }, [episodesOpen, episodesSeason, currentEpisodeSeason, seriesSeasons]);
 
   // Per-season info from TMDB — overview + per-episode runtime /
@@ -2490,8 +2507,15 @@ export default function BlissfulPlayer(props: {
     // the video track on HEVC Main 10 4K streams (audio plays, no
     // picture). Videasy's player works because they always go through
     // MSE/hls.js (their `<video>` src is a blob URL).
+    // Offline download (`offline:<id>`): an HLS VOD assembled from segments in
+    // IndexedDB. It MUST take the hls.js path — native HLS goes through the
+    // platform media stack, which cannot be fed from local storage (and on iOS
+    // doesn't reliably consult the service worker either). See offlineUrls.ts
+    // for why the loader-facing URL is a separate, resolvable https form.
+    const offlineId = offlineIdFromUrl(src);
     const isHls =
-      src.startsWith('blob:')
+      offlineId != null
+      || src.startsWith('blob:')
       || src.includes('.m3u8')
       || src.includes('/hlsv2/')
       || src.includes('/hls-master');
@@ -2510,8 +2534,8 @@ export default function BlissfulPlayer(props: {
     // and dies with MEDIA_ERR code 4. hls.js handles them (it derives codecs
     // from the init segments), so force it just like the other proxied HLS.
     const isProxiedHls =
-      isHls && (src.includes('/addon-proxy') || src.includes('/hls-master') || src.includes('/transcode')
-        || src.includes('/party-relay') || src.includes('/hlsv2/'));
+      isHls && (offlineId != null || src.includes('/addon-proxy') || src.includes('/hls-master')
+        || src.includes('/transcode') || src.includes('/party-relay') || src.includes('/hlsv2/'));
     const shouldUseHlsJs =
       isHls && Hls.isSupported() && (!hasNativeHls || isProxiedHls);
     playerLog(
@@ -2589,6 +2613,11 @@ export default function BlissfulPlayer(props: {
         levelLoadingMaxRetry: 6,
         fragLoadingTimeOut: 20000,
         fragLoadingMaxRetry: 6,
+        // Offline download: swap the network loader for the IndexedDB one, so
+        // the playlist and every segment come off the device. This is what
+        // makes offline work on iPhone (see lib/offlineHlsLoader.ts) — the
+        // service-worker route can't serve media reliably in WebKit.
+        ...(offlineId != null ? { loader: OfflineHlsLoader } : {}),
         xhrSetup: (xhr) => {
           xhr.withCredentials = false;
         },
@@ -2875,7 +2904,9 @@ export default function BlissfulPlayer(props: {
       // Do NOT use HLS-specific events (MANIFEST_LOADING, BUFFER_APPENDED) for buffering
       // — they cause unnecessary spinner flashes and don't match Stremio's behavior.
 
-      hls.loadSource(src);
+      // Offline sessions load the resolvable stand-in URL that our loader
+      // recognises; everything else loads the real stream URL.
+      hls.loadSource(offlineId != null ? offlinePlaylistUrl(offlineId) : src);
       hls.attachMedia(video);
     } else {
       video.src = src;

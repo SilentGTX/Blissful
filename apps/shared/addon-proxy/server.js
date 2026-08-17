@@ -257,6 +257,163 @@ function videoEncodeArgs() {
   return ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p', '-threads', TRANSCODE_X264_THREADS];
 }
 
+// ── Offline-download encode ladder (&q=) ─────────────────────────────────────
+// The streaming default (CRF 23 / 6 Mbps at source resolution) is ~2-4 GB for a
+// 2-hour film — far past what a phone will keep, and iOS storage is evictable.
+// An offline DOWNLOAD therefore asks for an explicit rung: the segments are
+// stored verbatim on the device, so bitrate here IS the download size.
+// `null` = stream at the source's own resolution/bitrate (the live-playback
+// default, kept as the "source" rung for desktops with disk to spare).
+//   size/hour ~= (video kbps + 160 audio kbps) * 3600 / 8
+const TRANSCODE_QUALITIES = {
+  '360p': { height: 360, vBitrate: '600k', vMaxrate: '900k', aBitrate: '96k', crf: '26' },
+  '540p': { height: 540, vBitrate: '1100k', vMaxrate: '1600k', aBitrate: '128k', crf: '24' },
+  '720p': { height: 720, vBitrate: '2000k', vMaxrate: '3000k', aBitrate: '128k', crf: '23' },
+  '1080p': { height: 1080, vBitrate: '4000k', vMaxrate: '6000k', aBitrate: '160k', crf: '22' },
+};
+// Parse + validate a `q=` param. Unknown/absent → null (source quality), so an
+// older client that doesn't send `q` behaves exactly as before.
+function parseQuality(raw) {
+  const key = String(raw || '').toLowerCase();
+  return Object.prototype.hasOwnProperty.call(TRANSCODE_QUALITIES, key) ? key : null;
+}
+// Encode args for a ladder rung. Downscale only (`min(ih,H)`) so a 720p source
+// asked for 1080p is never upscaled, and keep dimensions even (-2) for H.264.
+//
+// Software x264 uses CAPPED CRF (crf + maxrate + bufsize), not a flat bitrate
+// target: a fixed target pads easy scenes to the target — measured on a flat
+// synthetic clip, CBR 600k produced a LARGER file than the source-quality CRF
+// path. Capped CRF spends what the picture needs and still can't exceed the
+// rung's ceiling, so the size estimate stays an upper bound. VideoToolbox has
+// no usable CRF mode, so the hardware path stays bitrate-targeted (and is
+// bounded by the same maxrate).
+// Scale filter for a rung, WITHOUT the `-vf` flag — so it can go either into
+// `-vf` (plain encode) or into a `-filter_complex` chain (subtitle burn-in).
+function qualityScaleExpr(qKey) {
+  const q = TRANSCODE_QUALITIES[qKey];
+  return q ? `scale=-2:'min(${q.height},ih)':flags=bicubic` : null;
+}
+
+// `{ scale, video, audio }` — `video`/`audio` are codec args only; `scale` is the
+// filter expression (or null). Callers decide how to apply the filter.
+function qualityEncodeArgs(qKey) {
+  const q = TRANSCODE_QUALITIES[qKey];
+  if (!q) {
+    return {
+      scale: null,
+      video: videoEncodeArgs(),
+      audio: ['-c:a', 'aac', '-ac', '2', '-b:a', '160k'],
+    };
+  }
+  const video = TRANSCODE_HWENC
+    ? [
+      '-c:v', 'h264_videotoolbox',
+      '-b:v', q.vBitrate, '-maxrate', q.vMaxrate, '-bufsize', q.vMaxrate,
+      '-profile:v', 'high', '-pix_fmt', 'yuv420p',
+    ]
+    : [
+      '-c:v', 'libx264', '-preset', 'veryfast',
+      '-crf', q.crf, '-maxrate', q.vMaxrate, '-bufsize', q.vMaxrate,
+      '-pix_fmt', 'yuv420p', '-threads', TRANSCODE_X264_THREADS,
+    ];
+  return {
+    scale: qualityScaleExpr(qKey),
+    video,
+    audio: ['-c:a', 'aac', '-ac', '2', '-b:a', q.aBitrate],
+  };
+}
+
+// Video args + filter wiring, optionally BURNING IN an embedded subtitle stream.
+//
+// WHY BURN-IN EXISTS: a lot of anime (and every Blu-ray remux) carries its
+// subtitles as PGS — `hdmv_pgs_subtitle`, i.e. BITMAP images, not text. Those
+// cannot become WebVTT without OCR, so the web player can only ever ignore them:
+// Bleach's [Judas] release ships "English [Signs/Songs]" + "English [Full]" and
+// both are PGS, which is why the only text options left were two mistimed
+// OpenSubtitles files. Since every segment is re-encoded anyway, overlaying the
+// subtitle stream onto the video costs almost nothing and gives the release's
+// own typesetting, exactly as authored. It also makes subtitles work OFFLINE for
+// free: they are part of the picture, so a downloaded segment carries them.
+//
+// Overlay happens BEFORE scaling so the subtitle bitmaps line up with the frame
+// they were authored against, then the whole composite is scaled to the rung.
+function videoFilterArgs(qKey, subIdx) {
+  const enc = qualityEncodeArgs(qKey);
+  if (subIdx == null) {
+    return {
+      args: ['-map', '0:v:0', ...(enc.scale ? ['-vf', enc.scale] : []), ...enc.video],
+      audio: enc.audio,
+    };
+  }
+  const chain = `[0:v:0][0:${subIdx}]overlay${enc.scale ? `,${enc.scale}` : ''}[vout]`;
+  return {
+    args: ['-filter_complex', chain, '-map', '[vout]', ...enc.video],
+    audio: enc.audio,
+  };
+}
+
+// The source's audio tracks: `{ tracks: [{ i, lang, title, codec, channels }] }`.
+// `i` is the audio-relative index that maps to ffmpeg's `-map 0:a:i`. Cached
+// permanently per file (immutable) — so /transcode-seg can consult it on every
+// segment for free. Serves both /transcode-audio and the segment clamp below.
+async function probeAudioTracks(src) {
+  const cached = await jsonCacheGet('transcode-audio', src);
+  if (cached !== undefined) return cached;
+  const probeSrc = await resolveTranscodeSrc(src);
+  const tracks = await new Promise((resolve) => {
+    const p = spawn('ffprobe', [
+      '-v', 'error', '-select_streams', 'a',
+      '-show_entries', 'stream=channels,codec_name:stream_tags=language,title',
+      '-of', 'json', probeSrc,
+    ]);
+    let out = '';
+    p.stdout.on('data', (c) => { out += c.toString(); });
+    p.on('close', () => {
+      try {
+        const streams = (JSON.parse(out).streams) || [];
+        resolve(streams.map((s, i) => ({
+          i,
+          lang: (s.tags && (s.tags.language || s.tags.lang)) || null,
+          title: (s.tags && s.tags.title) || null,
+          codec: s.codec_name || null,
+          channels: s.channels || null,
+        })));
+      } catch { resolve([]); }
+    });
+    p.on('error', () => resolve([]));
+    setTimeout(() => { try { p.kill('SIGKILL'); } catch { /* noop */ } resolve([]); }, 25000);
+  });
+  const payload = { tracks };
+  // Permanent for a real result (immutable per file); short for empty (a cold
+  // RD link can make the probe race and return nothing).
+  await jsonCacheSet('transcode-audio', src, payload, tracks.length ? 0 : 10 * 60 * 1000);
+  return payload;
+}
+
+// Clamp a requested audio-track index to one the file actually has.
+//
+// WHY THIS EXISTS: segments map audio with `-map 0:a:N?`, and the trailing `?`
+// makes the mapping OPTIONAL — so an out-of-range N yields a perfectly valid,
+// HTTP-200, VIDEO-ONLY segment. The symptom is silent playback with no error
+// anywhere, which is what a stale `&a=` (carried over from a dual-audio release
+// onto a single-track one) produced on the anime path. Clamping here fixes it
+// for every client at once, including already-deployed bundles and the desktop
+// shell, and it also stops an offline DOWNLOAD from being permanently silent.
+// A probe failure returns the requested index unchanged rather than forcing 0 —
+// never make things worse when we can't see the file.
+async function clampAudioIdx(src, requested) {
+  if (!requested) return 0;
+  try {
+    const { tracks } = await probeAudioTracks(src);
+    if (!Array.isArray(tracks) || tracks.length === 0) return requested;
+    if (requested < tracks.length) return requested;
+    appendPlayerLog(`transcode-seg audio idx ${requested} out of range (${tracks.length} tracks) — using 0`);
+    return 0;
+  } catch {
+    return requested;
+  }
+}
+
 // Resolve a torrentio `/resolve/realdebrid/…` URL to its final real-debrid.com
 // direct URL ONCE and cache it. Feeding ffprobe/ffmpeg the torrentio URL means
 // EVERY probe + EVERY segment re-runs the redirect (torrentio → RD mints a fresh
@@ -3035,10 +3192,22 @@ const server = http.createServer((req, res) => {
     const n = Math.ceil(dur / SEG);
     const enc = encodeURIComponent(src);
     let pl = '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:' + SEG + '\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n';
-    const aParam = audioIdx ? '&a=' + audioIdx : '';
+    // Clamp here too, so the playlist itself never advertises an audio track the
+    // file doesn't have (a stale &a from a previous, multi-track release).
+    const safeAudioIdx = await clampAudioIdx(src, audioIdx);
+    const aParam = safeAudioIdx ? '&a=' + safeAudioIdx : '';
+    // Offline downloads request a ladder rung (&q=720p etc.) so the stored
+    // segments are phone-sized; propagate it onto every segment URI. Absent →
+    // source quality, i.e. the streaming behaviour.
+    const qKey = parseQuality(tq.q);
+    const qParam = qKey ? '&q=' + qKey : '';
+    // Burn-in subtitle stream (see videoFilterArgs). Carried onto every segment
+    // so the whole VOD is subtitled consistently.
+    const subRawPl = parseInt(tq.sub, 10);
+    const subParam = Number.isInteger(subRawPl) && subRawPl >= 0 ? '&sub=' + subRawPl : '';
     for (let i = 0; i < n; i++) {
       const d = Math.min(SEG, dur - i * SEG);
-      pl += '#EXTINF:' + d.toFixed(3) + ',\n/transcode-seg?url=' + enc + '&n=' + i + aParam + '\n';
+      pl += '#EXTINF:' + d.toFixed(3) + ',\n/transcode-seg?url=' + enc + '&n=' + i + aParam + qParam + subParam + '\n';
     }
     pl += '#EXT-X-ENDLIST\n';
     res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' });
@@ -3057,6 +3226,13 @@ const server = http.createServer((req, res) => {
     const n = parseInt(sq.n, 10);
     const aRawSeg = parseInt(sq.a, 10);
     const audioIdx = Number.isInteger(aRawSeg) && aRawSeg >= 0 ? aRawSeg : 0;
+    // Offline ladder rung (see TRANSCODE_QUALITIES). null → source quality.
+    const segQuality = parseQuality(sq.q);
+    // Burn-in subtitle stream index (absolute ffmpeg stream index from
+    // /probe-streams). See videoFilterArgs — this is the only way PGS/bitmap
+    // subtitles can reach a browser, and it makes them work offline too.
+    const subRaw = parseInt(sq.sub, 10);
+    const segSubIdx = Number.isInteger(subRaw) && subRaw >= 0 ? subRaw : null;
     if (!/^https?:\/\//i.test(src) || !Number.isInteger(n) || n < 0) {
       res.writeHead(400, { 'Content-Type': 'text/plain' });
       res.end('bad request');
@@ -3069,13 +3245,19 @@ const server = http.createServer((req, res) => {
     // and gets RD-throttled (the cause of the web player's endless buffering).
     void (async () => {
     const segSrc = await resolveTranscodeSrc(src);
+    // An audio index the file doesn't have would silently produce a VIDEO-ONLY
+    // segment (`-map 0:a:N?`). Clamp before encoding — cached probe, so this is
+    // free after the first segment. See clampAudioIdx.
+    const safeAudioIdx = await clampAudioIdx(src, audioIdx);
     // Host-side hardware transcoder: if configured, offload the (CPU-heavy)
     // segment encode to the native macOS ffmpeg service, which uses Apple
     // Silicon's h264_videotoolbox media engine (~6× less CPU, no thermal
     // throttling). We only resolve the URL here; the host does the encode.
     if (TRANSCODE_HOST_URL && TRANSCODE_HOST_SECRET) {
       const hostUrl = `${TRANSCODE_HOST_URL.replace(/\/+$/, '')}/seg?url=${encodeURIComponent(segSrc)}`
-        + `&n=${n}&a=${audioIdx}&secret=${encodeURIComponent(TRANSCODE_HOST_SECRET)}`;
+        + `&n=${n}&a=${safeAudioIdx}${segQuality ? `&q=${segQuality}` : ''}`
+        + `${segSubIdx != null ? `&sub=${segSubIdx}` : ''}`
+        + `&secret=${encodeURIComponent(TRANSCODE_HOST_SECRET)}`;
       const lib = hostUrl.startsWith('https:') ? https : http;
       const hr = lib.get(hostUrl, (hres) => {
         if (hres.statusCode !== 200) {
@@ -3098,6 +3280,7 @@ const server = http.createServer((req, res) => {
       res.on('close', killHost);
       return;
     }
+    const segEncode = videoFilterArgs(segQuality, segSubIdx);
     const args = [
       '-hide_banner', '-loglevel', 'error',
       // Reconnect + back off on transient RD throttling (429/5xx) instead of
@@ -3108,11 +3291,12 @@ const server = http.createServer((req, res) => {
       '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '8',
       '-reconnect_on_http_error', '429,500,502,503,504',
       '-ss', String(start), '-i', segSrc, '-t', String(SEG),
+      // Video mapping + filters (scale, and subtitle burn-in when `sub=` is set).
+      ...segEncode.args,
       // Pick the requested audio track (default first); `?` keeps a bad index
       // from failing the whole segment.
-      '-map', '0:v:0', '-map', '0:a:' + audioIdx + '?', '-sn', '-dn',
-      ...videoEncodeArgs(),
-      '-c:a', 'aac', '-ac', '2', '-b:a', '160k',
+      '-map', '0:a:' + safeAudioIdx + '?', '-sn', '-dn',
+      ...segEncode.audio,
       // Place each independently-encoded segment at its TRUE position in the
       // timeline. Input -ss resets the segment's PTS to ~0; -output_ts_offset
       // shifts it to `start`, so segment N reports start_time = n*SEG and the
@@ -3156,40 +3340,7 @@ const server = http.createServer((req, res) => {
       return;
     }
     void (async () => {
-      const cached = await jsonCacheGet('transcode-audio', src);
-      if (cached !== undefined) {
-        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-        res.end(JSON.stringify(cached));
-        return;
-      }
-      const probeSrc = await resolveTranscodeSrc(src);
-      const tracks = await new Promise((resolve) => {
-        const p = spawn('ffprobe', [
-          '-v', 'error', '-select_streams', 'a',
-          '-show_entries', 'stream=channels,codec_name:stream_tags=language,title',
-          '-of', 'json', probeSrc,
-        ]);
-        let out = '';
-        p.stdout.on('data', (c) => { out += c.toString(); });
-        p.on('close', () => {
-          try {
-            const streams = (JSON.parse(out).streams) || [];
-            resolve(streams.map((s, i) => ({
-              i,
-              lang: (s.tags && (s.tags.language || s.tags.lang)) || null,
-              title: (s.tags && s.tags.title) || null,
-              codec: s.codec_name || null,
-              channels: s.channels || null,
-            })));
-          } catch { resolve([]); }
-        });
-        p.on('error', () => resolve([]));
-        setTimeout(() => { try { p.kill('SIGKILL'); } catch { /* noop */ } resolve([]); }, 25000);
-      });
-      const payload = { tracks };
-      // Permanent for a real result (immutable per file); short for empty (a cold
-      // RD link can make the probe race and return nothing).
-      await jsonCacheSet('transcode-audio', src, payload, tracks.length ? 0 : 10 * 60 * 1000);
+      const payload = await probeAudioTracks(src);
       res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       res.end(JSON.stringify(payload));
     })();

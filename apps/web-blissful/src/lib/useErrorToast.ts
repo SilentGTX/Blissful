@@ -10,6 +10,16 @@ export function useErrorToast(message: string | null | undefined, title?: string
       return;
     }
 
+    // Offline is an expected state now that downloads exist: opening the app on
+    // a plane would otherwise stack up a toast per network-backed feature
+    // (catalog, addons, library, presence…) to report the one fact the user
+    // already knows. Only suppress when the browser is CERTAIN there's no
+    // connection — `onLine === true` doesn't imply reachable, so a dead server
+    // on a live connection still reports normally.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return;
+    }
+
     const key = `${title ?? ''}:${message}`;
     if (lastShownRef.current === key) return;
 

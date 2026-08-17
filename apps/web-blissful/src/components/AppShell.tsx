@@ -428,6 +428,7 @@ export default function AppShell() {
     if (location.pathname.startsWith('/discover')) return 'discover';
     if (location.pathname.startsWith('/library')) return 'library';
     if (location.pathname.startsWith('/addons')) return 'addons';
+    if (location.pathname.startsWith('/downloads')) return 'downloads';
     if (location.pathname.startsWith('/settings')) return 'settings';
     return 'home';
   }, [location.pathname]);

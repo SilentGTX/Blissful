@@ -29,9 +29,12 @@ import { fetchTmdbId, type TmdbLookup } from '../lib/tmdb';
 import { ResumeOrStartOverModal } from '../components/ResumeOrStartOverModal';
 import { UnreleasedEpisodeModal } from '../components/UnreleasedEpisodeModal';
 import { type BananaOption } from '../components/BananasPicker';
+import { OfflineDownloadModal } from '../components/OfflineDownloadModal';
+import { offlineSupported } from '../lib/offlineCapabilities';
 import { fetchFallbackReleases } from '../lib/fallbackReleases';
 import { getResumeSeconds } from '../layout/app-shell/utils';
 import { scoreReleaseForAutoPick } from '../lib/rdCache';
+import { expectedEpisodeFor, scoreEpisodeMatch } from '../lib/episodeMatch';
 import { isNativeShell } from '../lib/desktop';
 
 export default function DetailPage() {
@@ -237,6 +240,81 @@ export default function DetailPage() {
 
   const desktopRows = streamsViewDesktop.rows;
 
+  // ── Offline downloads ──────────────────────────────────────────────────────
+  // The download list is deliberately the UNFILTERED release set: every segment
+  // is re-encoded by the proxy on the way to the device, so HEVC/EAC3/MKV — the
+  // things `webInstantOnly` filters out for direct playback — are all fine here,
+  // and more choice means a better shot at a well-seeded cached release.
+  const streamsViewDownload = useMemo(
+    () =>
+      buildStreamsView(streamsByAddon, {
+        selectedAddon,
+        onlyTorrentioRdResolve: false,
+        streamSortKey,
+        lastStreamUrl: lastStream?.url ?? null,
+        webInstantOnly: false,
+      }),
+    [lastStream, selectedAddon, streamSortKey, streamsByAddon]
+  );
+
+  // Downloadable = the proxy can fetch it over HTTP. /transcode-seg feeds ffmpeg
+  // the URL from the Mac, so a magnet/infoHash-only row (nothing to fetch) and
+  // anything pointing at THIS machine's stremio-service (unreachable from the
+  // server) are both out. What's left is Real-Debrid direct links and torrentio
+  // /resolve/realdebrid/ URLs, which is exactly the debrid-backed set.
+  const downloadReleases = useMemo<BananaOption[]>(() => {
+    const seen = new Set<string>();
+    const out: BananaOption[] = [];
+    for (const row of streamsViewDownload.rows) {
+      const url = row.effectiveUrl ?? '';
+      if (!/^https?:\/\//i.test(url)) continue;
+      if (/\/stremio-server\//.test(url)) continue;
+      try {
+        const host = new URL(url).hostname;
+        if (host === '127.0.0.1' || host === 'localhost' || host === '::1') continue;
+      } catch {
+        continue;
+      }
+      if (seen.has(url)) continue;
+      seen.add(url);
+      out.push({
+        name: row.leftLabel,
+        torrentName: row.rightTitle,
+        quality: null,
+        // metaSize arrives as "💾 5.84 GB" — strip the emoji to the raw size.
+        size: row.metaSize ? row.metaSize.replace(/^\D+/, '').trim() || null : null,
+        seeders: row.seedersNum != null ? String(row.seedersNum) : null,
+        url,
+      });
+    }
+    return out;
+  }, [streamsViewDownload.rows]);
+
+  const [isDownloadOpen, setIsDownloadOpen] = useState(false);
+  // Downloads are a WEB feature: the desktop shell plays local files through mpv
+  // and has no browser storage budget to manage.
+  const offlineAvailable = !isNativeShell() && offlineSupported();
+  // Two entry points, because the detail page has two right-hand views:
+  //  - Episode list (the usual series path): a per-episode download button on
+  //    each card. Needed because on web, clicking an episode navigates straight
+  //    to the player, so a series never rests in an "episode selected" state.
+  //  - Streams view / any movie: the action-row button, which needs a resolved
+  //    release list for the selected episode.
+  const canDownload =
+    offlineAvailable
+    && downloadReleases.length > 0
+    && (!isSeriesLike || selectedVideoId !== null);
+  // Per-episode download. Selecting the episode is what triggers its stream
+  // fetch, so the modal opens before `downloadReleases` has arrived and shows a
+  // loading state until it does.
+  const handleDownloadEpisode = useCallback(
+    (videoId: string) => {
+      setSelectedVideoId(videoId);
+      setIsDownloadOpen(true);
+    },
+    [setSelectedVideoId]
+  );
+
   const mobileTorrentioRows = useMemo(
     () => streamsViewMobile.rows.filter((row) => row.addonName === 'Torrentio RD'),
     [streamsViewMobile.rows]
@@ -336,6 +414,11 @@ export default function DetailPage() {
     if (selectedAddon !== 'ALL') return streamsByAddon[selectedAddon] ? 0 : 1;
     return Math.max(0, streamsTotal - Object.keys(streamsByAddon).length);
   }, [streamsLoading, selectedAddon, streamsByAddon, streamsTotal]);
+
+  // The download modal can open before this episode's streams have arrived (the
+  // per-episode button selects the episode and opens in the same click), so it
+  // needs to tell "still looking" apart from "nothing downloadable".
+  const releasesLoading = streamsLoadingFiltered && downloadReleases.length === 0;
 
   const handleSelectAddon = useCallback(
     (key: string) => {
@@ -718,13 +801,21 @@ export default function DetailPage() {
     // makes Real-Debrid download the torrent before anything plays — on an
     // auto-advance to the next episode that reads as "it just hangs". Cache
     // state outranks quality here (see lib/rdCache); the row list's own order
-    // is quality/seeder-based and doesn't know about caching.
+    // is quality/seeder-based and doesn't know about caching. Within a cache
+    // tier, prefer the release that actually contains THIS episode — addon
+    // id→file mappings get that wrong for absolute-numbered anime ids (see
+    // lib/episodeMatch).
+    const expectedEpisode = expectedEpisodeFor(
+      selectedVideoId ?? searchParams.get('videoId'),
+      videos,
+    );
     const top = playableRows
       .slice()
       .sort((a, b) => {
         const s = (row: typeof a) => {
           const st = row.stream as { name?: string | null; title?: string | null; url?: string | null };
-          return scoreReleaseForAutoPick({ name: st.name, title: st.title, url: st.url });
+          return scoreReleaseForAutoPick({ name: st.name, title: st.title, url: st.url })
+            + scoreEpisodeMatch(`${st.name ?? ''} ${st.title ?? ''}`, expectedEpisode);
         };
         return s(b) - s(a);
       })[0];
@@ -799,6 +890,8 @@ export default function DetailPage() {
     handleNavigateToPlayer,
     navigate,
     searchParams,
+    selectedVideoId,
+    videos,
     type,
     id,
   ]);
@@ -854,6 +947,7 @@ export default function DetailPage() {
             handlePlayWithVidking(vid);
           }
         : onSelectEpisode,
+    onDownloadEpisode: offlineAvailable && isSeriesLike ? handleDownloadEpisode : null,
     getEpisodeProgressInfo,
     normalizeImage: normalizeStremioImage,
     formatDate,
@@ -1060,6 +1154,7 @@ export default function DetailPage() {
           onShare={handleShare}
           onPlay={!isNativeShell() && !isSeriesLike && canPlayWithVidking ? () => handlePlayWithVidking() : null}
           isLoggedIn={Boolean(authKey)}
+          onDownload={canDownload ? () => setIsDownloadOpen(true) : null}
         />
 
         {/* Desktop: Content with sidebar, Mobile: Hero with content overlays */}
@@ -1090,6 +1185,7 @@ export default function DetailPage() {
                   onShare={handleShare}
                   onPlay={!isNativeShell() && !isSeriesLike && canPlayWithVidking ? () => handlePlayWithVidking() : null}
                   isLoggedIn={Boolean(authKey)}
+                  onDownload={canDownload ? () => setIsDownloadOpen(true) : null}
                 />
               </div>
             </div>{/* End of px-4 wrapper */}
@@ -1209,6 +1305,24 @@ export default function DetailPage() {
           }
           onClose={() => setUnreleasedEpisode(null)}
         />
+
+        {/* Offline download picker (web only). Mounted lazily on open so the
+            IndexedDB/storage probes don't run on every detail page view. */}
+        {isDownloadOpen ? (
+          <OfflineDownloadModal
+            isOpen={isDownloadOpen}
+            metaId={id}
+            type={type}
+            videoId={isSeriesLike ? selectedVideoId : null}
+            title={meta?.meta?.name ?? 'Untitled'}
+            subtitle={isSeriesLike ? selectedEpisodeLabel : null}
+            poster={poster ?? normalizeStremioImage(meta?.meta?.poster ?? null) ?? null}
+            releases={downloadReleases}
+            releasesLoading={releasesLoading}
+            onClose={() => setIsDownloadOpen(false)}
+            onQueued={() => navigate('/downloads')}
+          />
+        ) : null}
       </div>
     </div>
   );

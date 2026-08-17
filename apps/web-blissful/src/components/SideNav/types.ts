@@ -1,8 +1,9 @@
 import type { LibraryItem } from '../../lib/mediaTypes';
 
 // 'addons' is desktop-only (the dedicated AddonsPage); web manages addons
-// via the in-shell modal flow.
-export type SideNavView = 'home' | 'discover' | 'library' | 'addons' | 'settings';
+// via the in-shell modal flow. 'downloads' is web-only — the desktop shell
+// plays local files through mpv and has no browser storage budget to manage.
+export type SideNavView = 'home' | 'discover' | 'library' | 'addons' | 'downloads' | 'settings';
 
 export type SideNavProps = {
   active: SideNavView;

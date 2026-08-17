@@ -104,7 +104,19 @@ export function scoreEpisodeMatch(
  */
 export function expectedEpisodeFor(
   videoId: string | null | undefined,
-  videos: Array<{ id: string; season?: number; episode?: number; title?: string; name?: string }> | null | undefined,
+  // Nullable fields accepted because addon meta shapes differ (the player's
+  // `EpisodeVideo` carries `season: number | null`); the body already narrows
+  // with `typeof === 'number'`, so null behaves exactly like absent.
+  videos:
+    | Array<{
+        id: string;
+        season?: number | null;
+        episode?: number | null;
+        title?: string | null;
+        name?: string | null;
+      }>
+    | null
+    | undefined,
 ): ExpectedEpisode | null {
   if (!videoId) return null;
   const parts = videoId.split(':');

@@ -14,8 +14,14 @@ do the heavy lifting (the per-segment re-encode); everything else stays in the
 proxy.
 
 Endpoint (secret-guarded, mirrors the proxy's /transcode-seg):
-  GET /seg?url=<direct media url>&n=<segment index>&a=<audio track>&secret=<s>
+  GET /seg?url=<direct media url>&n=<segment index>&a=<audio track>
+         [&q=<360p|540p|720p|1080p>][&sub=<stream index>]&secret=<s>
     → streams a 6s MPEG-TS segment (H.264 via VideoToolbox + AAC).
+    `q` is the offline-download ladder rung (downscale + fixed bitrate); absent
+    means source resolution at the streaming bitrate. Rungs must stay in sync
+    with TRANSCODE_QUALITIES in apps/shared/addon-proxy/server.js.
+    `sub` burns that subtitle stream into the picture — the only way PGS/bitmap
+    subtitles reach a browser, and it makes them survive an offline download.
   GET /health
 
 Driven by infra/launchd/com.budinoff.blissful-transcoder.plist.
@@ -38,6 +44,17 @@ SEG = 6  # seconds per segment — must match the proxy's playlist SEG.
 VBITRATE = os.environ.get("TRANSCODE_VBITRATE", "6000k")
 VMAXRATE = os.environ.get("TRANSCODE_VMAXRATE", "9000k")
 FFMPEG = os.environ.get("FFMPEG_BIN", "ffmpeg")
+
+# Offline-download encode ladder. Mirrors TRANSCODE_QUALITIES in
+# apps/shared/addon-proxy/server.js — keep the two in sync, since the proxy
+# builds the playlist and this service encodes what it asks for. Downloaded
+# segments are stored verbatim on the device, so bitrate here IS download size.
+QUALITIES = {
+    "360p": {"height": 360, "v": "600k", "vmax": "900k", "a": "96k"},
+    "540p": {"height": 540, "v": "1100k", "vmax": "1600k", "a": "128k"},
+    "720p": {"height": 720, "v": "2000k", "vmax": "3000k", "a": "128k"},
+    "1080p": {"height": 1080, "v": "4000k", "vmax": "6000k", "a": "160k"},
+}
 
 # Segment cache. Each (source, segment, audio-track) is encoded AT MOST ONCE and
 # reused — so a whole watch party (all guests load the SAME transcode URL) shares
@@ -73,20 +90,33 @@ _inflight_lock = threading.Lock()
 _inflight: dict[str, threading.Event] = {}
 
 
-def cache_key(url: str, n: int, audio_idx: int) -> str:
-    return hashlib.sha1(f"{url}|{n}|{audio_idx}".encode("utf-8")).hexdigest()
+def cache_key(
+    url: str, n: int, audio_idx: int, quality: str | None = None, sub_idx: int | None = None
+) -> str:
+    # `quality` and `sub_idx` are part of the key: the same (url, n, track) at
+    # 540p vs source resolution, or with vs without burned-in subtitles, are
+    # different bytes — mixing them up would serve a phone-sized or
+    # wrongly-subtitled segment into another stream.
+    return hashlib.sha1(
+        f"{url}|{n}|{audio_idx}|{quality or 'src'}|{'s' + str(sub_idx) if sub_idx is not None else 'nosub'}".encode("utf-8")
+    ).hexdigest()
 
 
 def cache_path(key: str) -> str:
     return os.path.join(CACHE_DIR, key[:2], key + ".ts")
 
 
-def encode_segment(url: str, n: int, audio_idx: int, out_path: str) -> tuple[bool, bytes]:
+def encode_segment(
+    url: str, n: int, audio_idx: int, out_path: str, quality: str | None = None,
+    sub_idx: int | None = None,
+) -> tuple[bool, bytes]:
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     tmp = f"{out_path}.tmp{os.getpid()}.{threading.get_ident()}"
     try:
         with open(tmp, "wb") as f:
-            proc = subprocess.Popen(seg_args(url, n, audio_idx), stdout=f, stderr=subprocess.PIPE)
+            proc = subprocess.Popen(
+                seg_args(url, n, audio_idx, quality, sub_idx), stdout=f, stderr=subprocess.PIPE
+            )
             try:
                 _, err = proc.communicate(timeout=ENCODE_TIMEOUT)
             except subprocess.TimeoutExpired:
@@ -105,14 +135,17 @@ def encode_segment(url: str, n: int, audio_idx: int, out_path: str) -> tuple[boo
     return False, (err or b"")[-200:]
 
 
-def ensure_segment(url: str, n: int, audio_idx: int, quiet: bool = False) -> tuple[bool, str]:
-    """Make sure (url, n, audio_idx) is in the cache; encode it if needed.
+def ensure_segment(
+    url: str, n: int, audio_idx: int, quiet: bool = False, quality: str | None = None,
+    sub_idx: int | None = None,
+) -> tuple[bool, str]:
+    """Make sure (url, n, audio_idx, quality) is in the cache; encode if needed.
 
     Coalesces with any in-flight encode of the same key: if another thread is
     already encoding this segment, wait for it and reuse the result — taking
     over as encoder if it failed. Returns (ok, cache_path).
     """
-    key = cache_key(url, n, audio_idx)
+    key = cache_key(url, n, audio_idx, quality, sub_idx)
     path = cache_path(key)
     for _attempt in range(3):
         if os.path.exists(path) and os.path.getsize(path) > 0:
@@ -129,7 +162,7 @@ def ensure_segment(url: str, n: int, audio_idx: int, quiet: bool = False) -> tup
             ev.wait(timeout=ENCODE_TIMEOUT + 15)
             continue
         try:
-            ok, err = encode_segment(url, n, audio_idx, path)
+            ok, err = encode_segment(url, n, audio_idx, path, quality, sub_idx)
         finally:
             with _inflight_lock:
                 _inflight.pop(key, None)
@@ -140,12 +173,14 @@ def ensure_segment(url: str, n: int, audio_idx: int, quiet: bool = False) -> tup
     return (os.path.exists(path) and os.path.getsize(path) > 0), path
 
 
-def prefetch_segment(url: str, n: int, audio_idx: int) -> None:
+def prefetch_segment(
+    url: str, n: int, audio_idx: int, quality: str | None = None, sub_idx: int | None = None
+) -> None:
     """Opportunistic background encode of an upcoming segment. Skips work that
     is already cached or in flight; bounded by _prefetch_slots so a seek can't
     stampede the media engine. quiet=True — running past the end of the file is
     expected on the last few segments and shouldn't spam the log."""
-    key = cache_key(url, n, audio_idx)
+    key = cache_key(url, n, audio_idx, quality, sub_idx)
     path = cache_path(key)
     if os.path.exists(path) and os.path.getsize(path) > 0:
         return
@@ -155,7 +190,7 @@ def prefetch_segment(url: str, n: int, audio_idx: int) -> None:
     if not _prefetch_slots.acquire(blocking=False):
         return  # engine busy — the on-demand path will pick it up if needed
     try:
-        ensure_segment(url, n, audio_idx, quiet=True)
+        ensure_segment(url, n, audio_idx, quiet=True, quality=quality, sub_idx=sub_idx)
     finally:
         _prefetch_slots.release()
 
@@ -206,8 +241,28 @@ def load_secret() -> str:
 SECRET = load_secret()
 
 
-def seg_args(url: str, n: int, audio_idx: int) -> list[str]:
+def seg_args(
+    url: str, n: int, audio_idx: int, quality: str | None = None, sub_idx: int | None = None
+) -> list[str]:
     start = n * SEG
+    q = QUALITIES.get(quality or "")
+    # Offline rung: downscale (never up — min(H,ih)) and hold a fixed bitrate so
+    # the stored file size is predictable. No rung → source resolution + the
+    # streaming bitrate, i.e. the live-playback path unchanged.
+    scale_expr = f"scale=-2:'min({q['height']},ih)':flags=bicubic" if q else None
+    v_bitrate = q["v"] if q else VBITRATE
+    v_maxrate = q["vmax"] if q else VMAXRATE
+    a_bitrate = q["a"] if q else "160k"
+    # Subtitle burn-in. PGS/bitmap subtitles (every Blu-ray remux, most anime)
+    # can't become WebVTT, so overlaying them onto the picture is the only way
+    # they reach a browser — and it makes them work offline for free. Overlay at
+    # source resolution first so the bitmaps line up, then scale the composite.
+    # Keep in sync with videoFilterArgs in apps/shared/addon-proxy/server.js.
+    if sub_idx is not None:
+        chain = f"[0:v:0][0:{sub_idx}]overlay" + (f",{scale_expr}" if scale_expr else "") + "[vout]"
+        video_map = ["-filter_complex", chain, "-map", "[vout]"]
+    else:
+        video_map = ["-map", "0:v:0"] + (["-vf", scale_expr] if scale_expr else [])
     return [
         FFMPEG, "-hide_banner", "-loglevel", "error",
         # Hardware DECODE on the media engine too — decoding 4K HEVC in software
@@ -220,13 +275,14 @@ def seg_args(url: str, n: int, audio_idx: int) -> list[str]:
         "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "8",
         "-reconnect_on_http_error", "429,500,502,503,504",
         "-ss", str(start), "-i", url, "-t", str(SEG),
-        "-map", "0:v:0", "-map", f"0:a:{audio_idx}?", "-sn", "-dn",
+        *video_map,
+        "-map", f"0:a:{audio_idx}?", "-sn", "-dn",
         # Hardware H.264 — the whole point: encode on the media engine, not the
         # CPU cores.
         "-c:v", "h264_videotoolbox",
-        "-b:v", VBITRATE, "-maxrate", VMAXRATE, "-bufsize", "12000k",
+        "-b:v", v_bitrate, "-maxrate", v_maxrate, "-bufsize", v_maxrate if q else "12000k",
         "-profile:v", "high", "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-ac", "2", "-b:a", "160k",
+        "-c:a", "aac", "-ac", "2", "-b:a", a_bitrate,
         # Place the independently-encoded segment at its true timeline position
         # so HLS.js appends them contiguously (identical to the proxy path).
         "-output_ts_offset", str(start),
@@ -390,19 +446,31 @@ class Handler(BaseHTTPRequestHandler):
         if n < 0 or audio_idx < 0:
             self.send_error(400)
             return
+        # Unknown rung → None (source quality), matching the proxy's parseQuality.
+        quality = q.get("q", [""])[0].lower() or None
+        if quality is not None and quality not in QUALITIES:
+            quality = None
+        # Burn-in subtitle stream index (absolute ffmpeg index). See seg_args.
+        try:
+            sub_raw = q.get("sub", [""])[0]
+            sub_idx = int(sub_raw) if sub_raw != "" else None
+        except ValueError:
+            sub_idx = None
+        if sub_idx is not None and sub_idx < 0:
+            sub_idx = None
 
         # Kick the prefetchers first so the next segments encode WHILE this one
         # is encoded/served — they dedupe against cache + in-flight and exit
         # instantly when there's nothing to do.
         for i in range(1, PREFETCH + 1):
             threading.Thread(
-                target=prefetch_segment, args=(url, n + i, audio_idx), daemon=True
+                target=prefetch_segment, args=(url, n + i, audio_idx, quality, sub_idx), daemon=True
             ).start()
 
         # Cache hit serves straight from disk (watch-party guests after the
         # first, seek-backs, and everything the prefetcher got to in time);
         # otherwise encode — coalesced with any identical in-flight request.
-        ok, path = ensure_segment(url, n, audio_idx)
+        ok, path = ensure_segment(url, n, audio_idx, quality=quality, sub_idx=sub_idx)
         if not ok:
             self.send_error(502)
             return

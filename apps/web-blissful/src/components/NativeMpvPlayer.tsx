@@ -86,6 +86,7 @@ import {
 } from '../lib/watchParty';
 import { desktopPlayingUrlToSource, resolveSourceForDesktop } from '../lib/watchPartySource';
 import { useStorage } from '../context/StorageProvider';
+import { expectedEpisodeFor } from '../lib/episodeMatch';
 import type { NextEpisodeInfo } from '../pages/PlayerPage';
 
 // ── Color helpers (mirrors SimplePlayer 1:1) ───────────────────────────
@@ -831,18 +832,27 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     for (const v of props.videos) if (v.season != null) set.add(v.season);
     return Array.from(set).sort((a, b) => a - b);
   }, [props.videos]);
-  const currentEpisodeSeason = useMemo(() => {
-    if (!props.videoId) return null;
-    const parts = props.videoId.split(':');
-    const s = parts.length >= 3 ? Number.parseInt(parts[parts.length - 2], 10) : NaN;
-    return Number.isFinite(s) ? s : null;
-  }, [props.videoId]);
+  const currentEpisodeSeason = useMemo(
+    () =>
+      // Meta-first, NOT a positional parse of the id: scheme-prefixed anime ids
+      // (`kitsu:244:3`) have no season segment, so reading the second-to-last one
+      // returns the SERIES id — Bleach opened the drawer filtered to "season 244"
+      // and showed "No episodes found". Same fix as BlissfulPlayer.
+      expectedEpisodeFor(props.videoId, props.videos)?.season ?? null,
+    [props.videoId, props.videos]
+  );
   // Initialize seasonSelect to current episode's season when the
   // drawer first opens, falling back to the smallest season.
   useEffect(() => {
     if (!episodesOpen) return;
     if (episodesSeason != null) return;
-    setEpisodesSeason(currentEpisodeSeason ?? seriesSeasons[0] ?? null);
+    // Only honour it if that season actually has episodes; the picker lists real
+    // seasons only, so a bogus value would leave no way back.
+    const preferred =
+      currentEpisodeSeason != null && seriesSeasons.includes(currentEpisodeSeason)
+        ? currentEpisodeSeason
+        : seriesSeasons[0] ?? currentEpisodeSeason;
+    setEpisodesSeason(preferred ?? null);
   }, [episodesOpen, episodesSeason, currentEpisodeSeason, seriesSeasons]);
   // Per-season info — overview + per-episode runtime / description.
   // Fetched from TMDB lazily when the episodes drawer is open.

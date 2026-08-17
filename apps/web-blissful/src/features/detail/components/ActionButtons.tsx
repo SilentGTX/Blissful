@@ -13,7 +13,29 @@ type ActionButtonsProps = {
   /** Library is per-user; for guests the button has nowhere to write.
    *  Hidden entirely (not just disabled) when not logged in. */
   isLoggedIn?: boolean;
+  /** Web-only: opens the offline download picker. Null when downloading isn't
+   *  possible here — the desktop shell, an unsupported browser, or a series
+   *  with no episode selected yet (there'd be no release list to choose from). */
+  onDownload?: (() => void) | null;
 };
+
+function DownloadIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <path d="M12 3v11m0 0 4-4m-4 4-4-4M4 18.5h16" />
+    </svg>
+  );
+}
 
 export function MobileActionButtons({
   inLibrary,
@@ -23,6 +45,7 @@ export function MobileActionButtons({
   onShare,
   onPlay,
   isLoggedIn = true,
+  onDownload,
 }: ActionButtonsProps) {
   return (
     <div className="fixed right-4 top-4 z-50 flex items-center gap-2 lg:hidden">
@@ -63,6 +86,17 @@ export function MobileActionButtons({
         </button>
       ) : null}
 
+      {onDownload ? (
+        <button
+          type="button"
+          className="grid h-10 w-10 place-items-center rounded-full border border-white/20 bg-black/50 backdrop-blur text-white transition-colors hover:bg-white/20"
+          onClick={onDownload}
+          aria-label="Download for offline"
+        >
+          <DownloadIcon className="h-5 w-5" />
+        </button>
+      ) : null}
+
       <button
         type="button"
         className={`grid h-10 w-10 place-items-center rounded-full border border-white/20 bg-black/50 backdrop-blur text-white transition-colors ${!hasTrailer ? 'opacity-40' : 'hover:bg-white/20'}`}
@@ -93,6 +127,7 @@ export function DesktopActionButtons({
   onShare,
   onPlay,
   isLoggedIn = true,
+  onDownload,
 }: ActionButtonsProps) {
   return (
     <div className="hidden lg:block">
@@ -113,6 +148,18 @@ export function DesktopActionButtons({
 
         {isLoggedIn ? (
           <LibraryActionButton inLibrary={inLibrary} onToggleLibrary={onToggleLibrary} />
+        ) : null}
+
+        {onDownload ? (
+          <button
+            type="button"
+            className="action-button-Pn4hZ"
+            onClick={onDownload}
+            aria-label="Download for offline"
+          >
+            <DownloadIcon className="icon" />
+            <span className="text">Download</span>
+          </button>
         ) : null}
 
         <button

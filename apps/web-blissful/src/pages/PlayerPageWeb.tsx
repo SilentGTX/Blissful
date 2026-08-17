@@ -12,6 +12,8 @@ import { getLibraryEntry } from '../lib/libraryStore';
 import { useContinueWatchingContext } from '../context/ContinueWatchingProvider';
 import { normalizeStremioImage } from '../lib/mediaTypes';
 import { fetchStreams, type StremioStream } from '../lib/stremioAddon';
+// `offline:<id>` — a download stored in IndexedDB (lib/offlineStore.ts).
+import { isOfflineUrl } from '../lib/offlineUrls';
 
 // Container formats the browser can't play natively — routed through the
 // proxy's /transcode endpoint (remux/re-encode to fragmented MP4).
@@ -480,6 +482,13 @@ export default function PlayerPage() {
   // RD-selected mode: a torrent was already chosen in the unreleased selector
   // and passed as `url` — skip Videasy AND the auto-fallback, just play it.
   const rdSelected = searchParams.get('rdsel') === '1';
+  // Offline download (`url=offline:<id>`): the stream is already on this device.
+  // Same "play exactly this, resolve nothing" contract as rdSelected — and here
+  // it's load-bearing rather than an optimisation: a Videasy source resolving in
+  // the background would shadow the offline URL (activeSource wins over `url`),
+  // so an offline playback would silently become a network stream. Resolving
+  // anything also defeats the point when there is no connection.
+  const isOfflineSession = isOfflineUrl(url);
   // Continue-Watching resume: Vidking is tried first (url=vidking:placeholder),
   // but the EXACT saved stream rides along as `resume` and plays if Vidking
   // fails — instant, no addon re-fetch/auto-pick.
@@ -814,9 +823,10 @@ export default function PlayerPage() {
   // are available. Picks the highest-ranked stream and feeds its URL
   // to BlissfulPlayer. Falls back silently if nothing comes back.
   useEffect(() => {
-    // RD modes ("Play with RealDebrid") — don't resolve Videasy at all; the
-    // user goes straight to the torrent they pick, no waiting on Videasy.
-    if (pickFirst || rdSelected) {
+    // RD modes ("Play with RealDebrid") and offline downloads — don't resolve
+    // Videasy at all; the user goes straight to the torrent they pick / the copy
+    // already on the device, no waiting on Videasy.
+    if (pickFirst || rdSelected || isOfflineSession) {
       setVideasyResolved(true);
       // These modes reuse the already-mounted player (a watch-party relay swap,
       // or "Play with RealDebrid"), so Videasy sources from the prior playback
@@ -982,7 +992,7 @@ export default function PlayerPage() {
   // a trigger for re-running the fetch on its own. Including it
   // would cause an immediate refetch loop on auto-switch.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tmdbLookup, metaTitle, title, meta?.meta?.name, imdbId, releaseYear, seriesSeasonEpisode, selectedServer, pickFirst, rdSelected, hasProfileRdKey]);
+  }, [tmdbLookup, metaTitle, title, meta?.meta?.name, imdbId, releaseYear, seriesSeasonEpisode, selectedServer, pickFirst, rdSelected, isOfflineSession, hasProfileRdKey]);
 
   // Reset the auto-switch chain whenever the title (imdbId) or
   // episode changes — previous "this server has no source" judgments
@@ -1110,13 +1120,17 @@ export default function PlayerPage() {
         if (cancelled) return;
         const probed = Array.isArray(d.tracks) ? d.tracks : [];
         setAudioTracks(probed);
-        // Apply the profile's audio language. The transcoder muxes ONE track
-        // (&a=N), so unlike a multi-audio HLS ladder nothing downstream can do
-        // this for us — without it every multi-audio release played track 0
-        // (a French release playing French to an English-preferring profile).
-        if (urlPinnedAudio || userPickedAudioRef.current) return;
+        // A URL-pinned `&a=N` can be STALE: resume links and next-episode links
+        // carry the index forward, and the next release may have fewer tracks
+        // (a dual-audio episode followed by a single-FLAC one is the common
+        // anime case). Asking the transcoder for a track that doesn't exist used
+        // to play video with no sound at all, so an out-of-range pin is dropped
+        // and the normal preference pass takes over.
+        const pinValid = urlPinnedAudio && (probed.length === 0 || urlAudioIdx < probed.length);
+        if (pinValid || userPickedAudioRef.current) return;
         const preferred = pickPreferredAudioTrack(probed, resolvedPlayerSettings.audioLanguage);
         if (preferred != null) setAudioTrackIdx(preferred);
+        else if (probed.length > 0 && urlAudioIdx >= probed.length) setAudioTrackIdx(0);
       })
       .catch(() => {});
     return () => { cancelled = true; };
@@ -1911,7 +1925,10 @@ export default function PlayerPage() {
     // the "watch-party guest reverts to its own EPIX stream instead of the
     // host's relay" bug. (The HEVC-drop is skipped too: the user explicitly
     // chose this stream; /transcode re-encodes it downstream if needed.)
-    rdSelected
+    // Offline joins rdSelected here for the same reason: an `offline:<id>` URL is
+    // an exact instruction, and letting `activeSource` win would swap the stored
+    // copy for a network stream.
+    rdSelected || isOfflineSession
       ? (url ?? '')
       : activeSource?.url
         ?? fallbackPlayUrl

@@ -112,6 +112,11 @@ type EpisodePanelProps = {
    *  skeleton up instead of flashing the show poster. */
   episodeStillsPending?: boolean;
   onSelectVideo: (id: string) => void;
+  /** Web offline downloads: renders a download button on each episode card.
+   *  Needed because on web `onSelectVideo` navigates STRAIGHT to the player, so
+   *  there is no moment where an episode is "selected" on the detail page — a
+   *  series would otherwise have no reachable download entry point at all. */
+  onDownloadVideo?: ((id: string) => void) | null;
   getEpisodeProgressInfo: (id: string) => { percent: number; hasProgress: boolean; watched: boolean };
   normalizeImage: (value?: string | null) => string | null | undefined;
   formatDate: (value?: string) => string | null;
@@ -126,6 +131,7 @@ type EpisodePanelProps = {
 export function EpisodePanel({
   videosForSeason,
   onSelectVideo,
+  onDownloadVideo,
   getEpisodeProgressInfo,
   normalizeImage,
   formatDate,
@@ -176,12 +182,17 @@ export function EpisodePanel({
 
             const isWatched = info.hasProgress || info.watched;
             return (
-              <button
+              // The download control is a SIBLING of the card button, not a
+              // child: nesting a button inside a button is invalid HTML and
+              // browsers drop the inner one. Both live in a wrapper that owns
+              // the hover scale so they move together.
+              <div
                 key={v.id}
+                className="relative mx-auto w-[90%] overflow-hidden rounded-xl transition-transform duration-200 ease-out hover:scale-[1.03]"
+              >
+              <button
                 type="button"
-                className={
-                  'block w-[90%] mx-auto cursor-pointer overflow-hidden rounded-xl text-left transition-transform duration-200 ease-out hover:scale-[1.03]'
-                }
+                className="block w-full cursor-pointer text-left"
                 onClick={() => onSelectVideo(v.id)}
               >
                 <div
@@ -208,7 +219,13 @@ export function EpisodePanel({
                   {/* Solid yellow "Watched" chip in the top-right
                       corner of the poster. */}
                   {isWatched ? (
-                    <span className="absolute right-2 top-2 z-20 rounded-md bg-amber-400 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-black">
+                    <span
+                      className={
+                        'absolute top-2 z-20 rounded-md bg-amber-400 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-black '
+                        // Clear the download button (40px on phones, 32px above sm).
+                        + (onDownloadVideo ? 'right-14 sm:right-12' : 'right-2')
+                      }
+                    >
                       Watched
                     </span>
                   ) : null}
@@ -241,6 +258,43 @@ export function EpisodePanel({
                   </div>
                 </div>
               </button>
+
+              {/* Always visible, not hover-revealed: the phone is the main
+                  offline target and it has no hover state. */}
+              {onDownloadVideo ? (
+                <button
+                  type="button"
+                  // Bigger hit area on phones (the main offline target) — 32px is
+                  // under the ~44px touch-target guidance, and this control sits
+                  // on top of a card that is itself tappable, so a cramped
+                  // version would mean mis-taps into playback.
+                  className="absolute right-2 top-2 z-30 grid h-10 w-10 cursor-pointer place-items-center rounded-full bg-black/55 text-white backdrop-blur transition-colors hover:bg-black/80 sm:h-8 sm:w-8"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDownloadVideo(v.id);
+                  }}
+                  aria-label={
+                    episodeNumber != null
+                      ? `Download episode ${episodeNumber} for offline`
+                      : 'Download for offline'
+                  }
+                  title="Download for offline"
+                >
+                  <svg
+                    className="h-4 w-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M12 3v11m0 0 4-4m-4 4-4-4M4 18.5h16" />
+                  </svg>
+                </button>
+              ) : null}
+              </div>
             );
           })}
         </div>

@@ -141,6 +141,56 @@ Supporting machinery:
   Torrentio URL through it for any profile/guest WITHOUT its own RD key — so a profile shows RD
   iff its own `realDebridApiKey` is set, regardless of what leaked into stored addons.
 
+### Offline downloads (web only)
+
+Download a movie/episode and watch it with no connection — including on iPhone.
+Entry points: the **Download** action on the detail page (`OfflineDownloadModal`), the
+**Downloads** page (`/downloads`), and `/offline-check` (a standalone device probe:
+MSE/ManagedMediaSource, storage quota, an 8 MB write round-trip, install state).
+
+**The one design constraint worth knowing.** Playback feeds stored MPEG-TS segments into
+hls.js via a custom `loader` that reads IndexedDB (`lib/offlineHlsLoader.ts`). It is NOT
+served through the service worker, and that is deliberate: in WebKit, `<video>` media loads
+don't reliably reach the SW and its media `Range` handling has never been dependable. The
+loader route keeps everything in JS we control — verified end-to-end with zero network
+requests during offline playback. It also means **MSE is the hard gate**: iPhone needs iOS
+17.1+ (`ManagedMediaSource`, which the player already prefers), iPad/desktop have full MSE,
+and anything older can only use native HLS — which cannot be fed from local storage, so
+downloads are refused there with an explicit reason (`lib/offlineCapabilities.ts`).
+
+- **Pipeline:** `/transcode.m3u8?url=…&q=<rung>` gives the real duration + a 6 s segment
+  list; `offlineDownloader.ts` fetches each `/transcode-seg` and commits it to IndexedDB
+  one at a time; playback rebuilds a VOD playlist from the stored segment durations.
+- **`q=` ladder** (360p/540p/720p/1080p, added to the proxy — see
+  [apps/shared/DOCUMENTATION.md](../shared/DOCUMENTATION.md)): segments are stored verbatim,
+  so the rung IS the download size. Default is 540p on phones, 720p elsewhere.
+- **Subtitles are burned in, chosen before the download starts.** Picking a release probes it
+  (`/probe-streams`) and offers its embedded tracks; the choice becomes `&sub=N` on every
+  segment, so the subtitles are part of the picture. This is the only way PGS/bitmap tracks
+  (most anime, every Blu-ray remux) can display in a browser at all, and it means a download
+  needs no subtitle files and no player support to be subtitled offline. It is also
+  irreversible per download — hence a distinct confirm step, and the track shown on the
+  Downloads row. A full-dialogue English track is preselected over a "Signs/Songs" one.
+- **Only debrid-backed releases are downloadable.** Every segment is produced by ffmpeg from
+  an HTTP source on the Mac, so magnet/infoHash-only rows and loopback stremio-service URLs
+  are filtered out; what remains is RD direct links + torrentio `/resolve/realdebrid/` URLs.
+- **No background downloads exist on the web.** WebKit has no Background Fetch and suspends
+  backgrounded tabs, so the app must stay open; a Screen Wake Lock is held while running,
+  every segment is committed individually, and an interrupted download is a first-class
+  resumable state (a resume re-fetches the playlist, since the original RD link has expired
+  by then, and pulls only the missing segments).
+- **Storage is evictable.** iOS can reclaim the segment blobs while leaving the metadata row,
+  so `verifyDownload()` re-derives what's actually stored before playing and when the
+  Downloads page mounts — eviction surfaces as "resume this", never as a player that stalls.
+  An installed (Add to Home Screen) PWA is the durability lever; the UI nudges toward it,
+  since `navigator.storage.persist()` is a no-op in WebKit.
+- **URL shapes** (`lib/offlineUrls.ts`, unit-tested): `offline:<id>` app-side (round-trips
+  through `/player?url=`, history, progress); `https://offline.blissful.invalid/<id>/…`
+  loader-side, because hls.js resolves segment URIs against the playlist URL and needs a
+  parseable absolute base. `PlayerPageWeb` treats an `offline:` URL like `rdsel` — resolve
+  nothing — otherwise a Videasy source resolving in the background would shadow the local
+  copy with a network stream.
+
 ### Provider architecture
 
 The deprecated `AppContext` mega-facade has been **deleted**. Global state lives in focused

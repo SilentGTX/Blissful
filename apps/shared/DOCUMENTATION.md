@@ -57,6 +57,51 @@ legacy session-token machinery (`videasyAuthHeaders`, `/videasy-token`, the remo
 `videasy-minter`) is retained but **inert** — it reactivates only if the token wall returns. Full
 anatomy + outside-in diagnosis in the memory note `project_vidking_videasy_pipeline`.
 
+### Transcode endpoints + the offline `q=` ladder
+
+`/transcode.m3u8?url=<src>[&a=<audio>][&q=<rung>]` ffprobes the duration and emits a VOD
+playlist of 6 s segments, each generated on demand by `/transcode-seg` (re-encoded to
+H.264 8-bit + AAC MPEG-TS, so every segment is independent and keyframe-started). Heavy
+encodes are offloaded to the macOS host's VideoToolbox service when `TRANSCODE_HOST_URL` is
+set (`infra/scripts/blissful-transcoder.py`).
+
+**`sub=<stream index>` burns a subtitle stream into the picture** (`videoFilterArgs`).
+Necessary because a large share of anime and every Blu-ray remux ships subtitles as **PGS**
+(`hdmv_pgs_subtitle`) — bitmap images, not text — which cannot become WebVTT without OCR, so
+the web player can only ignore them (it filters on `textBased`). Bleach's [Judas] release
+carries "English [Signs/Songs]" + "English [Full]", both PGS, which is why the only text
+options left were two mistimed OpenSubtitles files. Since every segment is re-encoded anyway,
+`[0:v:0][0:N]overlay` costs almost nothing and reproduces the release's own typesetting — and
+because the subtitles become part of the video, an offline download carries them with no
+subtitle files and no player support. Overlay runs BEFORE the `q=` scale so the bitmaps line
+up with the frame they were authored for. `sub` is part of the host transcoder's cache key
+alongside `q`. Verified 2026-08-17: identical requests are byte-identical, `&sub=4` changed
+the picture (+30 KB) and the burned text is visible in the frame with the player's own text
+tracks disabled.
+
+**`a=` is clamped to the tracks the file actually has** (`clampAudioIdx`). Segments map
+audio with `-map 0:a:N?`, and that trailing `?` makes the mapping OPTIONAL — an out-of-range
+N therefore produced a valid, HTTP-200, **video-only** segment, i.e. playback with no sound
+and no error anywhere. A stale `&a=` is easy to acquire: resume links and next-episode links
+carry the index forward, so a dual-audio anime episode followed by a single-track one asked
+for a track that didn't exist (diagnosed 2026-08-17 on Bleach `kitsu:244:3`, a
+`[FLAC 2.0][x264 10bit]` release). The clamp lives server-side so it protects every client at
+once — already-deployed bundles and the desktop shell included — and stops an offline
+download from being permanently silent. Valid multi-track selection is untouched: the client
+also drops an out-of-range pin (`PlayerPageWeb`), but the server is the safety net.
+
+`q` is the **offline-download ladder** (`360p | 540p | 720p | 1080p`, `TRANSCODE_QUALITIES`);
+anything unrecognised or absent means source resolution at the streaming bitrate, so older
+clients that never send `q` are unaffected. The rungs downscale only (`min(H,ih)`, even
+dimensions) and the software path uses capped CRF (`-crf` + `-maxrate`/`-bufsize`) rather than
+a flat bitrate — a fixed target pads easy scenes, measurably producing *larger* files than the
+CRF path on low-complexity video. VideoToolbox has no usable CRF mode, so the hardware path
+stays bitrate-targeted under the same ceiling. **`q` is part of the host transcoder's cache
+key** — otherwise a 540p segment could be served into a full-quality stream. Keep
+`TRANSCODE_QUALITIES` (server.js) and `QUALITIES` (blissful-transcoder.py) in sync; the
+client's size estimates live in `lib/offlineStore.ts`. Consumer: web offline downloads, see
+[apps/web-blissful/DOCUMENTATION.md](../web-blissful/DOCUMENTATION.md) §Offline downloads.
+
 ## `blissful-core/` — `@blissful/core`
 
 Shared pure-TS logic: stremio API, addon protocol (`stremioAddon.ts`), storage/auth clients,

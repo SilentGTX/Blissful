@@ -33,6 +33,8 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 const InvitePage = lazy(() => import('./pages/InvitePage'));
 const StremioLinkPopupPage = lazy(() => import('./pages/StremioLinkPopupPage'));
+const DownloadsPage = lazy(() => import('./pages/DownloadsPage'));
+const OfflineCheckPage = lazy(() => import('./pages/OfflineCheckPage'));
 
 export default function App() {
   return (
@@ -42,6 +44,19 @@ export default function App() {
             no splash. Deliberately bare so the Rust shell can verify
             transparent compositing over libmpv. Desktop-only. */}
         <Route path="/player-spike" element={<PlayerSpikePage />} />
+
+        {/* Device capability probe for offline downloads. Top-level, outside
+            AppShell and the providers: it has to render on a phone even when
+            something else in the app is broken there, and it's the page you
+            open BEFORE trusting downloads on a new device. */}
+        <Route
+          path="/offline-check"
+          element={
+            <Suspense fallback={<div className="min-h-dvh bg-[#07080b]" />}>
+              <OfflineCheckPage />
+            </Suspense>
+          }
+        />
 
         {/* Everything else — the normal app, wrapped in splash + providers. */}
         <Route
@@ -167,6 +182,14 @@ export default function App() {
                   element={
                     <Suspense fallback={<LoadingRow />}>
                       <AddonsPage />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="downloads"
+                  element={
+                    <Suspense fallback={<LoadingRow />}>
+                      <DownloadsPage />
                     </Suspense>
                   }
                 />
