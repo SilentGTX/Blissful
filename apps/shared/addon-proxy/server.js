@@ -429,16 +429,43 @@ const transcodeSrcCache = new Map(); // torrentio url -> { direct, exp }
 // segment fails so the next request re-resolves.
 const TRANSCODE_SRC_TTL = 8 * 60 * 1000;
 
-/** Forget a resolved RD link so the next segment re-mints one. Called when an
- *  encode fails — a dead link is indistinguishable from a broken file at the
- *  ffmpeg level, and re-resolving is cheap (~0.4s) compared to failing every
- *  remaining segment of a download. */
+// Re-resolution is DEBOUNCED per source. Minting a Real-Debrid link is
+// rate-limited upstream — the endless-buffering bug this file already warns about
+// was caused by re-minting per segment. With several segments in flight, one dead
+// link means every one of them fails at once, and invalidating per failure turned
+// that into a storm of mints, which RD then throttled: the segments kept failing
+// for a different reason than they started. One re-mint per source per window is
+// enough, since they all need the same new link.
+const transcodeSrcInvalidatedAt = new Map(); // src -> ms
+const TRANSCODE_RERESOLVE_DEBOUNCE = 20 * 1000;
+
+/** Forget a resolved RD link so the next segment re-mints one — at most once per
+ *  debounce window. Called when an encode fails: a dead link is
+ *  indistinguishable from a broken file at the ffmpeg level. */
 function invalidateTranscodeSrc(src) {
+  const last = transcodeSrcInvalidatedAt.get(src) ?? 0;
+  if (Date.now() - last < TRANSCODE_RERESOLVE_DEBOUNCE) return;
+  transcodeSrcInvalidatedAt.set(src, Date.now());
   if (transcodeSrcCache.delete(src)) {
     appendPlayerLog(`transcode-src invalidated (encode failed) host=${(() => { try { return new URL(src).host; } catch { return '?'; } })()}`);
   }
 }
+
+// One in-flight resolve per source. Without this, N concurrent segments that all
+// miss the cache each mint their own link — the exact throttling this is meant to
+// avoid.
+const transcodeSrcInflight = new Map(); // src -> Promise<string>
+
 function resolveTranscodeSrc(src) {
+  const pending = transcodeSrcInflight.get(src);
+  if (pending) return pending;
+  const p = resolveTranscodeSrcUncoalesced(src);
+  transcodeSrcInflight.set(src, p);
+  void p.finally(() => { transcodeSrcInflight.delete(src); });
+  return p;
+}
+
+function resolveTranscodeSrcUncoalesced(src) {
   return new Promise((resolve) => {
     if (!/\/resolve\//.test(src)) return resolve(src); // already a direct URL
     const c = transcodeSrcCache.get(src);

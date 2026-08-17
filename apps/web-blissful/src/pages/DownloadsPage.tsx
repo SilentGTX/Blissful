@@ -61,6 +61,32 @@ function progressPercent(row: OfflineDownload): number {
   return Math.min(100, (row.storedSegments.length / total) * 100);
 }
 
+// One object URL per download id, for the whole session.
+//
+// Deliberately NOT derived from the rows: the list re-reads from IndexedDB on
+// every progress tick (several times a second while downloading) and each read
+// returns a NEW Blob object, so anything keyed on the blob recreated and revoked
+// every URL constantly — the artwork visibly blinked out the moment a download
+// started. A download's poster never changes, so the id is the right key, and
+// the handful of URLs are released when the tab goes away.
+const posterUrlCache = new Map<string, string>();
+
+function posterUrlFor(row: OfflineDownload): string | null {
+  const hit = posterUrlCache.get(row.id);
+  if (hit) return hit;
+  if (!row.posterBlob) return null;
+  const url = URL.createObjectURL(row.posterBlob);
+  posterUrlCache.set(row.id, url);
+  return url;
+}
+
+function forgetPosterUrl(id: string): void {
+  const hit = posterUrlCache.get(id);
+  if (!hit) return;
+  URL.revokeObjectURL(hit);
+  posterUrlCache.delete(id);
+}
+
 function formatDuration(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return '';
   const h = Math.floor(seconds / 3600);
@@ -138,34 +164,19 @@ export default function DownloadsPage() {
   const handleRemove = useCallback(
     async (row: OfflineDownload) => {
       await removeDownload(row.id);
+      forgetPosterUrl(row.id);
       setRows((prev) => prev.filter((r) => r.id !== row.id));
       void refreshStorage();
     },
     [refreshStorage]
   );
 
-  // Poster object URLs, derived (not stored in state) so there's no extra render
-  // pass; the effect below only handles revoking them.
-  const posterUrls = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const row of rows) {
-      if (row.posterBlob) map.set(row.id, URL.createObjectURL(row.posterBlob));
-    }
-    return map;
-  }, [rows]);
-  useEffect(
-    () => () => {
-      for (const url of posterUrls.values()) URL.revokeObjectURL(url);
-    },
-    [posterUrls]
-  );
-
   /** Stored blob first — it's the only source that works offline. The remote URL
    *  is a fallback for rows downloaded before poster caching existed. */
   const posterSrc = useCallback(
     (row: OfflineDownload): string | null =>
-      posterUrls.get(row.id) ?? (online && row.poster ? proxiedImage(row.poster) ?? null : null),
-    [posterUrls, online]
+      posterUrlFor(row) ?? (online && row.poster ? proxiedImage(row.poster) ?? null : null),
+    [online]
   );
 
   const totalBytes = rows.reduce((sum, r) => sum + r.bytes, 0);
