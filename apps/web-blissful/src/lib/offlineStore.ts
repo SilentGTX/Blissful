@@ -76,10 +76,17 @@ export type OfflineDownload = {
    *  in front of it) needs the network the user doesn't have. */
   posterBlob?: Blob | null;
   quality: OfflineQuality;
-  /** The source URL the segments were transcoded from (RD/torrentio). Kept so a
-   *  resumed download can re-request segments; RD links expire, so the resume
-   *  path re-resolves through /transcode-seg exactly as the first pass did. */
+  /** The source URL the segments are transcoded from (RD/torrentio). */
   sourceUrl: string;
+  /** Addon transport URLs to re-look-up this episode's releases with.
+   *
+   *  Real-Debrid DIRECT links (`https://NN-N.download.real-debrid.com/d/…`) expire
+   *  after a while, and unlike a torrentio `/resolve/` URL the proxy cannot
+   *  re-mint them — so a link that dies 15 minutes into a 25-minute download
+   *  fails every remaining segment with ffmpeg's "End of file", forever. With
+   *  these we can ask the addons for a fresh release mid-download and carry on.
+   *  Optional: rows created before this existed simply can't self-heal. */
+  addonUrls?: string[];
   /** Audio track index muxed into the segments (&a=N). */
   audioTrackIdx: number;
   /** Absolute ffmpeg stream index of a subtitle track BURNED INTO the picture

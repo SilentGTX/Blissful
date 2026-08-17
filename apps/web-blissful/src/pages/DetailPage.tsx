@@ -1357,6 +1357,7 @@ export default function DetailPage() {
             subtitle={isSeriesLike ? selectedEpisodeLabel : null}
             poster={poster ?? normalizeStremioImage(meta?.meta?.poster ?? null) ?? null}
             releases={downloadReleases}
+            addonUrls={addons.map((a) => a.transportUrl)}
             releasesLoading={releasesLoading}
             onClose={() => setIsDownloadOpen(false)}
             onQueued={() => navigate('/downloads')}

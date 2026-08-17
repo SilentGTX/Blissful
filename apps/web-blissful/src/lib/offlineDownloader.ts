@@ -73,6 +73,9 @@ export type DownloadRequest = {
   /** Overwrite this row instead of creating a new one — used by batches, where a
    *  placeholder row is shown while the release is being looked up. */
   replaceId?: string;
+  /** Addon transport URLs, stored so a dead source link can be replaced
+   *  mid-download (see OfflineDownload.addonUrls). */
+  addonUrls?: string[];
 };
 
 /** Audio track as reported by /transcode-audio. */
@@ -343,9 +346,13 @@ export async function startDownload(req: DownloadRequest): Promise<OfflineDownlo
     posterBlob,
     quality: req.quality,
     sourceUrl: req.sourceUrl,
+    addonUrls: req.addonUrls,
     audioTrackIdx,
     subtitleStreamIdx,
-    subtitleLabel: req.subtitleLabel ?? null,
+    // Only claim subtitles that actually landed. The old code wrote the label
+    // unconditionally, so a download whose text track silently produced nothing
+    // still advertised "Subs: ENG" — the row lied about what was in it.
+    subtitleLabel: subtitleStreamIdx != null || subtitleVtt ? req.subtitleLabel ?? null : null,
     subtitleVtt,
     durationSeconds: playlist.durationSeconds,
     segmentDurations: playlist.segmentDurations,
@@ -473,7 +480,9 @@ async function runDownload(id: string): Promise<void> {
   try {
     // Always re-fetch the playlist: a resumed download's segment URLs point at
     // an expired RD link, and the proxy re-resolves on each request anyway.
-    const playlist = await fetchPlaylist(
+    // Reassignable: refreshSource() swaps in a new playlist when the source link
+    // dies mid-download.
+    let playlist = await fetchPlaylist(
       row.sourceUrl,
       row.audioTrackIdx,
       row.quality,
@@ -543,8 +552,18 @@ async function runDownload(id: string): Promise<void> {
       if (!after) return; // deleted mid-flight
       const stored2 = new Set(after.storedSegments);
       state.todo = state.todo.filter((i) => !stored2.has(i));
-      // A pass that stored nothing new means retrying again won't help either.
-      if (state.todo.length > 0 && after.storedSegments.length === before) break;
+      if (state.todo.length > 0 && after.storedSegments.length === before) {
+        // The whole pass stored nothing. Overwhelmingly the cause is a source
+        // link that has expired — a direct Real-Debrid URL dies after a while and
+        // then EVERY segment fails with ffmpeg's "End of file" (measured: a
+        // download managed 80 MB in 15 minutes, almost all of it retries). Ask
+        // the addons for a fresh release and keep going; only give up if that
+        // isn't possible or doesn't help.
+        const fresh = await refreshSource(id);
+        if (!fresh) break;
+        playlist = fresh;
+        continue;
+      }
     }
 
     if (cancelled.has(id)) {
@@ -576,6 +595,56 @@ async function runDownload(id: string): Promise<void> {
     activeId = null;
     if (queue.length === 0) await releaseWakeLock();
   }
+}
+
+/** Swap a download onto a fresh release and return its new playlist, or null if
+ *  that isn't possible.
+ *
+ *  Only useful because the row remembers which addons it came from: a direct
+ *  Real-Debrid link can't be re-minted by the proxy (there's no `/resolve/` URL
+ *  behind it), so the only way forward is to ask the addons for the episode
+ *  again. A different release is fine — every segment is re-encoded to the same
+ *  rung, so the stored segments and the new ones remain interchangeable as long
+ *  as the segment COUNT still matches; if it doesn't, the caller's
+ *  count-changed branch resets the byte accounting. */
+async function refreshSource(id: string): Promise<ParsedPlaylist | null> {
+  const row = await getDownload(id);
+  if (!row || !row.addonUrls || row.addonUrls.length === 0) return null;
+  try {
+    const [{ fetchFallbackReleases }, { rankReleasesForDownload }] = await Promise.all([
+      import('./fallbackReleases'),
+      import('./offlineBatch'),
+    ]);
+    const releases = await fetchFallbackReleases({
+      type: row.type,
+      id: row.videoId ?? row.metaId,
+      addons: row.addonUrls.map((u) => ({ transportUrl: u, manifest: {} }) as never),
+      showTitle: row.title,
+    });
+    const ranked = rankReleasesForDownload(releases, row.quality);
+    // Prefer a DIFFERENT url first (the current one is the one that just died),
+    // but fall back to re-trying it: a freshly-listed identical URL is often a
+    // newly minted link with the same shape.
+    const candidates = [...ranked.filter((u) => u !== row.sourceUrl), ...ranked];
+    for (const url of candidates.slice(0, 3)) {
+      try {
+        const next = await fetchPlaylist(
+          url,
+          row.audioTrackIdx,
+          row.quality,
+          row.subtitleStreamIdx ?? null
+        );
+        await updateDownload(id, { sourceUrl: url, error: null });
+        void emit();
+        return next;
+      } catch {
+        // try the next candidate
+      }
+    }
+  } catch {
+    // fall through — no refresh available
+  }
+  return null;
 }
 
 async function fetchSegment(url: string): Promise<Blob> {

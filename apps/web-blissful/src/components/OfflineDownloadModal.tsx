@@ -55,6 +55,9 @@ export type OfflineDownloadModalProps = {
   poster?: string | null;
   /** Downloadable releases (RD-resolvable only). */
   releases: BananaOption[];
+  /** Addon transport URLs, stored with the download so an expired source link
+   *  can be swapped for a fresh release mid-download. */
+  addonUrls?: string[];
   /** True while the release list is still being fetched — opening the modal from
    *  an episode card is what triggers that episode's stream fetch, so an empty
    *  list means "still loading", not "nothing to download". */
@@ -104,6 +107,7 @@ export function OfflineDownloadModal({
   subtitle,
   poster,
   releases,
+  addonUrls,
   releasesLoading = false,
   onClose,
   onQueued,
@@ -314,6 +318,7 @@ export function OfflineDownloadModal({
           subtitle: subtitle ?? null,
           poster: poster ?? null,
           sourceUrl: cand.url,
+          addonUrls,
           quality,
           audioTrackIdx: audioIdx,
           subtitleTrack: subTrack,
@@ -390,6 +395,7 @@ export function OfflineDownloadModal({
         subtitle: subtitle ?? null,
         poster: poster ?? null,
         sourceUrl: url,
+        addonUrls,
         quality,
         audioTrackIdx: chosenAudio,
         subtitleTrack: (subtitles ?? []).find((s) => s.index === chosenSub) ?? null,

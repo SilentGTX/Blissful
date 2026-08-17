@@ -202,6 +202,7 @@ export async function queueEpisodes(params: {
               : null,
             // Overwrite this episode's placeholder rather than adding a row.
             replaceId: placeholders.get(ep.videoId),
+            addonUrls: params.addons.map((a) => a.transportUrl),
           });
           queued = true;
           break;
