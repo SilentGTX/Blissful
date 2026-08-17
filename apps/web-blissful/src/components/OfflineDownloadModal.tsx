@@ -25,7 +25,8 @@ import { BlissModal } from './base';
 import { CloseIcon } from '../icons/CloseIcon';
 import { proxiedImage } from '../lib/imageProxy';
 import type { BananaOption } from './BananasPicker';
-import type { OfflineQuality } from '../lib/offlineStore';
+import { requestPersistentStorage, type OfflineQuality } from '../lib/offlineStore';
+import type { EmbeddedSubtitle } from '../lib/offlineDownloader';
 import { isPlaceholderUrl } from '../lib/releaseUrls';
 import { notifyError, notifySuccess } from '../lib/toastQueues';
 
@@ -50,6 +51,9 @@ export type OfflineDownloadModalProps = {
   /** BATCH mode: several episodes at once. `releases` is irrelevant here (each
    *  episode has its own list, looked up when the download is started). */
   batchEpisodes?: Array<{ videoId: string; label: string }>;
+  /** Fired once something is downloading into the library — the caller routes to
+   *  /downloads so progress is visible. */
+  onSavedToLibrary?: () => void;
 };
 
 function useIsMobile(breakpoint = 768): boolean {
@@ -92,6 +96,7 @@ export function OfflineDownloadModal({
   releasesLoading = false,
   onClose,
   batchEpisodes,
+  onSavedToLibrary,
 }: OfflineDownloadModalProps) {
   const isBatch = (batchEpisodes?.length ?? 0) > 0;
   const isMobile = useIsMobile();
@@ -145,6 +150,15 @@ export function OfflineDownloadModal({
   };
 
   const picked = isBatch ? null : rankedFor(quality)[0] ?? null;
+
+  /** English full-dialogue track, text preferred (it becomes a real WebVTT track
+   *  during playback; a bitmap one can't be shown at all for a copied file). */
+  const autoSubtitleOf = (subs: EmbeddedSubtitle[]): EmbeddedSubtitle | null => {
+    const english = subs.filter((s) => /^en/i.test(s.lang ?? '') || /english/i.test(s.title ?? ''));
+    const notSigns = english.filter((s) => !/sign|song/i.test(s.title ?? ''));
+    const pool = notSigns.length > 0 ? notSigns : english;
+    return pool.find((s) => s.textBased) ?? pool[0] ?? null;
+  };
 
   const safeName = (label?: string | null): string =>
     `${title}${label ? ` - ${label}` : ''}`.replace(/[\\/:*?"<>|]+/g, '-').trim();
@@ -242,6 +256,104 @@ export function OfflineDownloadModal({
       onClose();
     } catch (err: unknown) {
       notifyError('Could not open VLC', err instanceof Error ? err.message : 'Release lookup failed.');
+      setBusy(false);
+      setStatus(null);
+    }
+  };
+
+  // ── Into the offline library ───────────────────────────────────────────────
+  // Same bytes as the browser download, but stored in the app so /downloads can
+  // list and play them. The proxy hop that makes it possible (Real-Debrid sends
+  // no CORS headers) costs ~4%: 21.5 MB/s measured against 22.4 direct.
+
+  const handleSaveToLibrary = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      if (isBatch && batchEpisodes) {
+        setStatus('Preparing episodes…');
+        const { queueFileEpisodes } = await import('../lib/offlineBatch');
+        const result = await queueFileEpisodes({
+          addons: (addonUrls ?? []).map((u) => ({ transportUrl: u, manifest: {} }) as never),
+          type,
+          metaId,
+          poster: poster ?? null,
+          title,
+          episodes: batchEpisodes,
+          quality,
+          onProgress: (p) =>
+            setStatus(`Preparing… ${p.done}/${p.total}${p.current ? ` · ${p.current}` : ''}`),
+        });
+        if (result.failed.length > 0) {
+          notifyError(
+            `${result.failed.length} episode${result.failed.length === 1 ? '' : 's'} couldn’t start`,
+            `No usable release for: ${result.failed.slice(0, 3).join(', ')}${result.failed.length > 3 ? '…' : ''}`
+          );
+        }
+        onSavedToLibrary?.();
+        onClose();
+        return;
+      }
+
+      // Single: probe a few candidates so the file actually contains Japanese
+      // audio and text subtitles when they exist anywhere.
+      setStatus('Checking releases…');
+      const { probeReleases, bestProbed, rankReleasesForDownload, qualityForHeight } =
+        await import('../lib/offlineBatch');
+      let candidates = rankedFor(quality).map((r) => r.url);
+      if (candidates.length === 0) {
+        const { fetchFallbackReleases } = await import('../lib/fallbackReleases');
+        const found = await fetchFallbackReleases({
+          type,
+          id: videoId ?? metaId,
+          addons: (addonUrls ?? []).map((u) => ({ transportUrl: u, manifest: {} }) as never),
+          showTitle: title,
+        });
+        candidates = rankReleasesForDownload(found, quality);
+      }
+      const best = bestProbed(await probeReleases(candidates, 4));
+      const url = best?.url ?? candidates[0];
+      if (!url) {
+        notifyError('No release available', 'Nothing downloadable was found for this.');
+        setBusy(false);
+        setStatus(null);
+        return;
+      }
+      setStatus('Starting…');
+      const { fetchPosterBlob, prepareSubtitle } = await import('../lib/offlineDownloader');
+      const track = best ? autoSubtitleOf(best.subs) : null;
+      const [posterBlob, prepared] = await Promise.all([
+        fetchPosterBlob(poster ?? null),
+        track ? prepareSubtitle(url, track) : Promise.resolve({ vtt: null }),
+      ]);
+      const { startFileDownload } = await import('../lib/fileDownloader');
+      await requestPersistentStorage();
+      await startFileDownload({
+        metaId,
+        type,
+        videoId,
+        title,
+        subtitle: subtitle ?? null,
+        poster: poster ?? null,
+        posterBlob,
+        sourceUrl: url,
+        // What the file IS, measured — not the rung that was asked for.
+        quality: best?.video ? qualityForHeight(best.video.height) : quality,
+        fileVideo: best?.video ?? null,
+        subtitleVtt: prepared.vtt,
+        subtitleLabel:
+          prepared.vtt && track
+            ? `${(track.lang ?? 'und').toUpperCase()}${track.title ? ` · ${track.title}` : ''}`
+            : null,
+      });
+      notifySuccess('Saving to your library', `${safeName(subtitle)} — watch it in Downloads.`);
+      onSavedToLibrary?.();
+      onClose();
+    } catch (err: unknown) {
+      notifyError(
+        'Could not start the download',
+        err instanceof Error ? err.message : 'Release lookup failed.'
+      );
       setBusy(false);
       setStatus(null);
     }
@@ -393,35 +505,53 @@ export function OfflineDownloadModal({
           </div>
         ) : null}
 
-        {/* Never disabled for want of a release list: with none, the handlers do
-            their own lookup (the fallback usually has one). Only `busy` blocks. */}
-        <div className="mt-4 flex gap-2">
-          <button
-            type="button"
-            onClick={isBatch ? () => void handleBatch('download') : () => void handleDownloadFile()}
-            disabled={busy}
-            className="min-w-0 flex-1 cursor-pointer rounded-xl bg-white px-3 py-3 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-default disabled:opacity-50"
-          >
-            {busy
-              ? status ?? 'Working…'
-              : isBatch
-                ? `Download ${batchEpisodes?.length ?? 0} files`
-                : 'Download file'}
-          </button>
-          <button
-            type="button"
-            onClick={isBatch ? () => void handleBatch('vlc') : () => void handleOpenInVlc()}
-            disabled={busy}
-            className="shrink-0 cursor-pointer rounded-xl bg-white/10 px-3 py-3 text-sm font-semibold text-white/85 ring-1 ring-white/10 transition hover:bg-white/15 disabled:cursor-default disabled:opacity-50"
-          >
-            {isBatch ? 'VLC playlist' : 'Open in VLC'}
-          </button>
+        {/* Into the app first: it's what the Downloads page can show and play.
+            Never disabled for want of a release list — with none, the handlers do
+            their own lookup (the house fallback usually has one). */}
+        <button
+          type="button"
+          onClick={() => void handleSaveToLibrary()}
+          disabled={busy}
+          className="mt-4 w-full cursor-pointer rounded-xl bg-[var(--bliss-accent)] px-4 py-3 text-sm font-semibold text-black transition hover:brightness-110 disabled:cursor-default disabled:opacity-50"
+        >
+          {busy
+            ? status ?? 'Working…'
+            : isBatch
+              ? `Save ${batchEpisodes?.length ?? 0} episodes to library`
+              : 'Save to library'}
+        </button>
+        <div className="mt-2 text-[11px] leading-relaxed text-white/45">
+          Stored in Blissful, so it shows up in Downloads and plays there with no
+          connection. Nothing is re-encoded, so it runs at full speed.
+          {isBatch ? ' Episodes download one after another — keep Blissful open.' : ''}
         </div>
 
-        <div className="mt-3 text-[11px] leading-relaxed text-white/45">
-          {isBatch
-            ? 'Each episode gets its own cached release. Downloads go to your browser’s downloads folder at full speed; the playlist opens all of them in VLC in order.'
-            : 'The release as-is, at full speed — nothing is re-encoded. Saved by your browser, and playable in VLC / IINA, which handle MKV, HEVC and AC3 natively.'}
+        <div className="mt-4 border-t border-white/10 pt-3">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/40">
+            Or straight to your computer
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={isBatch ? () => void handleBatch('download') : () => void handleDownloadFile()}
+              disabled={busy}
+              className="min-w-0 flex-1 cursor-pointer rounded-xl bg-white/10 px-3 py-2.5 text-sm font-semibold text-white/85 ring-1 ring-white/10 transition hover:bg-white/15 disabled:cursor-default disabled:opacity-50"
+            >
+              {isBatch ? `Download ${batchEpisodes?.length ?? 0} files` : 'Download file'}
+            </button>
+            <button
+              type="button"
+              onClick={isBatch ? () => void handleBatch('vlc') : () => void handleOpenInVlc()}
+              disabled={busy}
+              className="shrink-0 cursor-pointer rounded-xl bg-white/10 px-3 py-2.5 text-sm font-semibold text-white/85 ring-1 ring-white/10 transition hover:bg-white/15 disabled:cursor-default disabled:opacity-50"
+            >
+              {isBatch ? 'VLC playlist' : 'Open in VLC'}
+            </button>
+          </div>
+          <div className="mt-2 text-[11px] leading-relaxed text-white/40">
+            Saved by your browser instead of the app — it won’t appear in Downloads.
+            VLC / IINA handle MKV, HEVC and AC3 natively.
+          </div>
         </div>
 
         {!isBatch && noReleases && releasesLoading ? (

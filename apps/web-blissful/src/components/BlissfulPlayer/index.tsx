@@ -378,6 +378,11 @@ export const STREMIO_ICONS: Record<StremioIconName, StremioIconDef> = {
 
 export default function BlissfulPlayer(props: {
   url: string;
+  /** A `blob:` URL for an offline FILE download — the release's own bytes,
+   *  assembled from IndexedDB. `url` stays `offline:<id>` (it's the identity used
+   *  by history, progress and subtitles); this is only what the `<video>` reads,
+   *  and it forces the plain path: a copied file is a container, not HLS. */
+  blobSrc?: string | null;
   title: string | null;
   metaTitle?: string | null;
   poster: string | null;
@@ -2546,7 +2551,9 @@ export default function BlissfulPlayer(props: {
       return [name, fn] as const;
     });
 
-    const src = props.url;
+    // An offline FILE download plays from its assembled Blob; everything else
+    // plays from the app-level URL.
+    const src = props.blobSrc ?? props.url;
 
     // Our /hls-master proxy URL has the actual `.m3u8` inside a
     // URL-encoded `url=` query param, so a literal `.includes('.m3u8')`
@@ -2560,13 +2567,18 @@ export default function BlissfulPlayer(props: {
     // platform media stack, which cannot be fed from local storage (and on iOS
     // doesn't reliably consult the service worker either). See offlineUrls.ts
     // for why the loader-facing URL is a separate, resolvable https form.
-    const offlineId = offlineIdFromUrl(src);
+    const offlineId = offlineIdFromUrl(props.url);
+    // A stored FILE is an ordinary container (MKV/MP4) — the `<video>` element
+    // demuxes it directly. It must NOT take the hls.js path, and it must not be
+    // mistaken for the MSE blob URLs that path produces.
+    const isStoredFile = props.blobSrc != null;
     const isHls =
-      offlineId != null
+      !isStoredFile
+      && (offlineId != null
       || src.startsWith('blob:')
       || src.includes('.m3u8')
       || src.includes('/hlsv2/')
-      || src.includes('/hls-master');
+      || src.includes('/hls-master'));
     const hasNativeHls = video.canPlayType('application/vnd.apple.mpegurl') !== '';
     // iOS Safari's native HLS (AVPlayer) is stricter than hls.js —
     // it refuses Videasy's media-playlist-only streams (no master
@@ -2978,6 +2990,26 @@ export default function BlissfulPlayer(props: {
     } else {
       video.src = src;
       nativeAudioTrackList = getNativeAudioTracks(video);
+      // A stored dual-audio file usually has the English dub first, which is how
+      // a downloaded anime episode came back sounding wrong. Safari exposes
+      // `audioTracks` and lets us switch; Chrome doesn't (the list is empty
+      // there), so this is best-effort and the picker stays the fallback.
+      if (isStoredFile) {
+        const pickJapanese = () => {
+          const tracks = getNativeAudioTracks(video);
+          if (!tracks || tracks.length < 2) return;
+          for (let i = 0; i < tracks.length; i += 1) {
+            const t = tracks[i];
+            const hay = `${t.language ?? ''} ${t.label ?? ''}`;
+            if (/^ja|jap|jpn|\bjp\b/i.test(hay)) {
+              for (let j = 0; j < tracks.length; j += 1) tracks[j].enabled = j === i;
+              updateNativeAudioTracks();
+              return;
+            }
+          }
+        };
+        video.addEventListener('loadedmetadata', pickJapanese, { once: true });
+      }
       video.addEventListener('loadedmetadata', updateNativeAudioTracks);
       nativeAudioTrackList?.addEventListener?.('change', updateNativeAudioTracks);
       nativeAudioTrackList?.addEventListener?.('addtrack', updateNativeAudioTracks);
@@ -3074,7 +3106,7 @@ export default function BlissfulPlayer(props: {
     // depending on the whole `playerSettings` object meant every
     // unrelated setting toggle (auto-play, popup duration, …) would
     // destroy the HLS instance and reload the video.
-  }, [props.playerSettings.audioLanguage, props.startTimeSeconds, props.url, retryNonce]);
+  }, [props.playerSettings.audioLanguage, props.startTimeSeconds, props.url, props.blobSrc, retryNonce]);
 
   useEffect(() => {
     if (isIos()) {

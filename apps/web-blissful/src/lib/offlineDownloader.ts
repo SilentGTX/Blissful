@@ -290,7 +290,7 @@ async function fetchPlaylist(
  *  subtitles and showing none. They're extracted to WebVTT once and stored
  *  instead — crisper at any size, switchable, and styled by the user's subtitle
  *  settings. */
-async function prepareSubtitle(
+export async function prepareSubtitle(
   sourceUrl: string,
   track: EmbeddedSubtitle | null | undefined
 ): Promise<{ burnIdx: number | null; vtt: string | null }> {
@@ -312,7 +312,7 @@ async function prepareSubtitle(
 
 /** Grab the poster bytes so the offline library has artwork. Best-effort: a
  *  missing poster is a cosmetic loss, never a reason to fail a download. */
-async function fetchPosterBlob(poster: string | null): Promise<Blob | null> {
+export async function fetchPosterBlob(poster: string | null): Promise<Blob | null> {
   if (!poster) return null;
   try {
     const res = await fetch(proxiedImage(poster));
@@ -679,9 +679,15 @@ async function fetchSegment(url: string): Promise<Blob> {
  *  mark them resumable and let the page offer the button. */
 export async function markInterruptedDownloads(): Promise<void> {
   const rows = await listDownloads();
+  // FILE downloads run in their own module, so ask it what's live. Without this,
+  // opening /downloads while one is running marked it "Paused" mid-flight — the
+  // row kept gaining chunks under a Resume button. (Measured: a 72-chunk episode
+  // showed "paused 57/72" and then completed anyway.)
+  const { activeFileDownloadIds } = await import('./fileDownloader');
+  const liveFiles = activeFileDownloadIds();
   for (const row of rows) {
     if (row.status === 'downloading' || row.status === 'queued') {
-      if (activeId === row.id || queue.includes(row.id)) continue;
+      if (activeId === row.id || queue.includes(row.id) || liveFiles.has(row.id)) continue;
       await updateDownload(row.id, { status: 'paused' });
     }
   }

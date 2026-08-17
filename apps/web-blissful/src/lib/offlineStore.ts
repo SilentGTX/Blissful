@@ -58,8 +58,35 @@ export type OfflineStatus =
   /** Gave up after repeated failures; `error` says why. Resumable. */
   | 'failed';
 
+/** What the `segments` rows of a download hold.
+ *
+ *  `hls`  — MPEG-TS segments produced by the proxy's transcode, played through
+ *           the custom hls.js loader. Universal (any codec becomes H.264/AAC)
+ *           but slow: ~0.8 MB/s, because the Mac re-encodes in real time.
+ *  `file` — byte RANGES of the release file itself, pulled through
+ *           `/addon-proxy` (which forwards Range and sends `ACAO: *` — Real-Debrid
+ *           does neither). Measured 21.5 MB/s against 22.4 MB/s straight from RD,
+ *           so the proxy hop costs ~4% and an 800 MB episode lands in ~40s. The
+ *           bytes are the original ones, so playback depends on the browser being
+ *           able to decode that container/codec. */
+export type OfflineKind = 'hls' | 'file';
+
 export type OfflineDownload = {
   id: string;
+  /** Missing on rows written before file downloads existed — treat as 'hls'. */
+  kind?: OfflineKind;
+  /** `file` only: the release URL's filename, for saving to disk / VLC. */
+  fileName?: string | null;
+  /** `file` only: Content-Type as served, e.g. 'video/x-matroska'. */
+  fileMime?: string | null;
+  /** `file` only: total size from Content-Range, so progress has a denominator
+   *  before every chunk is in. */
+  totalBytes?: number | null;
+  /** `file` only: what the video actually IS, from ffprobe — release names lie
+   *  (one listed as "1080p" measured 768x576 10-bit). Drives the library badge and
+   *  the "this won't play on your phone" warning: 10-bit H.264 is common in
+   *  fansubbed anime and iOS cannot decode it. */
+  fileVideo?: { width: number | null; height: number | null; codec: string | null; bitDepth: number | null } | null;
   /** Stremio meta id, e.g. 'tt0133093'. */
   metaId: string;
   /** 'movie' | 'series'. */
@@ -308,6 +335,28 @@ export async function getSegment(downloadId: string, index: number): Promise<Blo
     tx.objectStore(STORE_SEGMENTS).get([downloadId, index]) as IDBRequest<{ data: Blob } | undefined>
   );
   return row?.data ?? null;
+}
+
+/** Every stored chunk of a `file` download, in order, as ONE Blob.
+ *
+ *  Blob parts are references, not copies — WebKit and Blink keep them backed by
+ *  the same on-disk storage — so this does not pull 800 MB into the heap, and the
+ *  object URL made from it can be handed straight to `<video src>`. Returns null
+ *  when a chunk is missing (iOS eviction), which the caller must treat as "needs
+ *  re-downloading" rather than trying to play a file with a hole in it. */
+export async function getFileBlob(id: string): Promise<Blob | null> {
+  const row = await getDownload(id);
+  if (!row) return null;
+  const db = await openDb();
+  const tx = db.transaction(STORE_SEGMENTS, 'readonly');
+  const rows = await reqDone<Array<{ index: number; data: Blob }>>(
+    tx.objectStore(STORE_SEGMENTS).getAll(
+      IDBKeyRange.bound([id, -Infinity], [id, Infinity])
+    ) as IDBRequest<Array<{ index: number; data: Blob }>>
+  );
+  if (rows.length < row.segmentCount) return null;
+  const parts = rows.sort((a, b) => a.index - b.index).map((r) => r.data);
+  return new Blob(parts, { type: row.fileMime || 'video/mp4' });
 }
 
 /** Delete a download and every segment it owns. */

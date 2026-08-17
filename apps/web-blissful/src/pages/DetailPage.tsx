@@ -1359,6 +1359,7 @@ export default function DetailPage() {
             addonUrls={addons.map((a) => a.transportUrl)}
             releasesLoading={releasesLoading}
             onClose={() => setIsDownloadOpen(false)}
+            onSavedToLibrary={() => navigate('/downloads')}
           />
         ) : null}
 
@@ -1377,6 +1378,7 @@ export default function DetailPage() {
             releases={[]}
             addonUrls={addons.map((a) => a.transportUrl)}
             batchEpisodes={batchEpisodes}
+            onSavedToLibrary={() => navigate('/downloads')}
             onClose={() => {
               setBatchOpen(false);
               cancelEpisodeSelection();

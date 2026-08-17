@@ -61,6 +61,36 @@ function progressPercent(row: OfflineDownload): number {
   return Math.min(100, (row.storedSegments.length / total) * 100);
 }
 
+/** True when this browser can decode the stored FILE itself.
+ *
+ *  A file download keeps the release's own container and codecs, so playability
+ *  is the browser's business: Chrome decodes Matroska with H.264/AAC, Safari
+ *  refuses Matroska outright, and nothing in a browser plays AC3 or DTS. When the
+ *  answer is no the row still offers VLC and Save to disk — the bytes are already
+ *  on the device either way. */
+function canBrowserPlayFile(row: OfflineDownload): boolean {
+  if (row.kind !== 'file') return true;
+  if (typeof document === 'undefined') return true;
+  const probe = document.createElement('video');
+  const mime = (row.fileMime ?? '').toLowerCase();
+  const name = (row.fileName ?? '').toLowerCase();
+  const ext = name.slice(name.lastIndexOf('.') + 1);
+  // `Content-Type` from Real-Debrid is `application/force-download`, i.e. useless
+  // — the extension is the only honest hint about the container.
+  const guess =
+    ext === 'mp4' || ext === 'm4v'
+      ? 'video/mp4'
+      : ext === 'mkv'
+        ? 'video/x-matroska'
+        : ext === 'webm'
+          ? 'video/webm'
+          : mime.startsWith('video/')
+            ? mime
+            : '';
+  if (!guess) return true; // unknown — let the player try
+  return probe.canPlayType(guess) !== '';
+}
+
 // One object URL per download id, for the whole session.
 //
 // Deliberately NOT derived from the rows: the list re-reads from IndexedDB on
@@ -128,8 +158,22 @@ export default function DownloadsPage() {
     const unsubscribe = subscribeDownloads((next) => {
       if (!cancelled) setRows(next);
     });
+    // FILE downloads write straight to the store (they don't run through the HLS
+    // downloader's listener registry), so poll while anything is in flight. A
+    // getAll over a handful of metadata rows is cheap; the video bytes live in the
+    // other store and are never read here.
+    const poll = window.setInterval(() => {
+      void (async () => {
+        const next = await listDownloads();
+        if (cancelled) return;
+        if (next.some((r) => r.status === 'downloading' || r.status === 'queued')) {
+          setRows(next);
+        }
+      })();
+    }, 900);
     return () => {
       cancelled = true;
+      window.clearInterval(poll);
       unsubscribe();
     };
   }, [refreshStorage]);
@@ -160,6 +204,44 @@ export default function DownloadsPage() {
     },
     [navigate]
   );
+
+  /** Pause / resume go to whichever downloader owns the row. */
+  const handlePause = useCallback(async (row: OfflineDownload) => {
+    if (row.kind === 'file') {
+      const { cancelFileDownload } = await import('../lib/fileDownloader');
+      cancelFileDownload(row.id);
+      return;
+    }
+    await pauseDownload(row.id);
+  }, []);
+
+  const handleResume = useCallback(async (row: OfflineDownload) => {
+    if (row.kind === 'file') {
+      const { resumeFileDownload } = await import('../lib/fileDownloader');
+      await resumeFileDownload(row.id);
+      return;
+    }
+    await resumeDownload(row.id);
+  }, []);
+
+  /** Hand the stored file to the OS: the bytes are already here, so this needs no
+   *  connection — unlike re-downloading from Real-Debrid. */
+  const saveToDisk = useCallback(async (row: OfflineDownload) => {
+    const { getFileBlob } = await import('../lib/offlineStore');
+    const blob = await getFileBlob(row.id);
+    if (!blob) {
+      notifyError('This download is incomplete', 'Resume it to finish, then save.');
+      return;
+    }
+    const href = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = href;
+    a.download = row.fileName || `${row.title}${row.subtitle ? ` - ${row.subtitle}` : ''}.mkv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(href), 60_000);
+  }, []);
 
   const handleRemove = useCallback(
     async (row: OfflineDownload) => {
@@ -271,7 +353,18 @@ export default function DownloadsPage() {
                     ) : null}
                     <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-foreground/50">
                       <span className="rounded-full bg-white/10 px-2 py-0.5">{row.quality}</span>
-                      <span>{formatBytes(row.bytes)}</span>
+                      {/* A file download knows its true size up front (from
+                          Content-Range), so show progress against it rather than
+                          a number that only grows. */}
+                      <span>
+                        {formatBytes(row.bytes)}
+                        {row.kind === 'file' && row.totalBytes && row.status !== 'ready'
+                          ? ` of ${formatBytes(row.totalBytes)}`
+                          : ''}
+                      </span>
+                      {row.kind === 'file' ? (
+                        <span className="rounded-full bg-white/10 px-2 py-0.5">original file</span>
+                      ) : null}
                       {row.durationSeconds > 0 ? <span>{formatDuration(row.durationSeconds)}</span> : null}
                       {/* Burned into the picture, so it can't be turned off later
                           — worth stating on the row. */}
@@ -299,15 +392,47 @@ export default function DownloadsPage() {
                       </div>
                     ) : null}
 
+                    {/* A stored file keeps its original codecs, so say plainly
+                        when this browser can't decode it — the bytes are still
+                        here and VLC will play them. */}
+                    {row.status === 'ready' && !canBrowserPlayFile(row) ? (
+                      <div className="mt-2 text-[11px] leading-relaxed text-amber-100/80">
+                        This browser can’t decode {row.fileName?.split('.').pop()?.toUpperCase() ?? 'this file'} —
+                        save it or open it in VLC.
+                      </div>
+                    ) : null}
+                    {/* 10-bit H.264 ("Hi10p") is everywhere in fansubbed anime and
+                        iOS cannot decode it at all, so a file that plays fine on a
+                        laptop is a black screen on the phone. Worth saying before
+                        someone boards a plane with it. */}
+                    {row.status === 'ready' && (row.fileVideo?.bitDepth ?? 8) > 8 ? (
+                      <div className="mt-2 text-[11px] leading-relaxed text-amber-100/80">
+                        10-bit {row.fileVideo?.codec?.toUpperCase() ?? 'video'} — plays here, but
+                        iPhone and iPad can’t decode it. Use VLC on those.
+                      </div>
+                    ) : null}
+
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {row.status === 'ready' ? (
+                      {row.status === 'ready' && (row.kind === 'file' ? canBrowserPlayFile(row) : true) ? (
                         <Button
                           size="sm"
                           className="rounded-full bg-white text-black"
-                          isDisabled={!caps.canPlay}
+                          // MSE is only needed for segment (HLS) downloads; a
+                          // stored file goes straight into the <video> element.
+                          isDisabled={row.kind !== 'file' && !caps.canPlay}
                           onPress={() => void playOffline(row)}
                         >
                           Play
+                        </Button>
+                      ) : null}
+                      {row.kind === 'file' && row.status === 'ready' ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="rounded-full bg-white/10"
+                          onPress={() => void saveToDisk(row)}
+                        >
+                          Save to disk
                         </Button>
                       ) : null}
                       {isActive ? (
@@ -315,7 +440,7 @@ export default function DownloadsPage() {
                           size="sm"
                           variant="ghost"
                           className="rounded-full bg-white/10"
-                          onPress={() => void pauseDownload(row.id)}
+                          onPress={() => void handlePause(row)}
                         >
                           Pause
                         </Button>
@@ -325,7 +450,7 @@ export default function DownloadsPage() {
                           size="sm"
                           variant="ghost"
                           className="rounded-full bg-white/10"
-                          onPress={() => void resumeDownload(row.id)}
+                          onPress={() => void handleResume(row)}
                         >
                           Resume
                         </Button>

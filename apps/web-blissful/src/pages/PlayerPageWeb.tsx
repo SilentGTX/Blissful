@@ -13,7 +13,7 @@ import { useContinueWatchingContext } from '../context/ContinueWatchingProvider'
 import { normalizeStremioImage } from '../lib/mediaTypes';
 import { fetchStreams, type StremioStream } from '../lib/stremioAddon';
 // `offline:<id>` — a download stored in IndexedDB (lib/offlineStore.ts).
-import { isOfflineUrl } from '../lib/offlineUrls';
+import { isOfflineUrl, offlineIdFromUrl } from '../lib/offlineUrls';
 
 // Container formats the browser can't play natively — routed through the
 // proxy's /transcode endpoint (remux/re-encode to fragmented MP4).
@@ -489,6 +489,30 @@ export default function PlayerPage() {
   // so an offline playback would silently become a network stream. Resolving
   // anything also defeats the point when there is no connection.
   const isOfflineSession = isOfflineUrl(url);
+  // An offline FILE download (the release's own bytes, stored in ranges) is
+  // assembled into one Blob and handed to the <video> element directly — it's a
+  // container, not HLS, so it must not go through hls.js. Segment-based (HLS)
+  // downloads leave this null and keep the IndexedDB loader path.
+  const [offlineFileSrc, setOfflineFileSrc] = useState<string | null>(null);
+  useEffect(() => {
+    const offlineId = offlineIdFromUrl(url);
+    if (!offlineId) return;
+    let objectUrl: string | null = null;
+    let cancelled = false;
+    void (async () => {
+      const { getDownload, getFileBlob } = await import('../lib/offlineStore');
+      const row = await getDownload(offlineId);
+      if (cancelled || !row || row.kind !== 'file') return;
+      const blob = await getFileBlob(offlineId);
+      if (cancelled || !blob) return;
+      objectUrl = URL.createObjectURL(blob);
+      setOfflineFileSrc(objectUrl);
+    })();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [url]);
   // Continue-Watching resume: Vidking is tried first (url=vidking:placeholder),
   // but the EXACT saved stream rides along as `resume` and plays if Vidking
   // fails — instant, no addon re-fetch/auto-pick.
@@ -1982,6 +2006,7 @@ export default function PlayerPage() {
   return (
     <BlissfulPlayer
       url={playUrl}
+      blobSrc={offlineFileSrc}
       title={title}
       metaTitle={metaTitle}
       poster={poster}

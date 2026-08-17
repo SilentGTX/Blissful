@@ -12,6 +12,7 @@
 
 import { fetchFallbackReleases, type FallbackRelease } from './fallbackReleases';
 import { isPlaceholderUrl } from './releaseUrls';
+import { languageMatch } from './subtitleUtils';
 import type { AddonDescriptor } from './mediaTypes';
 import type { OfflineQuality } from './offlineStore';
 import {
@@ -125,6 +126,186 @@ export function rankReleasesForDownload(
     .map((s) => s.url);
 }
 
+export type ProbedVideo = {
+  width: number | null;
+  height: number | null;
+  codec: string | null;
+  bitDepth: number | null;
+};
+
+export type ProbedRelease = {
+  url: string;
+  audio: EmbeddedAudio[];
+  subs: EmbeddedSubtitle[];
+  hasJapanese: boolean;
+  /** A track a browser can render as text — bitmap (PGS) subs can't be, and a
+   *  file download can't burn them in, since the video bytes are copied. */
+  hasTextSubs: boolean;
+  /** What the video ACTUALLY is, not what the release name claims. Measured: a
+   *  release listed as "1080p" turned out to be 768x576 10-bit. */
+  video: ProbedVideo | null;
+};
+
+/** The rung a file really belongs to, from its true height. Release names are
+ *  unreliable, and a library row that claims 1080p for a 576p file is a lie the
+ *  user can see. */
+export function qualityForHeight(height: number | null | undefined): OfflineQuality {
+  const h = height ?? 0;
+  if (h >= 1800) return '2160p';
+  if (h >= 900) return '1080p';
+  if (h >= 650) return '720p';
+  if (h >= 480) return '540p';
+  return '360p';
+}
+
+/** Codecs a browser will refuse. 10-bit H.264 ("Hi10p", ubiquitous in fansubbed
+ *  anime) is the notable one: Safari and iOS cannot decode it at all, so a file
+ *  that plays perfectly on a desktop is a black screen on the phone. HEVC is
+ *  fine on Apple hardware but not in Chrome. Used as the LAST tiebreak, never to
+ *  reject a release — an unplayable file still works in VLC. */
+export function browserFriendly(video: ProbedVideo | null): boolean {
+  if (!video) return true;
+  const codec = (video.codec ?? '').toLowerCase();
+  if ((video.bitDepth ?? 8) > 8) return false;
+  return codec === 'h264' || codec === 'avc1' || codec === 'vp9' || codec === 'av1';
+}
+
+/** THE bug behind "it downloaded the English dub".
+ *
+ *  A hand-rolled `/^ja/i` test does not match `jpn` — which is exactly how every
+ *  release tags Japanese (measured on Bleach S1E7: three releases, tags `jpn`,
+ *  `jpn`+`eng`, `eng`, no track titles at all). So Japanese was never detected
+ *  and track 0 (the dub, in a dual-audio release) won by default. `languageMatch`
+ *  knows the ISO 639-1/2 aliases — 'ja', 'jpn', 'ja-JP' all match. */
+export function isJapanese(a: EmbeddedAudio): boolean {
+  return languageMatch('Japanese', a.lang) || /jap|jpn|\bjp\b/i.test(a.title ?? '');
+}
+
+function hasEnglishText(subs: EmbeddedSubtitle[]): boolean {
+  return subs.some(
+    (s) => s.textBased && (/^en/i.test(s.lang ?? '') || /english/i.test(s.title ?? ''))
+  );
+}
+
+/** Subtitles AND video info from ONE `/probe-streams` call — the same ffprobe the
+ *  transcode path uses. Kept together because two calls would ffprobe the same
+ *  remote file twice. */
+async function fetchProbe(
+  url: string
+): Promise<{ subs: EmbeddedSubtitle[]; video: ProbedVideo | null }> {
+  const res = await fetch(`/probe-streams?url=${encodeURIComponent(url)}`);
+  if (!res.ok) throw new Error(`probe failed: ${res.status}`);
+  const json = (await res.json()) as {
+    subtitles?: Array<{
+      index: number;
+      codec?: string | null;
+      language?: string | null;
+      title?: string | null;
+      textBased?: boolean;
+    }>;
+    video?: { width?: number; height?: number; codec?: string; bitDepth?: number } | null;
+  };
+  return {
+    subs: (json.subtitles ?? []).map((s) => ({
+      index: s.index,
+      lang: s.language ?? null,
+      title: s.title ?? null,
+      codec: s.codec ?? null,
+      textBased: s.textBased === true,
+    })),
+    video: json.video
+      ? {
+        width: json.video.width ?? null,
+        height: json.video.height ?? null,
+        codec: json.video.codec ?? null,
+        bitDepth: json.video.bitDepth ?? null,
+      }
+      : null,
+  };
+}
+
+/** Look INSIDE the candidates and pick one that actually contains what's wanted.
+ *
+ *  Ranking on the release NAME alone is what produced an anime download with
+ *  English audio and no subtitles: names lie, or say nothing, and the smallest
+ *  file is often a dub-only encode. So the top few candidates are probed
+ *  (`/probe-streams` — the same ffprobe the transcode path uses) and scored on
+ *  their real streams:
+ *
+ *    1. A Japanese audio track, when ANY candidate has one. Its presence is the
+ *       signal that the original language is Japanese — it doesn't depend on the
+ *       id namespace, which matters because the same show is reachable as both
+ *       `kitsu:244` and `tt0434665`.
+ *    2. English TEXT subtitles, which can be extracted to WebVTT and shown by
+ *       the player. Bitmap subs score lower: for a copied file there is nothing
+ *       that can render them.
+ *
+ *  Candidates keep their incoming order (cached, then smallest) as the tiebreak,
+ *  so this only ever moves a release up for a concrete reason. */
+export async function probeReleases(
+  urls: string[],
+  limit: number
+): Promise<ProbedRelease[]> {
+  const out: ProbedRelease[] = [];
+  for (const url of urls.slice(0, limit)) {
+    try {
+      const [probe, audio] = await Promise.all([
+        fetchProbe(url),
+        fetchAudioTracks(url),
+      ]);
+      const subs = probe.subs;
+      // No streams at all means the probe failed (dead link, uncached torrent) —
+      // not a release with no audio. Skip it rather than score it as "no
+      // Japanese".
+      if (audio.length === 0) continue;
+      out.push({
+        url,
+        audio,
+        subs,
+        hasJapanese: audio.some(isJapanese),
+        hasTextSubs: hasEnglishText(subs),
+        video: probe.video,
+      });
+      // Everything asked for, first try — stop paying for probes.
+      if (out[out.length - 1].hasJapanese && out[out.length - 1].hasTextSubs) break;
+    } catch {
+      // next candidate
+    }
+  }
+  return out;
+}
+
+/** Best of a probed set. See probeReleases for the reasoning.
+ *
+ *  A file download copies the bytes, so it cannot pick an audio track the way the
+ *  transcode could — whatever the player defaults to is what you hear, and only
+ *  Safari exposes `audioTracks` to switch. So a Japanese-ONLY release beats a
+ *  dual-audio one: it sounds right in every player, including Chrome, which
+ *  reports no audio track list at all. */
+export function bestProbed(probed: ProbedRelease[]): ProbedRelease | null {
+  if (probed.length === 0) return null;
+  const anyJapanese = probed.some((p) => p.hasJapanese);
+  const jpTier = (p: ProbedRelease): number => {
+    if (!anyJapanese) return 0;
+    if (!p.hasJapanese) return 2;
+    return p.audio.every(isJapanese) ? 0 : 1;
+  };
+  return (
+    [...probed]
+      .map((p, i) => ({
+        p,
+        i,
+        jp: jpTier(p),
+        sub: p.hasTextSubs ? 0 : p.subs.length > 0 ? 1 : 2,
+        // Last tiebreak only: 10-bit H.264 is unplayable on iPhone, so an
+        // otherwise-equal 8-bit release is the better copy to keep.
+        playable: browserFriendly(p.video) ? 0 : 1,
+      }))
+      .sort((a, b) => a.jp - b.jp || a.sub - b.sub || a.playable - b.playable || a.i - b.i)[0]?.p
+    ?? null
+  );
+}
+
 function autoSubtitle(subs: EmbeddedSubtitle[]): EmbeddedSubtitle | null {
   const english = subs.filter((s) => /^en/i.test(s.lang ?? '') || /english/i.test(s.title ?? ''));
   const notSigns = english.filter((s) => !/sign|song/i.test(s.title ?? ''));
@@ -134,7 +315,7 @@ function autoSubtitle(subs: EmbeddedSubtitle[]): EmbeddedSubtitle | null {
 }
 
 function autoAudio(auds: EmbeddedAudio[], preferredLang: string | null | undefined): number {
-  const jp = auds.find((a) => /^ja/i.test(a.lang ?? '') || /jap|jpn|\bjp\b/i.test(a.title ?? ''));
+  const jp = auds.find(isJapanese);
   if (jp) return jp.i;
   const pref = preferredLang
     ? auds.find((a) => (a.lang ?? '').toLowerCase().startsWith(preferredLang.slice(0, 2).toLowerCase()))
@@ -183,6 +364,101 @@ export async function resolveOriginalUrls(params: {
   progress.current = null;
   params.onProgress?.({ ...progress });
   return out;
+}
+
+/** Queue a selection as FILE downloads into the offline library: the release
+ *  bytes as they are, no transcode (~21 MB/s vs ~0.8). Every episode gets a
+ *  visible row immediately, then its release is probed and picked so anime lands
+ *  with Japanese audio and text subtitles rather than whatever the smallest file
+ *  happened to contain. */
+export async function queueFileEpisodes(params: {
+  addons: AddonDescriptor[];
+  type: string;
+  metaId: string;
+  poster: string | null;
+  title: string;
+  episodes: BatchEpisode[];
+  quality: OfflineQuality;
+  onProgress?: (p: BatchProgress) => void;
+}): Promise<BatchProgress> {
+  const progress: BatchProgress = {
+    done: 0,
+    total: params.episodes.length,
+    current: null,
+    failed: [],
+  };
+  const { startFileDownload } = await import('./fileDownloader');
+  const { fetchPosterBlob, prepareSubtitle } = await import('./offlineDownloader');
+  const posterBlob = await fetchPosterBlob(params.poster);
+
+  const placeholders = new Map<string, string>();
+  for (const ep of params.episodes) {
+    const id = await createPlaceholder({
+      metaId: params.metaId,
+      type: params.type,
+      videoId: ep.videoId,
+      title: params.title,
+      subtitle: ep.label,
+      poster: params.poster,
+      quality: params.quality,
+    });
+    placeholders.set(ep.videoId, id);
+  }
+
+  for (const ep of params.episodes) {
+    progress.current = ep.label;
+    params.onProgress?.({ ...progress });
+    try {
+      const releases = await fetchFallbackReleases({
+        type: params.type,
+        id: ep.videoId,
+        addons: params.addons,
+        showTitle: params.title,
+      });
+      const candidates = rankReleasesForDownload(releases, params.quality);
+      // Two probes per episode, not four: a probe is an ffprobe over the network
+      // (~2-5s) and a ten-episode batch would otherwise spend minutes before the
+      // first byte of video.
+      const best = bestProbed(await probeReleases(candidates, 2));
+      const url = best?.url ?? candidates[0];
+      if (!url) {
+        progress.failed.push(ep.label);
+        await failPlaceholder(placeholders.get(ep.videoId), 'No downloadable release was found.');
+      } else {
+        const track = best ? autoSubtitle(best.subs) : null;
+        const { vtt } = track ? await prepareSubtitle(url, track) : { vtt: null };
+        await startFileDownload({
+          metaId: params.metaId,
+          type: params.type,
+          videoId: ep.videoId,
+          title: params.title,
+          subtitle: ep.label,
+          poster: params.poster,
+          posterBlob,
+          sourceUrl: url,
+          // The rung the FILE is, not the one that was asked for.
+          quality: best?.video ? qualityForHeight(best.video.height) : params.quality,
+          fileVideo: best?.video ?? null,
+          subtitleVtt: vtt,
+          // Only claim subtitles when text actually landed — a label with no
+          // track behind it is how "Subs: ENG" came to mean nothing.
+          subtitleLabel: vtt && track ? `${(track.lang ?? 'und').toUpperCase()}${track.title ? ` · ${track.title}` : ''}` : null,
+          replaceId: placeholders.get(ep.videoId),
+        });
+      }
+    } catch (err: unknown) {
+      progress.failed.push(ep.label);
+      await failPlaceholder(
+        placeholders.get(ep.videoId),
+        err instanceof Error ? err.message : 'Could not start this episode.'
+      );
+    }
+    progress.done += 1;
+    params.onProgress?.({ ...progress });
+  }
+  progress.current = null;
+  params.onProgress?.({ ...progress });
+  return progress;
 }
 
 /** Queue every episode in `episodes`. Resolves when all have been queued (not

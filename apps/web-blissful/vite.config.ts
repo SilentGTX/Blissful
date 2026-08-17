@@ -205,7 +205,23 @@ export default defineConfig({
                 for (;;) {
                   const { done, value } = await reader.read();
                   if (done) break;
-                  if (!res.writableEnded) res.write(Buffer.from(value));
+                  if (res.writableEnded) break;
+                  // RESPECT BACKPRESSURE. Ignoring res.write()'s return value
+                  // buffers without limit, and with several concurrent 8 MB range
+                  // reads (offline file downloads) the socket died mid-body —
+                  // "206 Partial Content" followed by net::ERR_FAILED, which the
+                  // client can only see as a failed chunk.
+                  if (!res.write(Buffer.from(value))) {
+                    await new Promise<void>((resolve) => {
+                      const done2 = () => {
+                        res.off('drain', done2);
+                        res.off('close', done2);
+                        resolve();
+                      };
+                      res.once('drain', done2);
+                      res.once('close', done2);
+                    });
+                  }
                 }
               } catch { /* client disconnect */ }
               if (!res.writableEnded) res.end();

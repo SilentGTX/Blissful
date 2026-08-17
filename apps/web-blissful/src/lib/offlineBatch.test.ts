@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { rankReleasesForDownload } from './offlineBatch';
+import { bestProbed, isJapanese, rankReleasesForDownload, type ProbedRelease } from './offlineBatch';
 import type { FallbackRelease } from './fallbackReleases';
+import type { EmbeddedAudio, EmbeddedSubtitle } from './offlineDownloader';
 
 const rel = (name: string, size: string, url: string): FallbackRelease =>
   ({ name, size, url, torrentName: name, quality: null }) as unknown as FallbackRelease;
@@ -44,6 +45,19 @@ describe('rankReleasesForDownload', () => {
     expect(rankReleasesForDownload(releases, '1080p')[0]).toContain('Cached');
   });
 
+  it('recognises the tag releases actually use for Japanese', () => {
+    // `/^ja/` does NOT match `jpn`, which is how every release tags it — that is
+    // why a downloaded anime episode came back as the English dub.
+    const aud = (lang: string | null, title: string | null = null): EmbeddedAudio =>
+      ({ i: 0, lang, title, channels: 2, codec: 'aac' }) as EmbeddedAudio;
+    expect(isJapanese(aud('jpn'))).toBe(true);
+    expect(isJapanese(aud('ja'))).toBe(true);
+    expect(isJapanese(aud('ja-JP'))).toBe(true);
+    expect(isJapanese(aud(null, 'Japanese 2.0'))).toBe(true);
+    expect(isJapanese(aud('eng'))).toBe(false);
+    expect(isJapanese(aud('eng', 'English Dub'))).toBe(false);
+  });
+
   it('ignores sources ffmpeg and the browser cannot reach', () => {
     const releases = [
       rel('[RD+] Torrentio 1080p', '2 GB', 'magnet:?xt=urn:btih:abc'),
@@ -51,5 +65,81 @@ describe('rankReleasesForDownload', () => {
       rel('[RD+] Torrentio 1080p', '3 GB', `${RD}/Reachable.1080p.mkv`),
     ];
     expect(rankReleasesForDownload(releases, '1080p')).toEqual([`${RD}/Reachable.1080p.mkv`]);
+  });
+});
+
+describe('bestProbed', () => {
+  const aud = (i: number, lang: string | null): EmbeddedAudio =>
+    ({ i, lang, title: null, channels: 2, codec: 'aac' }) as EmbeddedAudio;
+  const sub = (lang: string, textBased: boolean): EmbeddedSubtitle =>
+    ({ index: 2, lang, title: null, codec: textBased ? 'subrip' : 'hdmv_pgs_subtitle', textBased }) as EmbeddedSubtitle;
+  const probed = (
+    url: string,
+    audio: EmbeddedAudio[],
+    subs: EmbeddedSubtitle[],
+    video: ProbedRelease['video'] = { width: 1920, height: 1080, codec: 'h264', bitDepth: 8 }
+  ): ProbedRelease => ({
+    url,
+    audio,
+    subs,
+    hasJapanese: audio.some(isJapanese),
+    hasTextSubs: subs.some((s) => s.textBased && /^en/i.test(s.lang ?? '')),
+    video,
+  });
+
+  it('prefers a Japanese-only release over a dual-audio one', () => {
+    // The real Bleach S1E7 list: jpn-only + English text subs, a DUAL release with
+    // image subs, and a dub. A copied file can't switch tracks in Chrome, so
+    // jpn-only is the only one that reliably sounds right.
+    const best = bestProbed([
+      probed('dual.mkv', [aud(0, 'jpn'), aud(1, 'eng')], [sub('eng', false)]),
+      probed('jpn-only.mkv', [aud(0, 'jpn')], [sub('eng', true)]),
+      probed('dub.mkv', [aud(0, 'eng')], []),
+    ]);
+    expect(best?.url).toBe('jpn-only.mkv');
+  });
+
+  it('takes a dual release over an English-only one', () => {
+    const best = bestProbed([
+      probed('dub.mkv', [aud(0, 'eng')], [sub('eng', true)]),
+      probed('dual.mkv', [aud(0, 'eng'), aud(1, 'jpn')], []),
+    ]);
+    expect(best?.url).toBe('dual.mkv');
+  });
+
+  it('prefers 8-bit over Hi10p when everything else is equal', () => {
+    // Only a tiebreak: iOS can't decode 10-bit H.264 at all, so between two
+    // otherwise-identical releases the 8-bit one is the better copy to keep.
+    const best = bestProbed([
+      probed('hi10p.mkv', [aud(0, 'jpn')], [sub('eng', true)], {
+        width: 1920, height: 1080, codec: 'h264', bitDepth: 10,
+      }),
+      probed('8bit.mkv', [aud(0, 'jpn')], [sub('eng', true)], {
+        width: 1920, height: 1080, codec: 'h264', bitDepth: 8,
+      }),
+    ]);
+    expect(best?.url).toBe('8bit.mkv');
+  });
+
+  it('never lets the codec outweigh audio language', () => {
+    const best = bestProbed([
+      probed('8bit-dub.mkv', [aud(0, 'eng')], [sub('eng', true)], {
+        width: 1920, height: 1080, codec: 'h264', bitDepth: 8,
+      }),
+      probed('hi10p-jpn.mkv', [aud(0, 'jpn')], [sub('eng', true)], {
+        width: 1920, height: 1080, codec: 'h264', bitDepth: 10,
+      }),
+    ]);
+    expect(best?.url).toBe('hi10p-jpn.mkv');
+  });
+
+  it('falls back to subtitles when nothing is Japanese', () => {
+    // Not anime: no Japanese anywhere, so the tiebreak is text subtitles, then
+    // the incoming order (cached, smallest).
+    const best = bestProbed([
+      probed('no-subs.mkv', [aud(0, 'eng')], []),
+      probed('text-subs.mkv', [aud(0, 'eng')], [sub('eng', true)]),
+    ]);
+    expect(best?.url).toBe('text-subs.mkv');
   });
 });
