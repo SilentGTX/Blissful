@@ -13,6 +13,7 @@ import { Button } from '@heroui/react';
 import { proxiedImage } from '../lib/imageProxy';
 import {
   detectOfflineCapabilities,
+  offlineBootWarning,
   offlineDurabilityWarning,
 } from '../lib/offlineCapabilities';
 import {
@@ -167,6 +168,7 @@ export default function DownloadsPage() {
 
   const totalBytes = rows.reduce((sum, r) => sum + r.bytes, 0);
   const durability = offlineDurabilityWarning(caps);
+  const bootWarning = offlineBootWarning(caps);
 
   return (
     <div className="mt-4 space-y-6 overflow-x-hidden">
@@ -208,6 +210,13 @@ export default function DownloadsPage() {
             {caps.blockedReason}
           </div>
         ) : null}
+        {bootWarning ? (
+          <div className="mt-4 rounded-2xl bg-red-500/12 px-4 py-3 text-[13px] leading-relaxed text-red-200 ring-1 ring-red-400/30">
+            <div className="mb-1 font-semibold">These downloads won’t open offline in this browser</div>
+            {bootWarning}
+          </div>
+        ) : null}
+
         {durability ? (
           <div className="mt-3 rounded-2xl bg-amber-400/10 px-4 py-3 text-[13px] leading-relaxed text-amber-100/90 ring-1 ring-amber-300/20">
             {durability}

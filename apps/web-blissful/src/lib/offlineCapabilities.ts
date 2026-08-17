@@ -33,6 +33,14 @@ export type OfflineCapabilities = {
    *  the display sleeping. Absent is survivable; the user just has to keep the
    *  screen awake themselves. */
   hasWakeLock: boolean;
+  /** Service workers exist here. Without them the APP ITSELF cannot load with no
+   *  connection — the downloads are intact in IndexedDB but unreachable, because
+   *  the page that reads them can't boot. Chrome and Firefox for iOS are the
+   *  trap: they're WebKit shells with no service-worker support, so a download
+   *  made there is worthless on a plane (you get the browser's offline error
+   *  page instead of Blissful). Safari — ideally added to the Home Screen — is
+   *  the only iOS route that works. */
+  hasServiceWorker: boolean;
   /** Human-readable reason `canPlay` is false, else null. */
   blockedReason: string | null;
 };
@@ -82,8 +90,22 @@ export function detectOfflineCapabilities(): OfflineCapabilities {
     isIosLike,
     iosVersion: isIosLike ? detectIosVersion() : null,
     hasWakeLock: typeof navigator !== 'undefined' && 'wakeLock' in navigator,
+    hasServiceWorker: typeof navigator !== 'undefined' && 'serviceWorker' in navigator,
     blockedReason,
   };
+}
+
+/** Why the app itself won't open with no connection, or null if it will.
+ *
+ *  Distinct from `blockedReason` (which is about PLAYING a download): this is
+ *  about the app being reachable at all. Downloading into a browser that can't
+ *  boot offline is the worst possible outcome — gigabytes fetched, then a dino
+ *  on the plane — so this is surfaced BEFORE a download starts, not after. */
+export function offlineBootWarning(caps: OfflineCapabilities): string | null {
+  if (caps.hasServiceWorker) return null;
+  return caps.isIosLike
+    ? 'This browser can’t open Blissful without a connection — Chrome and Firefox on iOS don’t support offline web apps. Open blissful.budinoff.com in SAFARI instead, then Share → Add to Home Screen. Downloads are stored per browser, so they have to be made in Safari too.'
+    : 'This browser can’t open Blissful without a connection (no service worker support), so downloads made here won’t be reachable offline.';
 }
 
 /** True when downloading is worth offering at all. */

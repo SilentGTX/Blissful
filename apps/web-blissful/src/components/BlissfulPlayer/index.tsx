@@ -1900,6 +1900,17 @@ export default function BlissfulPlayer(props: {
       setSelectedLanguage(null);
       return;
     }
+    // An offline download brings its own subtitles (chosen at download time and
+    // stored as WebVTT). Don't fetch network sources for it: offline they can
+    // only fail, and ONLINE they were winning the auto-pick — a downloaded
+    // episode played with a network-fetched Bulgarian track instead of the
+    // English one the user deliberately downloaded.
+    if (offlineIdFromUrl(props.url)) {
+      setSubtitleTracks([]);
+      setSelectedSubtitleKey('off');
+      setSelectedLanguage(null);
+      return;
+    }
 
     const controller = new AbortController();
     let cancelled = false;
@@ -2166,7 +2177,7 @@ export default function BlissfulPlayer(props: {
   // `selectedSubtitleKey` back to 'off' and making the user's subtitle
   // selection vanish after a transient stream error.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.addons, props.id, props.type, props.videoId, props.playerSettings.subtitlesLanguage]);
+  }, [props.addons, props.id, props.type, props.videoId, props.url, props.playerSettings.subtitlesLanguage]);
 
   // Probe the resolved stream URL for embedded subtitle tracks via the addon-proxy's
   // ffprobe/ffmpeg endpoints. Text-based codecs (subrip, ass, mov_text, etc.) get added
@@ -2189,6 +2200,43 @@ export default function BlissfulPlayer(props: {
       }
       return isHttpUrl(u) ? u : null;
     })();
+    // Offline download: the subtitle track (when it's a text one) was extracted
+    // to WebVTT at download time and lives in IndexedDB. Serve it from there as
+    // a blob and skip the stream probe entirely — probing needs the network, and
+    // the source URL is long expired by the time this plays.
+    const offlineIdForSubs = offlineIdFromUrl(props.url);
+    if (offlineIdForSubs) {
+      let cancelledSubs = false;
+      setChapters([]);
+      setVideoInfo(null);
+      void (async () => {
+        const { getDownload } = await import('../../lib/offlineStore');
+        const row = await getDownload(offlineIdForSubs);
+        if (cancelledSubs) return;
+        if (!row?.subtitleVtt) {
+          setEmbeddedSubtitleTracks([]);
+          return;
+        }
+        const blobUrl = URL.createObjectURL(
+          new Blob([row.subtitleVtt], { type: 'text/vtt' })
+        );
+        const key = `offline:${offlineIdForSubs}`;
+        setEmbeddedSubtitleTracks([
+          {
+            key,
+            lang: (row.subtitleLabel ?? 'und').slice(0, 3).toLowerCase(),
+            label: row.subtitleLabel ? `${row.subtitleLabel} (downloaded)` : 'Downloaded subtitles',
+            origin: 'Embedded',
+            url: blobUrl,
+          },
+        ]);
+        // Select it: the user picked this track when they started the download,
+        // and it's the only one that exists offline. Their own in-player choice
+        // still wins if they change it.
+        if (!userPickedSubtitleRef.current) setSelectedSubtitleKey(key);
+      })();
+      return () => { cancelledSubs = true; };
+    }
     if (!probeTarget) {
       setEmbeddedSubtitleTracks([]);
       setChapters([]);

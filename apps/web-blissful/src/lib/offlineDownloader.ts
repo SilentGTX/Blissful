@@ -61,10 +61,34 @@ export type DownloadRequest = {
   sourceUrl: string;
   audioTrackIdx?: number;
   quality: OfflineQuality;
-  /** Subtitle stream to burn into the picture (see OfflineDownload). */
-  subtitleStreamIdx?: number | null;
+  /** The chosen embedded subtitle track, or null for none. How it's applied
+   *  depends on its kind — see prepareSubtitle. */
+  subtitleTrack?: EmbeddedSubtitle | null;
   subtitleLabel?: string | null;
 };
+
+/** Audio track as reported by /transcode-audio. */
+export type EmbeddedAudio = {
+  i: number;
+  lang: string | null;
+  title: string | null;
+  codec: string | null;
+  channels: number | null;
+};
+
+/** Audio tracks in a source, so a download can pick a language instead of
+ *  blindly taking track 0 — which on a dual-audio anime release is usually the
+ *  English dub. */
+export async function fetchAudioTracks(sourceUrl: string): Promise<EmbeddedAudio[]> {
+  try {
+    const res = await fetch(`/transcode-audio?url=${encodeURIComponent(sourceUrl)}`);
+    if (!res.ok) return [];
+    const data = (await res.json()) as { tracks?: EmbeddedAudio[] };
+    return Array.isArray(data.tracks) ? data.tracks : [];
+  } catch {
+    return [];
+  }
+}
 
 /** Embedded subtitle track as reported by /probe-streams. */
 export type EmbeddedSubtitle = {
@@ -244,6 +268,37 @@ async function fetchPlaylist(
 /** Queue a new download. Resolves with the stored row as soon as its playlist
  *  is known (so the UI can show the real size/segment count immediately); the
  *  segment fetching continues in the background. */
+/** Decide how a chosen subtitle track travels with the download.
+ *
+ *  IMAGE subtitles (PGS/dvdsub — most anime, every Blu-ray remux) can only be
+ *  burned into the picture: nothing in a browser can decode them as text.
+ *
+ *  TEXT subtitles (subrip/ass/mov_text) must NOT be burned. ffmpeg's `overlay`
+ *  filter composites images only; handed a text stream it silently emits a
+ *  byte-identical picture, which is how a download came back claiming "ENG"
+ *  subtitles and showing none. They're extracted to WebVTT once and stored
+ *  instead — crisper at any size, switchable, and styled by the user's subtitle
+ *  settings. */
+async function prepareSubtitle(
+  sourceUrl: string,
+  track: EmbeddedSubtitle | null | undefined
+): Promise<{ burnIdx: number | null; vtt: string | null }> {
+  if (!track) return { burnIdx: null, vtt: null };
+  if (!track.textBased) return { burnIdx: track.index, vtt: null };
+  try {
+    const res = await fetch(
+      `/extract-subtitle.vtt?url=${encodeURIComponent(sourceUrl)}&track=${track.index}`
+    );
+    if (!res.ok) return { burnIdx: null, vtt: null };
+    const text = await res.text();
+    // A WebVTT file must start with the WEBVTT magic; anything else is an error
+    // page and would render as garbage.
+    return { burnIdx: null, vtt: /^\s*WEBVTT/.test(text) ? text : null };
+  } catch {
+    return { burnIdx: null, vtt: null };
+  }
+}
+
 /** Grab the poster bytes so the offline library has artwork. Best-effort: a
  *  missing poster is a cosmetic loss, never a reason to fail a download. */
 async function fetchPosterBlob(poster: string | null): Promise<Blob | null> {
@@ -261,7 +316,10 @@ async function fetchPosterBlob(poster: string | null): Promise<Blob | null> {
 
 export async function startDownload(req: DownloadRequest): Promise<OfflineDownload> {
   const audioTrackIdx = req.audioTrackIdx ?? 0;
-  const subtitleStreamIdx = req.subtitleStreamIdx ?? null;
+  const { burnIdx: subtitleStreamIdx, vtt: subtitleVtt } = await prepareSubtitle(
+    req.sourceUrl,
+    req.subtitleTrack
+  );
   const playlist = await fetchPlaylist(req.sourceUrl, audioTrackIdx, req.quality, subtitleStreamIdx);
   const posterBlob = await fetchPosterBlob(req.poster ?? null);
   const row = await createDownload({
@@ -278,6 +336,7 @@ export async function startDownload(req: DownloadRequest): Promise<OfflineDownlo
     audioTrackIdx,
     subtitleStreamIdx,
     subtitleLabel: req.subtitleLabel ?? null,
+    subtitleVtt,
     durationSeconds: playlist.durationSeconds,
     segmentDurations: playlist.segmentDurations,
     segmentCount: playlist.segmentUrls.length,

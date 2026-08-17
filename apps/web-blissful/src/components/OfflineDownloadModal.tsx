@@ -20,6 +20,7 @@ import { proxiedImage } from '../lib/imageProxy';
 import { BananasPicker, type BananaOption } from './BananasPicker';
 import {
   detectOfflineCapabilities,
+  offlineBootWarning,
   offlineDurabilityWarning,
 } from '../lib/offlineCapabilities';
 import {
@@ -33,10 +34,14 @@ import {
   type OfflineQuality,
 } from '../lib/offlineStore';
 import {
+  fetchAudioTracks,
   fetchEmbeddedSubtitles,
   startDownload,
+  type EmbeddedAudio,
   type EmbeddedSubtitle,
 } from '../lib/offlineDownloader';
+import { pickPreferredAudioTrack } from '../lib/audioTracks';
+import { useStorage } from '../context/StorageProvider';
 import { notifyError, notifySuccess } from '../lib/toastQueues';
 
 export type OfflineDownloadModalProps = {
@@ -110,6 +115,12 @@ export function OfflineDownloadModal({
   const [pendingRelease, setPendingRelease] = useState<string | null>(null);
   const [subtitles, setSubtitles] = useState<EmbeddedSubtitle[] | null>(null);
   const [chosenSub, setChosenSub] = useState<number | null>(null);
+  // Audio is chosen per download too: a dual-audio anime release usually has the
+  // English dub as track 0, so "just take the first track" gets it wrong for
+  // exactly the content people download most.
+  const [audios, setAudios] = useState<EmbeddedAudio[] | null>(null);
+  const [chosenAudio, setChosenAudio] = useState(0);
+  const { playerSettings } = useStorage();
 
   useEffect(() => {
     if (!isOpen) return;
@@ -134,6 +145,9 @@ export function OfflineDownloadModal({
   if (!isOpen) return null;
 
   const durability = offlineDurabilityWarning(caps);
+  // Louder than `durability`: without a service worker the app can't even open
+  // offline, so the download would be unreachable exactly when it's needed.
+  const bootWarning = offlineBootWarning(caps);
   // Per-hour figures: the true total isn't known until the proxy reports the
   // real duration, which happens when the download starts.
   const perHour = (q: OfflineQuality) => formatBytes(estimateDownloadBytes(3600, q));
@@ -145,9 +159,17 @@ export function OfflineDownloadModal({
     if (starting) return;
     setPendingRelease(url);
     setSubtitles(null);
-    const found = await fetchEmbeddedSubtitles(url);
-    setSubtitles(found);
-    const english = found.filter((s) => /^en/i.test(s.lang ?? '') || /english/i.test(s.title ?? ''));
+    setAudios(null);
+    const [foundSubs, foundAudio] = await Promise.all([
+      fetchEmbeddedSubtitles(url),
+      fetchAudioTracks(url),
+    ]);
+    setSubtitles(foundSubs);
+    setAudios(foundAudio);
+
+    const english = foundSubs.filter(
+      (s) => /^en/i.test(s.lang ?? '') || /english/i.test(s.title ?? '')
+    );
     // Prefer a "Full"/dialogue track over a "Signs/Songs" one — the latter only
     // captions on-screen text and songs, so it looks broken as a main subtitle.
     const full =
@@ -156,6 +178,26 @@ export function OfflineDownloadModal({
       english[0] ??
       null;
     setChosenSub(full ? full.index : null);
+
+    // Audio default: JAPANESE WINS when the release has it.
+    //
+    // Track 0 is the wrong default for the content people download most: this
+    // very release lists `0: eng` (dub) before `1: jpn`, which is how a download
+    // came back with English audio on an anime. The presence of a Japanese track
+    // is itself a strong signal that the original language is Japanese, and it
+    // doesn't depend on the id namespace — the same show is reachable as both
+    // `kitsu:244` and `tt0434665`, so sniffing the id would have missed it.
+    // Otherwise fall back to the profile's preference, then track 0. The picker
+    // below shows the choice either way, so overriding is one tap.
+    const japanese = pickPreferredAudioTrack(foundAudio, 'Japanese');
+    const preferred = pickPreferredAudioTrack(foundAudio, playerSettings.audioLanguage);
+    setChosenAudio(japanese ?? preferred ?? 0);
+  };
+
+  const audioLabelFor = (a: EmbeddedAudio): string => {
+    const lang = (a.lang ?? 'und').toUpperCase();
+    const bits = [a.title, a.channels ? `${a.channels}ch` : null, a.codec?.toUpperCase()].filter(Boolean);
+    return bits.length ? `${lang} · ${bits.join(' · ')}` : lang;
   };
 
   const subtitleLabelFor = (s: EmbeddedSubtitle): string => {
@@ -181,7 +223,8 @@ export function OfflineDownloadModal({
         poster: poster ?? null,
         sourceUrl: url,
         quality,
-        subtitleStreamIdx: chosenSub,
+        audioTrackIdx: chosenAudio,
+        subtitleTrack: (subtitles ?? []).find((s) => s.index === chosenSub) ?? null,
         subtitleLabel:
           chosenSub != null
             ? subtitleLabelFor(
@@ -259,8 +302,16 @@ export function OfflineDownloadModal({
             ) : null}
 
             <div className="mt-4">
-              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/50">
-                Quality
+              {/* Called "Save as", NOT "Quality": the release list below is also
+                  grouped by quality (4K/1080p/720p), and having two things
+                  labelled quality in one dialog read as being asked twice. This
+                  one is what the file is re-encoded to — i.e. its size. */}
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/50">
+                Save as
+              </div>
+              <div className="mb-2 text-[11px] leading-relaxed text-white/40">
+                How it's stored on this device — the release you pick below can be
+                any source quality.
               </div>
               {/* Even 2x2 grid rather than wrapping flex — four chips in a
                   340px column otherwise orphan 1080p onto its own row. */}
@@ -291,6 +342,13 @@ export function OfflineDownloadModal({
                 </div>
               ) : null}
             </div>
+
+            {bootWarning ? (
+              <div className="mt-4 rounded-xl bg-red-500/12 px-4 py-3 text-[12px] leading-relaxed text-red-200 ring-1 ring-red-400/30">
+                <div className="mb-1 font-semibold">This browser can’t play downloads offline</div>
+                {bootWarning}
+              </div>
+            ) : null}
 
             {durability ? (
               <div className="mt-3 rounded-xl bg-amber-400/10 px-4 py-3 text-[12px] leading-relaxed text-amber-100/90 ring-1 ring-amber-300/20">
@@ -328,12 +386,39 @@ export function OfflineDownloadModal({
                 /* Subtitle step. Burned into the picture, so it must be decided
                    BEFORE downloading — the segments are encoded with it. */
                 <div className="rounded-xl bg-white/5 p-3 ring-1 ring-white/10">
-                  {subtitles == null ? (
+                  {subtitles == null || audios == null ? (
                     <div className="py-4 text-center text-sm text-white/70">
-                      Checking this release for subtitles…
+                      Checking this release for audio and subtitles…
                     </div>
                   ) : (
                     <>
+                      {/* Audio first: on a dual-audio anime release track 0 is
+                          usually the English dub, so this is the setting most
+                          likely to be wrong if left alone. */}
+                      {audios.length > 1 ? (
+                        <>
+                          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/50">
+                            Audio
+                          </div>
+                          <div className="mb-3 space-y-1.5">
+                            {audios.map((a) => (
+                              <button
+                                key={a.i}
+                                type="button"
+                                onClick={() => setChosenAudio(a.i)}
+                                className={`w-full cursor-pointer rounded-lg px-3 py-2 text-left text-sm transition ${
+                                  chosenAudio === a.i
+                                    ? 'bg-[var(--bliss-accent)] text-black'
+                                    : 'bg-white/[0.06] text-white/80 hover:bg-white/10'
+                                }`}
+                              >
+                                {audioLabelFor(a)}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      ) : null}
+
                       <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/50">
                         Subtitles
                       </div>
@@ -367,7 +452,9 @@ export function OfflineDownloadModal({
                       <div className="mt-2 text-[11px] leading-relaxed text-white/45">
                         {subtitles.length === 0
                           ? 'This release has no embedded subtitles. It will download without them.'
-                          : 'Subtitles are burned into the picture so they work offline. Pick before downloading — this can’t be changed afterwards.'}
+                          : chosenSub != null && subtitles.find((s) => s.index === chosenSub)?.textBased === false
+                            ? 'Image subtitles are burned into the picture (the only way they can show in a browser), so this can’t be changed afterwards.'
+                            : 'Saved alongside the video and switchable during playback. Audio and subtitles are fixed once the download starts.'}
                       </div>
                       <div className="mt-3 flex gap-2">
                         <button

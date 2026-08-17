@@ -82,8 +82,18 @@ export type OfflineDownload = {
    *  anime and every Blu-ray remux — reach a browser at all, and being part of
    *  the video means they work offline with no extra storage. */
   subtitleStreamIdx: number | null;
-  /** Human label of the burned-in track, for the Downloads list. */
+  /** Human label of the stored/burned track, for the Downloads list. */
   subtitleLabel: string | null;
+  /** WebVTT text for a TEXT subtitle track (subrip/ass/mov_text), extracted at
+   *  download time and rendered as a real subtitle track during offline
+   *  playback.
+   *
+   *  Text subs are NOT burned in: ffmpeg's `overlay` filter only composites
+   *  IMAGE subtitles, and given a text stream it silently produces an identical
+   *  picture (measured byte-identical) — a download that claims subtitles and
+   *  has none. Keeping text as VTT is better anyway: crisp at any size,
+   *  switchable, and styled by the user's subtitle settings. */
+  subtitleVtt?: string | null;
   durationSeconds: number;
   segmentDurations: number[];
   segmentCount: number;
