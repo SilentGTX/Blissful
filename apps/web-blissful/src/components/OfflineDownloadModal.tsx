@@ -275,7 +275,17 @@ export function OfflineDownloadModal({
       const cached = /\[\s*RD\s*[+⚡]/iu.test(hay) || /cached/i.test(hay);
       const uncached = /\[\s*RD\s*(?:download|↓|⬇)/iu.test(hay);
       const bytes = sizeBytesOf(r.size) ?? Number.MAX_SAFE_INTEGER;
-      return { r, rank: uncached ? 2 : cached ? 0 : 1, bytes, height: sourceHeightOf(r.url) };
+      // Prefer a re-mintable torrentio `/resolve/` URL over a fixed direct
+      // Real-Debrid link: direct links expire, and a download runs for minutes.
+      // See rankReleasesForDownload in lib/offlineBatch for the measurement.
+      const durable = /\/resolve\//i.test(r.url) ? 0 : 1;
+      return {
+        r,
+        rank: uncached ? 2 : cached ? 0 : 1,
+        durable,
+        bytes,
+        height: sourceHeightOf(r.url),
+      };
     });
     // Sources too small for the chosen rung are still usable (they just won't be
     // upscaled), so keep them — but after the ones that can actually deliver it.
@@ -283,6 +293,7 @@ export function OfflineDownloadModal({
       .sort(
         (a, b) =>
           a.rank - b.rank ||
+          a.durable - b.durable ||
           Number(a.height < minHeight) - Number(b.height < minHeight) ||
           a.bytes - b.bytes
       )

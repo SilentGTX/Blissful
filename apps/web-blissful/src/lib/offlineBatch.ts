@@ -75,7 +75,13 @@ export function rankReleasesForDownload(
 ): string[] {
   const minHeight = MIN_HEIGHT[quality];
   const seen = new Set<string>();
-  const scored: Array<{ url: string; rank: number; short: number; bytes: number }> = [];
+  const scored: Array<{
+    url: string;
+    rank: number;
+    durable: number;
+    short: number;
+    bytes: number;
+  }> = [];
   for (const r of releases) {
     const url = r.url ?? '';
     // Only an HTTP source can be fed to /transcode-seg: a magnet or
@@ -94,15 +100,25 @@ export function rankReleasesForDownload(
     const hay = `${r.name} ${r.torrentName ?? ''} ${r.quality ?? ''}`;
     const cached = /\[\s*RD\s*[+⚡]/iu.test(hay) || /cached/i.test(hay);
     const uncached = /\[\s*RD\s*(?:download|↓|⬇)/iu.test(hay);
+    // A torrentio `/resolve/` URL is re-mintable: the proxy follows it to a fresh
+    // Real-Debrid link on every request, and re-resolves when one dies. A DIRECT
+    // `download.real-debrid.com` URL is a fixed link that expires — measured on a
+    // long download, every segment after the expiry failed with ffmpeg's "End of
+    // file" and nothing server-side could refresh it. Prefer the re-mintable
+    // shape for downloads, which run for many minutes.
+    const durable = /\/resolve\//i.test(url) ? 0 : 1;
     scored.push({
       url,
       rank: uncached ? 2 : cached ? 0 : 1,
+      durable,
       short: sourceHeight(hay) < minHeight ? 1 : 0,
       bytes: sizeBytes(r.size),
     });
   }
   return scored
-    .sort((a, b) => a.rank - b.rank || a.short - b.short || a.bytes - b.bytes)
+    .sort(
+      (a, b) => a.rank - b.rank || a.durable - b.durable || a.short - b.short || a.bytes - b.bytes
+    )
     .map((s) => s.url);
 }
 
