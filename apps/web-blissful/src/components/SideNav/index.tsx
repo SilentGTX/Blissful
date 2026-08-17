@@ -17,6 +17,7 @@ export default function SideNav(props: SideNavProps) {
         userLabel={props.userLabel}
         onOpenContinueItem={props.onOpenContinueItem}
         onRemoveContinueItem={props.onRemoveContinueItem}
+        offline={props.offline}
       />
     );
   }
@@ -34,6 +35,7 @@ export default function SideNav(props: SideNavProps) {
       userLabel={props.userLabel}
       onOpenContinueItem={props.onOpenContinueItem}
       onRemoveContinueItem={props.onRemoveContinueItem}
+      offline={props.offline}
     />
   );
 }

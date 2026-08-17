@@ -5,6 +5,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthProvider';
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { postHeartbeat, type PresenceActivity } from './blissfulAuthApi';
 
 const HEARTBEAT_INTERVAL_MS = 30 * 1000;
@@ -35,10 +36,14 @@ export function clearCurrentActivity() {
 
 export function usePresenceHeartbeat() {
   const { authKey } = useAuth();
+  const online = useOnlineStatus();
   const lastBeatRef = useRef(0);
 
   useEffect(() => {
     if (!authKey) return;
+    // Offline: a heartbeat can only fail, and it fires every ~30s. Skipped
+    // until the connection returns (the `online` dep restarts it).
+    if (!online) return;
     const beat = () => {
       lastBeatRef.current = Date.now();
       void postHeartbeat(authKey, currentActivityRef).catch(() => {
@@ -59,5 +64,5 @@ export function usePresenceHeartbeat() {
       window.clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [authKey]);
+  }, [authKey, online]);
 }

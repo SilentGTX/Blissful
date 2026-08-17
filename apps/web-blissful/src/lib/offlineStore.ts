@@ -63,7 +63,13 @@ export type OfflineDownload = {
   title: string;
   /** "S1E2 - Episode name" or null — shown under the title. */
   subtitle: string | null;
+  /** Remote poster URL. Useless offline — see `posterBlob`, which is what the
+   *  Downloads list actually renders. Kept for the player deep link. */
   poster: string | null;
+  /** The poster IMAGE, stored at download time. Without this the offline
+   *  library is a list of grey rectangles: the remote URL (and the /img proxy
+   *  in front of it) needs the network the user doesn't have. */
+  posterBlob?: Blob | null;
   quality: OfflineQuality;
   /** The source URL the segments were transcoded from (RD/torrentio). Kept so a
    *  resumed download can re-request segments; RD links expire, so the resume

@@ -32,6 +32,7 @@ import {
   type OfflineDownload,
   type OfflineQuality,
 } from './offlineStore';
+import { proxiedImage } from './imageProxy';
 
 /** Parallel segment fetches. Each one is an ffmpeg encode on the Mac, whose own
  *  prefetcher already works ahead, so a small number keeps the pipe full
@@ -243,10 +244,26 @@ async function fetchPlaylist(
 /** Queue a new download. Resolves with the stored row as soon as its playlist
  *  is known (so the UI can show the real size/segment count immediately); the
  *  segment fetching continues in the background. */
+/** Grab the poster bytes so the offline library has artwork. Best-effort: a
+ *  missing poster is a cosmetic loss, never a reason to fail a download. */
+async function fetchPosterBlob(poster: string | null): Promise<Blob | null> {
+  if (!poster) return null;
+  try {
+    const res = await fetch(proxiedImage(poster));
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    // Guard against an error page being stored as "artwork".
+    return blob.size > 0 && blob.type.startsWith('image/') ? blob : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function startDownload(req: DownloadRequest): Promise<OfflineDownload> {
   const audioTrackIdx = req.audioTrackIdx ?? 0;
   const subtitleStreamIdx = req.subtitleStreamIdx ?? null;
   const playlist = await fetchPlaylist(req.sourceUrl, audioTrackIdx, req.quality, subtitleStreamIdx);
+  const posterBlob = await fetchPosterBlob(req.poster ?? null);
   const row = await createDownload({
     id: `dl_${req.metaId}_${req.videoId ?? 'movie'}_${req.quality}_${Date.now().toString(36)}`,
     metaId: req.metaId,
@@ -255,6 +272,7 @@ export async function startDownload(req: DownloadRequest): Promise<OfflineDownlo
     title: req.title,
     subtitle: req.subtitle,
     poster: req.poster,
+    posterBlob,
     quality: req.quality,
     sourceUrl: req.sourceUrl,
     audioTrackIdx,

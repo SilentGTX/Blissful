@@ -17,6 +17,7 @@ import {
 import { useAuth } from './AuthProvider';
 import { STORAGE_URL, STORAGE_WS_URL } from '../lib/storageBaseUrl';
 import { isNativeShell } from '../lib/desktop';
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
 
 export type PartyInviteRequest = {
   from: { userId: string; displayName: string };
@@ -79,6 +80,7 @@ function buildWsUrl(): string {
 
 export function UserSocketProvider({ children }: { children: ReactNode }) {
   const { authKey } = useAuth();
+  const online = useOnlineStatus();
   // Registry of handlers keyed by event name. Every matching message
   // dispatches to every subscribed handler.
   const handlersRef = useRef<Map<EventName, Set<Handler<EventName>>>>(new Map());
@@ -113,6 +115,13 @@ export function UserSocketProvider({ children }: { children: ReactNode }) {
     };
 
     if (!authKey) {
+      closeExisting();
+      return;
+    }
+    // Offline: don't open (or keep retrying) the invite socket — it can only
+    // fail, and its reconnect backoff would run for the whole flight. The
+    // `online` dep reconnects as soon as the network is back.
+    if (!online) {
       closeExisting();
       return;
     }
@@ -161,7 +170,7 @@ export function UserSocketProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       closeExisting();
     };
-  }, [authKey]);
+  }, [authKey, online]);
 
   const value = useMemo(() => ({ subscribe }), [subscribe]);
   return <UserSocketContext.Provider value={value}>{children}</UserSocketContext.Provider>;

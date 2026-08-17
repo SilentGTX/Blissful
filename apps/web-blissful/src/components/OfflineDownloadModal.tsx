@@ -210,7 +210,10 @@ export function OfflineDownloadModal({
     }
   };
 
-  const bodyContent = (
+  // The two halves of the dialog. Stacked in the mobile sheet; side by side on
+  // desktop, where a single tall column left the release list in a narrow strip
+  // and wrapped the quality chips onto a second row.
+  const infoPanel = (
     <>
       {poster ? (
         <>
@@ -259,7 +262,9 @@ export function OfflineDownloadModal({
               <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/50">
                 Quality
               </div>
-              <div className="flex flex-wrap gap-2">
+              {/* Even 2x2 grid rather than wrapping flex — four chips in a
+                  340px column otherwise orphan 1080p onto its own row. */}
+              <div className="grid grid-cols-2 gap-2">
                 {OFFLINE_QUALITIES.map((q) => (
                   <button
                     key={q}
@@ -298,7 +303,15 @@ export function OfflineDownloadModal({
               the background{caps.hasWakeLock ? '. The screen is kept awake for you.' : ', and this browser can’t keep your screen awake, so turn off auto-lock.'}
             </div>
 
-            <div className="mt-4">
+          </>
+        )}
+      </div>
+    </>
+  );
+
+  const choicePanel = caps.blockedReason ? null : (
+    <div className="relative px-5 pb-5 md:px-0 md:pb-0">
+            <div className="mt-4 md:mt-0">
               <div className="mb-2 flex items-center gap-2">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/50">
                   Choose a release
@@ -395,9 +408,13 @@ export function OfflineDownloadModal({
                 </div>
               )}
             </div>
-          </>
-        )}
-      </div>
+    </div>
+  );
+
+  const bodyContent = (
+    <>
+      {infoPanel}
+      {choicePanel}
     </>
   );
 
@@ -438,14 +455,24 @@ export function OfflineDownloadModal({
           if (!open) onClose();
         }}
       >
-        <BlissModal.Container size="sm">
-          <BlissModal.Dialog>
+        <BlissModal.Container size="lg">
+          {/* HeroUI's `lg` dialog caps at 512px, which is what squeezed the
+              release list into a strip. Widen the frame itself. */}
+          <BlissModal.Dialog className="w-full max-w-[940px]">
             <BlissModal.Header className="sr-only">
               <BlissModal.Heading>Download for offline</BlissModal.Heading>
             </BlissModal.Header>
             <BlissModal.Body className="px-0">
-              <div className="solid-surface relative mx-auto max-h-[90vh] w-full max-w-[460px] overflow-y-auto rounded-[20px] bg-[#101116]">
-                {bodyContent}
+              {/* Desktop: a wide dialog split in two — the decisions (quality,
+                  storage, warnings) on the left over the artwork, the long
+                  release list scrolling on its own on the right. The previous
+                  single 460px column made a 600-release list unusable and
+                  wrapped the four quality chips onto two rows. */}
+              <div className="solid-surface relative mx-auto grid max-h-[86vh] w-full max-w-[900px] grid-cols-[minmax(0,340px)_minmax(0,1fr)] overflow-hidden rounded-[24px] bg-[#101116]">
+                <div className="relative overflow-y-auto">{infoPanel}</div>
+                <div className="relative flex min-h-0 flex-col overflow-y-auto border-l border-white/10 p-5">
+                  {choicePanel}
+                </div>
               </div>
             </BlissModal.Body>
           </BlissModal.Dialog>

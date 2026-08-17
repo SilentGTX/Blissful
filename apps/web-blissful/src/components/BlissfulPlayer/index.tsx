@@ -2617,7 +2617,26 @@ export default function BlissfulPlayer(props: {
         // the playlist and every segment come off the device. This is what
         // makes offline work on iPhone (see lib/offlineHlsLoader.ts) — the
         // service-worker route can't serve media reliably in WebKit.
-        ...(offlineId != null ? { loader: OfflineHlsLoader } : {}),
+        //
+        // The buffer is also retuned for local playback. The streaming defaults
+        // hold ~90s each way to ride out network hiccups, but there is no
+        // network here: a refill is an IndexedDB read. On iPhone that large
+        // buffer is actively harmful — ManagedMediaSource evicts under memory
+        // pressure and asks the app to stop buffering, so every seek fights
+        // eviction and re-append (reported as very choppy seeking on iOS).
+        // Small buffers + a wider fragment-lookup tolerance + more stall nudges
+        // suit an instant local source much better.
+        ...(offlineId != null
+          ? {
+            loader: OfflineHlsLoader,
+            maxBufferLength: 30,
+            maxMaxBufferLength: 60,
+            maxBufferSize: 20 * 1024 * 1024,
+            backBufferLength: 30,
+            maxFragLookUpTolerance: 0.5,
+            nudgeMaxRetry: 10,
+          }
+          : {}),
         xhrSetup: (xhr) => {
           xhr.withCredentials = false;
         },

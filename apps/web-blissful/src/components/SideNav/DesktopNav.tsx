@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import type { SideNavView, SideNavProps } from './types';
 import { ICONS } from './utils';
+import { isOnlineOnlyNav } from '../../lib/offlineRoutes';
 import { NavItem } from './NavItem';
 import { ContinueWatchingDrawer } from './ContinueWatchingDrawer';
 import { ContinueWatchingItem } from './ContinueWatchingItem';
@@ -32,6 +33,7 @@ export type DesktopNavProps = Pick<
   | 'userLabel'
   | 'onOpenContinueItem'
   | 'onRemoveContinueItem'
+  | 'offline'
 >;
 
 export function DesktopNav(props: DesktopNavProps) {
@@ -234,6 +236,7 @@ export function DesktopNav(props: DesktopNavProps) {
           <ul className="flex flex-col gap-0.5">
             <NavItem
               label="Home"
+              unavailable={props.offline && isOnlineOnlyNav('home')}
               icon={ICONS.home}
               active={props.active === 'home'}
               collapsed={collapsed}
@@ -241,6 +244,7 @@ export function DesktopNav(props: DesktopNavProps) {
             />
             <NavItem
               label="Discover"
+              unavailable={props.offline && isOnlineOnlyNav('discover')}
               icon={ICONS.discover}
               active={props.active === 'discover'}
               collapsed={collapsed}
@@ -248,6 +252,7 @@ export function DesktopNav(props: DesktopNavProps) {
             />
             <NavItem
               label="Library"
+              unavailable={props.offline && isOnlineOnlyNav('library')}
               icon={ICONS.library}
               active={props.active === 'library'}
               collapsed={collapsed}
@@ -258,6 +263,7 @@ export function DesktopNav(props: DesktopNavProps) {
             {isNativeShell() ? (
               <NavItem
                 label="Addons"
+                unavailable={props.offline && isOnlineOnlyNav('addons')}
                 icon={ICONS.addons}
                 active={props.active === 'addons'}
                 collapsed={collapsed}

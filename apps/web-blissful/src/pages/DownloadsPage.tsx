@@ -31,6 +31,7 @@ import {
 } from '../lib/offlineDownloader';
 import { offlineAppUrl } from '../lib/offlineUrls';
 import { notifyError } from '../lib/toastQueues';
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
 
 function statusLabel(row: OfflineDownload): string {
   const done = row.storedSegments.length;
@@ -67,6 +68,7 @@ function formatDuration(seconds: number): string {
 
 export default function DownloadsPage() {
   const navigate = useNavigate();
+  const online = useOnlineStatus();
   const caps = useMemo(() => detectOfflineCapabilities(), []);
   const [rows, setRows] = useState<OfflineDownload[]>([]);
   const [storage, setStorage] = useState<{ usage: number | null; quota: number | null }>({
@@ -139,6 +141,30 @@ export default function DownloadsPage() {
     [refreshStorage]
   );
 
+  // Poster object URLs, derived (not stored in state) so there's no extra render
+  // pass; the effect below only handles revoking them.
+  const posterUrls = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const row of rows) {
+      if (row.posterBlob) map.set(row.id, URL.createObjectURL(row.posterBlob));
+    }
+    return map;
+  }, [rows]);
+  useEffect(
+    () => () => {
+      for (const url of posterUrls.values()) URL.revokeObjectURL(url);
+    },
+    [posterUrls]
+  );
+
+  /** Stored blob first — it's the only source that works offline. The remote URL
+   *  is a fallback for rows downloaded before poster caching existed. */
+  const posterSrc = useCallback(
+    (row: OfflineDownload): string | null =>
+      posterUrls.get(row.id) ?? (online && row.poster ? proxiedImage(row.poster) ?? null : null),
+    [posterUrls, online]
+  );
+
   const totalBytes = rows.reduce((sum, r) => sum + r.bytes, 0);
   const durability = offlineDurabilityWarning(caps);
 
@@ -163,6 +189,19 @@ export default function DownloadsPage() {
             </div>
           ) : null}
         </div>
+
+        {/* Offline mode is a deliberate, explained state — not a broken app.
+            The rest of Blissful needs the network, so it's out of reach until
+            the connection is back. */}
+        {!online ? (
+          <div className="mt-4 flex items-start gap-3 rounded-2xl bg-[var(--bliss-accent)]/10 px-4 py-3 ring-1 ring-[var(--bliss-accent)]/25">
+            <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-[var(--bliss-accent)]" />
+            <div className="text-[13px] leading-relaxed text-[var(--bliss-accent)]">
+              <span className="font-semibold">You’re offline.</span> Only downloads are
+              available — the rest of Blissful needs a connection and comes back on its own.
+            </div>
+          </div>
+        ) : null}
 
         {caps.blockedReason ? (
           <div className="mt-4 rounded-2xl bg-red-500/10 px-4 py-3 text-[13px] leading-relaxed text-red-200 ring-1 ring-red-400/20">
@@ -191,9 +230,9 @@ export default function DownloadsPage() {
                   key={row.id}
                   className="flex gap-3 rounded-2xl border border-white/10 bg-white/5 p-3 sm:gap-4 sm:p-4"
                 >
-                  {row.poster ? (
+                  {posterSrc(row) ? (
                     <img
-                      src={proxiedImage(row.poster) ?? undefined}
+                      src={posterSrc(row) ?? undefined}
                       alt=""
                       className="h-[86px] w-[58px] shrink-0 rounded-xl object-cover sm:h-[110px] sm:w-[74px]"
                       loading="lazy"

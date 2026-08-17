@@ -17,7 +17,7 @@ import { isNativeShell } from '../../lib/desktop';
 
 export type MobileNavProps = Pick<
   SideNavProps,
-  'active' | 'onChange' | 'onOpenLogin' | 'onOpenJoinParty' | 'continueWatching' | 'continueSyncError' | 'userLabel' | 'onOpenContinueItem' | 'onRemoveContinueItem'
+  'active' | 'onChange' | 'onOpenLogin' | 'onOpenJoinParty' | 'continueWatching' | 'continueSyncError' | 'userLabel' | 'onOpenContinueItem' | 'onRemoveContinueItem' | 'offline'
 >;
 
 // Swipeable item with iOS-style swipe to delete
@@ -194,18 +194,21 @@ export function MobileNav(props: MobileNavProps) {
         <div className="solid-surface flex h-[80px] items-center justify-around rounded-[28px] bg-white/6 px-2 shadow-lg backdrop-blur-xl border border-white/10">
           <MobileNavItem
             label="Home"
+            unavailable={props.offline}
             icon={ICONS.home}
             active={props.active === 'home'}
             onPress={() => handleNavChange('home')}
           />
           <MobileNavItem
             label="Discover"
+            unavailable={props.offline}
             icon={ICONS.discover}
             active={props.active === 'discover'}
             onPress={() => handleNavChange('discover')}
           />
           <MobileNavItem
             label="Library"
+            unavailable={props.offline}
             icon={ICONS.library}
             active={props.active === 'library'}
             onPress={() => handleNavChange('library')}
@@ -224,6 +227,7 @@ export function MobileNav(props: MobileNavProps) {
           <MobileNavItem
             label="Party"
             icon={ICONS.watchParty}
+            unavailable={props.offline}
             active={false}
             onPress={() => props.onOpenJoinParty()}
           />

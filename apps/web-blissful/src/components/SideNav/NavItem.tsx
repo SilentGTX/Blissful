@@ -12,6 +12,9 @@ type NavItemProps = {
   active: boolean;
   collapsed: boolean;
   onPress: () => void;
+  /** Needs a connection we don't have (offline mode). Dimmed and inert, rather
+   *  than hidden, so the app doesn't appear to lose features. */
+  unavailable?: boolean;
 };
 
 export function NavItem(props: NavItemProps) {
@@ -21,12 +24,15 @@ export function NavItem(props: NavItemProps) {
   const button = (
     <button
       type="button"
-      onClick={props.onPress}
+      onClick={props.unavailable ? undefined : props.onPress}
+      disabled={props.unavailable}
+      title={props.unavailable ? 'Needs a connection' : undefined}
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
       onFocus={() => setIsHovering(true)}
       onBlur={() => setIsHovering(false)}
       className={
+        (props.unavailable ? 'pointer-events-none opacity-35 ' : '') +
         // Height clamps with the larger of viewport-height (3vh)
         // and viewport-width (1.6vw) factors — scales on both tall
         // monitors and 4K TVs while staying tight enough that the
@@ -80,14 +86,18 @@ type MobileNavItemProps = {
   icon: string;
   active: boolean;
   onPress: () => void;
+  /** See NavItemProps.unavailable. */
+  unavailable?: boolean;
 };
 
 export function MobileNavItem(props: MobileNavItemProps) {
   return (
     <button
       type="button"
-      onClick={props.onPress}
+      onClick={props.unavailable ? undefined : props.onPress}
+      disabled={props.unavailable}
       className={
+        (props.unavailable ? 'pointer-events-none opacity-30 ' : '') +
         'relative flex h-14 min-w-[44px] flex-1 flex-col items-center justify-center gap-1 transition-colors duration-200 ' +
         (props.active
           ? 'text-[var(--bliss-accent)] drop-shadow-[0_0_12px_var(--bliss-accent-glow)]'

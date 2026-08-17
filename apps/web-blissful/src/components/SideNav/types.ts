@@ -19,4 +19,8 @@ export type SideNavProps = {
   onOpenContinueItem: (item: LibraryItem, options?: { source?: 'mobile' | 'desktop' }) => void;
   onRemoveContinueItem: (item: LibraryItem) => void;
   isMobile?: boolean;
+  /** No connection: everything except Downloads/Settings is unreachable, so
+   *  those entries render dimmed and inert instead of bouncing through a
+   *  redirect. */
+  offline?: boolean;
 };

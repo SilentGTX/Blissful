@@ -33,7 +33,9 @@ function HeroTransitionOverlay() {
     </div>
   );
 }
-import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
+import { isOfflineSafeRoute } from '../lib/offlineRoutes';
 import { RouteTransition } from './RouteTransition';
 import { PlayerBufferingScreen } from './PlayerBufferingScreen';
 import SideNav from './SideNav';
@@ -423,6 +425,10 @@ export default function AppShell() {
     persistStorageState({ uiStyle });
   }, [persistStorageState, uiStyle]);
 
+  // Offline mode collapses the app to the downloaded library (see the gate
+  // before the render return).
+  const online = useOnlineStatus();
+
   // ---------- active nav ---------------------------------------------------
   const activeNav = useMemo(() => {
     if (location.pathname.startsWith('/discover')) return 'discover';
@@ -481,6 +487,18 @@ export default function AppShell() {
     [navigate]
   );
 
+  // ── Offline mode ─────────────────────────────────────────────────────────
+  // With no connection, every catalog/addon/library/social surface is a dead
+  // spinner or an error, and navigating back into them from the player was the
+  // reported "the whole site is buggy offline". So the app collapses to what
+  // genuinely works offline: the downloaded library, and the player playing from
+  // it. Anything else redirects to /downloads until the connection returns.
+  // Deliberately a route-level gate rather than making each screen
+  // offline-tolerant — one place to reason about, and nothing can slip through.
+  if (!online && !isOfflineSafeRoute(location.pathname)) {
+    return <Navigate to="/downloads" replace />;
+  }
+
   return (
     <>
       <div
@@ -512,6 +530,7 @@ export default function AppShell() {
                       onOpenContinueItem={onOpenContinueItem}
                       onRemoveContinueItem={onRemoveContinueItem}
                       isMobile={false}
+                      offline={!online}
                     />
                   </div>
                 </aside>
@@ -595,6 +614,7 @@ export default function AppShell() {
                onOpenContinueItem={onOpenContinueItem}
                onRemoveContinueItem={onRemoveContinueItem}
               isMobile={true}
+              offline={!online}
             />
           </>
         ) : null}

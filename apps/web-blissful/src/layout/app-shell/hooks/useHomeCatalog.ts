@@ -11,6 +11,7 @@
 
 import { useEffect, useState } from 'react';
 import { fetchAddonManifest, fetchCatalog } from '../../../lib/stremioAddon';
+import { useOnlineStatus } from '../../../hooks/useOnlineStatus';
 import type { StremioAddonManifest } from '../../../lib/stremioAddon';
 import type { MediaItem } from '../../../types/media';
 import { metaToItem } from '../utils';
@@ -36,8 +37,14 @@ export function useHomeCatalog(): HomeCatalog {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [manifest, setManifest] = useState<StremioAddonManifest | null>(null);
+  const online = useOnlineStatus();
 
   useEffect(() => {
+    // Offline: don't start four catalog fetches that can only fail. This
+    // provider is mounted app-wide, so without the guard it churns even though
+    // offline mode never shows the home rows. Coming back online re-runs it via
+    // the `online` dep.
+    if (!online) return;
     let cancelled = false;
     Promise.all([
       fetchAddonManifest(),
@@ -66,7 +73,9 @@ export function useHomeCatalog(): HomeCatalog {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [online]);
 
-  return { movieItems, seriesItems, animeItems, loading, error, manifest };
+  // Offline reports "not loading" (derived, so the effect never has to setState
+  // just to say that) — there is nothing in flight and nothing coming.
+  return { movieItems, seriesItems, animeItems, loading: online && loading, error, manifest };
 }
