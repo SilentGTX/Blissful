@@ -11,6 +11,7 @@
 // just get throttled; the downloader runs one download at a time regardless.
 
 import { fetchFallbackReleases, type FallbackRelease } from './fallbackReleases';
+import { isPlaceholderUrl } from './releaseUrls';
 import type { AddonDescriptor } from './mediaTypes';
 import type { OfflineQuality } from './offlineStore';
 import {
@@ -44,6 +45,7 @@ const MIN_HEIGHT: Record<OfflineQuality, number> = {
   '540p': 540,
   '720p': 720,
   '1080p': 1080,
+  '2160p': 2160,
 };
 
 function sizeBytes(raw: string | null | undefined): number {
@@ -89,6 +91,7 @@ export function rankReleasesForDownload(
     // stremio-server URL isn't reachable from the Mac.
     if (!/^https?:\/\//i.test(url)) continue;
     if (/\/stremio-server\//.test(url)) continue;
+    if (isPlaceholderUrl(url)) continue;
     try {
       const host = new URL(url).hostname;
       if (host === '127.0.0.1' || host === 'localhost' || host === '::1') continue;
@@ -137,6 +140,49 @@ function autoAudio(auds: EmbeddedAudio[], preferredLang: string | null | undefin
     ? auds.find((a) => (a.lang ?? '').toLowerCase().startsWith(preferredLang.slice(0, 2).toLowerCase()))
     : undefined;
   return pref?.i ?? 0;
+}
+
+/** Best original-file URL per episode, for the fast path (browser download /
+ *  VLC). No transcode involved, so nothing is queued and nothing is stored — the
+ *  caller just needs the links. Episodes with no downloadable release are
+ *  omitted, and reported through `onProgress` as failures. */
+export async function resolveOriginalUrls(params: {
+  addons: AddonDescriptor[];
+  type: string;
+  title: string;
+  episodes: BatchEpisode[];
+  quality: OfflineQuality;
+  onProgress?: (p: BatchProgress) => void;
+}): Promise<Array<{ label: string; url: string }>> {
+  const progress: BatchProgress = {
+    done: 0,
+    total: params.episodes.length,
+    current: null,
+    failed: [],
+  };
+  const out: Array<{ label: string; url: string }> = [];
+  for (const ep of params.episodes) {
+    progress.current = ep.label;
+    params.onProgress?.({ ...progress });
+    try {
+      const releases = await fetchFallbackReleases({
+        type: params.type,
+        id: ep.videoId,
+        addons: params.addons,
+        showTitle: params.title,
+      });
+      const url = rankReleasesForDownload(releases, params.quality)[0];
+      if (url) out.push({ label: ep.label, url });
+      else progress.failed.push(ep.label);
+    } catch {
+      progress.failed.push(ep.label);
+    }
+    progress.done += 1;
+    params.onProgress?.({ ...progress });
+  }
+  progress.current = null;
+  params.onProgress?.({ ...progress });
+  return out;
 }
 
 /** Queue every episode in `episodes`. Resolves when all have been queued (not

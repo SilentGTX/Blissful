@@ -270,6 +270,9 @@ const TRANSCODE_QUALITIES = {
   '540p': { height: 540, vBitrate: '1100k', vMaxrate: '1600k', aBitrate: '128k', crf: '24' },
   '720p': { height: 720, vBitrate: '2000k', vMaxrate: '3000k', aBitrate: '128k', crf: '23' },
   '1080p': { height: 1080, vBitrate: '4000k', vMaxrate: '6000k', aBitrate: '160k', crf: '22' },
+  // 4K. Only worth picking when the SOURCE is 4K (the scale filter never upscales)
+  // and only on a device with the disk for it — ~5.5 GB/hour.
+  '2160p': { height: 2160, vBitrate: '12000k', vMaxrate: '18000k', aBitrate: '192k', crf: '22' },
 };
 // Parse + validate a `q=` param. Unknown/absent → null (source quality), so an
 // older client that doesn't send `q` behaves exactly as before.

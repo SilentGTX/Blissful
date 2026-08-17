@@ -54,6 +54,7 @@ QUALITIES = {
     "540p": {"height": 540, "v": "1100k", "vmax": "1600k", "a": "128k"},
     "720p": {"height": 720, "v": "2000k", "vmax": "3000k", "a": "128k"},
     "1080p": {"height": 1080, "v": "4000k", "vmax": "6000k", "a": "160k"},
+    "2160p": {"height": 2160, "v": "12000k", "vmax": "18000k", "a": "192k"},
 }
 
 # Segment cache. Each (source, segment, audio-track) is encoded AT MOST ONCE and

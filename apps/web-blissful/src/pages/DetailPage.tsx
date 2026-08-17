@@ -31,7 +31,6 @@ import { UnreleasedEpisodeModal } from '../components/UnreleasedEpisodeModal';
 import { type BananaOption } from '../components/BananasPicker';
 import { OfflineDownloadModal } from '../components/OfflineDownloadModal';
 import { offlineSupported } from '../lib/offlineCapabilities';
-import { notifyError } from '../lib/toastQueues';
 import { fetchFallbackReleases } from '../lib/fallbackReleases';
 import { getResumeSeconds } from '../layout/app-shell/utils';
 import { scoreReleaseForAutoPick } from '../lib/rdCache';
@@ -1345,8 +1344,8 @@ export default function DetailPage() {
           onClose={() => setUnreleasedEpisode(null)}
         />
 
-        {/* Offline download picker (web only). Mounted lazily on open so the
-            IndexedDB/storage probes don't run on every detail page view. */}
+        {/* Download picker (web only): hands the release file to the browser or
+            to VLC. Mounted lazily so it costs nothing on a normal page view. */}
         {isDownloadOpen ? (
           <OfflineDownloadModal
             isOpen={isDownloadOpen}
@@ -1360,13 +1359,12 @@ export default function DetailPage() {
             addonUrls={addons.map((a) => a.transportUrl)}
             releasesLoading={releasesLoading}
             onClose={() => setIsDownloadOpen(false)}
-            onQueued={() => navigate('/downloads')}
           />
         ) : null}
 
-        {/* Batch download: same dialog, size-only, queues every selected
-            episode. Each one needs its own release lookup, which happens in
-            lib/offlineBatch. */}
+        {/* Batch download: same dialog, one quality choice for the whole
+            selection. Each episode needs its own release lookup, which happens
+            in lib/offlineBatch. */}
         {batchOpen && batchEpisodes.length > 0 ? (
           <OfflineDownloadModal
             isOpen={batchOpen}
@@ -1377,29 +1375,12 @@ export default function DetailPage() {
             subtitle={`${batchEpisodes.length} episodes`}
             poster={poster ?? normalizeStremioImage(meta?.meta?.poster ?? null) ?? null}
             releases={[]}
+            addonUrls={addons.map((a) => a.transportUrl)}
             batchEpisodes={batchEpisodes}
-            onBatchStart={async (quality) => {
-              const { queueEpisodes } = await import('../lib/offlineBatch');
-              const result = await queueEpisodes({
-                addons,
-                type,
-                metaId: id,
-                title: meta?.meta?.name ?? 'Untitled',
-                poster: poster ?? normalizeStremioImage(meta?.meta?.poster ?? null) ?? null,
-                episodes: batchEpisodes,
-                quality,
-              });
-              cancelEpisodeSelection();
+            onClose={() => {
               setBatchOpen(false);
-              if (result.failed.length > 0) {
-                notifyError(
-                  `${result.failed.length} episode${result.failed.length === 1 ? '' : 's'} couldn’t be queued`,
-                  `No cached release was available for: ${result.failed.slice(0, 3).join(', ')}${result.failed.length > 3 ? '…' : ''}`
-                );
-              }
-              navigate('/downloads');
+              cancelEpisodeSelection();
             }}
-            onClose={() => setBatchOpen(false)}
           />
         ) : null}
       </div>

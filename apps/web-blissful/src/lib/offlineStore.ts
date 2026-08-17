@@ -20,9 +20,9 @@ const DB_VERSION = 1;
 const STORE_DOWNLOADS = 'downloads';
 const STORE_SEGMENTS = 'segments';
 
-export type OfflineQuality = '360p' | '540p' | '720p' | '1080p';
+export type OfflineQuality = '360p' | '540p' | '720p' | '1080p' | '2160p';
 
-export const OFFLINE_QUALITIES: OfflineQuality[] = ['360p', '540p', '720p', '1080p'];
+export const OFFLINE_QUALITIES: OfflineQuality[] = ['360p', '540p', '720p', '1080p', '2160p'];
 
 /** Approximate total bitrate (video + audio) per rung, bits/second. Mirrors
  *  TRANSCODE_QUALITIES in apps/shared/addon-proxy/server.js — used only to
@@ -32,6 +32,7 @@ const QUALITY_BITRATE: Record<OfflineQuality, number> = {
   '540p': 1_100_000 + 128_000,
   '720p': 2_000_000 + 128_000,
   '1080p': 4_000_000 + 160_000,
+  '2160p': 12_000_000 + 192_000,
 };
 
 /** Bytes a download of `durationSeconds` at `quality` should occupy. */
