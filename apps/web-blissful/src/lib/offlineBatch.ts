@@ -14,8 +14,10 @@ import { fetchFallbackReleases, type FallbackRelease } from './fallbackReleases'
 import type { AddonDescriptor } from './mediaTypes';
 import type { OfflineQuality } from './offlineStore';
 import {
+  createPlaceholder,
   fetchAudioTracks,
   fetchEmbeddedSubtitles,
+  failPlaceholder,
   startDownload,
   type EmbeddedAudio,
   type EmbeddedSubtitle,
@@ -141,6 +143,24 @@ export async function queueEpisodes(params: {
     current: null,
     failed: [],
   };
+  // Every selected episode gets a visible row FIRST, before any lookup. Each
+  // resolution costs 20-40s (release list + ffprobe for the duration), so
+  // resolving before creating rows made a multi-episode batch look like it had
+  // silently done nothing — one row downloading and no sign of the rest.
+  const placeholders = new Map<string, string>();
+  for (const ep of params.episodes) {
+    const id = await createPlaceholder({
+      metaId: params.metaId,
+      type: params.type,
+      videoId: ep.videoId,
+      title: params.title,
+      subtitle: ep.label,
+      poster: params.poster,
+      quality: params.quality,
+    });
+    placeholders.set(ep.videoId, id);
+  }
+
   for (const ep of params.episodes) {
     progress.current = ep.label;
     params.onProgress?.({ ...progress });
@@ -180,6 +200,8 @@ export async function queueEpisodes(params: {
             subtitleLabel: track
               ? `${(track.lang ?? 'und').toUpperCase()}${track.title ? ` · ${track.title}` : ''}`
               : null,
+            // Overwrite this episode's placeholder rather than adding a row.
+            replaceId: placeholders.get(ep.videoId),
           });
           queued = true;
           break;
@@ -187,9 +209,16 @@ export async function queueEpisodes(params: {
           // next candidate
         }
       }
-      if (!queued) progress.failed.push(ep.label);
+      if (!queued) {
+        progress.failed.push(ep.label);
+        await failPlaceholder(
+          placeholders.get(ep.videoId),
+          'No cached Real-Debrid release was available for this episode.'
+        );
+      }
     } catch {
       progress.failed.push(ep.label);
+      await failPlaceholder(placeholders.get(ep.videoId), 'Could not look up releases.');
     }
     progress.done += 1;
     params.onProgress?.({ ...progress });

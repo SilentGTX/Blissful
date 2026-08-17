@@ -421,7 +421,23 @@ async function clampAudioIdx(src, requested) {
 // difference between the web player buffering forever and starting promptly.
 // RD direct links are short-lived, so cache only ~25 min then re-resolve.
 const transcodeSrcCache = new Map(); // torrentio url -> { direct, exp }
-const TRANSCODE_SRC_TTL = 25 * 60 * 1000;
+// Shorter than an RD link's nominal lifetime on purpose. A cached mapping that
+// outlives the link it points at poisons every later segment: ffmpeg reports
+// "Error opening input files: End of file" and the segment 502s. A long download
+// (230 segments over 10+ minutes) would then crawl through retries for the rest
+// of the TTL. See invalidateTranscodeSrc, which drops a mapping the moment a
+// segment fails so the next request re-resolves.
+const TRANSCODE_SRC_TTL = 8 * 60 * 1000;
+
+/** Forget a resolved RD link so the next segment re-mints one. Called when an
+ *  encode fails — a dead link is indistinguishable from a broken file at the
+ *  ffmpeg level, and re-resolving is cheap (~0.4s) compared to failing every
+ *  remaining segment of a download. */
+function invalidateTranscodeSrc(src) {
+  if (transcodeSrcCache.delete(src)) {
+    appendPlayerLog(`transcode-src invalidated (encode failed) host=${(() => { try { return new URL(src).host; } catch { return '?'; } })()}`);
+  }
+}
 function resolveTranscodeSrc(src) {
   return new Promise((resolve) => {
     if (!/\/resolve\//.test(src)) return resolve(src); // already a direct URL
@@ -3254,30 +3270,53 @@ const server = http.createServer((req, res) => {
     // Silicon's h264_videotoolbox media engine (~6× less CPU, no thermal
     // throttling). We only resolve the URL here; the host does the encode.
     if (TRANSCODE_HOST_URL && TRANSCODE_HOST_SECRET) {
-      const hostUrl = `${TRANSCODE_HOST_URL.replace(/\/+$/, '')}/seg?url=${encodeURIComponent(segSrc)}`
-        + `&n=${n}&a=${safeAudioIdx}${segQuality ? `&q=${segQuality}` : ''}`
-        + `${segSubIdx != null ? `&sub=${segSubIdx}` : ''}`
-        + `&secret=${encodeURIComponent(TRANSCODE_HOST_SECRET)}`;
-      const lib = hostUrl.startsWith('https:') ? https : http;
-      const hr = lib.get(hostUrl, (hres) => {
-        if (hres.statusCode !== 200) {
-          appendPlayerLog(`transcode-seg host status=${hres.statusCode} n=${n}`);
-          hres.resume();
-          res.writeHead(502, { 'Content-Type': 'text/plain' });
-          res.end('host transcoder error');
-          return;
-        }
-        res.writeHead(200, { 'Content-Type': 'video/mp2t', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' });
-        hres.pipe(res);
-      });
-      const killHost = () => { try { hr.destroy(); } catch { /* noop */ } };
-      hr.on('error', (e) => {
-        appendPlayerLog(`transcode-seg host err=${e.message} n=${n}`);
-        if (!res.headersSent) { res.writeHead(502); }
-        try { res.end(); } catch { /* noop */ }
-      });
-      req.on('close', killHost);
-      res.on('close', killHost);
+      // A failed encode is usually a DEAD RD LINK, not a broken file: ffmpeg
+      // reports "Error opening input files: End of file" and there is nothing to
+      // distinguish it from real corruption at this level. So on failure, drop
+      // the cached resolution and try ONCE more with a freshly minted link.
+      // Without this a link that expires mid-download fails every remaining
+      // segment (observed: n=150..155 all 502, a download crawling through
+      // client retries) until the cache TTL runs out.
+      const askHost = (useSrc, isRetry) => {
+        const hostUrl = `${TRANSCODE_HOST_URL.replace(/\/+$/, '')}/seg?url=${encodeURIComponent(useSrc)}`
+          + `&n=${n}&a=${safeAudioIdx}${segQuality ? `&q=${segQuality}` : ''}`
+          + `${segSubIdx != null ? `&sub=${segSubIdx}` : ''}`
+          + `&secret=${encodeURIComponent(TRANSCODE_HOST_SECRET)}`;
+        const lib = hostUrl.startsWith('https:') ? https : http;
+        const hr = lib.get(hostUrl, (hres) => {
+          if (hres.statusCode !== 200) {
+            appendPlayerLog(`transcode-seg host status=${hres.statusCode} n=${n}${isRetry ? ' (retry)' : ''}`);
+            hres.resume();
+            if (!isRetry) {
+              invalidateTranscodeSrc(src);
+              void (async () => {
+                const fresh = await resolveTranscodeSrc(src);
+                askHost(fresh, true);
+              })();
+              return;
+            }
+            // CORS headers on the error too: without them the browser reports an
+            // opaque "Failed to fetch" instead of a 502, which makes the client's
+            // own retry logic blind.
+            res.writeHead(502, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
+            res.end('host transcoder error');
+            return;
+          }
+          res.writeHead(200, { 'Content-Type': 'video/mp2t', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' });
+          hres.pipe(res);
+        });
+        const killHost = () => { try { hr.destroy(); } catch { /* noop */ } };
+        hr.on('error', (e) => {
+          appendPlayerLog(`transcode-seg host err=${e.message} n=${n}${isRetry ? ' (retry)' : ''}`);
+          if (!res.headersSent) {
+            res.writeHead(502, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
+          }
+          try { res.end(); } catch { /* noop */ }
+        });
+        req.on('close', killHost);
+        res.on('close', killHost);
+      };
+      askHost(segSrc, false);
       return;
     }
     const segEncode = videoFilterArgs(segQuality, segSubIdx);
@@ -3320,6 +3359,11 @@ const server = http.createServer((req, res) => {
     ff.on('close', (code) => {
       if (code && code !== 0 && code !== 255) {
         appendPlayerLog(`transcode-seg exit=${code} n=${n} ${errTail.replace(/\s+/g, ' ').slice(-120)}`);
+        // Same reasoning as the host path: a failed encode is usually an expired
+        // RD link, so forget the resolution and let the next request re-mint one.
+        // (Headers are already sent here, so the client sees a short segment and
+        // retries — by which time the link is fresh.)
+        invalidateTranscodeSrc(src);
       }
       try { res.end(); } catch { /* noop */ }
     });

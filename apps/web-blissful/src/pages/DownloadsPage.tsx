@@ -39,6 +39,8 @@ function statusLabel(row: OfflineDownload): string {
   const total = Math.max(1, row.segmentCount);
   const pct = Math.min(100, Math.round((done / total) * 100));
   switch (row.status) {
+    case 'resolving':
+      return 'Finding a release…';
     case 'ready':
       return 'Ready to watch offline';
     case 'downloading':
@@ -233,7 +235,8 @@ export default function DownloadsPage() {
           ) : (
             rows.map((row) => {
               const pct = progressPercent(row);
-              const isActive = row.status === 'downloading' || row.status === 'queued';
+              const isActive =
+                row.status === 'downloading' || row.status === 'queued' || row.status === 'resolving';
               return (
                 <div
                   key={row.id}
@@ -276,7 +279,7 @@ export default function DownloadsPage() {
                       {statusLabel(row)}
                     </div>
 
-                    {row.status !== 'ready' ? (
+                    {row.status !== 'ready' && row.status !== 'resolving' ? (
                       <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-white/10">
                         <div
                           className="h-full rounded-full bg-[var(--bliss-accent)] transition-[width] duration-300"

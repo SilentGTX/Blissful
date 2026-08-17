@@ -41,6 +41,11 @@ export function estimateDownloadBytes(durationSeconds: number, quality: OfflineQ
 }
 
 export type OfflineStatus =
+  /** In a batch, waiting for its release + duration to be looked up. The row
+   *  exists so the user can see every episode they selected straight away —
+   *  resolving one takes 20-40s (release lookup + ffprobe), so doing it before
+   *  creating rows made a 10-episode batch look like nothing had happened. */
+  | 'resolving'
   /** Queued, nothing fetched yet. */
   | 'queued'
   /** Actively fetching segments. */

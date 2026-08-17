@@ -34,10 +34,15 @@ import {
 } from './offlineStore';
 import { proxiedImage } from './imageProxy';
 
-/** Parallel segment fetches. Each one is an ffmpeg encode on the Mac, whose own
- *  prefetcher already works ahead, so a small number keeps the pipe full
- *  without stampeding the media engine. */
-const SEGMENT_CONCURRENCY = 3;
+/** Parallel segment fetches.
+ *
+ *  Each one is an ffmpeg encode on the Mac, but the wall-clock cost is dominated
+ *  by I/O, not the encode: every segment opens a fresh HTTPS connection to
+ *  Real-Debrid and seeks (the transcoder's own comments put that at ~40% of a
+ *  segment's budget), and the encode itself runs on the dedicated media engine.
+ *  So the queue is mostly waiting, and a few more in flight is close to free —
+ *  the host transcoder coalesces duplicate work and caps its own prefetch. */
+const SEGMENT_CONCURRENCY = 6;
 /** Attempts within one pass before that segment is left for the next pass. */
 const SEGMENT_RETRIES = 3;
 /** Whole-list passes over the still-missing segments. Stragglers are common on a
@@ -65,6 +70,9 @@ export type DownloadRequest = {
    *  depends on its kind — see prepareSubtitle. */
   subtitleTrack?: EmbeddedSubtitle | null;
   subtitleLabel?: string | null;
+  /** Overwrite this row instead of creating a new one — used by batches, where a
+   *  placeholder row is shown while the release is being looked up. */
+  replaceId?: string;
 };
 
 /** Audio track as reported by /transcode-audio. */
@@ -323,7 +331,9 @@ export async function startDownload(req: DownloadRequest): Promise<OfflineDownlo
   const playlist = await fetchPlaylist(req.sourceUrl, audioTrackIdx, req.quality, subtitleStreamIdx);
   const posterBlob = await fetchPosterBlob(req.poster ?? null);
   const row = await createDownload({
-    id: `dl_${req.metaId}_${req.videoId ?? 'movie'}_${req.quality}_${Date.now().toString(36)}`,
+    id:
+      req.replaceId
+      ?? `dl_${req.metaId}_${req.videoId ?? 'movie'}_${req.quality}_${Date.now().toString(36)}`,
     metaId: req.metaId,
     type: req.type,
     videoId: req.videoId,
@@ -344,6 +354,56 @@ export async function startDownload(req: DownloadRequest): Promise<OfflineDownlo
   void emit();
   enqueue(row.id);
   return row;
+}
+
+/** A visible row for an episode whose release hasn't been looked up yet.
+ *
+ *  Batches create one of these per selected episode up front, so the user sees
+ *  everything they picked immediately; each resolution then overwrites its own
+ *  row via `replaceId`. Status 'resolving' with segmentCount 0 keeps it out of
+ *  the download queue until it's real. Returns the row id. */
+export async function createPlaceholder(init: {
+  metaId: string;
+  type: string;
+  videoId: string | null;
+  title: string;
+  subtitle: string | null;
+  poster: string | null;
+  quality: OfflineQuality;
+}): Promise<string> {
+  const id = `dl_${init.metaId}_${init.videoId ?? 'movie'}_${init.quality}_${Date.now().toString(36)}_${Math.trunc(performance.now())}`;
+  const row = await createDownload({
+    id,
+    metaId: init.metaId,
+    type: init.type,
+    videoId: init.videoId,
+    title: init.title,
+    subtitle: init.subtitle,
+    poster: init.poster,
+    posterBlob: null,
+    quality: init.quality,
+    sourceUrl: '',
+    audioTrackIdx: 0,
+    subtitleStreamIdx: null,
+    subtitleLabel: null,
+    subtitleVtt: null,
+    durationSeconds: 0,
+    segmentDurations: [],
+    segmentCount: 0,
+  });
+  await updateDownload(row.id, { status: 'resolving' });
+  void emit();
+  return id;
+}
+
+/** Mark a placeholder as failed (no release found, lookup error). */
+export async function failPlaceholder(id: string | undefined, reason: string): Promise<void> {
+  if (!id) return;
+  const row = await getDownload(id);
+  // Only touch it if it never became a real download.
+  if (!row || row.segmentCount > 0) return;
+  await updateDownload(id, { status: 'failed', error: reason });
+  void emit();
 }
 
 /** Resume a paused/failed download. Re-fetches the playlist (the old segment
