@@ -89,7 +89,17 @@ or the HTTP API (`POST :11434/api/generate` with base64 `images`). Setup, RAM no
 alternatives:
 `C:\Users\origi\.claude\projects\D--JS-Blissful\memory\project_homelab_local_vision_llm.md`.
 
-## Vidking/Videasy source pipeline (web player)
+## Vidking/Videasy source pipeline (web player) — DISABLED 2026-08-27
+
+**OFF right now — do not debug this pipeline as if it were live.** The whole path is parked
+behind one flag: `VIDEASY_ENABLED` in
+[apps/web-blissful/src/lib/playerServers.ts](apps/web-blissful/src/lib/playerServers.ts) (client)
+and `VIDEASY_ENABLED=1` in the proxy env (server, no code change to revert). Web playback resolves
+**Real-Debrid only**. Grep `VIDEASY DISABLED` for all five touchpoints. The launchd agent
+`com.budinoff.videasy-resolver` is unloaded on the Mac and its plist deleted — re-bootstrap it from
+`infra/launchd/` if the browser rung is ever needed again. Reason: the headed-Chrome rung was left
+running after a failed resolve and spun 6 CPU cores for six days, and had returned 0 sources on
+every attempt since 2026-07-18. Everything below describes how it works WHEN ENABLED.
 
 The web player's stream-source resolver. `/videasy-sources` (addon-proxy) fetches an encrypted
 payload **in-process** from `api.speedracelight.com` via a two-step seed flow (`GET /seed` →

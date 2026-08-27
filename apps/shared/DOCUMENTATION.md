@@ -44,6 +44,13 @@ cooldown + pre-skip. Host history:
 `api.videasy.net` → `api.videasy.to` (both now 404) → `api.speedracelight.com`. The old CryptoJS/WASM
 decryptor (`videasy-decrypt.js` + `videasy-module.wasm`) is kept for reference but unused.
 
+> **DISABLED 2026-08-27.** The entire Videasy path is off: `/videasy-sources` returns
+> `{sources:[],subtitles:[]}` in ~2 ms, `/videasy-token` accepts and discards, and the on-Mac
+> browser-resolver is never called (its launchd agent is unloaded and the plist deleted).
+> Server-side revert: set `VIDEASY_ENABLED=1` in the proxy env — no code change. Client-side:
+> `VIDEASY_ENABLED` in `apps/web-blissful/src/lib/playerServers.ts`. Grep `VIDEASY DISABLED`.
+> The rest of this section documents the pipeline as it behaves WHEN ENABLED.
+
 **Fallbacks, in order:** if fetch+decrypt fails for every provider — the one case it can't
 handle is Videasy rotating the response cipher — it falls back to the on-Mac browser-resolver
 (`infra/scripts/videasy-resolver.py`, launchd `com.budinoff.videasy-resolver`, `:13099`): a headed
