@@ -227,12 +227,20 @@ export function DesktopNav(props: DesktopNavProps) {
 
         <div className="mx-4 h-px shrink-0 bg-white/10" />
 
-        {/* Nav caps at 33dvh so it sits equal to each of the two
-            footer accordions when all three are fully populated.
-            Natural smaller-than-cap content stays at its natural
-            height; nothing here ever needs to scroll in practice
-            since there are only 5 items. */}
-        <nav className="my-2 max-h-[33dvh] shrink-0">
+        {/* No height cap. This used to be `max-h-[33dvh]`, meant to
+            divide the rail evenly between the nav and the two footer
+            accordions — but max-height only ever SUBTRACTS, and the
+            six rows are never taller than ~322px, so on any normal
+            screen 33dvh was already larger than the content and the
+            cap did nothing. The one case where it did bite was a
+            short viewport, where it clipped the box while the rows
+            kept their size: the overflow escaped (the nav is
+            `overflow: visible`) and painted on top of the Friends /
+            Continue Watching cards.
+            The footer below is `flex-1 min-h-0` with scrolling lists,
+            so it is the part that can afford to give up space —
+            primary navigation is not. */}
+        <nav className="my-2 shrink-0">
           <ul className="flex flex-col gap-0.5">
             <NavItem
               label="Home"

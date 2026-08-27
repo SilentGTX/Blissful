@@ -2759,36 +2759,25 @@ html[data-ui="tv"] .bliss-nav-bar {
    `git show android-tv:apps/blissful-mvs/src/index.css`, the html[data-tv]
    layer, re-gated to html[data-ui="tv"].
 
-   Values are the originals, unscaled. The shell ran its WebView at ~1152 CSS
-   px on a 1920 panel (~1.67x zoom), so on a desktop monitor these render
-   smaller than the TV shows them — which is correct: a 10-foot UI blown up to
-   its on-TV pixel size is oversized at desk distance. Scaling them up was
-   tried and looked absurd.
+   SIZING IS NOT PORTED — only the LOOK is. The shell's rail metrics (a 160px
+   band, ~50px glyphs, 56-76px rows, a 72px logo) are a 10-foot UI, and on a
+   desktop monitor they overflowed the rail: six rows at 56-76px did not fit
+   the height the nav is given, so the last two spilled out and painted over
+   the Friends / Continue Watching cards. Every rule that existed to make those
+   oversized glyphs fit — the narrower rail inset, the matching icon-slot width,
+   the display:none label, the collapsed-footer min-heights — went with them.
+
+   The sidebar therefore inherits Classic's geometry (row height, glyph size,
+   icon-slot width, logo, rail width) and this layer only restyles it: the glass
+   panel, the accent focus ring, no active pill, the transparent top bar, the
+   search pill and the avatar.
    =========================================================================== */
 html[data-ui="tv"] {
   --tv-safe-x: 5vw;
   --tv-safe-y: 4vh;
-  --tv-rail-collapsed: clamp(120px, 7.5vw, 170px); /* MUST match TV_SIDEBAR_COLLAPSED_WIDTH */
   --tv-topbar-h: clamp(56px, 7vh, 84px);
   --bliss-glass-top: rgba(40, 47, 64, 0.97);
   --bliss-glass-bottom: rgba(17, 21, 31, 0.985);
-}
-
-/* Tighter symmetric inset than the desktop 1.25rem so the centred glass column
-   fills more of the band. */
-html[data-ui="tv"] .bliss-vertical-nav {
-  overflow: visible;
-  padding-left: clamp(8px, 0.7vw, 14px);
-  padding-right: clamp(8px, 0.7vw, 14px);
-}
-
-/* NOT scoped to .closed — the source isn't either. Gating it on the collapsed
-   state made the glyphs snap from ~50px down to the base ~20px on expand.
-   Scaled to the 160px band, which is the size the shell actually shows (its
-   26-30px is against a ~1152px-wide WebView viewport). */
-html[data-ui="tv"] .nav-icon-slot svg {
-  width: clamp(42px, 2.6vw, 54px);
-  height: clamp(42px, 2.6vw, 54px);
 }
 
 /* FAKED "liquid glass" — deliberately NO backdrop-filter. The original notes
@@ -2885,82 +2874,6 @@ html[data-ui="tv"] .bliss-top-nav-inner {
 
 html[data-ui="tv"] .bliss-top-nav-inner > * {
   pointer-events: auto;
-}
-
-/* Missed on the first port. The desktop rail caps its nav at 33dvh to leave
-   room for the Friends / Continue Watching footer; the original TV layer
-   overrides that ("on TV the footer is hidden, so let the nav use the height it
-   needs"). Without it the six icons were squeezed into the top third of the rail
-   with a dead gap below them. */
-/* COLLAPSED only. The desktop rail caps its nav at 33dvh so the Friends /
-   Continue Watching accordions have room; the TV shell overrides that because
-   its footer is hidden. Web keeps the footer, so lifting the cap on the
-   EXPANDED rail let the nav eat the accordions' space and both lists rendered
-   zero rows. Collapsed, the footer is just two icon buttons and can spare it. */
-html[data-ui="tv"] .bliss-sidebar.closed nav {
-  max-height: none;
-}
-
-/* Logo sizing applies in BOTH states — scoping it to .closed made the logo row
-   taller when collapsed, which pushed every nav icon down by 30px relative to
-   the expanded rail. */
-html[data-ui="tv"] .logo {
-  height: clamp(2.75rem, 3.4vw, 4.5rem) !important;
-  width: clamp(2.75rem, 3.4vw, 4.5rem) !important;
-}
-
-/* Dead-centre the icon in every collapsed row — ported verbatim. The source's
-   comment is worth keeping: use FLEX, not grid, because a single implicit auto
-   track shrink-wraps on legacy WebViews and `place-items:center` then leaves the
-   cell pinned at the START (icons hug the left). A full-width flex box centres a
-   lone child on every engine. This is the rule I had missed, which is why the
-   glyphs sat left of centre. */
-
-/* The hidden label must leave the flow entirely or it nudges the row off-centre. */
-html[data-ui="tv"] .bliss-sidebar.closed .bliss-sidebar-label {
-  display: none !important;
-}
-
-
-/* The footer is `flex-1` in the markup (it shares slack with the nav on the
-   expanded rail). Collapsed, both it and the nav claimed the slack and the two
-   footer glyphs ended up overlapping and clipped at the rail's bottom edge.
-   Pin the footer to its natural height and let the nav take what's left. */
-html[data-ui="tv"] .bliss-sidebar.closed .footer {
-  flex: 0 0 auto !important;
-}
-
-html[data-ui="tv"] .bliss-sidebar.closed .footer > div {
-  min-height: clamp(58px, 7vh, 84px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* Classic's trick, re-derived for this rail's width: the icon slot is a fixed
-   box exactly as wide as the collapsed row's content, and the glyph is centred
-   INSIDE it. Because the slot keeps that width when the label appears, the
-   glyph's centre is at the same x collapsed and expanded — so the width
-   transition animates with the icons standing still. Applies in BOTH states;
-   scoping it to .closed is what made them jump.
-     panel = --tv-rail-collapsed - 2x nav padding
-     row   = panel - 2rem (mx-4) - 2px (1px border each side) */
-html[data-ui="tv"] .nav-icon-slot {
-  width: calc(
-    var(--tv-rail-collapsed) - 2 * clamp(8px, 0.7vw, 14px) - 2rem - 2px
-  );
-}
-
-/* The base row height (clamp(2rem, max(3vh,1.6vw), 3.25rem)) is shorter than
-   this theme's 49px glyph, so on the EXPANDED rail the icons overflowed their
-   rows and piled on top of each other. Give every row room for the glyph.
-   Collapsed rows already flex taller than this, so it only affects expanded. */
-/* NAV rows only. `.bliss-sidebar-link` is also worn by the footer's Friends and
-   Continue Watching header buttons; giving those a min-height made them taller,
-   and useFooterAccordionHeights then had no room left to allot to the lists —
-   the Friends accordion rendered its header and search box with zero rows. */
-html[data-ui="tv"] .bliss-sidebar nav .bliss-sidebar-link {
-  min-height: clamp(56px, 5.5vh, 76px);
 }
 
 /* Dropdown popovers portal to <body> with a normal z-index, but the collapsed

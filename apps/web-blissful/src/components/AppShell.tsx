@@ -65,7 +65,6 @@ import {
   HOME_PREFS_KEY,
   SIDEBAR_COLLAPSED_KEY,
   SIDEBAR_COLLAPSED_WIDTH,
-  TV_SIDEBAR_COLLAPSED_WIDTH,
   SIDEBAR_EXPANDED_WIDTH,
 } from '../layout/app-shell/constants';
 import { ResumeOrStartOverModal } from './ResumeOrStartOverModal';
@@ -446,10 +445,14 @@ export default function AppShell() {
     [homeRowOptions, homeRowPrefs]
   );
 
+  // Every theme uses the same rail widths. The TV theme had its own,
+  // narrower collapsed width, which then needed a matching icon-slot
+  // override in CSS to keep the glyphs centred — the two drifted apart
+  // and the icons sat off-centre. One width, one slot calculation.
   const navSizeStyle = {
     '--horizontal-nav-bar-size': '72px',
     '--vertical-nav-bar-size': sidebarCollapsed
-      ? (uiStyle === 'tv' ? TV_SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_COLLAPSED_WIDTH)
+      ? SIDEBAR_COLLAPSED_WIDTH
       : SIDEBAR_EXPANDED_WIDTH,
   } as React.CSSProperties;
 
