@@ -166,7 +166,23 @@ const VIDEASY_SOURCES_TTL = 30 * 60 * 1000; // 30 min
 // via a JSON.parse hook. The proxy asks it per title. This is immune to their
 // cipher changes because we never decrypt anything ourselves.
 const VIDEASY_RESOLVER_URL = process.env.VIDEASY_RESOLVER_URL || 'http://host.docker.internal:13099';
+// ── VIDEASY DISABLED (2026-08-27) ────────────────────────────────────────────
+// Videasy/Vidking is switched OFF server-side: /videasy-sources and
+// /videasy-token answer immediately and the on-Mac browser resolver is never
+// called. Playback resolves Real-Debrid only.
+//
+// Why: the browser rung above was left running after a failed resolve on
+// 2026-08-21 and spun 6 CPU cores on the Mac for six days. It had also returned
+// zero sources on every attempt since 2026-07-18, so it only ever added ~60 s of
+// stall before RD took over. The client is disabled too
+// (apps/web-blissful/src/lib/playerServers.ts → VIDEASY_ENABLED).
+//
+// REVERT: set `VIDEASY_ENABLED=1` in the proxy env (docker-compose.yml) — no code
+// change needed. Re-enabling the browser rung ALSO needs the launchd agent
+// `com.budinoff.videasy-resolver` bootstrapped again on the Mac.
+const VIDEASY_DISABLED = process.env.VIDEASY_ENABLED !== '1';
 function fetchFromResolver(mediaType, tmdbId, seasonId, episodeId, cb) {
+  if (VIDEASY_DISABLED) return cb(null); // VIDEASY DISABLED — never spawn the Mac's Chrome
   if (!VIDEASY_TOKEN_SECRET) return cb(null);
   const qs = new URLSearchParams({
     type: mediaType === 'movie' ? 'movie' : 'tv',
@@ -1989,6 +2005,14 @@ const server = http.createServer((req, res) => {
   // secret; the port is 127.0.0.1-bound so this is localhost-only anyway).
   // Stored in memory and used for all upstream api.videasy.net calls.
   if (req.method === 'POST' && (req.url === '/videasy-token' || req.url.startsWith('/videasy-token?'))) {
+    // VIDEASY DISABLED — accept and discard. Answering 200 keeps whatever still
+    // POSTs a token from retrying in a loop; the value is never used while the
+    // Videasy path is off.
+    if (VIDEASY_DISABLED) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, disabled: 'videasy' }));
+      return;
+    }
     if (!VIDEASY_TOKEN_SECRET || req.headers['x-token-secret'] !== VIDEASY_TOKEN_SECRET) {
       res.writeHead(403, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: false, error: 'forbidden' }));
@@ -2677,6 +2701,14 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.url === '/videasy-sources' || req.url.startsWith('/videasy-sources?')) {
+    // VIDEASY DISABLED — answer "no sources" instantly (no upstream fetch, no
+    // token quota, no browser resolver). The player reads this as "Videasy has
+    // nothing" and commits its Real-Debrid pick, which is the desired path.
+    if (VIDEASY_DISABLED) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ sources: [], subtitles: [] }));
+      return;
+    }
     const parsed = url.parse(req.url, true);
     const {
       title,

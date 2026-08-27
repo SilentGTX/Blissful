@@ -27,7 +27,12 @@ const AccountsPage = lazy(() => import('./pages/AccountsPage'));
 const DetailPage = lazy(() => import('./pages/DetailPage'));
 const DiscoverPage = lazy(() => import('./pages/DiscoverPage'));
 const LibraryPage = lazy(() => import('./pages/LibraryPage'));
-const VidkingPlayerPage = lazy(() => import('./pages/VidkingPlayerPage'));
+// VIDEASY DISABLED (2026-08-27) — see lib/playerServers.ts. This page is a
+// full-screen iframe onto vidking.net's own embed player, and nothing in the app
+// ever navigated to it (the "Play with Vidking" button goes to /player/auto|rd/…,
+// not here) — verified orphaned before parking it. Restore this import and the
+// two `vidking/:type/:tmdbId` routes below together.
+// const VidkingPlayerPage = lazy(() => import('./pages/VidkingPlayerPage'));
 const SearchPage = lazy(() => import('./pages/SearchPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
@@ -135,6 +140,9 @@ export default function App() {
                     </ErrorBoundary>
                   }
                 />
+                {/* VIDEASY DISABLED (2026-08-27) — the vidking.net iframe routes.
+                    Orphaned (nothing linked to them) and parked with the rest of
+                    the Videasy path; see lib/playerServers.ts.
                 <Route
                   path="vidking/:type/:tmdbId"
                   element={
@@ -151,6 +159,7 @@ export default function App() {
                     </Suspense>
                   }
                 />
+                */}
                 <Route
                   // Matches both the legacy /player?… query form and the short
                   // /player/vidking/<id>/<slug> + /player/rd/… paths (the seeder

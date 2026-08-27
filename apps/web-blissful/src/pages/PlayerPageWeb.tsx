@@ -7,7 +7,7 @@ import BlissfulPlayer from '../components/BlissfulPlayer';
 import type { PlayerSettings } from '../lib/playerSettings';
 import { useMetaDetails } from '../models/useMetaDetails';
 import { fetchTmdbId, type TmdbLookup } from '../lib/tmdb';
-import { PLAYER_SERVERS, DEFAULT_SERVER_ID } from '../lib/playerServers';
+import { PLAYER_SERVERS, DEFAULT_SERVER_ID, VIDEASY_ENABLED } from '../lib/playerServers';
 import { getLibraryEntry } from '../lib/libraryStore';
 import { useContinueWatchingContext } from '../context/ContinueWatchingProvider';
 import { normalizeStremioImage } from '../lib/mediaTypes';
@@ -847,6 +847,16 @@ export default function PlayerPage() {
   // are available. Picks the highest-ranked stream and feeds its URL
   // to BlissfulPlayer. Falls back silently if nothing comes back.
   useEffect(() => {
+    // VIDEASY DISABLED — see lib/playerServers.ts for the why and how to revert.
+    // Resolve nothing and report resolved, so the parallel addon/RD fallback
+    // commits its pick directly. Deliberately identical to the RD-key skip
+    // below, which is the proven no-Videasy path.
+    if (!VIDEASY_ENABLED) {
+      sendPlayerLog('[player-page] videasy skip — disabled (VIDEASY_ENABLED=false)');
+      setVideasySources([]);
+      setVideasyResolved(true);
+      return;
+    }
     // RD modes ("Play with RealDebrid") and offline downloads — don't resolve
     // Videasy at all; the user goes straight to the torrent they pick / the copy
     // already on the device, no waiting on Videasy.
@@ -1925,7 +1935,11 @@ export default function PlayerPage() {
   // and in that window the drawer offered "Servers" — a picker for the very
   // source this profile deliberately skips. It also surfaces "Releases" as soon
   // as the RD fast path lists them, instead of waiting for the commit.
-  const rdSourceUi = (!!fallbackPlayUrl || pickFirst || rdSelected || hasProfileRdKey) && !activeSource;
+  // VIDEASY DISABLED: `!VIDEASY_ENABLED` pins this to the RD/Releases UI, so the
+  // Videasy "Servers" tab can never be offered for a source we no longer resolve.
+  const rdSourceUi =
+    (!VIDEASY_ENABLED || !!fallbackPlayUrl || pickFirst || rdSelected || hasProfileRdKey) &&
+    !activeSource;
   // Resolution priority: Videasy source → addon-stream fallback (when
   // Videasy is down) → raw URL from query params (back-compat with
   // direct ?url=… entry points). The raw URL is dropped if it's a
