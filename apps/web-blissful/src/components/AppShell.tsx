@@ -63,7 +63,6 @@ import { WatchPartyJoinModal } from './WatchParty';
 import { HomeSettingsDialog } from '../layout/app-shell/components/HomeSettingsDialog';
 import {
   HOME_PREFS_KEY,
-  SIDEBAR_COLLAPSED_KEY,
   SIDEBAR_COLLAPSED_WIDTH,
   SIDEBAR_EXPANDED_WIDTH,
 } from '../layout/app-shell/constants';
@@ -221,33 +220,12 @@ export default function AppShell() {
   const isFullscreenRoute = location.pathname.startsWith('/detail') || location.pathname.startsWith('/player');
   const isNetflix = uiStyle === 'netflix';
 
-  // Default to expanded sidebar
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    try {
-      // Read the theme straight from storage rather than waiting for an effect:
-      // the TV theme's rail is icon-only, and collapsing it after mount made it
-      // visibly animate shut on every load.
-      const collapsed = localStorage.getItem('uiStyle') === 'tv';
-      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? 'true' : 'false');
-      return collapsed;
-    } catch {
-      return false;
-    }
-  });
-
-  // The TV theme's rail is icon-only by design (it mirrors the TV app, where the
-  // rail is a narrow strip of icons). Collapse it when that theme is picked; the
-  // user can still expand it with the toggle.
-  const tvCollapseAppliedRef = useRef(false);
-  useEffect(() => {
-    if (uiStyle !== 'tv') {
-      tvCollapseAppliedRef.current = false;
-      return;
-    }
-    if (tvCollapseAppliedRef.current) return;
-    tvCollapseAppliedRef.current = true;
-    setSidebarCollapsed(true);
-  }, [uiStyle]);
+  // The sidebar starts expanded in every theme, TV included. The TV theme used
+  // to start (and snap back to) an icon-only rail, borrowed from the Android TV
+  // shell where the nav really is a strip of icons; on the web it just read as a
+  // shrunken sidebar next to the Classic theme's full one. The rail's own
+  // toggle collapses it for the session.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     document.documentElement.style.setProperty('--bliss-sidebar-left', '1.25rem');

@@ -35,7 +35,6 @@ export const NETFLIX_BG =
   'radial-gradient(circle at 20% 20%, rgba(229, 9, 20, 0.24), transparent 45%), radial-gradient(circle at 80% 10%, rgba(255, 70, 70, 0.12), transparent 40%), linear-gradient(180deg, #0b0b0b 0%, #141414 45%, #0b0b0b 100%)';
 
 export const HOME_PREFS_KEY = 'blissfulHomePrefs';
-export const SIDEBAR_COLLAPSED_KEY = 'blissfulSidebarCollapsed';
 // Sidebar widths scale fluidly with viewport so the chrome doesn't
 // look like a tiny strip on 4K/TV screens. At 1920w the expanded
 // sidebar is ~360px (current desktop look); at 3840w it caps at
