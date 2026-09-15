@@ -87,9 +87,11 @@ Stop kills Metro only — the emulator stays warm for the next start.
     `http://<ip>:8008/setup/eureka_info` with `"name":"budinoffTV"`. First adb connect needs the
     on-screen *Allow USB debugging* prompt accepted once.
   - **Philips 65PUS7354** — `TPM191E` @ `192.168.1.14:5555` (moved off `.2`; adb-wifi, wlan0,
-    Android 12). scrcpy to view.
-  - The release APK is universal (arm64-v8a / armeabi-v7a / x86 / x86_64), so one build installs
-    on both; `-Device <serial>` picks the target when both are connected.
+    Android 12). scrcpy to view. **NOT a deploy target** — do not install here; budinoffTV is
+    the box in use. Kept listed only so its address isn't mistaken for the EON box's.
+  - The release APK is universal (arm64-v8a / armeabi-v7a / x86 / x86_64). Pass
+    `-Device 192.168.1.2:5555` (or `adb -s`) so a build can't land on the Philips by default
+    when both happen to be connected.
 - **Hot reload on a real TV:** debug APK + `adb reverse tcp:8081 tcp:8081`.
 - **Verify TV interactions by DRIVING the app:** `adb shell input keyevent <code>` then
   `screencap`/pull and read the screenshot after each step. Never claim a screen works from one
