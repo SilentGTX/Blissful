@@ -5,6 +5,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { filterRelevantBananas } from '../lib/bananaRelevance';
+import { detectSubtitleHint, subtitleHintRank, type SubtitleHint } from '../lib/subtitleHints';
 
 export type BananaOption = {
   name: string;
@@ -32,6 +33,22 @@ function bananaScore(r: BananaOption): number {
   const sizeGb = (bananaSizeBytes(r.size) ?? 0) / 1_073_741_824;
   return seeds / Math.sqrt(sizeGb + 1);
 }
+// Subtitle hint, read off the release NAME (see lib/subtitleHints). Memoised per
+// release because the comparator asks for it on every comparison, and the answer
+// can't change for a given name. Module-level, like rdCacheVerified: the same
+// release comes back from several addons and across picker instances.
+const subtitleHintCache = new Map<string, SubtitleHint | null>();
+function bananaSubtitleHint(r: BananaOption): SubtitleHint | null {
+  const key = `${r.name}\u0000${r.torrentName ?? ''}`;
+  let hit = subtitleHintCache.get(key);
+  if (hit === undefined) {
+    hit = detectSubtitleHint(r.name, r.torrentName);
+    if (subtitleHintCache.size > 2000) subtitleHintCache.clear(); // bound memory
+    subtitleHintCache.set(key, hit);
+  }
+  return hit;
+}
+
 type BananaBucket = '4K' | '1080p' | '720p' | 'SD' | 'Other';
 const BANANA_BUCKET_ORDER: BananaBucket[] = ['4K', '1080p', '720p', 'SD', 'Other'];
 function bananaBucket(r: BananaOption): BananaBucket {
@@ -163,6 +180,13 @@ export function BananasPicker({
       const ra = bananaCacheRank(a);
       const rb = bananaCacheRank(b);
       if (ra !== rb) return ra - rb; // cached → unknown → uncached
+      // Subtitle tag second, DELIBERATELY below the cache rank: an uncached
+      // release must never outrank a cached one just for saying "MULTISUB",
+      // because picking it makes you wait on RD. Within one cache tier, though,
+      // a tagged release is the better pick.
+      const sa = subtitleHintRank(bananaSubtitleHint(a));
+      const sb = subtitleHintRank(bananaSubtitleHint(b));
+      if (sa !== sb) return sa - sb; // subs → multi-audio → unknown
       return bananaScore(b) - bananaScore(a);
     });
     // Dedup by the torrent's TRUE identity — the 40-hex infohash in the RD
@@ -257,7 +281,15 @@ export function BananasPicker({
     // green "Cached" badge marks which picks truly play instantly.
     const pick = (b: BananaBucket) => {
       const rows = bananaBuckets[b].filter((r) => !sameBanana(r.url, selectedReleaseUrl));
-      return rows.find((r) => bananaCacheRank(r) === 0) ?? rows[0];
+      // Cached first, as before; among cached, prefer one whose name advertises
+      // subtitles. rows is already sorted, so "first match" is also "best score".
+      const cached = rows.filter((r) => bananaCacheRank(r) === 0);
+      return (
+        cached.find((r) => subtitleHintRank(bananaSubtitleHint(r)) === 0) ??
+        cached[0] ??
+        rows.find((r) => subtitleHintRank(bananaSubtitleHint(r)) === 0) ??
+        rows[0]
+      );
     };
     return [pick('4K'), pick('1080p')].filter(Boolean) as BananaOption[];
   }, [bananaBuckets, selectedReleaseUrl]);
@@ -285,6 +317,7 @@ export function BananasPicker({
     const leftLabel = r.name.replace(/\s*\n\s*/g, ' ').trim();
     const title = r.torrentName || leftLabel;
     const isRdStream = /\[RD\+?\]|realdebrid|real-?debrid/i.test(`${r.name} ${r.url}`);
+    const subHint = bananaSubtitleHint(r);
     const meta = [
       r.size ? `💾 ${r.size}` : null,
       r.seeders ? `👤 ${r.seeders}` : null,
@@ -322,6 +355,19 @@ export function BananasPicker({
             ) : null}
             {notCached ? (
               <span className="rounded bg-amber-400/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300/90">Not cached</span>
+            ) : null}
+            {subHint ? (
+              <span
+                className={
+                  'rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ' +
+                  (subHint.kind === 'subs'
+                    ? 'bg-sky-400/15 text-sky-300/90'
+                    : 'bg-white/10 text-white/60')
+                }
+                title={`"${subHint.marker}" in the release name — read from the name, not from the file`}
+              >
+                {subHint.label}
+              </span>
             ) : null}
             {meta ? <span className="truncate">{meta}</span> : null}
           </div>
