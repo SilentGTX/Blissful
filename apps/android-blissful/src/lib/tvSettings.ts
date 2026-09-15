@@ -298,9 +298,19 @@ export function languageMatches(
   const p = (pref ?? '').trim().toLowerCase();
   if (!l || !p || p === 'none') return false;
   const tokens = [p, ...(LANGUAGE_MATCH_TOKENS[p] ?? [])];
-  return tokens.some((t) =>
+  if (tokens.some((t) =>
     l === t || l.startsWith(`${t}-`) || l.startsWith(`${t}_`) || (t.length >= 4 && l.includes(t)),
-  );
+  )) return true;
+  // Fallback: the two-way prefix test this function replaced. The table only
+  // lists the languages the TV picker offers, and dropping the old test for
+  // everything else was a regression: it is what matched every language whose
+  // ISO code prefixes its English name ('bulgarian'/'bul', 'swedish'/'swe',
+  // 'danish'/'dan', 'hungarian'/'hun'), including any code the account passes
+  // through from the desktop picker's full ISO list. With it kept, this is a
+  // strict superset of the old behaviour: the table only ever ADDS the pairs the
+  // prefix test cannot see (japanese/jpn, german/deu, french/fra, dutch/nld,
+  // chinese/zho).
+  return p.startsWith(l) || l.startsWith(p);
 }
 
 // Accent / subtitle text color presets — the same set the desktop TV branch
