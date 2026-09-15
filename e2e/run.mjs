@@ -56,6 +56,15 @@ const AREAS = {
     paths: [/Friends\//, /useSocial/, /usePresence/, /PartyInviteListener/, /friendsApi/],
     filter: 'social.',
   },
+  subtitles: {
+    // The proxy's extract/probe endpoints and every subtitle path that feeds off
+    // them. addon-proxy also appears under watch-party; both areas running is fine.
+    paths: [
+      /addon-proxy\/server\.js/, /lib\/subtitles/, /lib\/subtitleUtils/, /SubtitleOverlay/,
+      /subtitleLangLabel/, /extract-subtitle/, /probe-streams/,
+    ],
+    filter: 'subtitles',
+  },
 };
 
 const argv = process.argv.slice(2);

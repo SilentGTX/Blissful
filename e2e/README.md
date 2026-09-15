@@ -71,6 +71,14 @@ e2e/
   (logged-out gating + **logged-in friends accordion**). Auth-gated features are
   tested for REAL via throwaway **Blissful** accounts (`e2e/fixtures/auth.ts` —
   Blissful's own auth, NOT Stremio).
+- **Embedded subtitles** `subtitles-extract.protocol`: boots the addon-proxy on a
+  throwaway port + cache dir and drives `/probe-streams` → `/extract-subtitle.vtt`
+  against a GENERATED MKV whose single subrip track carries a known cue. Guards
+  the SINGLE-FLIGHT invariant: N concurrent requests for one track must produce
+  exactly ONE ffmpeg run (the players re-request while a run is going; each used
+  to spawn its own ffmpeg over the same remote file, which is what made cues take
+  ~9s instead of ~2s). Asserts the run COUNT, not a stopwatch. Verified to FAIL on
+  the pre-fix server (4 runs) — a guard that can't catch its own bug is worthless.
 - **Social (real, two accounts)** `social.protocol`: friend request → accept →
   both friends, + friend-gated presence lookup. Over the live backend, no mocks.
 - **Social over `/ws/user`** `social-ws.protocol`: two authed accounts on the

@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import type { AddressInfo } from 'node:net';
 
 // Local media servers (Range + CORS). `webmUrl` is a codec-friendly WebM (Chromium
@@ -103,14 +104,41 @@ function serveStalling(file: string): http.Server {
   });
 }
 
-async function listenServed(file: string, contentType: string, name: string): Promise<{ url: string; close: () => void }> {
+async function listenServed(
+  file: string,
+  contentType: string,
+  name: string,
+  opts: { bind?: string; host?: string } = {},
+): Promise<{ url: string; close: () => void }> {
   const server = serveFile(file, contentType);
-  await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+  const bind = opts.bind ?? '127.0.0.1';
+  await new Promise<void>((r) => server.listen(0, bind, () => r()));
   const port = (server.address() as AddressInfo).port;
-  return { url: `http://127.0.0.1:${port}/${name}`, close: () => server.close() };
+  return { url: `http://${opts.host ?? '127.0.0.1'}:${port}/${name}`, close: () => server.close() };
 }
 
-export const test = base.extend<{ webmUrl: string; multitrackUrl: string | null; stallingUrl: string }>({
+/** First non-internal IPv4 of this machine, or null. Needed because the
+ *  addon-proxy rewrites loopback hosts (127.0.0.1 / localhost / ::1) to
+ *  `host.docker.internal` — correct in production, where it runs in a container
+ *  and loopback would mean the container itself, but it makes a 127.0.0.1 test
+ *  server unreachable to it. A test that feeds the proxy a media URL must
+ *  therefore serve on a real address. Prefers a private LAN range over VPN
+ *  interfaces (Tailscale et al) so the address is one the proxy can actually
+ *  reach when both are on the same host. */
+function lanAddress(): string | null {
+  const v4: string[] = [];
+  for (const addrs of Object.values(os.networkInterfaces())) {
+    for (const a of addrs ?? []) if (a.family === 'IPv4' && !a.internal) v4.push(a.address);
+  }
+  return v4.find((a) => /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(a)) ?? v4[0] ?? null;
+}
+
+export const test = base.extend<{
+  webmUrl: string;
+  multitrackUrl: string | null;
+  multitrackLanUrl: string | null;
+  stallingUrl: string;
+}>({
   webmUrl: async ({}, use) => {
     const s = await listenServed(await ensureClip(), 'video/webm', 'clip.webm');
     try {
@@ -137,6 +165,22 @@ export const test = base.extend<{ webmUrl: string; multitrackUrl: string | null;
       return;
     }
     const s = await listenServed(file, 'video/x-matroska', 'multitrack.mkv');
+    try {
+      await use(s.url);
+    } finally {
+      s.close();
+    }
+  },
+  // Same file, served on a LAN address instead of loopback, for tests that hand
+  // the URL to the addon-proxy (see lanAddress above for why loopback fails).
+  multitrackLanUrl: async ({}, use) => {
+    const file = ensureMultitrack();
+    const host = lanAddress();
+    if (!file || !host) {
+      await use(null);
+      return;
+    }
+    const s = await listenServed(file, 'video/x-matroska', 'multitrack.mkv', { bind: '0.0.0.0', host });
     try {
       await use(s.url);
     } finally {
