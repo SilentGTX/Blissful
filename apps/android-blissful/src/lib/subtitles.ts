@@ -439,7 +439,7 @@ export async function probeEmbeddedSubtitles(streamUrl: string, signal?: AbortSi
     const resp = await fetch(`${proxy}/probe-streams?url=${encodeURIComponent(streamUrl)}`, { signal });
     if (!resp.ok) return [];
     const data = (await resp.json()) as {
-      subtitles?: Array<{ index: number; language?: string; title?: string | null; textBased?: boolean }>;
+      subtitles?: Array<{ index: number; language?: string; title?: string | null; textBased?: boolean; forced?: boolean }>;
     };
     const out: SubtitleTrack[] = [];
     for (const s of data.subtitles ?? []) {
@@ -453,7 +453,15 @@ export async function probeEmbeddedSubtitles(streamUrl: string, signal?: AbortSi
         label: s.title ? `${langName} - ${s.title}` : `${langName} - Built-in`,
         url: `${proxy}/extract-subtitle.vtt?url=${encodeURIComponent(streamUrl)}&track=${s.index}`,
         source: 'Built-in',
-        rating: 0,
+        // Anime muxes carry TWO English tracks: full dialogue and "Signs & Songs"
+        // (opening lyrics + on-screen sign translations — a few dozen cues, silent
+        // through the dialogue). Both are tagged `eng`. orderSubtitlesForPlayer
+        // sorts a language's variants by rating, and the auto-pick takes the
+        // first, so with every embedded track at 0 the signs track won by probe
+        // order and the viewer got nothing (Bleach S1E49: track 3, a 3 KB VTT,
+        // chosen over track 7's 20 KB). Mirrors the web's scoring, where the
+        // file's own tracks lead (+100) and anything unfit for dialogue sinks.
+        rating: 100 - (s.forced ? 60 : 0) - (/\b(signs?|songs?|karaoke|lyrics|forced)\b/i.test(s.title ?? '') ? 60 : 0),
       });
     }
     return out;

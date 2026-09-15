@@ -24,7 +24,7 @@ import {
   effectiveAudioLanguage,
   languageMatches,
 } from '../lib/tvSettings';
-import { subtitleLangLabel, loadSubtitles, orderSubtitlesForPlayer, type SubtitleTrack } from '../lib/subtitles';
+import { subtitleLangLabel, loadSubtitles, probeEmbeddedSubtitles, orderSubtitlesForPlayer, type SubtitleTrack } from '../lib/subtitles';
 import { activeCueText, fetchSubtitleCues, type SubtitleCue } from '../lib/subtitleCues';
 import { SubtitleOverlay } from '../components/player/SubtitleOverlay';
 import { SkipButton } from '../components/player/SkipButton';
@@ -93,7 +93,13 @@ export function PlayerScreen() {
   const [releasesLoading, setReleasesLoading] = useState(false);
   const releasesFetched = useRef(false);
   const skippedRef = useRef(false);
-  const autoSubRef = useRef(false); // whether we've auto-loaded the preferred subtitle for this file
+  const autoSubRef = useRef(false);
+  /** How the CURRENT subtitle got chosen, so the auto-picker can upgrade itself
+   *  without fighting the user: 'engine'/'addon' are provisional and may be
+   *  replaced when the extracted (renderable) built-in track arrives a couple of
+   *  seconds later; 'builtin' is the best we have; 'manual' means the user chose
+   *  and we never touch it again. */
+  const autoSubKindRef = useRef<'engine' | 'addon' | 'builtin' | 'manual' | null>(null); // whether we've auto-loaded the preferred subtitle for this file
   const autoAudioRef = useRef(false); // whether we've auto-selected the preferred audio for this file
   const resumeAtRef = useRef(0); // seconds to resume at on the next file (release-switch / mid-play auto-advance)
   const firstFrameRef = useRef(false); // VideoView painted a real frame — proves the decoder works; brakes the codec skip
@@ -286,6 +292,7 @@ export function PlayerScreen() {
     setSubTracks([]);
     skippedRef.current = false;
     autoSubRef.current = false;
+    autoSubKindRef.current = null;
     autoAudioRef.current = false;
     seekedRef.current = false;
     firstFrameRef.current = false;
@@ -613,6 +620,50 @@ export function PlayerScreen() {
   };
   const inviteLink = `${getStorageBaseUrl().replace(/\/storage\/?$/, '')}/invite/${params.roomCode ?? ''}`;
 
+  // expo-video's track properties are bridged Kotlin getters/setters that
+  // iterate ExoPlayer's LIVE track lists. Read on the JS thread while the player
+  // thread is mutating them (a track switch, a new segment's tracks arriving),
+  // the getter throws java.util.ConcurrentModificationException, which reaches
+  // JS as "Exception in HostFunction" — and uncaught on the poll below it killed
+  // the whole app (Bleach S1E49, the moment a subtitle track was selected). A
+  // dropped poll tick or a set that has to be retried costs nothing; a dead app
+  // costs the episode. Every touch of those properties goes through these two.
+  type EngineTracks = {
+    audio: Track[] | null;
+    subs: Track[] | null;
+    video: { isSupported?: boolean }[] | null;
+    curAudio: string | null;
+    curSub: string | null;
+  };
+  const readEngineTracks = (): EngineTracks | null => {
+    try {
+      const p = player as unknown as {
+        availableAudioTracks?: Track[];
+        availableSubtitleTracks?: Track[];
+        availableVideoTracks?: { isSupported?: boolean }[];
+        audioTrack?: Track | null;
+        subtitleTrack?: Track | null;
+      };
+      return {
+        audio: p.availableAudioTracks ?? null,
+        subs: p.availableSubtitleTracks ?? null,
+        video: p.availableVideoTracks ?? null,
+        curAudio: p.audioTrack?.id ?? null,
+        curSub: p.subtitleTrack?.id ?? null,
+      };
+    } catch {
+      return null; // mid-mutation — this tick's snapshot is skipped, the next one lands
+    }
+  };
+  const setEngineTrack = (kind: 'audioTrack' | 'subtitleTrack', value: Track | null): boolean => {
+    try {
+      (player as unknown as Record<string, unknown>)[kind] = value;
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   useEffect(() => {
     bumpControls();
     const id = setInterval(() => {
@@ -660,17 +711,13 @@ export function PlayerScreen() {
         setControlsVisible(false);
       }
       if ((player as { status?: string }).status === 'error') setErrored(true);
-      const p = player as unknown as {
-        availableAudioTracks?: Track[];
-        availableSubtitleTracks?: Track[];
-        availableVideoTracks?: { isSupported?: boolean }[];
-        audioTrack?: Track | null;
-        subtitleTrack?: Track | null;
-      };
-      if (p.availableAudioTracks) setAudioTracks(p.availableAudioTracks);
-      if (p.availableSubtitleTracks) setSubTracks(p.availableSubtitleTracks);
-      setCurAudio(p.audioTrack?.id ?? null);
-      setCurSub(p.subtitleTrack?.id ?? null);
+      const snap = readEngineTracks();
+      if (snap) {
+        if (snap.audio) setAudioTracks(snap.audio);
+        if (snap.subs) setSubTracks(snap.subs);
+        setCurAudio(snap.curAudio);
+        setCurSub(snap.curSub);
+      }
       // Codec watchdog. The TV's decoder reports per-track support; a 4K encode
       // the panel can't decode (Dolby Vision profile / 10-bit level / lossless
       // audio) plays as a BLACK, silent picture while the container + our text
@@ -688,7 +735,7 @@ export function PlayerScreen() {
         !firstFrameRef.current &&
         index < playlist.length - 1
       ) {
-        const vids = p.availableVideoTracks ?? [];
+        const vids = snap?.video ?? [];
         if (vids.length > 0 && vids.every((t) => t.isSupported === false)) {
           codecSkipRef.current = true;
           toast.show("This release can't play on your TV", { description: 'Switching to the next one' });
@@ -714,6 +761,45 @@ export function PlayerScreen() {
     return () => { cancelled = true; ctrl.abort(); };
   }, [params.streamTarget, token]);
 
+  // EMBEDDED subtitles, extracted server-side so WE render them.
+  //
+  // Selecting an embedded track hands it to expo-video's native renderer, and on
+  // this engine that frequently draws NOTHING — anime muxes carry ASS/SSA, which
+  // is what it handles worst. The track is selected, the toast says "English -
+  // Embedded", and the screen stays blank. Styling was the known limitation; not
+  // rendering at all is the real one.
+  //
+  // So route them the same way as addon subs: the proxy ffprobes the playing file
+  // and serves each text track as WebVTT (/extract-subtitle.vtt), we parse the
+  // cues and draw them through SubtitleOverlay — which works, and honours the
+  // saved colour/size/outline into the bargain.
+  //
+  // This was tried and reverted once because extraction hung: every request
+  // spawned its own ffmpeg demuxing the whole cold Real-Debrid file. That is
+  // fixed — the endpoint is single-flight now (one run per file+track, later
+  // requests attach to it) and results are cached per release, so a cold track
+  // is seconds and a repeat is instant. Keyed on the PLAYING url, not the
+  // content id: a different release has different tracks.
+  useEffect(() => {
+    const url = current.url;
+    if (!url) return;
+    let cancelled = false;
+    const ctrl = new AbortController();
+    probeEmbeddedSubtitles(url, ctrl.signal)
+      .then((tracks) => {
+        if (cancelled || tracks.length === 0) return;
+        // Merge, don't replace: the addon subs above may still be loading or
+        // already in. Dedupe by id so a re-run can't double the list.
+        setExtTracks((prev) => {
+          const seen = new Set(prev.map((t) => t.id));
+          const add = tracks.filter((t) => !seen.has(t.id));
+          return add.length ? orderSubtitlesForPlayer([...prev, ...add]) : prev;
+        });
+      })
+      .catch(() => { /* best-effort — the engine's own track list still stands */ });
+    return () => { cancelled = true; ctrl.abort(); };
+  }, [current.url]);
+
   // Auto-load the preferred-language subtitle for the file we actually land on —
   // prefer an EXTERNAL sub (we render it styled), falling back to embedded. Gated
   // on `revealed`: the player auto-advances PAST debrid-DMCA/errored releases, each
@@ -721,7 +807,7 @@ export function PlayerScreen() {
   // (loaded once, always present), without this gate every skipped release re-fired
   // its own "Subtitles loaded" toast. Only the revealed (real) file applies + toasts.
   useEffect(() => {
-    if (autoSubRef.current || !revealed) return;
+    if (!revealed) return;
     const pref = (tvs.subtitlesLanguage ?? '').trim();
     if (!pref || pref.toLowerCase() === 'none') return;
     // Same table-driven matcher as the audio pick below: the old two-way
@@ -734,10 +820,48 @@ export function PlayerScreen() {
     // native renderer, which CAN'T be styled — so they're the fallback (the
     // desktop styles embedded via mpv; expo-video has no equivalent). Manual
     // selection can still pick a "Built-in" track.
-    const ext = extTracks.find((t) => matches(t.lang) || matches(t.langName));
-    if (ext) { autoSubRef.current = true; applySubtitle(ext.id); return; }
+    // Order of preference, best first:
+    //   1. the FILE'S OWN track, server-extracted to VTT (source 'Built-in') —
+    //      it matches the release, it is timed to this exact encode, and we draw
+    //      it ourselves so it actually appears and honours the saved styling;
+    //   2. an addon subtitle — a different transcription, timing not guaranteed
+    //      to match this release, but it renders;
+    //   3. the engine's own embedded track — LAST, because handing it to
+    //      expo-video frequently draws NOTHING (ASS/SSA, which is what anime
+    //      ships). It used to be preferred-against for being unstylable; the
+    //      real problem is that selecting it can leave a blank screen.
+    // This reverses the old order, which put addon subs first and meant a Kitsu
+    // episode never used its own English track.
+    const matchesTrack = (t: SubtitleTrack) => matches(t.lang) || matches(t.langName);
+    // Every Built-in variant for the language, best-rated first (see
+    // probeEmbeddedSubtitles): the pick is the head, the rest are handed over as
+    // alternatives so a variant that turns out to be signs-only is skipped.
+    const builtIns = extTracks.filter((t) => t.source === 'Built-in' && matchesTrack(t));
+    const builtIn = builtIns[0];
     const emb = subTracks.find((t) => matches(t.language));
-    if (emb) { autoSubRef.current = true; applySubtitle(emb.id); }
+    // The extraction lands a beat after the addon list, so an addon pick made a
+    // moment ago is provisional: upgrade to the file's own track when it shows
+    // up. A manual choice is never overridden.
+    const kind = autoSubKindRef.current;
+    if (kind === 'manual' || kind === 'builtin') return;
+    if (builtIn) {
+      autoSubRef.current = true;
+      autoSubKindRef.current = 'builtin';
+      applySubtitle(builtIn.id, {
+        fallbackEmbeddedId: emb?.id ?? null,
+        alternativeIds: builtIns.slice(1).map((t) => t.id),
+      });
+      return;
+    }
+    if (kind) return; // something provisional already showing — wait for the extraction
+    const addon = extTracks.find((t) => t.source !== 'Built-in' && matchesTrack(t));
+    if (addon) {
+      autoSubRef.current = true;
+      autoSubKindRef.current = 'addon';
+      applySubtitle(addon.id, { fallbackEmbeddedId: emb?.id ?? null });
+      return;
+    }
+    if (emb) { autoSubRef.current = true; autoSubKindRef.current = 'engine'; applySubtitle(emb.id); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [extTracks, subTracks, revealed]);
 
@@ -754,7 +878,7 @@ export function PlayerScreen() {
     const track = audioTracks.find((t) => matches(t.language));
     if (track && track.id !== curAudio) {
       autoAudioRef.current = true;
-      (player as unknown as { audioTrack?: Track | null }).audioTrack = track;
+      setEngineTrack('audioTrack', track);
       setCurAudio(track.id);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -811,6 +935,13 @@ export function PlayerScreen() {
     return lang ? subtitleLangLabel(lang) : t.label || fallback;
   };
   const drawerAudio: DrawerAudioTrack[] = audioTracks.map((t) => ({ id: t.id, label: langLabel(t, 'Audio'), lang: t.language, codec: null }));
+  // Languages we have a server-extracted (renderable) copy of. The engine's own
+  // entry for those is dropped from the list below: it is a duplicate that draws
+  // nothing when picked, and having two identical "Built-in / English" rows where
+  // only one works is worse than having one that does.
+  const extractedLangs = new Set(
+    extTracks.filter((t) => t.source === 'Built-in').map((t) => (t.lang || '').toLowerCase()),
+  );
   const drawerSubs: DrawerSubtitleTrack[] = [
     // Built-in (embedded) subs first (the old app's order), then addon subs.
     // NOTE: embedded subs use expo-video's NATIVE rendering (unstyled) — that's a
@@ -819,8 +950,14 @@ export function PlayerScreen() {
     // track from the COLD remote RD file (the TV plays it directly, not through
     // the Mac), so it hangs/times out and the sub never shows. Styleable subs come
     // from external sources instead — incl. the built-in /opensubs (see subtitles.ts).
-    ...subTracks.map((t) => ({ id: t.id, label: langLabel(t, 'Subtitle'), lang: t.language, embedded: true, origin: 'Embedded' })),
-    ...extTracks.map((t) => ({ id: t.id, label: t.langName, lang: t.lang, embedded: false, origin: t.source })),
+    ...subTracks
+      .filter((t) => !extractedLangs.has((t.language || '').toLowerCase()))
+      .map((t) => ({ id: t.id, label: langLabel(t, 'Subtitle'), lang: t.language, embedded: true, origin: 'Embedded' })),
+    // Server-extracted copies of the file's own tracks (source 'Built-in') are
+    // shown AS built-in — that is what they are; the extraction is only how we
+    // get to draw them. Cosmetic: applySubtitle finds them in extTracks by id
+    // regardless.
+    ...extTracks.map((t) => ({ id: t.id, label: t.langName, lang: t.lang, embedded: t.source === 'Built-in', origin: t.source })),
   ];
   const drawerReleases: DrawerRelease[] = releases.map((r) => ({
     key: r.key,
@@ -837,23 +974,71 @@ export function PlayerScreen() {
   const applyAudio = (id: string) => {
     const t = audioTracks.find((x) => x.id === id);
     const p = player as unknown as { audioTrack?: Track | null };
-    if (t) { p.audioTrack = t; setCurAudio(t.id); toast.show(`Audio: ${langLabel(t, 'Audio')}`); }
+    if (t) { setEngineTrack('audioTrack', t); setCurAudio(t.id); toast.show(`Audio: ${langLabel(t, 'Audio')}`); }
   };
-  const applySubtitle = (id: string | null) => {
+  /** `fallbackEmbeddedId` — an engine track to fall back to if an EXTERNAL pick
+   *  never produces cues. `alternativeIds` — further external tracks (same
+   *  language, best first) to try before that, used to step past a variant that
+   *  fetched but is too sparse to be dialogue. Both come from the auto-load
+   *  below; manual selection leaves them unset (an explicit choice shouldn't
+   *  silently become another). */
+  const applySubtitle = (
+    id: string | null,
+    opts?: { fallbackEmbeddedId?: string | null; alternativeIds?: string[] },
+  ) => {
     const p = player as unknown as { subtitleTrack?: Track | null };
-    if (id == null) { p.subtitleTrack = null; setCurSub(null); setCurExtId(null); setCues([]); toast.show('Subtitles: Off'); return; }
+    if (id == null) { setEngineTrack('subtitleTrack', null); setCurSub(null); setCurExtId(null); setCues([]); toast.show('Subtitles: Off'); return; }
     const ext = extTracks.find((x) => x.id === id);
     if (ext) {
-      // External sub — we render it ourselves (styled overlay); disable the
-      // engine's own subtitle so it isn't drawn twice.
-      p.subtitleTrack = null; setCurSub(null); setCurExtId(ext.id); setCues([]);
+      // External sub — we render it ourselves (styled overlay). Do NOT drop the
+      // engine's own subtitle yet: this used to null it immediately and only
+      // then start the download, so a fetch that failed, stalled or parsed to
+      // zero cues left the screen blank with a perfectly good embedded track
+      // switched off (and autoSubRef already latched, so nothing reconsidered
+      // it). Anime Kitsu supplies English subs for kitsu titles, so this was the
+      // normal path on anime, not an edge case. The engine track stays up until
+      // real cues are in hand; on failure we fall back to it.
+      setCurExtId(ext.id); setCues([]);
       const my = ++cueLoadRef.current;
-      fetchSubtitleCues(ext.url).then((c) => { if (cueLoadRef.current === my) setCues(c); }).catch(() => toast.show('Subtitle failed to load'));
-      toast.show('Subtitles loaded', { description: `${ext.langName} - ${ext.source}` });
+      const fallback = () => {
+        if (cueLoadRef.current !== my) return;
+        setCurExtId(null);
+        const fb = opts?.fallbackEmbeddedId ? subTracks.find((x) => x.id === opts.fallbackEmbeddedId) : null;
+        if (fb) {
+          setEngineTrack('subtitleTrack', fb); setCurSub(fb.id);
+          toast.show('Subtitles loaded', { description: `${langLabel(fb, 'Subtitle')} - Embedded` });
+        } else {
+          toast.show('Subtitle failed to load');
+        }
+      };
+      // Step to the next same-language variant if there is one, else the engine
+      // fallback. Used when this one fails outright OR is too sparse to be the
+      // dialogue track (a "Signs & Songs" track is a few dozen cues where a full
+      // episode is hundreds). The sparse test only applies while alternatives
+      // remain — with nothing left to try, a thin track still beats a blank
+      // screen, and a genuinely quiet film would otherwise never get subtitles.
+      const rest = opts?.alternativeIds ?? [];
+      const tryNext = () => {
+        if (cueLoadRef.current !== my) return;
+        if (rest.length > 0) { applySubtitle(rest[0], { ...opts, alternativeIds: rest.slice(1) }); return; }
+        fallback();
+      };
+      fetchSubtitleCues(ext.url)
+        .then((c) => {
+          if (cueLoadRef.current !== my) return;
+          const tooSparse = c.length < 40 && rest.length > 0;
+          if (c.length === 0 || tooSparse) { tryNext(); return; }
+          // Cues in hand — now it's safe to silence the engine's own rendering
+          // so the two aren't drawn on top of each other.
+          setEngineTrack('subtitleTrack', null); setCurSub(null);
+          setCues(c);
+          toast.show('Subtitles loaded', { description: `${ext.langName} - ${ext.source}` });
+        })
+        .catch(tryNext);
       return;
     }
     const t = subTracks.find((x) => x.id === id);
-    if (t) { p.subtitleTrack = t; setCurSub(t.id); setCurExtId(null); setCues([]); toast.show('Subtitles loaded', { description: `${langLabel(t, 'Subtitle')} - Embedded` }); }
+    if (t) { setEngineTrack('subtitleTrack', t); setCurSub(t.id); setCurExtId(null); setCues([]); toast.show('Subtitles loaded', { description: `${langLabel(t, 'Subtitle')} - Embedded` }); }
   };
 
   const runBottom = (id: BottomId) => {
@@ -1177,7 +1362,7 @@ export function PlayerScreen() {
           onApplyAudio={applyAudio}
           subtitleTracks={drawerSubs}
           currentSubtitleId={curExtId ?? curSub}
-          onApplySubtitle={applySubtitle}
+          onApplySubtitle={(id: string | null) => { autoSubKindRef.current = 'manual'; applySubtitle(id); }}
           subtitleSizePx={subSizePx}
           onSubtitleSizePxChange={setSubSizePx}
           subtitleColor={subColor}
