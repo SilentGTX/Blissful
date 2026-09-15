@@ -944,12 +944,15 @@ export function PlayerScreen() {
   );
   const drawerSubs: DrawerSubtitleTrack[] = [
     // Built-in (embedded) subs first (the old app's order), then addon subs.
-    // NOTE: embedded subs use expo-video's NATIVE rendering (unstyled) — that's a
-    // documented engine limit. Server-side extraction (probe → /extract-subtitle.vtt)
-    // to style them was tried + reverted: ffmpeg must read the whole interleaved
-    // track from the COLD remote RD file (the TV plays it directly, not through
-    // the Mac), so it hangs/times out and the sub never shows. Styleable subs come
-    // from external sources instead — incl. the built-in /opensubs (see subtitles.ts).
+    // NOTE: the file's own subtitle tracks reach the drawer TWO ways. The ones we
+    // can render — server-extracted to VTT via /probe-streams + /extract-subtitle.vtt
+    // (probeEmbeddedSubtitles) — come in through extTracks with source 'Built-in'
+    // and draw through SubtitleOverlay, styled. The engine's own entries
+    // (subTracks) are kept only for languages we have NO extracted copy of, because
+    // handing a track to expo-video's native renderer frequently drew nothing on
+    // this box (ASS/SSA anime tracks, Bleach S1E49). Extraction was once reverted
+    // for hanging on cold Real-Debrid files; the proxy is single-flight + cached now
+    // (5.8s cold for a 24-min episode, instant after), which is what made it viable.
     ...subTracks
       .filter((t) => !extractedLangs.has((t.language || '').toLowerCase()))
       .map((t) => ({ id: t.id, label: langLabel(t, 'Subtitle'), lang: t.language, embedded: true, origin: 'Embedded' })),
