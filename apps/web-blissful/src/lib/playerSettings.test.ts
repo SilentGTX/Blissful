@@ -10,9 +10,27 @@ import {
 import { hasKitsuAddon, isKitsuAddon, isKitsuId } from './animeKitsu';
 
 describe('PLAYER_LANGUAGE_OPTIONS ordering', () => {
-  it('leads with None, then English, then Bulgarian', () => {
+  it('leads with None, then Japanese, English, Bulgarian', () => {
     expect(PLAYER_LANGUAGE_OPTIONS[0].value).toBeNull();
-    expect(PLAYER_LANGUAGE_OPTIONS.slice(1, 3).map((o) => o.value)).toEqual(['eng', 'bul']);
+    expect(PLAYER_LANGUAGE_OPTIONS.slice(1, 4).map((o) => o.value)).toEqual(['jpn', 'eng', 'bul']);
+    expect(PLAYER_LANGUAGE_OPTIONS.slice(1, 4).map((o) => o.label)).toEqual(['Japanese', 'English', 'Bulgarian']);
+  });
+
+  it('labels every language in plain English, not its native script', () => {
+    // A picker has to be readable by someone who doesn't speak the language
+    // they're looking for: "Japanese", never "日本語 (にほんご)".
+    const labels = PLAYER_LANGUAGE_OPTIONS.slice(1).map((o) => o.label);
+    for (const label of labels) {
+      expect(label, `${label} is not a Latin-script English name`).toMatch(/^[A-Za-z\u00C0-\u024F][A-Za-z\u00C0-\u024F ()'-]*$/);
+    }
+    expect(labels).toContain('German');
+    expect(labels).toContain('Chinese');
+    expect(labels).toContain('Arabic');
+  });
+
+  it('never shows two languages under the same label', () => {
+    const labels = PLAYER_LANGUAGE_OPTIONS.map((o) => o.label);
+    expect(new Set(labels).size).toBe(labels.length);
   });
 
   it('keeps the remaining languages alphabetical by label', () => {

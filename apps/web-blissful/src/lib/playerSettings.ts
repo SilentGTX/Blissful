@@ -135,12 +135,14 @@ export const STREAMING_CACHE_SIZE_OPTIONS: Array<{
 
 const LANGUAGE_NAMES = languageNames as Record<string, string>;
 
-/** Pinned to the top of every language picker, in this order. Matched on the
- *  ISO 639-2 code (languageNames.json is keyed 'eng'/'bul', not 'en'/'bg'),
- *  not the label — the labels are native names ("български език"), so a label
- *  match would be wrong and locale-dependent. Mirrors the player's
- *  own Off / English / Bulgarian ordering (see lib/subtitleUtils langPriority). */
-export const PINNED_LANGUAGE_CODES = ['eng', 'bul'] as const;
+/** Pinned to the top of every language picker, in this order — the languages
+ *  this household actually switches between (anime in Japanese, everything
+ *  else in English, Bulgarian subtitles). Matched on the ISO 639-2 code
+ *  (languageNames.json is keyed 'jpn'/'eng'/'bul', not 'ja'/'en'/'bg'), never
+ *  on the label. The labels are plain English names ("Japanese", not
+ *  "日本語"): a picker has to be readable by someone who doesn't already speak
+ *  the language they're looking for. */
+export const PINNED_LANGUAGE_CODES = ['jpn', 'eng', 'bul'] as const;
 
 const languageOptions = Object.entries(LANGUAGE_NAMES)
   .map(([value, label]) => ({ value, label }))
