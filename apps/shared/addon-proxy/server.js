@@ -1204,6 +1204,23 @@ async function enrichSubtitleEntries(entries, { max = 16, deadlineMs = 30000 } =
 //   • nothing was cached, so every selection paid the full cost again.
 // Now: serve from a persistent cache when warm, and give a cold extraction room
 // to finish. The result is immutable for a given release file + track.
+//
+// SINGLE-FLIGHT. One ffmpeg run per (file, track), however many requests arrive.
+// The players re-request the same track while a run is already going — the web
+// player re-attaches its <track> element, which makes the browser abort the old
+// GET and issue a new one — and each of those used to spawn its own ffmpeg
+// reading the same multi-GB file over the same Real-Debrid link. Measured on a
+// Bleach episode: four concurrent runs for track 7, first cues 8.7s after the
+// first request; the same file with a single run took 2.1s. The runs were not
+// doing different work, they were competing for the same bandwidth.
+//
+// Now the first request leads and later ones attach to its output: a joiner gets
+// everything buffered so far at once, then each new chunk live, so it finishes
+// with the leader instead of restarting the clock. A leader whose own client goes
+// away (exactly what that aborted GET is) keeps running — its followers and the
+// cache still need the result.
+const inflightSubExtractions = new Map();
+
 async function extractSubtitleVtt(targetUrl, trackIndex, res) {
   targetUrl = rewriteLoopback(targetUrl);
   // Key on the release FILENAME, not the URL: a Real-Debrid link's host and
@@ -1228,7 +1245,37 @@ async function extractSubtitleVtt(targetUrl, trackIndex, res) {
       return sendVtt(hit.vtt);
     }
   }
+
+  // Dedup key: the cache key when there is one. Without a filename (a local
+  // path) fall back to the URL so concurrent requests still share a run.
+  const flightKey = cacheKey || `${targetUrl}::${trackIndex}`;
+
+  // Attach `res` to a run: replay what has been produced so far, then follow it.
+  const attach = (run) => {
+    res.writeHead(200, {
+      'Content-Type': 'text/vtt; charset=utf-8',
+      'Access-Control-Allow-Origin': '*',
+    });
+    for (const b of run.chunks) res.write(b);
+    if (run.finished) {
+      res.end();
+      return;
+    }
+    run.followers.add(res);
+    // A client going away must not stop the run — the cache and the other
+    // followers still want it.
+    res.on('close', () => run.followers.delete(res));
+  };
+
+  const existing = inflightSubExtractions.get(flightKey);
+  if (existing) {
+    console.log(`Embedded sub JOIN in-flight ${flightKey} (${existing.followers.size + 1} attached)`);
+    attach(existing);
+    return;
+  }
+
   console.log(`Extracting embedded sub track ${trackIndex} from ${targetUrl.slice(0, 90)}`);
+  const startedAt = Date.now();
   const ff = spawn('ffmpeg', [
     '-loglevel', 'error',
     '-i', targetUrl,
@@ -1237,44 +1284,51 @@ async function extractSubtitleVtt(targetUrl, trackIndex, res) {
     '-f', 'webvtt',
     '-',
   ]);
+  const run = { chunks: [], followers: new Set(), finished: false };
+  inflightSubExtractions.set(flightKey, run);
+
   let stderr = '';
   ff.stderr.on('data', (b) => { stderr += b.toString(); });
-  res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  // Tee to the client (progressive) AND to a buffer so a successful run can be
-  // cached — the next viewer of this release gets it instantly.
-  const chunks = [];
-  ff.stdout.on('data', (b) => { chunks.push(b); });
-  ff.stdout.pipe(res);
+  // Tee to every attached client (progressive) AND to a buffer, so a successful
+  // run can be cached — the next viewer of this release gets it instantly.
+  ff.stdout.on('data', (b) => {
+    run.chunks.push(b);
+    for (const r of run.followers) { try { r.write(b); } catch { /* client gone */ } }
+  });
+  attach(run); // the leader is simply the first follower
+
+  const settle = () => {
+    run.finished = true;
+    inflightSubExtractions.delete(flightKey);
+    for (const r of run.followers) { try { r.end(); } catch { /* client gone */ } }
+    run.followers.clear();
+  };
+
   // 15 min: enough for a 4K remux over the RD link. The old 120s cap silently
   // truncated exactly the files most likely to carry embedded subs.
   const killer = setTimeout(() => ff.kill('SIGKILL'), 900000);
   ff.on('close', async (code) => {
     clearTimeout(killer);
-    if (code === 0 && cacheKey && chunks.length) {
-      const vtt = Buffer.concat(chunks).toString('utf8');
+    if (code === 0 && cacheKey && run.chunks.length) {
+      const vtt = Buffer.concat(run.chunks).toString('utf8');
       // Only cache a real cue list — a header-only VTT means the track was
       // empty (or the run died early) and must not be pinned.
       if (vtt.includes('-->')) {
         await jsonCacheSet('embedsubs', cacheKey, { vtt }, 30 * 24 * 60 * 60 * 1000);
-        console.log(`Embedded sub cached ${cacheKey} (${vtt.length}B)`);
+        console.log(`Embedded sub cached ${cacheKey} (${vtt.length}B, ${Date.now() - startedAt}ms)`);
       }
     }
-    if (code !== 0 && !res.headersSent) {
-      res.writeHead(502, { 'Content-Type': 'text/plain' });
-      res.end('ffmpeg extract failed: ' + stderr.trim().slice(0, 300));
-    } else if (code !== 0) {
-      res.end();
+    if (code !== 0) {
+      console.error(`Embedded sub extract failed (code ${code}): ${stderr.trim().slice(0, 300)}`);
     }
+    // Headers are already sent on every attached response, so a late failure can
+    // only be signalled by ending the stream — same as the pre-single-flight code.
+    settle();
   });
   ff.on('error', () => {
     clearTimeout(killer);
-    if (!res.headersSent) {
-      res.writeHead(502, { 'Content-Type': 'text/plain' });
-      res.end('ffmpeg spawn error');
-    } else {
-      res.end();
-    }
+    console.error(`Embedded sub ffmpeg spawn error for ${flightKey}`);
+    settle();
   });
 }
 const STREMIO_AUTH_BASE = process.env.STREMIO_AUTH_BASE || 'https://www.strem.io';
