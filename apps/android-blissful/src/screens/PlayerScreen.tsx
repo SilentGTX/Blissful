@@ -225,7 +225,19 @@ export function PlayerScreen() {
   // can't style its native subtitle rendering; the web styles cues via ::cue, mpv
   // via sub-color). `cues` = the active external sub's parsed cues; `curExtId` =
   // the selected external sub.
-  const [extTracks, setExtTracks] = useState<SubtitleTrack[]>([]);
+  // Two sources, two states, ONE derived list. The addon load and the embedded
+  // probe used to write the same state, and whichever finished last replaced the
+  // other: the probe (~1s) landed first with the file's own tracks, the addon
+  // list (~2s) then overwrote it, and the extracted Built-in entries vanished.
+  // The drawer fell back to listing the engine's own (unrenderable) tracks as
+  // "BUILT-IN", and the track actually playing had no row left to highlight.
+  // Deriving the list makes arrival order irrelevant.
+  const [addonTracks, setAddonTracks] = useState<SubtitleTrack[]>([]);
+  const [builtinTracks, setBuiltinTracks] = useState<SubtitleTrack[]>([]);
+  const extTracks = useMemo(
+    () => orderSubtitlesForPlayer([...builtinTracks, ...addonTracks]),
+    [builtinTracks, addonTracks],
+  );
   const [cues, setCues] = useState<SubtitleCue[]>([]);
   const [curExtId, setCurExtId] = useState<string | null>(null);
   const cueLoadRef = useRef(0);
@@ -290,6 +302,9 @@ export function PlayerScreen() {
     setErrored(false);
     setAudioTracks([]);
     setSubTracks([]);
+    // The file's own tracks belong to THIS file; the probe effect (keyed on the
+    // url) refills them. Addon tracks are content-keyed and stay.
+    setBuiltinTracks([]);
     skippedRef.current = false;
     autoSubRef.current = false;
     autoSubKindRef.current = null;
@@ -756,7 +771,7 @@ export function PlayerScreen() {
     let cancelled = false;
     const ctrl = new AbortController();
     loadSubtitles({ type: st.type, id: st.id, token, signal: ctrl.signal })
-      .then((res) => { if (!cancelled) setExtTracks(orderSubtitlesForPlayer(res.tracks)); })
+      .then((res) => { if (!cancelled) setAddonTracks(res.tracks); })
       .catch(() => { /* no addon subs — embedded still available */ });
     return () => { cancelled = true; ctrl.abort(); };
   }, [params.streamTarget, token]);
@@ -787,14 +802,7 @@ export function PlayerScreen() {
     const ctrl = new AbortController();
     probeEmbeddedSubtitles(url, ctrl.signal)
       .then((tracks) => {
-        if (cancelled || tracks.length === 0) return;
-        // Merge, don't replace: the addon subs above may still be loading or
-        // already in. Dedupe by id so a re-run can't double the list.
-        setExtTracks((prev) => {
-          const seen = new Set(prev.map((t) => t.id));
-          const add = tracks.filter((t) => !seen.has(t.id));
-          return add.length ? orderSubtitlesForPlayer([...prev, ...add]) : prev;
-        });
+        if (!cancelled) setBuiltinTracks(tracks); // [] for a file with no text tracks
       })
       .catch(() => { /* best-effort — the engine's own track list still stands */ });
     return () => { cancelled = true; ctrl.abort(); };
@@ -939,8 +947,11 @@ export function PlayerScreen() {
   // entry for those is dropped from the list below: it is a duplicate that draws
   // nothing when picked, and having two identical "Built-in / English" rows where
   // only one works is worse than having one that does.
+  // Compared by canonical label, not raw code: the engine reports 'en' where the
+  // probe says 'eng', and a raw-code comparison would let every engine duplicate
+  // through.
   const extractedLangs = new Set(
-    extTracks.filter((t) => t.source === 'Built-in').map((t) => (t.lang || '').toLowerCase()),
+    extTracks.filter((t) => t.source === 'Built-in').map((t) => subtitleLangLabel(t.lang || '')),
   );
   const drawerSubs: DrawerSubtitleTrack[] = [
     // Built-in (embedded) subs first (the old app's order), then addon subs.
@@ -954,13 +965,22 @@ export function PlayerScreen() {
     // for hanging on cold Real-Debrid files; the proxy is single-flight + cached now
     // (5.8s cold for a 24-min episode, instant after), which is what made it viable.
     ...subTracks
-      .filter((t) => !extractedLangs.has((t.language || '').toLowerCase()))
+      .filter((t) => !extractedLangs.has(subtitleLangLabel(t.language || '')))
       .map((t) => ({ id: t.id, label: langLabel(t, 'Subtitle'), lang: t.language, embedded: true, origin: 'Embedded' })),
     // Server-extracted copies of the file's own tracks (source 'Built-in') are
     // shown AS built-in — that is what they are; the extraction is only how we
     // get to draw them. Cosmetic: applySubtitle finds them in extTracks by id
     // regardless.
-    ...extTracks.map((t) => ({ id: t.id, label: t.langName, lang: t.lang, embedded: t.source === 'Built-in', origin: t.source })),
+    ...extTracks.map((t) => ({
+      id: t.id,
+      // Built-in rows carry the probe's label — language plus the track TITLE when
+      // it says more ("English - Signs & Songs"); five bare "English" rows are
+      // unpickable. Addon rows keep the language; their origin is the pill.
+      label: t.source === 'Built-in' ? t.label : t.langName,
+      lang: t.lang,
+      embedded: t.source === 'Built-in',
+      origin: t.source,
+    })),
   ];
   const drawerReleases: DrawerRelease[] = releases.map((r) => ({
     key: r.key,
@@ -1365,7 +1385,14 @@ export function PlayerScreen() {
           onApplyAudio={applyAudio}
           subtitleTracks={drawerSubs}
           currentSubtitleId={curExtId ?? curSub}
-          onApplySubtitle={(id: string | null) => { autoSubKindRef.current = 'manual'; applySubtitle(id); }}
+          onApplySubtitle={(id: string | null) => {
+            autoSubKindRef.current = 'manual';
+            // A hand-picked extracted track may need a cold ffmpeg run (~6s on an
+            // episode, longer on a remux); without this the pick looks dead until
+            // the cues land and "Subtitles loaded" fires.
+            if (id && extTracks.some((x) => x.id === id)) toast.show('Loading subtitles…');
+            applySubtitle(id);
+          }}
           subtitleSizePx={subSizePx}
           onSubtitleSizePxChange={setSubSizePx}
           subtitleColor={subColor}

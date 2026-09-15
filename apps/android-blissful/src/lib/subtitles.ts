@@ -431,6 +431,47 @@ async function fetchProxyOpenSubs(params: {
  *  web BlissfulPlayer embedded-subtitle probe. Best-effort: returns [] on any
  *  failure (the caller keeps the native tracks as a fallback). Bitmap subs (PGS,
  *  VobSub) are dropped by the server's `textBased` flag — no client-side OCR. */
+// Language named in a subtitle track's TITLE. Fansub batch muxes routinely tag
+// every text track `eng` in the container and put the real language in the
+// title ("Bulgarian", "Português (Brasil)", "Signs & Songs") — one Bleach file
+// arrived as ten "English" tracks that way, nine of them not English, and the
+// auto-pick and the drawer both trusted the tag. Ordered most-specific first
+// (Brazilian Portuguese before Portuguese, Malayalam before Malay) and matched by
+// substring rather than \b, which JS regex doesn't honour for Cyrillic/CJK.
+const TITLE_LANGUAGES: Array<[string[], string]> = [
+  [['malayalam'], 'mal'],
+  [['pob', 'brasil', 'brazil', 'pt-br', 'português (br', 'portuguese (br', 'portuguese-br'], 'pob'],
+  [['portuguese', 'português'], 'por'],
+  [['english', 'eng '], 'eng'],
+  [['bulgarian', 'български'], 'bul'],
+  [['japanese', '日本語'], 'jpn'],
+  [['korean', '한국어'], 'kor'],
+  [['turkish', 'türkçe'], 'tur'],
+  [['vietnamese', 'tiếng việt'], 'vie'],
+  [['spanish', 'español', 'castellano', 'latino', 'latin american'], 'spa'],
+  [['french', 'français'], 'fra'],
+  [['german', 'deutsch'], 'deu'],
+  [['italian', 'italiano'], 'ita'],
+  [['russian', 'русский'], 'rus'],
+  [['polish', 'polski'], 'pol'],
+  [['arabic', 'العربية'], 'ara'],
+  [['chinese', '中文', '简体', '繁體', '繁体'], 'zho'],
+  [['dutch', 'nederlands'], 'nld'],
+  [['hindi'], 'hin'],
+  [['indonesian', 'bahasa'], 'ind'],
+  [['thai'], 'tha'],
+  [['malay'], 'msa'],
+  [['filipino', 'tagalog'], 'fil'],
+];
+export function languageFromTitle(title: string | null | undefined): string | null {
+  const t = ` ${(title ?? '').toLowerCase().trim()} `;
+  if (t.trim() === '') return null;
+  for (const [needles, code] of TITLE_LANGUAGES) {
+    if (needles.some((n) => t.includes(n))) return code;
+  }
+  return null;
+}
+
 export async function probeEmbeddedSubtitles(streamUrl: string, signal?: AbortSignal): Promise<SubtitleTrack[]> {
   if (!/^https?:\/\//i.test(streamUrl)) return [];
   const proxy = proxyBaseUrl();
@@ -444,13 +485,23 @@ export async function probeEmbeddedSubtitles(streamUrl: string, signal?: AbortSi
     const out: SubtitleTrack[] = [];
     for (const s of data.subtitles ?? []) {
       if (!s.textBased) continue;
-      const lang = (s.language || 'und').toLowerCase();
+      // Trust the title over a generic tag: `eng`/`und` on a track titled
+      // "Bulgarian" is the mux lying, and everything downstream (grouping, the
+      // auto-pick's language match) keys off `lang`.
+      const tagged = (s.language || 'und').toLowerCase();
+      const fromTitle = languageFromTitle(s.title);
+      const lang = fromTitle && (tagged === 'eng' || tagged === 'en' || tagged === 'und') ? fromTitle : tagged;
       const langName = subtitleLangLabel(lang);
+      // A title that only restates the language adds nothing ("Bulgarian -
+      // Bulgarian"); anything else — "Signs & Songs", "Full", "Honorifics",
+      // "Português (Brasil)" — is exactly what tells two same-language rows apart.
+      const title = (s.title ?? '').trim();
+      const titleIsJustTheLanguage = title !== '' && title.toLowerCase() === langName.toLowerCase();
       out.push({
         id: `embedded::${s.index}`,
         lang,
         langName,
-        label: s.title ? `${langName} - ${s.title}` : `${langName} - Built-in`,
+        label: title && !titleIsJustTheLanguage ? `${langName} - ${title}` : langName,
         url: `${proxy}/extract-subtitle.vtt?url=${encodeURIComponent(streamUrl)}&track=${s.index}`,
         source: 'Built-in',
         // Anime muxes carry TWO English tracks: full dialogue and "Signs & Songs"

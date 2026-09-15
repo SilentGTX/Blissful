@@ -525,7 +525,11 @@ export function SettingsDrawer(props: SettingsDrawerProps) {
                       <VariantRow
                         key={`v-${v.id}`}
                         m={m}
-                        label={v.embedded ? (drilledLang ?? '') : v.label || v.origin || 'Subtitle'}
+                        // Built-in rows carry the track TITLE when it says more than the
+                        // language ("English - Signs & Songs") — ten identical "English"
+                        // rows are unpickable. Engine tracks have no title and fall back
+                        // to the language.
+                        label={v.embedded ? (v.label || drilledLang || '') : v.label || v.origin || 'Subtitle'}
                         tag={tag}
                         embedded={v.embedded}
                         active={active}
