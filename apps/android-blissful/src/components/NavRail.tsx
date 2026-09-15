@@ -251,27 +251,27 @@ export function NavRail({ active = 'Home' as NavKey }: { active?: NavKey }) {
           where the rail ends — and a dark panel with a gently-rounded RIGHT edge
           (top-right + bottom-right) when expanded. No glass pill / sheen. */}
       <View style={{ flex: 1, paddingTop: m.safeY, paddingBottom: m.safeY }}>
-        <Row iconW={iconW} itemH={m.s(48)} mx={rowMargin} expanded={expanded} focusable={false} label="Blissful" labelColor={colors.text} labelFont={font.serif} labelSize={m.s(22)} renderIcon={() => <Image source={require('../../assets/blissful-small-logo.png')} style={{ width: m.s(36), height: m.s(36), borderRadius: m.s(10) }} resizeMode="contain" />} />
+        <Row iconW={iconW} itemH={m.s(48)} mx={rowMargin} expanded={expanded} focusable={false} label="Blissful" labelColor={colors.text} labelFont={font.serif} labelSize={m.navBrand} renderIcon={() => <Image source={require('../../assets/blissful-small-logo.png')} style={{ width: m.s(36), height: m.s(36), borderRadius: m.s(10) }} resizeMode="contain" />} />
         <Divider mx={m.s(10)} my={m.s(6)} />
         {ITEMS.map((it, i) => (
-          <Row key={i === 0 ? `${it.key}-${openKey}` : it.key} ref={(el) => { navRefs.current[i] = el; }} focusable={expanded} autoFocus={i === 0 && expanded} nextFocusUp={upTag(i)} nextFocusDown={downTag(i)} iconW={iconW} itemH={m.navItemH} mx={rowMargin} expanded={expanded} active={active === it.key} label={it.label} labelSize={m.s(16)} renderIcon={(c) => ico(it.icon, c, c === colors.accent)} onRailFocus={onRailFocus} onPress={() => { if (it.key === 'Search') navigation.navigate('Search'); else if (it.key === 'Home') navigation.navigate('Home'); else if (it.key === 'Discover') navigation.navigate('Discover', { type: 'movie' }); else if (it.key === 'Library') navigation.navigate('Library'); else if (it.key === 'Addons') navigation.navigate('Addons'); else if (it.key === 'Settings') navigation.navigate('Settings'); else if (it.key === 'JoinParty') setJoinOpen(true); }} />
+          <Row key={i === 0 ? `${it.key}-${openKey}` : it.key} ref={(el) => { navRefs.current[i] = el; }} focusable={expanded} autoFocus={i === 0 && expanded} nextFocusUp={upTag(i)} nextFocusDown={downTag(i)} iconW={iconW} itemH={m.navItemH} mx={rowMargin} expanded={expanded} active={active === it.key} label={it.label} labelSize={m.navLabel} renderIcon={(c) => ico(it.icon, c, c === colors.accent)} onRailFocus={onRailFocus} onPress={() => { if (it.key === 'Search') navigation.navigate('Search'); else if (it.key === 'Home') navigation.navigate('Home'); else if (it.key === 'Discover') navigation.navigate('Discover', { type: 'movie' }); else if (it.key === 'Library') navigation.navigate('Library'); else if (it.key === 'Addons') navigation.navigate('Addons'); else if (it.key === 'Settings') navigation.navigate('Settings'); else if (it.key === 'JoinParty') setJoinOpen(true); }} />
         ))}
 
         <Divider mx={m.s(8)} my={m.s(8)} />
 
         {expanded ? (
           <>
-            <Row ref={(el) => { navRefs.current[7] = el; }} nextFocusUp={upTag(7)} iconW={iconW} itemH={m.navItemH} mx={rowMargin} expanded label="Friends" labelColor={colors.text} labelSize={m.s(17)} renderIcon={(c) => friendsIcon(c)} onRailFocus={onRailFocus} />
+            <Row ref={(el) => { navRefs.current[7] = el; }} nextFocusUp={upTag(7)} iconW={iconW} itemH={m.navItemH} mx={rowMargin} expanded label="Friends" labelColor={colors.text} labelSize={m.navLabel} renderIcon={(c) => friendsIcon(c)} onRailFocus={onRailFocus} />
             {token ? (
               <FriendsBody m={m} mx={rowMargin} token={token} friends={friends} incoming={incoming} presence={presence} refresh={refresh} tab={tab} setTab={setTab} query={query} setQuery={setQuery} onRailFocus={onRailFocus} onTabFocus={(f: boolean) => (tabFocusedRef.current = f)} />
             ) : (
               <Pressable onFocus={() => onRailFocus(true)} onBlur={() => onRailFocus(false)} onPress={openLogin} style={{ paddingHorizontal: rowMargin + m.s(6), paddingVertical: m.s(10) }}>
-                <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(16), color: colors.textDim }}>Login to see friends</Text>
+                <Text style={{ fontFamily: font.bodySemi, fontSize: m.navLabelSm, color: colors.textDim }}>Login to see friends</Text>
               </Pressable>
             )}
           </>
         ) : (
-          <Row focusable={false} iconW={iconW} itemH={m.navItemH} mx={rowMargin} expanded={false} label="Friends" labelSize={m.s(16)} renderIcon={() => friendsIcon(colors.textDim)} />
+          <Row focusable={false} iconW={iconW} itemH={m.navItemH} mx={rowMargin} expanded={false} label="Friends" labelSize={m.navLabel} renderIcon={() => friendsIcon(colors.textDim)} />
         )}
       </View>
     </Animated.View>

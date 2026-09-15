@@ -51,5 +51,14 @@ function buildMetrics(width: number, height: number) {
     profileFont: clampVw(19.2, 1.4, 27.2), // .tv-topbar-profile (1.2rem..1.4vw..1.7rem)
     navIcon: clampVw(26, 1.6, 30), // .nav-icon-slot svg
     navItemH: clampVh(60, 4.4, 76), // .bliss-sidebar-link height
+    // Rail labels. NOT a port of the web sidebar's clamp: the web value is sized
+    // for a desk monitor, and at 1920-design px it lands near 16 — which on a TV
+    // panel IS 16 physical px (a 1080p TV reports ~960dp, so s() halves), under
+    // half Android TV's ~18sp floor and the smallest type in the app. Sized here
+    // as 10-foot type instead, between the card title (19) and the row title
+    // (35), matching the top bar's search/profile text.
+    navLabel: clampVw(20, 1.4, 28), // primary rail items
+    navLabelSm: clampVw(17, 1.15, 23), // secondary rail text (hints, list rows)
+    navBrand: clampVw(24, 1.7, 34), // the "Blissful" wordmark at the rail's top
   };
 }
