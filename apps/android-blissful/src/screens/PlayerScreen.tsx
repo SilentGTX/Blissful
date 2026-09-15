@@ -18,7 +18,12 @@ import { useWatchPartyRoom } from '../lib/useWatchPartyRoom';
 import { createWatchPartyRoom, getOrCreateGuestUserId, getStashedWatchPartyPassword, getStoredGuestName, getWatchPartyRoom, stashWatchPartyPassword, clearWatchPartyPassword, type WatchPartyRoomInfo } from '../lib/watchParty';
 import { AudioIcon, BackPill, EpisodesIcon, NextEpisodeIcon, PlayIcon, PlayerIconBtn, PlayerLabelBtn, ReleasesIcon, SourceBadges, SubsIcon, WatchPartyButton } from '../components/player/PlayerControls';
 import { detectSource, is4kTitle, isHdrTitle, normColor, toRgba } from '../lib/colorUtils';
-import { readTvSettings, writeTvSettings } from '../lib/tvSettings';
+import {
+  readTvSettings,
+  writeTvSettings,
+  effectiveAudioLanguage,
+  languageMatches,
+} from '../lib/tvSettings';
 import { subtitleLangLabel, loadSubtitles, orderSubtitlesForPlayer, type SubtitleTrack } from '../lib/subtitles';
 import { activeCueText, fetchSubtitleCues, type SubtitleCue } from '../lib/subtitleCues';
 import { SubtitleOverlay } from '../components/player/SubtitleOverlay';
@@ -717,12 +722,13 @@ export function PlayerScreen() {
   // its own "Subtitles loaded" toast. Only the revealed (real) file applies + toasts.
   useEffect(() => {
     if (autoSubRef.current || !revealed) return;
-    const pref = (tvs.subtitlesLanguage ?? '').trim().toLowerCase();
-    if (!pref || pref === 'none') return;
-    const matches = (lang: string | null | undefined) => {
-      const l = (lang ?? '').toLowerCase();
-      return !!l && (pref.startsWith(l) || l.startsWith(pref) || l === pref);
-    };
+    const pref = (tvs.subtitlesLanguage ?? '').trim();
+    if (!pref || pref.toLowerCase() === 'none') return;
+    // Same table-driven matcher as the audio pick below: the old two-way
+    // startsWith only worked where the ISO code prefixes the English name, so a
+    // 'Japanese'/'German'/'French'/'Dutch'/'Chinese' preference never matched a
+    // jpn/deu/fra/nld/zho track.
+    const matches = (lang: string | null | undefined) => languageMatches(lang, pref);
     // Prefer an EXTERNAL sub: we render those ourselves (SubtitleOverlay), so the
     // saved colour/size/outline apply. Embedded subs go through expo-video's
     // native renderer, which CAN'T be styled — so they're the fallback (the
@@ -735,17 +741,16 @@ export function PlayerScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [extTracks, subTracks, revealed]);
 
-  // Auto-select the preferred AUDIO language (saved setting; default English) on
-  // the real file — mirrors the subtitle auto-load. Silent (no toast), one-shot
-  // per file via autoAudioRef.
+  // Auto-select the preferred AUDIO language on the real file — mirrors the
+  // subtitle auto-load. Silent (no toast), one-shot per file via autoAudioRef.
+  // The preference is per-content, not global: Anime Kitsu titles (`kitsu:` ids)
+  // resolve to their own default (Japanese out of the box) so anime plays in its
+  // original language while everything else stays on the profile default.
   useEffect(() => {
     if (autoAudioRef.current || !revealed || audioTracks.length === 0) return;
-    const pref = (tvs.audioLanguage ?? 'English').trim().toLowerCase();
-    if (!pref || pref === 'none') return;
-    const matches = (lang: string | null | undefined) => {
-      const l = (lang ?? '').toLowerCase();
-      return !!l && (pref.startsWith(l) || l.startsWith(pref) || l === pref);
-    };
+    const pref = effectiveAudioLanguage(tvs, params.streamTarget?.id ?? params.detailId);
+    if (!pref || pref.trim().toLowerCase() === 'none') return;
+    const matches = (lang: string | null | undefined) => languageMatches(lang, pref);
     const track = audioTracks.find((t) => matches(t.language));
     if (track && track.id !== curAudio) {
       autoAudioRef.current = true;

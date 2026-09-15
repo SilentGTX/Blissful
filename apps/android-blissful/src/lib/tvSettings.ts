@@ -14,6 +14,7 @@
 // the desktop storageApi.ts), then call it from saveTvSettings() below. The
 // local store stays as the offline fallback.
 import { fetchStoredSettings } from '@blissful/core';
+import { isKitsuId } from './animeKitsu';
 import { toRgba } from './colorUtils';
 import { kv } from './storage';
 
@@ -34,6 +35,16 @@ export type TvSettings = {
   subtitlesOutlineColor: string; // rgba
   subtitlesLanguage: string | null;
   audioLanguage: string | null;
+  /** Default audio language for Anime Kitsu content (`kitsu:` ids) — anime is
+   *  usually wanted in its original Japanese while the rest of the library stays
+   *  on `audioLanguage`. `null` = same as `audioLanguage`. Offered in Settings
+   *  only while the Anime Kitsu addon is installed, but applied by content id,
+   *  so a Kitsu show already in Continue Watching keeps its language. A profile
+   *  saved before this existed has no key at all and reads as the Japanese
+   *  default — only an explicit null means "defer to the default".
+   *  Mirrors playerSettings.kitsuAudioLanguage on web/desktop, which stores the
+   *  ISO code ('jpn'); tvLanguageFromStored/ToStored bridge the two formats. */
+  kitsuAudioLanguage: string | null;
   seekTimeDurationMs: number;
   seekShortTimeDurationMs: number;
   // Playback
@@ -56,6 +67,7 @@ export const DEFAULT_TV_SETTINGS: TvSettings = {
   subtitlesOutlineColor: 'rgba(0,0,0,0.75)',
   subtitlesLanguage: 'English',
   audioLanguage: 'English',
+  kitsuAudioLanguage: 'Japanese',
   seekTimeDurationMs: 10000,
   seekShortTimeDurationMs: 4000,
   bingeWatching: true,
@@ -113,6 +125,11 @@ export async function hydrateTvSettingsFromCloud(token: string | null): Promise<
     // names so the Player dropdowns show the saved value rather than a blank.
     merged.subtitlesLanguage = tvLanguageFromStored(merged.subtitlesLanguage);
     merged.audioLanguage = tvLanguageFromStored(merged.audioLanguage);
+    // Absent in the cloud (a profile saved before the option existed) keeps the
+    // local Japanese default — the merge loop above only copies !== undefined,
+    // which is exactly the web's kitsuAudioPreference() rule. An explicit null
+    // travels through as null = "same as the default audio track".
+    merged.kitsuAudioLanguage = tvLanguageFromStored(merged.kitsuAudioLanguage);
     // Subtitle colours come from the account as rgba (the desktop format).
     // Normalise to rgba so the picker can show them (and any custom colour still
     // renders in the live preview even if it isn't one of the swatches).
@@ -213,6 +230,77 @@ export function tvLanguageFromStored(v: unknown): string | null {
 export function tvLanguageToStored(v: string | null): string | null {
   if (!v) return null;
   return TV_NAME_TO_LANG_CODE[v.toLowerCase()] ?? v;
+}
+
+// --- Preference resolution (mirrors web playerSettings.ts) -------------------
+
+/** The Anime Kitsu audio preference, or `null` for "same as the default audio
+ *  track". A settings object with no key at all (saved before the option
+ *  existed) gets the Japanese default; only an explicit null defers. */
+export function kitsuAudioPreference(
+  settings: Pick<TvSettings, 'kitsuAudioLanguage'>,
+): string | null {
+  const value = settings.kitsuAudioLanguage;
+  if (value === undefined) return DEFAULT_TV_SETTINGS.kitsuAudioLanguage;
+  return value && value.trim() !== '' ? value : null;
+}
+
+/** The audio language the player should prefer for the content `id`: the Anime
+ *  Kitsu preference for `kitsu:` shows/episodes, the profile default otherwise.
+ *  `null` = no preference (leave the file's own default track alone). */
+export function effectiveAudioLanguage(
+  settings: Pick<TvSettings, 'audioLanguage' | 'kitsuAudioLanguage'>,
+  id: string | null | undefined,
+): string | null {
+  if (isKitsuId(id)) {
+    const kitsu = kitsuAudioPreference(settings);
+    if (kitsu) return kitsu;
+  }
+  return settings.audioLanguage ?? null;
+}
+
+// Every spelling a track's `language` field may use for one of our preference
+// names: ISO 639-2/T, 639-2/B where it differs, and 639-1. The player used to
+// compare the preference NAME against the track code with a two-way
+// startsWith, which quietly worked only where the code is a prefix of the
+// English name ('english'/'eng', 'spanish'/'spa') and failed wherever they
+// diverge — 'japanese' never matched a 'jpn' track, nor 'german' a 'deu',
+// 'french' a 'fra', 'dutch' a 'nld', 'chinese' a 'zho'. Japanese is exactly
+// what the Anime Kitsu default needs, so the matching is table-driven now.
+const LANGUAGE_MATCH_TOKENS: Record<string, string[]> = {
+  english: ['eng', 'en'],
+  spanish: ['spa', 'es'],
+  french: ['fra', 'fre', 'fr'],
+  german: ['deu', 'ger', 'de'],
+  italian: ['ita', 'it'],
+  portuguese: ['por', 'pt'],
+  dutch: ['nld', 'dut', 'nl'],
+  russian: ['rus', 'ru'],
+  polish: ['pol', 'pl'],
+  turkish: ['tur', 'tr'],
+  arabic: ['ara', 'ar'],
+  hindi: ['hin', 'hi'],
+  japanese: ['jpn', 'ja'],
+  korean: ['kor', 'ko'],
+  chinese: ['zho', 'chi', 'zh'],
+};
+
+/** Does a track's language/label satisfy the saved preference? `pref` is a TV
+ *  option ('Japanese'), a raw ISO code passed through from the account, or
+ *  null/'None' (never matches). Short codes must match exactly or as a tagged
+ *  prefix ('pt-BR'), so 'ja' can't swallow 'jav'; full names may match loosely
+ *  so a track labelled "Japanese (stereo)" still counts. */
+export function languageMatches(
+  trackLanguage: string | null | undefined,
+  pref: string | null | undefined,
+): boolean {
+  const l = (trackLanguage ?? '').trim().toLowerCase();
+  const p = (pref ?? '').trim().toLowerCase();
+  if (!l || !p || p === 'none') return false;
+  const tokens = [p, ...(LANGUAGE_MATCH_TOKENS[p] ?? [])];
+  return tokens.some((t) =>
+    l === t || l.startsWith(`${t}-`) || l.startsWith(`${t}_`) || (t.length >= 4 && l.includes(t)),
+  );
 }
 
 // Accent / subtitle text color presets — the same set the desktop TV branch

@@ -22,6 +22,8 @@ import { Button } from '../components/ui/Button';
 import { SettingsStremioPanel } from '../components/settings/SettingsStremioPanel';
 import { SettingsTraktPanel } from '../components/settings/SettingsTraktPanel';
 import { APP_NAME, APP_TAGLINE, APP_VERSION } from '../lib/appInfo';
+import { loadInstalledAddonUrls } from '../lib/addons';
+import { hasKitsuAddon } from '../lib/animeKitsu';
 import {
   EXTERNAL_PLAYER_OPTIONS,
   NEXT_VIDEO_POPUP_OPTIONS_MS,
@@ -33,6 +35,7 @@ import {
   TV_COLOR_PRESETS,
   TV_LANGUAGE_OPTIONS,
   hydrateTvSettingsFromCloud,
+  kitsuAudioPreference,
   readTvSettings,
   tvLanguageToStored,
   writeTvSettings,
@@ -228,6 +231,18 @@ export function SettingsScreen() {
     };
   }, [token]);
 
+  // The Anime Kitsu audio default is only offered while that addon is installed
+  // (it would be noise otherwise); the stored value survives an uninstall, and
+  // the player keeps applying it by content id either way.
+  const [kitsuInstalled, setKitsuInstalled] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    loadInstalledAddonUrls(token)
+      .then((urls) => { if (!cancelled) setKitsuInstalled(hasKitsuAddon(urls)); })
+      .catch(() => { /* no addon list — leave the extra picker hidden */ });
+    return () => { cancelled = true; };
+  }, [token]);
+
   // Debounced cloud save — settings now persist to the account (not just locally).
   // The TV field names match the desktop PlayerSettings 1:1, so the whole object
   // is sent as playerSettings; saveStoredSettings merges it over the account's
@@ -242,6 +257,7 @@ export function SettingsScreen() {
         ...settings,
         subtitlesLanguage: tvLanguageToStored(settings.subtitlesLanguage),
         audioLanguage: tvLanguageToStored(settings.audioLanguage),
+        kitsuAudioLanguage: tvLanguageToStored(settings.kitsuAudioLanguage),
       };
       void saveStoredSettings(token, payload as unknown as Record<string, unknown>);
     }, 700);
@@ -338,6 +354,15 @@ export function SettingsScreen() {
     }
     return base;
   }, [settings.subtitlesLanguage, settings.audioLanguage]);
+  // The Anime Kitsu picker's first entry defers to the default audio track above
+  // it, rather than meaning "no preference" like the generic "None".
+  const kitsuLanguageItems = useMemo<SelectOption[]>(
+    () =>
+      [{ key: 'default', label: 'Same as default audio track' } as SelectOption].concat(
+        languageItems.filter((o) => o.key !== 'none'),
+      ),
+    [languageItems],
+  );
   const sizeItems = useMemo<SelectOption[]>(
     () => SUBTITLE_SIZE_OPTIONS_PX.map((px) => ({ key: String(px), label: `${px}px` })),
     [],
@@ -520,6 +545,34 @@ export function SettingsScreen() {
                         onOpen={setDropdown}
                       />
                     </View>
+                    {kitsuInstalled ? (
+                      <View style={{ marginTop: m.s(14) }}>
+                        <FieldLabel label="Anime Kitsu default audio" m={m} />
+                        <TvSelect
+                          iconName="volume-high-outline"
+                          options={kitsuLanguageItems}
+                          value={kitsuAudioPreference(settings) ?? 'default'}
+                          onChange={(k) =>
+                            update({ kitsuAudioLanguage: k === 'default' ? null : k })
+                          }
+                          m={m}
+                          minWidth={m.s(260)}
+                          atRowStart
+                          onOpen={setDropdown}
+                        />
+                        <Text
+                          style={{
+                            fontFamily: font.body,
+                            fontSize: m.navLabelSm,
+                            color: colors.textDim,
+                            marginTop: m.s(8),
+                          }}
+                        >
+                          Anime opened from Anime Kitsu plays in this language instead of the
+                          default track. Japanese unless you change it.
+                        </Text>
+                      </View>
+                    ) : null}
                   </Card>
 
                   <Card title="Controls" m={m}>
