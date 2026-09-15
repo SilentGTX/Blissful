@@ -75,11 +75,22 @@ Stop kills Metro only — the emulator stays warm for the next start.
     OOM — just re-run (incremental resumes from where it stopped).
   - **Release is debug-keystore signed** (`android/app/build.gradle` → `release { signingConfig
     signingConfigs.debug }`), so it installs over a previous build with `-r` (no signature clash).
-  - **Manual install/launch** (what `-Install` does): `adb -s 192.168.1.2:5555 install -r <apk>`
-    then `adb -s 192.168.1.2:5555 shell monkey -p com.blissful.tv.rn -c
+  - **Manual install/launch** (what `-Install` does): `adb -s <device> install -r <apk>`
+    then `adb -s <device> shell monkey -p com.blissful.tv.rn -c
     android.intent.category.LAUNCHER 1`.
-- **Hot reload on the real TV:** debug APK + `adb reverse tcp:8081 tcp:8081`. Real TV = Philips
-  65PUS7354 @ `192.168.1.2:5555` (adb-wifi, Android 12, armeabi-v7a); scrcpy to view.
+- **Real devices (2026-09-15).** Both are DHCP, so CONFIRM the address before trusting it —
+  `adb mdns services` finds nothing here; sweep the /24 and probe tcp/5555, then read
+  `getprop ro.product.model`. Both are 32-bit (`armeabi-v7a,armeabi` — NEITHER is arm64), but
+  they differ in Android level, so don't assume a result on one carries to the other.
+  - **budinoffTV** — EON `SDSTB02` set-top box @ `192.168.1.2:5555`, wired ethernet, Android 11
+    (SDK 30), leanback. Identify it without adb: it answers
+    `http://<ip>:8008/setup/eureka_info` with `"name":"budinoffTV"`. First adb connect needs the
+    on-screen *Allow USB debugging* prompt accepted once.
+  - **Philips 65PUS7354** — `TPM191E` @ `192.168.1.14:5555` (moved off `.2`; adb-wifi, wlan0,
+    Android 12). scrcpy to view.
+  - The release APK is universal (arm64-v8a / armeabi-v7a / x86 / x86_64), so one build installs
+    on both; `-Device <serial>` picks the target when both are connected.
+- **Hot reload on a real TV:** debug APK + `adb reverse tcp:8081 tcp:8081`.
 - **Verify TV interactions by DRIVING the app:** `adb shell input keyevent <code>` then
   `screencap`/pull and read the screenshot after each step. Never claim a screen works from one
   static shot — focus/nav bugs are invisible otherwise.
