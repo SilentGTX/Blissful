@@ -37,6 +37,7 @@ import { useMetrics } from '../../theme/metrics';
 import { subtitleLangLabel, langPriority } from '../../lib/subtitles';
 import { normColor } from '../../lib/colorUtils';
 import { FocusTrap } from '../FocusTrap';
+import type { SubtitleHint } from '../../lib/subtitleHints';
 
 type M = ReturnType<typeof useMetrics>;
 
@@ -103,6 +104,9 @@ export type DrawerRelease = {
    *  cached ([RD download]). Drives the "Cached" badge + hide-uncached, exactly
    *  like the Detail StreamPicker + desktop BananasPicker. */
   cacheRank: 0 | 1 | 2;
+  /** Subtitle tag read off the release name, or null when it says nothing.
+   *  A hint, never a probe — see lib/subtitleHints. */
+  subHint: SubtitleHint | null;
   /** Playable url, or null (infoHash-only → not selectable). */
   url: string | null;
 };
@@ -691,7 +695,7 @@ function ReleaseRow({ m, release, active, autoFocus, onPress }: { m: M; release:
         <Text numberOfLines={2} style={{ flex: 1, fontFamily: font.bodyMed, fontSize: m.s(15), lineHeight: m.s(20), color: active ? colors.accent : 'rgba(255,255,255,0.9)' }}>{release.title}</Text>
         {active ? <Ionicons name="checkmark" size={m.s(18)} color={colors.accent} /> : null}
       </View>
-      {(release.isRd || release.cacheRank === 0 || release.meta) ? (
+      {(release.isRd || release.cacheRank === 0 || release.meta || release.subHint) ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(8), marginTop: m.s(5) }}>
           {release.isRd ? (
             <View style={{ borderRadius: m.s(4), backgroundColor: 'rgba(149,162,255,0.2)', paddingHorizontal: m.s(6), paddingVertical: m.s(1) }}>
@@ -702,6 +706,27 @@ function ReleaseRow({ m, release, active, autoFocus, onPress }: { m: M; release:
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(3), borderRadius: m.s(4), backgroundColor: 'rgba(25,247,210,0.16)', paddingHorizontal: m.s(6), paddingVertical: m.s(1) }}>
               <Ionicons name="flash" size={m.s(10)} color={colors.brand} />
               <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(10), letterSpacing: m.s(0.5), color: colors.brand }}>Cached</Text>
+            </View>
+          ) : null}
+          {release.subHint ? (
+            <View
+              style={{
+                borderRadius: m.s(4),
+                backgroundColor: release.subHint.kind === 'subs' ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.10)',
+                paddingHorizontal: m.s(6),
+                paddingVertical: m.s(1),
+              }}
+            >
+              <Text
+                style={{
+                  fontFamily: font.bodySemi,
+                  fontSize: m.s(10),
+                  letterSpacing: m.s(0.5),
+                  color: release.subHint.kind === 'subs' ? '#93c5fd' : 'rgba(255,255,255,0.6)',
+                }}
+              >
+                {release.subHint.label}
+              </Text>
             </View>
           ) : null}
           {release.meta ? <Text numberOfLines={1} style={{ flex: 1, fontFamily: font.body, fontSize: m.s(12), color: 'rgba(255,255,255,0.55)' }}>{release.meta}</Text> : null}

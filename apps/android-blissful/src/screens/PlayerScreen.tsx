@@ -830,6 +830,7 @@ export function PlayerScreen() {
     bucket: r.bucket,
     isRd: r.isRd,
     cacheRank: r.cacheRank,
+    subHint: r.subHint,
     url: r.url,
   }));
 

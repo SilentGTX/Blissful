@@ -6,6 +6,7 @@ import {
   type StremioStream,
 } from '@blissful/core';
 import { filterRelevantStreams } from './streamRelevance';
+import { detectSubtitleHint, subtitleHintRank, type SubtitleHint } from './subtitleHints';
 
 // ── Addon URL list (ported from useAddonsManager.ts) ───────────────────────
 const CINEMETA_URL = 'https://v3-cinemeta.strem.io/manifest.json';
@@ -188,6 +189,11 @@ export type PickerStream = {
   // (non-RD, or Comet's unreliable [RD⚡]). Drives cached-first ranking + the
   // hide-not-cached picker filter, mirroring the web BananasPicker.
   cacheRank: 0 | 1 | 2;
+  /** Subtitle tag read off the release NAME (lib/subtitleHints) — null = the
+   *  name says nothing, which is NOT "no subtitles". Never a probe: see that
+   *  file for why the accurate option costs Real-Debrid budget we need for
+   *  playback. Mirrors the web BananasPicker. */
+  subHint: SubtitleHint | null;
   bucket: ResolutionBucket;
 };
 
@@ -233,6 +239,13 @@ export function rankStreams(rows: PickerStream[]): PickerStream[] {
     if (ap !== bp) return bp - ap;
     if (a.cacheRank !== b.cacheRank) return a.cacheRank - b.cacheRank;
     if (a.isRd !== b.isRd) return a.isRd ? -1 : 1;
+    // Subtitle tag ranks BELOW cache + RD, above seeders: it must never pull an
+    // uncached (or non-RD) release above one that plays instantly, because
+    // picking it makes you wait. Among equally-playable releases, a name that
+    // advertises subtitles is the better pick. Same order as the web picker.
+    const sa = subtitleHintRank(a.subHint);
+    const sb = subtitleHintRank(b.subHint);
+    if (sa !== sb) return sa - sb;
     const sd = score(b) - score(a);
     if (sd !== 0) return sd;
     return a.title.localeCompare(b.title);
@@ -275,6 +288,7 @@ function toRows(transportUrl: string, streams: StremioStream[]): PickerStream[] 
       sizeBytes: parseSizeBytes(parsed.size),
       isRd,
       cacheRank: cacheRankOf(leftLabel),
+      subHint: detectSubtitleHint(leftLabel, title),
       bucket: bucketOf({ leftLabel, title }),
     };
   });

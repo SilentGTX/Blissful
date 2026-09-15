@@ -58,10 +58,32 @@ function StreamRow({ row, m, autoFocus, onPlay }: { row: PickerStream; m: M; aut
           ))}
         </View>
       ) : null}
-      {row.cacheRank === 0 ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(5), marginTop: m.s(6) }}>
-          <Ionicons name="flash" size={m.s(14)} color={colors.brand} />
-          <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(14), color: colors.brand }}>Cached · instant</Text>
+      {row.cacheRank === 0 || row.subHint ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(10), marginTop: m.s(6) }}>
+          {row.cacheRank === 0 ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(5) }}>
+              <Ionicons name="flash" size={m.s(14)} color={colors.brand} />
+              <Text style={{ fontFamily: font.bodySemi, fontSize: m.s(14), color: colors.brand }}>Cached · instant</Text>
+            </View>
+          ) : null}
+          {row.subHint ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(5) }}>
+              <Ionicons
+                name="chatbox-ellipses-outline"
+                size={m.s(14)}
+                color={row.subHint.kind === 'subs' ? '#93c5fd' : 'rgba(255,255,255,0.6)'}
+              />
+              <Text
+                style={{
+                  fontFamily: font.bodySemi,
+                  fontSize: m.s(14),
+                  color: row.subHint.kind === 'subs' ? '#93c5fd' : 'rgba(255,255,255,0.6)',
+                }}
+              >
+                {row.subHint.label}
+              </Text>
+            </View>
+          ) : null}
         </View>
       ) : null}
       {!playable ? (
