@@ -1,4 +1,5 @@
 import languageNames from './languageNames.json';
+import { isKitsuId } from './animeKitsu';
 
 export type PlayerSettings = {
   subtitlesLanguage: string | null;
@@ -8,6 +9,14 @@ export type PlayerSettings = {
   subtitlesOutlineColor: string;
   assSubtitlesStyling: boolean;
   audioLanguage: string | null;
+  /** Default audio language for Anime Kitsu content (`kitsu:` ids) — anime is
+   *  usually wanted in its original Japanese while the rest of the library stays
+   *  on `audioLanguage`. `null` = same as `audioLanguage`. Offered in Settings
+   *  only while the Anime Kitsu addon is installed, but applied by content id,
+   *  so a Kitsu show already in Continue Watching keeps its language. Profiles
+   *  saved before this existed have no key at all: `kitsuAudioPreference()`
+   *  reads that as the Japanese default, never as "same as default". */
+  kitsuAudioLanguage?: string | null;
   surroundSound: boolean;
   seekTimeDurationMs: number;
   seekShortTimeDurationMs: number;
@@ -61,6 +70,7 @@ export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
   subtitlesOutlineColor: 'rgba(0, 0, 0, 0.75)',
   assSubtitlesStyling: true,
   audioLanguage: null,
+  kitsuAudioLanguage: 'jpn',
   surroundSound: false,
   seekTimeDurationMs: 10000,
   seekShortTimeDurationMs: 4000,
@@ -80,6 +90,33 @@ export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
   realDebridApiKey: '',
   alwaysShareHostStream: false,
 };
+
+/** The Anime Kitsu audio preference: an ISO 639-2 code, or `null` for "same
+ *  as the default audio track". A profile with no key at all (saved before the
+ *  option existed, or a backend object that was never re-normalised) gets the
+ *  Japanese default — only an explicit `null` means "defer to the default". */
+export function kitsuAudioPreference(
+  settings: Pick<PlayerSettings, 'kitsuAudioLanguage'>,
+): string | null {
+  const value = settings.kitsuAudioLanguage;
+  if (value === undefined) return DEFAULT_PLAYER_SETTINGS.kitsuAudioLanguage ?? null;
+  return value && value.trim() !== '' ? value : null;
+}
+
+/** The audio language a player should prefer for the content `id`: the Anime
+ *  Kitsu preference for `kitsu:` shows/episodes, the profile default otherwise.
+ *  Both players and the transcode track picker route through this so the two
+ *  settings can't drift apart. `null` = no preference (the file's own default). */
+export function effectiveAudioLanguage(
+  settings: Pick<PlayerSettings, 'audioLanguage' | 'kitsuAudioLanguage'>,
+  id: string | null | undefined,
+): string | null {
+  if (isKitsuId(id)) {
+    const kitsu = kitsuAudioPreference(settings);
+    if (kitsu) return kitsu;
+  }
+  return settings.audioLanguage ?? null;
+}
 
 export const STREAMING_CACHE_SIZE_OPTIONS: Array<{
   value: number | null;

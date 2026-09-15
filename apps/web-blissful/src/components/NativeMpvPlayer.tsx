@@ -67,6 +67,7 @@ import { getLastStreamSelection, setLastStreamSelection } from '../lib/streamHis
 import { setCurrentActivity, clearCurrentActivity } from '../lib/usePresenceHeartbeat';
 import { notifyError, notifyInfo, notifySuccess } from '../lib/toastQueues';
 import {
+  effectiveAudioLanguage,
   writeStoredPlayerSettings,
   type PlayerSettings,
 } from '../lib/playerSettings';
@@ -497,6 +498,38 @@ function buildTorrentStreamUrl(
 // `formatTime` lives in ./NativeMpvPlayer/ScrubBar.tsx — the only
 // caller after the player decomposition. Re-import here if anything
 // in this file ever needs to render a hh:mm:ss again.
+
+// mpv's `alang` / `slang` take a comma-separated priority list of language
+// codes, and containers disagree on the spelling — Matroska and MP4 tag tracks
+// with ISO 639-2 (`jpn`, `eng`), DVDs and some muxers with ISO 639-1 (`ja`,
+// `en`). Keyed by the English name because the legacy subtitle preference
+// stored display names; `mpvLangList` also finds the list a bare code belongs
+// to, so a stored `jpn` is handed to mpv as "jpn,ja" and matches either form.
+const MPV_LANG_LISTS: Record<string, string> = {
+  english: 'eng,en', german: 'ger,deu,de', french: 'fre,fra,fr',
+  spanish: 'spa,es', italian: 'ita,it', portuguese: 'por,pt',
+  russian: 'rus,ru', japanese: 'jpn,ja', korean: 'kor,ko',
+  chinese: 'chi,zho,zh', arabic: 'ara,ar', hindi: 'hin,hi',
+  turkish: 'tur,tr', polish: 'pol,pl', dutch: 'dut,nld,nl',
+  swedish: 'swe,sv', czech: 'cze,ces,cs', romanian: 'rum,ron,ro',
+  hungarian: 'hun,hu', bulgarian: 'bul,bg', croatian: 'hrv,hr',
+  serbian: 'srp,sr', slovak: 'slo,slk,sk', slovenian: 'slv,sl',
+  greek: 'gre,ell,el', danish: 'dan,da', finnish: 'fin,fi',
+  norwegian: 'nor,no', thai: 'tha,th', vietnamese: 'vie,vi',
+  indonesian: 'ind,id', malay: 'may,msa,ms', hebrew: 'heb,he',
+  persian: 'per,fas,fa', ukrainian: 'ukr,uk', albanian: 'alb,sqi,sq',
+};
+
+/** Expand an audio-language preference (an ISO 639 code or an English name)
+ *  into mpv's priority list; `fallback` when there is no preference at all. A
+ *  code we have no list for is passed through as-is. */
+function mpvLangList(pref: string | null | undefined, fallback: string): string {
+  const raw = (pref ?? '').trim();
+  if (!raw) return fallback;
+  const key = raw.toLowerCase();
+  if (MPV_LANG_LISTS[key]) return MPV_LANG_LISTS[key];
+  return Object.values(MPV_LANG_LISTS).find((list) => list.split(',').includes(key)) ?? raw;
+}
 
 export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   const navigate = useNavigate();
@@ -1455,8 +1488,9 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         // file's first track before `alang` arrives). Setting it here, in
         // sequence, makes the English default reliable for the first file too;
         // mpv keeps the property across loadfiles. Mirrors line ~2040.
-        const audioPref = props.playerSettings.audioLanguage;
-        const alangPref = audioPref && audioPref.trim() !== '' ? audioPref : 'eng,en';
+        // Anime Kitsu content (`kitsu:` ids) lands on its own default, Japanese,
+        // unless the profile says otherwise — see lib/playerSettings.
+        const alangPref = mpvLangList(effectiveAudioLanguage(props.playerSettings, props.id), 'eng,en');
         await desktop.mpv.command('set', 'alang', alangPref).catch(() => {});
         await desktop.mpv.command('loadfile', resolved, 'replace', '-1', opts);
         if (cancelled) return;
@@ -1923,7 +1957,8 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   // Last alang/slang pushed to mpv. Pushing `slang` re-runs mpv's automatic
   // subtitle selection (overriding a manual sid pick), so only push when the
   // language preference truly changed — never on a track-selection re-render.
-  const lastLangPrefSigRef = useRef<string | null>(null);
+  const lastAlangRef = useRef<string | null>(null);
+  const lastSlangRef = useRef<string | null>(null);
   // Phase 4 iter 2: sync subtitle styling from playerSettings to mpv.
   // Stremio's subtitle pickers (size + text/background/outline color) map
   // directly to mpv's sub-* property set.
@@ -2076,33 +2111,19 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     // means "no preference" — mpv falls back to its default selection
     // (usually first track in the file).
     // Default audio to English unless the user has explicitly picked
-    // another language in profile settings. mpv `alang` accepts a
-    // priority list — "eng,en" matches both 3-letter and 2-letter
-    // ISO codes that different containers use. Empty string would
-    // mean "no preference", letting mpv pick the first track
-    // (usually whatever order the file lists them in).
-    const alang = settings.audioLanguage && settings.audioLanguage.trim() !== ''
-      ? settings.audioLanguage
-      : 'eng,en';
+    // another language in profile settings (Anime Kitsu content has its
+    // own default, Japanese — lib/playerSettings). mpv `alang` accepts a
+    // priority list — "eng,en" matches both 3-letter and 2-letter ISO
+    // codes that different containers use, so the preference is expanded
+    // the same way (`jpn` → "jpn,ja"). Empty string would mean "no
+    // preference", letting mpv pick the first track (usually whatever
+    // order the file lists them in).
+    const alang = mpvLangList(effectiveAudioLanguage(settings, props.id), 'eng,en');
     // mpv's `slang` expects ISO 639 codes (eng, en), not display
     // names (English). Map common names and pass through anything
     // that already looks like a code.
     const subLangPref = settings.subtitlesLanguage ?? '';
-    const langMap: Record<string, string> = {
-      english: 'eng,en', german: 'ger,deu,de', french: 'fre,fra,fr',
-      spanish: 'spa,es', italian: 'ita,it', portuguese: 'por,pt',
-      russian: 'rus,ru', japanese: 'jpn,ja', korean: 'kor,ko',
-      chinese: 'chi,zho,zh', arabic: 'ara,ar', hindi: 'hin,hi',
-      turkish: 'tur,tr', polish: 'pol,pl', dutch: 'dut,nld,nl',
-      swedish: 'swe,sv', czech: 'cze,ces,cs', romanian: 'rum,ron,ro',
-      hungarian: 'hun,hu', bulgarian: 'bul,bg', croatian: 'hrv,hr',
-      serbian: 'srp,sr', slovak: 'slo,slk,sk', slovenian: 'slv,sl',
-      greek: 'gre,ell,el', danish: 'dan,da', finnish: 'fin,fi',
-      norwegian: 'nor,no', thai: 'tha,th', vietnamese: 'vie,vi',
-      indonesian: 'ind,id', malay: 'may,msa,ms', hebrew: 'heb,he',
-      persian: 'per,fas,fa', ukrainian: 'ukr,uk', albanian: 'alb,sqi,sq',
-    };
-    const slangValue = langMap[subLangPref.toLowerCase()] ?? subLangPref;
+    const slangValue = MPV_LANG_LISTS[subLangPref.toLowerCase()] ?? subLangPref;
     // CRITICAL: only push alang/slang when the language PREFERENCE actually
     // changed — NOT on every effect run. Setting `slang` makes mpv re-run its
     // automatic subtitle selection, which OVERRIDES a manual `sid` pick and
@@ -2110,10 +2131,15 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     // shows selected but doesn't render" bug: picking it re-fired this effect,
     // `set slang` re-auto-selected, dropping the manual sid to `-`). The pref
     // only changes from Settings, never from picking a track in the player.
-    const langSig = `${alang}|${slangValue}`;
-    if (lastLangPrefSigRef.current !== langSig) {
-      lastLangPrefSigRef.current = langSig;
+    // Tracked per property so an audio-preference change alone (moving
+    // between an Anime Kitsu show and anything else) never re-fires the
+    // subtitle auto-selection.
+    if (lastAlangRef.current !== alang) {
+      lastAlangRef.current = alang;
       desktop.mpv.command('set', 'alang', alang).catch(() => {});
+    }
+    if (lastSlangRef.current !== slangValue) {
+      lastSlangRef.current = slangValue;
       desktop.mpv.command('set', 'slang', slangValue).catch(() => {});
     }
   }, [

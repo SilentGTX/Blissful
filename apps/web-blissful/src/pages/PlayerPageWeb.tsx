@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthProvider';
 import { useStorage } from '../context/StorageProvider';
 import BlissfulPlayer from '../components/BlissfulPlayer';
 import type { PlayerSettings } from '../lib/playerSettings';
+import { effectiveAudioLanguage } from '../lib/playerSettings';
 import { useMetaDetails } from '../models/useMetaDetails';
 import { fetchTmdbId, type TmdbLookup } from '../lib/tmdb';
 import { PLAYER_SERVERS, DEFAULT_SERVER_ID, VIDEASY_ENABLED } from '../lib/playerServers';
@@ -1142,6 +1143,9 @@ export default function PlayerPage() {
   // Set once the user picks a track in the drawer — their choice outranks the
   // profile's language preference for the rest of this stream.
   const userPickedAudioRef = useRef(false);
+  // Anime Kitsu content prefers its own audio language (Japanese by default);
+  // everything else follows the profile's default track. See lib/playerSettings.
+  const audioLanguagePref = effectiveAudioLanguage(resolvedPlayerSettings, id);
   useEffect(() => {
     setAudioTracks([]);
     setAudioTrackIdx(urlAudioIdx); // honor the track baked into the URL
@@ -1162,13 +1166,13 @@ export default function PlayerPage() {
         // and the normal preference pass takes over.
         const pinValid = urlPinnedAudio && (probed.length === 0 || urlAudioIdx < probed.length);
         if (pinValid || userPickedAudioRef.current) return;
-        const preferred = pickPreferredAudioTrack(probed, resolvedPlayerSettings.audioLanguage);
+        const preferred = pickPreferredAudioTrack(probed, audioLanguagePref);
         if (preferred != null) setAudioTrackIdx(preferred);
         else if (probed.length > 0 && urlAudioIdx >= probed.length) setAudioTrackIdx(0);
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [transcodeAudioSrc, urlAudioIdx, urlPinnedAudio, resolvedPlayerSettings.audioLanguage]);
+  }, [transcodeAudioSrc, urlAudioIdx, urlPinnedAudio, audioLanguagePref]);
   const handleSelectAudioTrack = useCallback((i: number) => {
     userPickedAudioRef.current = true;
     setAudioTrackIdx(i);
@@ -1178,6 +1182,24 @@ export default function PlayerPage() {
   // UI can show a helpful error overlay instead of a permanent
   // black screen.
   const [fallbackExhausted, setFallbackExhausted] = useState(false);
+  // The episode this session is playing. The committed fallback stream belongs
+  // to exactly one episode, and it has to stop reaching the player IN THE SAME
+  // RENDER the episode changes — not one commit later from the reset effect
+  // below. In that gap the player was handed the new `videoId` together with
+  // the previous episode's stream URL: the finished episode kept playing (and
+  // saving progress under the new episode's id) until Real-Debrid resolved the
+  // next one, so "next episode" sat on the end of the old scrub bar for a
+  // couple of seconds instead of cutting straight to the buffering logo.
+  // Keeping the previous key in state and resetting during render is React's
+  // documented way to derive state from a prop change without that stale
+  // commit — it re-renders immediately, before anything is painted.
+  const episodeKey = `${type ?? ''}|${id ?? ''}|${videoId ?? ''}`;
+  const [fallbackEpisodeKey, setFallbackEpisodeKey] = useState(episodeKey);
+  if (fallbackEpisodeKey !== episodeKey) {
+    setFallbackEpisodeKey(episodeKey);
+    setFallbackPlayUrl(null);
+    setFallbackExhausted(false);
+  }
   // Consecutive fallback runs that found NO streams at all. Usually a
   // transient upstream condition (Torrentio/RD 429 throttle, network blip)
   // that succeeds seconds later — retried before declaring exhaustion.

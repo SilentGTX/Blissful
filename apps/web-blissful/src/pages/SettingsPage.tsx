@@ -2,10 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { ScrollShadow } from '@heroui/react';
 import { BlissSelect } from '../components/base';
 import { ChromePicker, type ColorResult } from 'react-color';
+import { useAddons } from '../context/AddonsProvider';
 import { useAuth } from '../context/AuthProvider';
 import { useStorage } from '../context/StorageProvider';
 import { useUI } from '../context/UIProvider';
 import { parseColor, buildRgba, hexToRgb } from '../lib/colorUtils';
+import { hasKitsuAddon } from '../lib/animeKitsu';
 import { SettingsStremioPanel } from '../components/SettingsStremioPanel';
 import { notifySuccess } from '../lib/toastQueues';
 import {
@@ -16,6 +18,7 @@ import {
   SEEK_TIME_DURATION_OPTIONS_MS,
   STREAMING_CACHE_SIZE_OPTIONS,
   SUBTITLE_SIZE_OPTIONS_PX,
+  kitsuAudioPreference,
   type PlayerSettings,
 } from '../lib/playerSettings';
 
@@ -25,6 +28,10 @@ export default function SettingsPage() {
   const { uiStyle, setUiStyle } = useUI();
   const { playerSettings, savePlayerSettings } = useStorage();
   const { user, updateProfile } = useAuth();
+  const { addons } = useAddons();
+  // The Anime Kitsu audio default is only offered while the addon is installed
+  // (it would be noise otherwise); the stored value survives an uninstall.
+  const kitsuInstalled = hasKitsuAddon(addons);
   const [colorModal, setColorModal] = useState<'text' | 'bg' | 'outline' | 'accent' | null>(null);
 
   // Username edit. Seeded from the live user, reset whenever the
@@ -107,6 +114,13 @@ export default function SettingsPage() {
         }))
       ),
     []
+  );
+
+  // The Anime Kitsu picker's first entry defers to the default audio track
+  // above it, rather than meaning "no preference" like the generic "None".
+  const kitsuLanguageItems = useMemo(
+    () => [{ key: 'default', label: 'Same as default audio track' }].concat(languageItems.slice(1)),
+    [languageItems]
   );
 
   const sizeItems = useMemo(
@@ -383,6 +397,23 @@ export default function SettingsPage() {
                         triggerClassName="h-9"
                       />
                     </div>
+                    {kitsuInstalled ? (
+                      <div>
+                        <div className="text-xs text-foreground/60 mb-2">Anime Kitsu default audio</div>
+                        <BlissSelect
+                          ariaLabel="Anime Kitsu audio language"
+                          selectedKey={kitsuAudioPreference(playerSettings) ?? 'default'}
+                          onSelectionChange={(key) => {
+                            updateSettings({ kitsuAudioLanguage: key === 'default' ? null : String(key) });
+                          }}
+                          items={kitsuLanguageItems}
+                          triggerClassName="h-9"
+                        />
+                        <div className="mt-2 text-xs text-foreground/50">
+                          Anime opened from Anime Kitsu plays in this language instead of the default track. Japanese unless you change it.
+                        </div>
+                      </div>
+                    ) : null}
 
                   </div>
                 </div>

@@ -5,7 +5,7 @@ import Hls from 'hls.js';
 // HeroUI overlays are handled by the caller on iOS.
 import type { AddonDescriptor } from '../../lib/mediaTypes';
 import type { PlayerSettings } from '../../lib/playerSettings';
-import { writeStoredPlayerSettings } from '../../lib/playerSettings';
+import { effectiveAudioLanguage, writeStoredPlayerSettings } from '../../lib/playerSettings';
 import type { NextEpisodeInfo } from '../../pages/PlayerPage';
 import { usePlayerReady } from '../../context/PlayerReadyProvider';
 import { useActiveParties } from '../../context/ActivePartiesProvider';
@@ -1416,6 +1416,16 @@ export default function BlissfulPlayer(props: {
   // since cleanups close over the previous render's props.
   const latestVideoIdRef = useRef<string | null>(props.videoId);
   latestVideoIdRef.current = props.videoId;
+  // The episode the load effect last set up (`id|videoId`), so it can tell an
+  // episode switch from a quality swap / retry of the same one and reset the
+  // on-screen clock only for the former.
+  const loadedEpisodeKeyRef = useRef<string | null>(null);
+  // The audio language this session should land on: the Anime Kitsu preference
+  // for `kitsu:` content, the profile default otherwise (lib/playerSettings).
+  // Resolved here rather than inside the load effect so that effect depends on
+  // the ONE string it actually reads — a settings hydration that merely fills
+  // in the Kitsu default can't register as a change and reload the video.
+  const effectiveAudioPref = effectiveAudioLanguage(props.playerSettings, props.id);
   const [selectedAudioTrackId, setSelectedAudioTrackId] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   // Canonical language label of the last toast we surfaced. The
@@ -2382,6 +2392,22 @@ export default function BlissfulPlayer(props: {
     const video = videoRef.current;
     if (!video) return;
 
+    // An episode switch (not a quality swap or retry of the same episode) drops
+    // the previous episode's clock right here. Its listeners are already
+    // detached and the placeholder branch below attaches none, so nothing else
+    // resets these while the next stream resolves — the scrub bar used to sit
+    // on the end of the finished episode for the whole resolve, instead of
+    // reading as "loading the next one" under the buffering logo.
+    const episodeLoadKey = `${props.id ?? ''}|${props.videoId ?? ''}`;
+    if (loadedEpisodeKeyRef.current !== episodeLoadKey) {
+      loadedEpisodeKeyRef.current = episodeLoadKey;
+      setCurrentTime(0);
+      setDuration(0);
+      setIsBuffering(true);
+      firstFrameSeenRef.current = false;
+      setFirstFrameSeen(false);
+    }
+
     if (hlsRef.current) {
       hlsRef.current.destroy();
       hlsRef.current = null;
@@ -2740,9 +2766,11 @@ export default function BlissfulPlayer(props: {
           // explicit preference (mirrors mpv's `alang=eng,en` fallback on
           // desktop and the TV app's `audioLanguage ?? 'English'`), so a
           // multi-audio file lands on the English track out of the box rather
-          // than whatever track the file happens to list first.
+          // than whatever track the file happens to list first. Anime Kitsu
+          // content resolves to its own preference (Japanese by default) —
+          // see `effectiveAudioPref`.
           if (!userPickedAudioRef.current) {
-            const audioPref = props.playerSettings.audioLanguage ?? 'eng';
+            const audioPref = effectiveAudioPref ?? 'eng';
             const preferred = tracks.findIndex((track) =>
               languageMatch(audioPref, track.lang ?? track.name ?? '')
             );
@@ -3102,11 +3130,11 @@ export default function BlissfulPlayer(props: {
       video.removeAttribute('src');
       video.load();
     };
-    // Only the audio language is read inside this effect; previously
-    // depending on the whole `playerSettings` object meant every
+    // Only the (resolved) audio language is read inside this effect;
+    // previously depending on the whole `playerSettings` object meant every
     // unrelated setting toggle (auto-play, popup duration, …) would
     // destroy the HLS instance and reload the video.
-  }, [props.playerSettings.audioLanguage, props.startTimeSeconds, props.url, props.blobSrc, retryNonce]);
+  }, [effectiveAudioPref, props.startTimeSeconds, props.url, props.blobSrc, retryNonce]);
 
   useEffect(() => {
     if (isIos()) {
