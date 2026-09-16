@@ -10,10 +10,15 @@ import type { AddressInfo } from 'node:net';
 // has no H.264; local-http so the player's https-only DMCA fallback never fires).
 // `multitrackUrl` is an ffmpeg-generated MKV with 2 audio + 1 subtitle track for
 // the desktop mpv player (mpv decodes anything) — null if no ffmpeg is available.
+// `mislabeledSubsUrl` is the same idea for the subtitle picker: a file whose
+// subtitle metadata lies the way real releases lie (a Bulgarian track with no
+// language tag, two English tracks that only the title tells apart), so the
+// picker's grouping and labelling have a KNOWN right answer.
 
 const TMP = path.join(process.cwd(), '.tmp-e2e');
 const WEBM = path.join(TMP, 'clip.webm');
 const MKV = path.join(TMP, 'multitrack.mkv');
+const SUBS_MKV = path.join(TMP, 'mislabeled-subs.mkv');
 const SOURCE = process.env.MEDIA_SOURCE_URL || 'https://media.w3.org/2010/05/sintel/trailer.webm';
 
 async function ensureClip(): Promise<string> {
@@ -57,6 +62,43 @@ function ensureMultitrack(): string | null {
     { timeout: 90_000 },
   );
   return r.status === 0 && fs.existsSync(MKV) ? MKV : null;
+}
+
+// An MKV whose subtitle metadata lies the way real releases do:
+//   s:0  eng, no title              — plain English
+//   s:1  und, title "Bulgarian"     — the language lives in the TITLE only
+//   s:2  eng, title "Signs & Songs" — same language, different content
+// Generated, so the picker has one right answer: TWO languages (English and
+// Bulgarian, not three English rows) and two distinguishable English variants.
+// No bitmap track here — ffmpeg cannot transcode text subtitles into one, and
+// `isImageSubtitleCodec` is covered by the unit tests instead.
+function ensureMislabeledSubs(): string | null {
+  if (fs.existsSync(SUBS_MKV) && fs.statSync(SUBS_MKV).size > 10_000) return SUBS_MKV;
+  const ff = ffmpegPath();
+  if (!ff) return null;
+  fs.mkdirSync(TMP, { recursive: true });
+  const srt = path.join(TMP, 'e2e-subs.srt');
+  if (!fs.existsSync(srt)) {
+    fs.writeFileSync(srt, '1\n00:00:00,000 --> 00:00:15,000\nE2E test subtitle\n');
+  }
+  const r = spawnSync(
+    ff,
+    [
+      '-y', '-hide_banner', '-loglevel', 'error',
+      '-f', 'lavfi', '-i', 'testsrc=duration=15:size=320x240:rate=10',
+      '-f', 'lavfi', '-i', 'sine=frequency=440:duration=15',
+      '-i', srt, '-i', srt, '-i', srt,
+      '-map', '0:v', '-map', '1:a', '-map', '2:s', '-map', '3:s', '-map', '4:s',
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'aac', '-c:s', 'srt',
+      '-metadata:s:a:0', 'language=eng',
+      '-metadata:s:s:0', 'language=eng',
+      '-metadata:s:s:1', 'language=und', '-metadata:s:s:1', 'title=Bulgarian',
+      '-metadata:s:s:2', 'language=eng', '-metadata:s:s:2', 'title=Signs & Songs',
+      SUBS_MKV,
+    ],
+    { timeout: 90_000 },
+  );
+  return r.status === 0 && fs.existsSync(SUBS_MKV) ? SUBS_MKV : null;
 }
 
 function serveFile(file: string, contentType: string): http.Server {
@@ -136,6 +178,7 @@ function lanAddress(): string | null {
 export const test = base.extend<{
   webmUrl: string;
   multitrackUrl: string | null;
+  mislabeledSubsUrl: string | null;
   multitrackLanUrl: string | null;
   stallingUrl: string;
 }>({
@@ -156,6 +199,19 @@ export const test = base.extend<{
     } finally {
       (server as http.Server & { closeAllConnections?: () => void }).closeAllConnections?.();
       server.close();
+    }
+  },
+  mislabeledSubsUrl: async ({}, use) => {
+    const file = ensureMislabeledSubs();
+    if (!file) {
+      await use(null);
+      return;
+    }
+    const s = await listenServed(file, 'video/x-matroska', 'mislabeled-subs.mkv');
+    try {
+      await use(s.url);
+    } finally {
+      s.close();
     }
   },
   multitrackUrl: async ({}, use) => {

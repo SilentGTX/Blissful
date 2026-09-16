@@ -19,6 +19,9 @@ export type TopOverlayProps = {
   error: string | null;
   /** Optional element rendered in the top-right area next to the HDR badges. */
   rightSlot?: ReactNode;
+  /** Optional chip rendered right after the title pill — the player uses it
+   *  for the Filler / Recap badge of the episode being watched. */
+  titleBadge?: ReactNode;
 };
 
 export function TopOverlay({
@@ -31,6 +34,7 @@ export function TopOverlay({
   streamUrl,
   error,
   rightSlot,
+  titleBadge,
 }: TopOverlayProps) {
   return (
     <div
@@ -40,14 +44,17 @@ export function TopOverlay({
       }
     >
       <div className="pointer-events-auto flex items-start justify-between gap-3">
-        <button
-          type="button"
-          className="flex cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-2 text-sm font-semibold text-white backdrop-blur hover:bg-white/15"
-          onClick={onBack}
-        >
-          <StremioIcon name="chevron-back" className="h-5 w-5" />
-          <span className="max-w-[40vw] truncate">{headerPrimary}</span>
-        </button>
+        <div className="flex min-w-0 items-center gap-2">
+          <button
+            type="button"
+            className="flex cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-2 text-sm font-semibold text-white backdrop-blur hover:bg-white/15"
+            onClick={onBack}
+          >
+            <StremioIcon name="chevron-back" className="h-5 w-5" />
+            <span className="max-w-[40vw] truncate">{headerPrimary}</span>
+          </button>
+          {titleBadge}
+        </div>
         <div className="flex items-center gap-2">
           <PlayerHdrBadges
             videoGamma={videoGamma}

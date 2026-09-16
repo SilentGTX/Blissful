@@ -9,11 +9,15 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  effectiveTrackLanguage,
+  isImageSubtitleCodec,
   langPriority,
+  languageFromTitle,
   languageMatch,
   scoreSubtitleTrack,
   subtitleLangLabel,
   subtitleSyncScore,
+  subtitleTrackLabel,
 } from './subtitleUtils';
 
 // Auto-pick sync matching. The user this exists for cannot hear whether a
@@ -131,5 +135,76 @@ describe('langPriority', () => {
   it('keeps local above the unpinned languages', () => {
     expect(langPriority('local')).toBeGreaterThan(langPriority('fr'));
     expect(langPriority('fr')).toBe(langPriority('spa'));
+  });
+});
+
+// Embedded tracks whose container tag lies. A fansub batch mux tags every
+// text track `eng` and puts the real language in the title; before this the
+// picker showed ten "English" rows, nine of them not English, and the
+// auto-pick took whichever the muxer listed first.
+describe('languageFromTitle', () => {
+  it('reads the language out of a track title', () => {
+    expect(languageFromTitle('Bulgarian')).toBe('bul');
+    expect(languageFromTitle('Português (Brasil)')).toBe('pob');
+    expect(languageFromTitle('русский')).toBe('rus');
+  });
+
+  it('prefers the more specific language', () => {
+    expect(languageFromTitle('Portuguese (Brazil)')).toBe('pob');
+    expect(languageFromTitle('Malayalam')).toBe('mal');
+  });
+
+  it('says nothing for a title that names no language', () => {
+    expect(languageFromTitle('Signs & Songs')).toBeNull();
+    expect(languageFromTitle('')).toBeNull();
+    expect(languageFromTitle(null)).toBeNull();
+  });
+});
+
+describe('effectiveTrackLanguage', () => {
+  it('lets the title override a generic tag', () => {
+    expect(effectiveTrackLanguage('eng', 'Bulgarian')).toBe('bul');
+    expect(effectiveTrackLanguage('und', 'Japanese')).toBe('jpn');
+    expect(effectiveTrackLanguage(null, 'Français')).toBe('fra');
+  });
+
+  it('trusts a specific tag over the title', () => {
+    expect(effectiveTrackLanguage('fra', 'English signs')).toBe('fra');
+    expect(effectiveTrackLanguage('bul', 'Bulgarian')).toBe('bul');
+  });
+
+  it('keeps the tag when the title names nothing', () => {
+    expect(effectiveTrackLanguage('eng', 'Signs & Songs')).toBe('eng');
+    expect(effectiveTrackLanguage(null, null)).toBe('und');
+  });
+});
+
+describe('subtitleTrackLabel', () => {
+  it('keeps the title when it says more than the language', () => {
+    expect(subtitleTrackLabel('eng', 'Signs & Songs')).toBe('English – Signs & Songs');
+    expect(subtitleTrackLabel('eng', 'English (SDH)')).toBe('English (SDH)');
+  });
+
+  it('drops a title that only restates the language', () => {
+    expect(subtitleTrackLabel('bul', 'Bulgarian')).toBe('Bulgarian');
+    expect(subtitleTrackLabel('eng', null)).toBe('English');
+  });
+});
+
+// Bitmap subs can't take the viewer's colour / size — mpv draws the release's
+// own picture. The picker labels them so "I picked green and got white" has a
+// visible answer, and the auto-pick prefers a text track when there is one.
+describe('isImageSubtitleCodec', () => {
+  it('knows the bitmap formats', () => {
+    expect(isImageSubtitleCodec('hdmv_pgs_subtitle')).toBe(true);
+    expect(isImageSubtitleCodec('dvd_subtitle')).toBe(true);
+    expect(isImageSubtitleCodec('DVB_SUBTITLE')).toBe(true);
+  });
+
+  it('leaves text formats alone', () => {
+    expect(isImageSubtitleCodec('ass')).toBe(false);
+    expect(isImageSubtitleCodec('subrip')).toBe(false);
+    expect(isImageSubtitleCodec('mov_text')).toBe(false);
+    expect(isImageSubtitleCodec(null)).toBe(false);
   });
 });

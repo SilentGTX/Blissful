@@ -48,12 +48,33 @@ import { usePlayerReady } from '../context/PlayerReadyProvider';
 import { useActiveParties } from '../context/ActivePartiesProvider';
 import { triggerStremioItemSync } from '../lib/stremioLinkApi';
 import { UpNextOverlay } from './NativeMpvPlayer/UpNextOverlay';
+import { FillerNotice } from './FillerNotice';
+import { FillerBadge } from './FillerBadge';
+import { FillerEpisodeModal } from './FillerEpisodeModal';
+import { useAnimeFiller } from '../hooks/useAnimeFiller';
+import {
+  acknowledgeFillerRun,
+  episodeNumberOf,
+  fillerKindFor,
+  fillerRunFrom,
+  isFillerAcknowledged,
+  readFillerAcks,
+  type FillerAck,
+  type FillerKind,
+  type FillerRun,
+} from '../lib/animeFiller';
 import { SettingsPanel, type SettingsTab, type ReleaseOption } from './NativeMpvPlayer/SettingsPanel';
 import { SkipChapterButton } from './NativeMpvPlayer/SkipChapterButton';
 import { useChapterSkip } from './NativeMpvPlayer/useChapterSkip';
 import { useSkipSegments } from './NativeMpvPlayer/useSkipSegments';
 import { subtitleLangLabel } from './NativeMpvPlayer/subtitleHelpers';
-import { langPriority, subtitleSyncScore } from '../lib/subtitleUtils';
+import {
+  effectiveTrackLanguage,
+  isImageSubtitleCodec,
+  langPriority,
+  subtitleSyncScore,
+  subtitleTrackLabel,
+} from '../lib/subtitleUtils';
 import { EpisodesDrawer, type EpisodeVideo, type DrawerSeasonInfo } from './NativeMpvPlayer/EpisodesDrawer';
 import { useNavigate } from 'react-router-dom';
 import { ChromePicker, type ColorResult } from 'react-color';
@@ -68,6 +89,7 @@ import { setCurrentActivity, clearCurrentActivity } from '../lib/usePresenceHear
 import { notifyError, notifyInfo, notifySuccess } from '../lib/toastQueues';
 import {
   effectiveAudioLanguage,
+  fillerWarningsEnabled,
   writeStoredPlayerSettings,
   type PlayerSettings,
 } from '../lib/playerSettings';
@@ -294,7 +316,10 @@ interface NativeMpvPlayerProps {
   background?: string;
   logo?: string;
   startTimeSeconds?: number;
-  type: 'movie' | 'series';
+  /** Route media type, verbatim — `anime` is what Anime Kitsu catalogs use and
+   *  every key downstream (progress, last-stream, the back link) is written
+   *  under it elsewhere in the app, so it must NOT be folded into `series`. */
+  type: 'movie' | 'series' | 'anime';
   id: string;
   videoId: string | null;
   addons: AddonDescriptor[];
@@ -1219,7 +1244,9 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       if (!props.id || !props.type || creatingRoom) return;
       setCreatingRoom(true);
       try {
-        const partyType = props.type === 'series' ? 'series' : 'movie';
+        // The room protocol knows only movie / series; anime rides as series
+        // so guests get the episode-aware flow.
+        const partyType = props.type !== 'movie' ? 'series' : 'movie';
         const code = await createWatchPartyRoom({
           authToken: props.authKey,
           guestId: props.authKey ? null : guestId,
@@ -1746,6 +1773,101 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     };
   }, []);
 
+  // Episode list in the drawer's shape. Declared up here (rather than next to
+  // the drawer JSX) because the filler block and the episode-selection
+  // callbacks below all look episodes up through it.
+  const drawerEpisodes = useMemo((): EpisodeVideo[] => {
+    if (!props.videos?.length) return [];
+    return props.videos.map((v: Record<string, unknown>) => ({
+      id: String(v.id ?? ''),
+      title: ((v.title ?? v.name ?? null) as string | null),
+      season: typeof v.season === 'number' ? v.season : null,
+      episode: typeof v.episode === 'number' ? v.episode : null,
+      thumbnail: (v.thumbnail ?? null) as string | null,
+      released: (v.released ?? null) as string | null,
+      description: ((v.overview ?? v.description ?? null) as string | null),
+      rating: v.rating != null ? String(v.rating) : null,
+    }));
+  }, [props.videos]);
+
+  // ── Anime filler (Anime Kitsu + MyAnimeList) ──────────────────────────
+  // Which episodes of this show are filler / recaps — only for Kitsu content
+  // with the warnings left on in Settings. Null otherwise, and everything
+  // below degrades to "no badge, no prompt". Same hook, same cache and same
+  // acknowledgements as the web player and the detail page.
+  const fillerEpisodes = useAnimeFiller({
+    metaId: props.id,
+    episodeCount: drawerEpisodes.filter((v) => v.season !== 0).length,
+    enabled: props.type !== 'movie' && fillerWarningsEnabled(props.playerSettings),
+  });
+  const currentEpisodeNumber = useMemo(() => {
+    const v = drawerEpisodes.find((x) => x.id === props.videoId);
+    if (v) return episodeNumberOf(v);
+    return props.videoId ? episodeNumberOf({ id: props.videoId }) : null;
+  }, [drawerEpisodes, props.videoId]);
+  const currentFillerKind = fillerKindFor(fillerEpisodes, currentEpisodeNumber);
+  const currentFillerRun = useMemo(
+    () => (currentFillerKind ? fillerRunFrom(fillerEpisodes, currentEpisodeNumber) : null),
+    [currentFillerKind, fillerEpisodes, currentEpisodeNumber],
+  );
+  const nextEpisodeNumber = useMemo(() => {
+    const next = props.nextEpisodeInfo;
+    if (!next) return null;
+    const v = drawerEpisodes.find((x) => x.id === next.nextVideoId);
+    return v ? episodeNumberOf(v) : episodeNumberOf({ id: next.nextVideoId, episode: next.nextEpisode });
+  }, [props.nextEpisodeInfo, drawerEpisodes]);
+  const nextFillerKind = fillerKindFor(fillerEpisodes, nextEpisodeNumber);
+  const nextFillerRun = useMemo(
+    () => (nextFillerKind ? fillerRunFrom(fillerEpisodes, nextEpisodeNumber) : null),
+    [nextFillerKind, fillerEpisodes, nextEpisodeNumber],
+  );
+  // "Watch anyway" acknowledgements for this show (per session): a run the
+  // viewer already chose to watch plays through without asking again.
+  const [fillerAckState, setFillerAckState] = useState<{ id: string | null; acks: FillerAck[] }>(
+    () => ({ id: props.id, acks: readFillerAcks(props.id) }),
+  );
+  const fillerAcks = fillerAckState.id === props.id ? fillerAckState.acks : readFillerAcks(props.id);
+  const acknowledgeFiller = useCallback((run: FillerRun) => {
+    setFillerAckState({ id: props.id, acks: acknowledgeFillerRun(props.id, run) });
+  }, [props.id]);
+  /** The addon video of the canon episode a run skips to — null when the run
+   *  reaches the end of the list or the addon doesn't carry that episode. */
+  const fillerCanonVideo = useCallback((run: FillerRun | null): EpisodeVideo | null => {
+    if (!run || run.nextCanon == null) return null;
+    return drawerEpisodes.find((v) => episodeNumberOf(v) === run.nextCanon) ?? null;
+  }, [drawerEpisodes]);
+  const fillerSkipLabel = useCallback((run: FillerRun | null): string | null => {
+    const target = fillerCanonVideo(run);
+    return target && run && !partyNonHost ? `Skip to episode ${run.nextCanon}` : null;
+  }, [fillerCanonVideo, partyNonHost]);
+  // The next episode opens a filler run the viewer hasn't waved through: the
+  // Up Next card turns into a watch-or-skip question and auto-advance holds.
+  const nextFillerPrompt = useMemo(() => {
+    if (!nextFillerKind || !nextFillerRun || nextEpisodeNumber == null) return null;
+    if (isFillerAcknowledged(fillerAcks, nextEpisodeNumber)) return null;
+    return { kind: nextFillerKind, run: nextFillerRun, skipLabel: fillerSkipLabel(nextFillerRun) };
+  }, [nextFillerKind, nextFillerRun, nextEpisodeNumber, fillerAcks, fillerSkipLabel]);
+  const nextFillerPromptRef = useRef(nextFillerPrompt);
+  nextFillerPromptRef.current = nextFillerPrompt;
+  // Watch-or-skip prompt for an episode the viewer picked (drawer / next
+  // button). Stamped with the episode it was raised on, so a prompt left over
+  // from the previous episode is dropped rather than lingering over the new one.
+  const [fillerPromptState, setFillerPrompt] = useState<{
+    forVideoId: string | null;
+    video: EpisodeVideo;
+    kind: FillerKind;
+    run: FillerRun;
+    /** Raised by the next-episode button: "Watch anyway" must go through the
+     *  seamless advance (which autoplays an episode with no saved release)
+     *  rather than the drawer's selection, which drops on the stream picker. */
+    advance?: boolean;
+  } | null>(null);
+  const fillerPrompt = fillerPromptState && fillerPromptState.forVideoId === props.videoId
+    ? fillerPromptState
+    : null;
+  // The floating notice about the CURRENT episode — dismissable per episode.
+  const [fillerNoticeDismissedFor, setFillerNoticeDismissedFor] = useState<string | null>(null);
+
   // Phase 4 iter 2: Up-next auto-advance — mirrors SimplePlayer's pattern
   // but driven by mpv property/event observation instead of <video> events.
   const advanceToNextEpisode = useCallback(() => {
@@ -1804,8 +1926,10 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   ]);
 
   // Episode drawer: navigate to a different episode. Reuses the same
-  // stream-history lookup pattern as advanceToNextEpisode.
-  const onSelectEpisode = useCallback(
+  // stream-history lookup pattern as advanceToNextEpisode. This is the
+  // UNGATED path — `handleSelectEpisode` below puts the filler question in
+  // front of it; the skip / "watch anyway" answers land here directly.
+  const selectEpisodeUngated = useCallback(
     (video: EpisodeVideo) => {
       if (!props.type || !props.id) return;
       // Guests cannot change episodes — only the host can.
@@ -1845,6 +1969,64 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     },
     [props.type, props.id, props.videoId, props.authKey, props.poster, props.metaTitle, props.logo, props.background, navigate, watchParty.isHost, watchParty.connected],
   );
+
+  // Filler gate in front of the plain selection: an episode inside a filler /
+  // recap run the viewer hasn't waved through gets the watch-or-skip prompt
+  // first. Canon episodes and acknowledged runs fall straight through.
+  const onSelectEpisode = useCallback(
+    (video: EpisodeVideo) => {
+      if (!partyNonHost && video.id !== props.videoId) {
+        const epNum = episodeNumberOf(video);
+        const kind = fillerKindFor(fillerEpisodes, epNum);
+        const run = kind ? fillerRunFrom(fillerEpisodes, epNum) : null;
+        if (kind && run && epNum != null && !isFillerAcknowledged(fillerAcks, epNum)) {
+          setEpisodesOpen(false);
+          setFillerPrompt({ forVideoId: props.videoId, video, kind, run });
+          return;
+        }
+      }
+      selectEpisodeUngated(video);
+    },
+    [selectEpisodeUngated, partyNonHost, props.videoId, fillerEpisodes, fillerAcks],
+  );
+
+  // Jump past a filler run to its first canon episode (the notice, the prompt
+  // and the Up Next "Skip" all land here). Goes through the ungated path — the
+  // target is canon by construction.
+  const skipFillerRun = useCallback((run: FillerRun | null) => {
+    const target = fillerCanonVideo(run);
+    if (!target) return;
+    setFillerPrompt(null);
+    selectEpisodeUngated(target);
+  }, [fillerCanonVideo, selectEpisodeUngated]);
+
+  // Manual "next episode" from the bottom controls. Unchanged except that
+  // stepping into a filler run the viewer hasn't waved through asks first;
+  // everything else still takes the seamless advance.
+  const handlePlayNextManual = useCallback(() => {
+    const next = props.nextEpisodeInfo;
+    if (!next) return;
+    const prompt = nextFillerPromptRef.current;
+    const nextVideo = prompt ? drawerEpisodes.find((v) => v.id === next.nextVideoId) : undefined;
+    if (prompt && nextVideo) {
+      setFillerPrompt({
+        forVideoId: props.videoId,
+        video: nextVideo,
+        kind: prompt.kind,
+        run: prompt.run,
+        advance: true,
+      });
+      return;
+    }
+    advanceToNextEpisode();
+  }, [props.nextEpisodeInfo, props.videoId, drawerEpisodes, advanceToNextEpisode]);
+
+  // Up Next "Play Now" / "Watch": watching into a filler run acknowledges it,
+  // so the rest of the run auto-advances like any other episode.
+  const handleUpNextAdvance = useCallback(() => {
+    if (nextFillerPromptRef.current) acknowledgeFiller(nextFillerPromptRef.current.run);
+    advanceToNextEpisode();
+  }, [acknowledgeFiller, advanceToNextEpisode]);
 
   // Releases picker: switch the played torrent to a different Real-Debrid
   // release. Re-navigate to /player with the new `url=` (carrying every other
@@ -1908,6 +2090,9 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       if (!showUpNext && !upNextCancelledRef.current) {
         setShowUpNext(true);
       } else if (props.playerSettings.bingeWatching && !upNextCancelledRef.current) {
+        // A filler run ahead that hasn't been waved through never auto-plays:
+        // the Up Next card stays up with its watch-or-skip buttons instead.
+        if (nextFillerPromptRef.current) return;
         advanceToNextEpisode();
       }
     });
@@ -1925,6 +2110,12 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       setUpNextCountdown(10);
       return;
     }
+    // Filler ahead and not yet acknowledged: the card asks instead of counting
+    // down. Answering it (Watch / Skip) clears the prompt and this re-runs.
+    if (nextFillerPrompt) {
+      setUpNextCountdown(10);
+      return;
+    }
     setUpNextCountdown(10);
     const interval = window.setInterval(() => {
       setUpNextCountdown((prev) => {
@@ -1939,12 +2130,19 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       });
     }, 1000);
     return () => window.clearInterval(interval);
-  }, [showUpNext, advanceToNextEpisode]);
+  }, [showUpNext, advanceToNextEpisode, nextFillerPrompt]);
 
   const cancelUpNext = useCallback(() => {
     upNextCancelledRef.current = true;
     setShowUpNext(false);
   }, []);
+
+  // Up Next "Skip to episode N" — dismiss the card, then jump past the run.
+  const handleUpNextSkipFiller = useCallback(() => {
+    const prompt = nextFillerPromptRef.current;
+    cancelUpNext();
+    if (prompt) skipFillerRun(prompt.run);
+  }, [cancelUpNext, skipFillerRun]);
 
   // Tracks the last subtitle-STYLE signature pushed to mpv (size + colors).
   // The destructive force-style re-apply (sub-reload + sid off→on) must only
@@ -2294,7 +2492,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   // so the detail page opens on the right episode.
   const onBack = useCallback(() => {
     const base = `/detail/${encodeURIComponent(props.type)}/${encodeURIComponent(props.id)}`;
-    if (props.type === 'series' && props.videoId) {
+    if (props.type !== 'movie' && props.videoId) {
       navigate(`${base}?videoId=${encodeURIComponent(props.videoId)}`);
     } else {
       navigate(base);
@@ -2397,22 +2595,43 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   // on the exact "mpv is ready for sub-add" moment (Stremio's player
   // uses the same FileLoaded signal for its subtitle attach flow).
   const [fileLoadedReady, setFileLoadedReady] = useState(false);
+  // Pending track-list re-reads, so a re-load cancels the previous file's.
+  const trackSweepTimersRef = useRef<number[]>([]);
   useEffect(() => {
     const unsub = desktop.onMpvEvent((e) => {
-      if (e.type === 'FileLoaded' || e.type === 'PlaybackRestart') {
-        // Small delay so mpv has populated track-list/* properties,
-        // then flip fileLoadedReady — AFTER refreshTracks() completes
-        // and `tracks` state is up to date. Flipping it before tracks
-        // refresh races the auto-load effect, which then sees an
-        // empty embedded list and picks an addon variant instead of
-        // the (yet-unloaded) embedded one.
-        setTimeout(async () => {
+      if (e.type !== 'FileLoaded' && e.type !== 'PlaybackRestart') return;
+      for (const t of trackSweepTimersRef.current) window.clearTimeout(t);
+      trackSweepTimersRef.current = [];
+      // Small delay so mpv has populated track-list/* properties, then flip
+      // fileLoadedReady — AFTER refreshTracks() completes and `tracks` state
+      // is up to date. Flipping it before tracks refresh races the auto-load
+      // effect, which then sees an empty embedded list and picks an addon
+      // variant instead of the (yet-unloaded) embedded one.
+      trackSweepTimersRef.current.push(
+        window.setTimeout(async () => {
           await refreshTracks();
           setFileLoadedReady(true);
-        }, 200);
+        }, 200),
+      );
+      // ...and read it again a few times after that. On a remote file mpv
+      // reports the tracks it has parsed SO FAR: a big MKV served over HTTP
+      // routinely announces its first tracks at FileLoaded and the rest a
+      // second or three later, which is the "some subtitles show up late,
+      // some never appear" complaint — the list was read once, too early, and
+      // never again unless the viewer reopened the panel. Cheap (a handful of
+      // property reads) and idempotent; PlaybackRestart after a seek cancels
+      // and re-arms it, which costs nothing.
+      for (const delay of [1200, 3000, 6000]) {
+        trackSweepTimersRef.current.push(
+          window.setTimeout(() => { void refreshTracks(); }, delay),
+        );
       }
     });
-    return unsub;
+    return () => {
+      unsub();
+      for (const t of trackSweepTimersRef.current) window.clearTimeout(t);
+      trackSweepTimersRef.current = [];
+    };
   }, [refreshTracks]);
   // Reset all per-file subtitle state on URL change (player re-mounts
   // but state may persist via fast HMR / batched updates). This is
@@ -2811,6 +3030,30 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     props.playerSettings.subtitlesOutlineColor,
   ]);
 
+  // mpv's subtitle tracks, with the two things the container routinely gets
+  // wrong already resolved:
+  //   * `lang` — a batch mux tags every text track `eng` (or `und`) and puts
+  //     the real language in the title. Filing by the tag put ten tracks under
+  //     English, nine of them not English, and the auto-pick took the first.
+  //   * `image` — PGS / VobSub tracks are pictures. The appearance settings
+  //     cannot touch them (mpv draws the release's own bitmap), which is what
+  //     "I picked green and the subtitles are white" actually is.
+  // Everything downstream — the language list, the variant rows, the counts,
+  // the auto-pick, the watch-party match — reads this, so they agree.
+  const subTracks = useMemo(() => {
+    return tracks
+      .filter((t) => t.kind === 'sub')
+      .map((t) => {
+        const lang = effectiveTrackLanguage(t.lang, t.title);
+        return {
+          id: t.id,
+          lang,
+          label: subtitleTrackLabel(lang, t.title),
+          image: isImageSubtitleCodec(t.codec),
+        };
+      });
+  }, [tracks]);
+
   // Apply a subtitle selection. For embedded tracks we just flip mpv's
   // `sid`. For addon tracks we `sub-add` the URL first (mpv assigns a new
   // sub-track id), remember it so re-selection skips the round-trip, then
@@ -2861,7 +3104,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         // Look up the picked track to get its language; fall back to
         // Unknown if the track-list hasn't populated yet (shouldn't
         // happen since the picker only shows tracks mpv reported).
-        const track = tracks.find((t) => t.kind === 'sub' && t.id === id);
+        const track = subTracks.find((t) => t.id === id);
         const lang = subtitleLangLabel(track?.lang ?? 'unknown');
         notifyInfo('Subtitles loaded', `${lang} - Embedded`);
         return;
@@ -2930,7 +3173,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         }
       }
     },
-    [addonSubs, tracks],
+    [addonSubs, subTracks],
   );
 
   // Languages available in the combined subtitle pool (embedded + addon).
@@ -2944,9 +3187,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     const seenCanon = new Set<string>();
     const out: string[] = [];
     const allLangs: string[] = [
-      ...tracks
-        .filter((t) => t.kind === 'sub')
-        .map((t) => (t.lang ?? 'unknown').trim().toLowerCase()),
+      ...subTracks.map((t) => t.lang),
       ...addonSubs.map((t) => t.lang.trim().toLowerCase()),
     ];
     for (const lang of allLangs) {
@@ -2965,7 +3206,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       const p = langPriority(b) - langPriority(a);
       return p !== 0 ? p : subtitleLangLabel(a).localeCompare(subtitleLangLabel(b));
     });
-  }, [tracks, addonSubs]);
+  }, [subTracks, addonSubs]);
 
   // Canonical language of the subtitle track that is ACTUALLY active,
   // derived from `selectedSubKey`. The picker highlights the language row
@@ -2979,22 +3220,33 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     if (selectedSubKey.startsWith('embedded:')) {
       const id = Number.parseInt(selectedSubKey.slice('embedded:'.length), 10);
       if (!Number.isFinite(id)) return null;
-      return tracks.find((t) => t.kind === 'sub' && t.id === id)?.lang ?? null;
+      return subTracks.find((t) => t.id === id)?.lang ?? null;
     }
     if (selectedSubKey.startsWith('addon:')) {
       const k = selectedSubKey.slice('addon:'.length);
       return addonSubs.find((s) => s.key === k)?.lang ?? null;
     }
     return null;
-  }, [selectedSubKey, tracks, addonSubs]);
+  }, [selectedSubKey, subTracks, addonSubs]);
+
+  // Languages the file itself carries (post-correction) — the SettingsPanel
+  // tags those rows "Built-in".
+  const embeddedSubLanguages = useMemo(() => subTracks.map((t) => t.lang), [subTracks]);
+  // Is the subtitle on screen a bitmap one? Drives the note in Customize
+  // Appearance explaining why the colour / size sliders do nothing for it.
+  const activeSubIsImage = useMemo(() => {
+    const m = /^embedded:(\d+)$/.exec(selectedSubKey);
+    if (!m) return false;
+    const id = Number.parseInt(m[1], 10);
+    return subTracks.find((t) => t.id === id)?.image ?? false;
+  }, [selectedSubKey, subTracks]);
 
   // Per-canonical-lang variant count (embedded + addon). Used by the
   // SettingsPanel to display "N VARIANTS" next to each language row.
   const variantCountByLang = useMemo(() => {
     const counts: Record<string, number> = {};
-    for (const t of tracks) {
-      if (t.kind !== 'sub') continue;
-      const canon = subtitleLangLabel((t.lang ?? 'unknown').trim().toLowerCase());
+    for (const t of subTracks) {
+      const canon = subtitleLangLabel(t.lang);
       counts[canon] = (counts[canon] ?? 0) + 1;
     }
     for (const t of addonSubs) {
@@ -3002,7 +3254,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       counts[canon] = (counts[canon] ?? 0) + 1;
     }
     return counts;
-  }, [tracks, addonSubs]);
+  }, [subTracks, addonSubs]);
 
   // Variants (both embedded and addon) for the selected language.
   // Default the language pick to the user's preferred sub language (or
@@ -3067,6 +3319,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       label: string;
       origin: string;
       embedded: boolean;
+      image: boolean;
     }>;
     // Match every track whose canonical language label is the same as
     // the picked language's canonical. `eng`, `en`, `english` all share
@@ -3075,27 +3328,23 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     const targetCanon = subtitleLangLabel(selectedSubLang);
     const sameCanon = (lang: string | null | undefined) =>
       Boolean(lang) && subtitleLangLabel(lang as string) === targetCanon;
-    const embeddedVariants = tracks
-      .filter((t) => t.kind === 'sub' && sameCanon(t.lang ?? 'unknown'))
-      .map((t) => {
-        // Label parity with the web player: keep the mux title ("SDH",
-        // "Forced") next to the language so twin embedded tracks are
-        // distinguishable — "English – SDH" vs "English". No title (or a
-        // codec-only track) falls back to the plain language label.
-        const base = subtitleLangLabel((t.lang ?? 'unknown').trim().toLowerCase());
-        const title = t.title?.trim() ?? '';
-        const label = !title
-          ? base
-          : title.toLowerCase().includes(base.toLowerCase())
-            ? title
-            : `${base} – ${title}`;
-        return {
-          key: `embedded:${t.id}`,
-          label,
-          origin: 'In video',
-          embedded: true,
-        };
-      });
+    const embeddedVariants = subTracks
+      .filter((t) => sameCanon(t.lang))
+      // Text before bitmap. The first variant is what the auto-pick takes, and
+      // a PGS track can carry neither the viewer's colour nor their size — so
+      // when a release ships both, the styleable one is the one we land on.
+      .slice()
+      .sort((a, b) => Number(a.image) - Number(b.image))
+      .map((t) => ({
+        key: `embedded:${t.id}`,
+        // Label parity with the web player: the mux title ("SDH", "Forced",
+        // "Signs & Songs") next to the language, so twin embedded tracks are
+        // distinguishable — "English – SDH" vs "English".
+        label: t.label,
+        origin: 'In video',
+        embedded: true,
+        image: t.image,
+      }));
     const addonVariants = addonSubs
       .filter((t) => sameCanon(t.lang))
       .slice()
@@ -3109,9 +3358,10 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         label: t.label,
         origin: t.origin,
         embedded: false,
+        image: false,
       }));
     return [...embeddedVariants, ...addonVariants];
-  }, [selectedSubLang, tracks, addonSubs, duration]);
+  }, [selectedSubLang, subTracks, addonSubs, duration]);
 
   // Helper for the Languages-column click handler: computes the first
   // variant (same priority order as variantsForLanguage — embedded
@@ -3181,7 +3431,10 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     const canon = subtitleLangLabel(hostWantSubLang);
     const sameCanon = (l: string | null | undefined) =>
       Boolean(l) && subtitleLangLabel(l as string) === canon;
-    const embedded = tracks.find((t) => t.kind === 'sub' && sameCanon(t.lang ?? 'unknown'));
+    const embedded = subTracks
+      .filter((t) => sameCanon(t.lang))
+      .slice()
+      .sort((a, b) => Number(a.image) - Number(b.image))[0];
     if (embedded) {
       appliedHostSubRef.current = hostWantSubLang;
       setSelectedSubLang(hostWantSubLang);
@@ -3450,20 +3703,6 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
 
   // Map props.videos to the EpisodeVideo shape for the episodes drawer.
   // Cinemeta uses `name` for episode titles; some addons use `title`.
-  const drawerEpisodes = useMemo((): EpisodeVideo[] => {
-    if (!props.videos?.length) return [];
-    return props.videos.map((v: Record<string, unknown>) => ({
-      id: String(v.id ?? ''),
-      title: ((v.title ?? v.name ?? null) as string | null),
-      season: typeof v.season === 'number' ? v.season : null,
-      episode: typeof v.episode === 'number' ? v.episode : null,
-      thumbnail: (v.thumbnail ?? null) as string | null,
-      released: (v.released ?? null) as string | null,
-      description: ((v.overview ?? v.description ?? null) as string | null),
-      rating: v.rating != null ? String(v.rating) : null,
-    }));
-  }, [props.videos]);
-
   // Skip Intro / Recap / Credits detection driven by mpv chapter
   // markers. Returns null when the current chapter doesn't match any
   // of the intro/recap/outro regexes, or when the file has no
@@ -3532,6 +3771,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         streamUrl={props.url ?? null}
         error={error}
         rightSlot={watchPartySlot}
+        titleBadge={currentFillerKind ? <FillerBadge kind={currentFillerKind} /> : null}
       />
 
       <BufferingOverlay visible={buffering || watchParty.partyWaiting} logo={props.logo} />
@@ -3559,15 +3799,66 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
 
       {/* Up-next overlay -- auto-advance card with thumbnail, countdown
           bar, and Play Now / Cancel buttons. */}
+      {/* Filler notice for the episode being watched: the first seconds of
+          the episode, then again whenever the controls are up, until the
+          viewer dismisses it. Bottom-left so it never collides with the
+          Skip Intro button (bottom-right) or the Up Next card. */}
+      {currentFillerKind && currentFillerRun
+        && fillerNoticeDismissedFor !== props.videoId
+        && (timePos < 20 || controlsVisible)
+        && !showUpNext && !episodesOpen && !settingsPanelOpen ? (
+        <FillerNotice
+          kind={currentFillerKind}
+          run={currentFillerRun}
+          skipLabel={fillerSkipLabel(currentFillerRun)}
+          onSkip={() => skipFillerRun(currentFillerRun)}
+          onDismiss={() => setFillerNoticeDismissedFor(props.videoId)}
+        />
+      ) : null}
+
       <UpNextOverlay
         visible={showUpNext}
         nextEpisodeInfo={props.nextEpisodeInfo}
         countdown={upNextCountdown}
         playerSettings={props.playerSettings}
         onCancel={cancelUpNext}
-        onAdvance={advanceToNextEpisode}
+        onAdvance={handleUpNextAdvance}
         controlsOpacity={controlsOpacity}
+        fillerPrompt={nextFillerPrompt}
+        onSkipFiller={handleUpNextSkipFiller}
       />
+
+      {/* Filler watch-or-skip prompt — an episode inside a filler / recap run
+          picked from the drawer or via the next-episode button. */}
+      {fillerPrompt ? (
+        <FillerEpisodeModal
+          isOpen
+          title={props.metaTitle ?? props.title ?? ''}
+          episodeLabel={
+            `Episode ${episodeNumberOf(fillerPrompt.video) ?? '?'}`
+            + (fillerPrompt.video.title ? ` · ${fillerPrompt.video.title}` : '')
+          }
+          poster={fillerPrompt.video.thumbnail ?? props.background ?? props.poster ?? null}
+          kind={fillerPrompt.kind}
+          run={fillerPrompt.run}
+          position="this"
+          skipTarget={(() => {
+            const target = fillerCanonVideo(fillerPrompt.run);
+            return target && fillerPrompt.run.nextCanon != null
+              ? { episode: fillerPrompt.run.nextCanon, title: target.title }
+              : null;
+          })()}
+          onWatch={() => {
+            const { video, run, advance } = fillerPrompt;
+            acknowledgeFiller(run);
+            setFillerPrompt(null);
+            if (advance) advanceToNextEpisode();
+            else selectEpisodeUngated(video);
+          }}
+          onSkip={() => skipFillerRun(fillerPrompt.run)}
+          onClose={() => setFillerPrompt(null)}
+        />
+      ) : null}
 
       {/* Unified settings panel -- slides in from the right. Audio
           tracks + subtitle picker + appearance customization. */}
@@ -3584,6 +3875,8 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         activeSubLang={activeSubLang}
         setSelectedSubLang={setSelectedSubLang}
         combinedSubLanguages={combinedSubLanguages}
+        embeddedSubLanguages={embeddedSubLanguages}
+        activeSubIsImage={activeSubIsImage}
         variantsForLanguage={variantsForLanguage}
         variantCountByLang={variantCountByLang}
         applySubtitleSelection={applySubtitleSelection}
@@ -3628,6 +3921,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         progressLookupId={props.id}
         progressLookupType={props.type}
         onSelectEpisode={onSelectEpisode}
+        fillerEpisodes={fillerEpisodes}
       />
 
       {/* Watch party drawer -- slides in from the right. Fully wired
@@ -3804,9 +4098,10 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         isFullscreen={isFullscreen}
         onToggleFullscreen={onToggleFullscreen}
         nextEpisodeInfo={props.nextEpisodeInfo}
-        advanceToNextEpisode={advanceToNextEpisode}
+        advanceToNextEpisode={handlePlayNextManual}
+        nextEpisodeFiller={nextFillerKind && nextFillerRun ? { kind: nextFillerKind, run: nextFillerRun } : null}
         openSettings={openSettings}
-        isSeriesLike={props.type === 'series'}
+        isSeriesLike={props.type !== 'movie'}
         toggleEpisodes={toggleEpisodes}
         hasReleases={!partyNonHost && (props.releases?.length ?? 0) > 0}
       />

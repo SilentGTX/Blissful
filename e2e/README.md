@@ -88,6 +88,18 @@ e2e/
   (Skip lands on 34; "Watch anyway" enters 33, the notice marks it, and the ack then covers
   the rest of the run). Chromium has no H.264 and nothing under test needs the video to
   decode. Runner area: `filler`.
+- **Filler episodes on the DESKTOP player** `filler.desktop`: the same feature where it
+  actually had to be ported — the mpv player. Anime Kitsu goes in as a guest addon,
+  Bleach 33 opens in the native player, the map is fetched from Jikan by the SHELL'S
+  WebView (ani.zip -> MAL, no proxy), and the assertions are the notice, its
+  "Skip to episode 34", the Filler badge on the title pill, and the skip landing on 34.
+  Uses the 52-second clip on purpose: on a shorter file the Up Next card legitimately
+  replaces the notice inside the 30-second window. Runner area: `filler`.
+- **Subtitle picker (desktop)** `subtitles-picker.desktop`: a GENERATED MKV whose
+  subtitle metadata lies the way real releases lie — one `eng` track, one with NO
+  language tag titled "Bulgarian", one `eng` titled "Signs & Songs". The oracle is the
+  file: the picker must list Bulgarian as its own language (not a third English row)
+  and keep the two English tracks apart by title. Runner area: `subtitles`.
 - **Social (real, two accounts)** `social.protocol`: friend request → accept →
   both friends, + friend-gated presence lookup. Over the live backend, no mocks.
 - **Social over `/ws/user`** `social-ws.protocol`: two authed accounts on the

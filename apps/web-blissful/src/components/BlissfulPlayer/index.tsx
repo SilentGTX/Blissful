@@ -14,7 +14,7 @@ import { getDocPiP } from '../../lib/documentPip';
 import { DEFAULT_SERVER_ID } from '../../lib/playerServers';
 import { useChapterSkipWeb, hasClassifiableChapter, type Chapter } from '../useChapterSkipWeb';
 import { SkipChapterButton } from './SkipChapterButton';
-import { FillerNotice } from './FillerNotice';
+import { FillerNotice } from '../FillerNotice';
 import { FillerBadge } from '../FillerBadge';
 import { FillerEpisodeModal } from '../FillerEpisodeModal';
 import { useAnimeFiller } from '../../hooks/useAnimeFiller';
@@ -102,6 +102,8 @@ import {
   findMatchingLanguage,
   isEmbeddedOrigin,
   scoreSubtitleTrack,
+  effectiveTrackLanguage,
+  subtitleTrackLabel,
 } from '../../lib/subtitleUtils';
 
 export type StremioIconName =
@@ -2310,9 +2312,12 @@ export default function BlissfulPlayer(props: {
         const tracks: SubtitleTrack[] = (data.subtitles ?? [])
           .filter((s) => s.textBased)
           .map((s) => {
-            const lang = (s.language || 'und').toLowerCase();
-            const baseLabel = subtitleLangLabel(lang);
-            const label = s.title ? `${baseLabel} – ${s.title}` : baseLabel;
+            // The container's tag is not to be trusted on its own: batch muxes
+            // label every text track `eng` (or `und`) and put the real language
+            // in the title, which filed ten tracks under English — nine of them
+            // not English — and had the auto-pick take whichever came first.
+            const lang = effectiveTrackLanguage(s.language, s.title);
+            const label = subtitleTrackLabel(lang, s.title);
             return {
               key: `embedded:${s.index}`,
               lang,

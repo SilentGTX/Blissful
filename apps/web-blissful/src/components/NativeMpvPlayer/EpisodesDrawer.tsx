@@ -21,6 +21,8 @@ import { StremioIcon } from '../PlayerControlIcons';
 import { EpisodeThumbnail } from './EpisodeThumbnail';
 import { getProgressPercent } from '../../lib/progressStore';
 import { notifyWarning } from '../../lib/toastQueues';
+import { episodeNumberOf, fillerKindFor, fillerRunFrom, isFillerRunStart, type FillerEpisodes } from '../../lib/animeFiller';
+import { FillerBadge } from '../FillerBadge';
 
 export type EpisodeVideo = {
   id: string;
@@ -91,6 +93,9 @@ export type EpisodesDrawerProps = {
    *  clicks are no-ops, cards render visibly inert, and we show a
    *  hint at the top explaining why. */
   disableSelection?: boolean;
+  /** Anime Kitsu filler map (MyAnimeList via Jikan) — badges filler / recap
+   *  cards and notes where a run starts. Null = not anime / unknown. */
+  fillerEpisodes?: FillerEpisodes | null;
 };
 
 export function EpisodesDrawer(props: EpisodesDrawerProps) {
@@ -120,6 +125,7 @@ export function EpisodesDrawer(props: EpisodesDrawerProps) {
     progressLookupType,
     onSelectEpisode,
     disableSelection,
+    fillerEpisodes,
   } = props;
 
   // Videasy-style transform-driven carousel: no native scroll.
@@ -451,6 +457,14 @@ export function EpisodesDrawer(props: EpisodesDrawerProps) {
                           ? `${rawRuntimeMinutes}m`
                           : ((v as { runtime?: string }).runtime ?? null);
                         const epDescription = tmdbEp?.overview ?? v.description ?? null;
+                        const epNumber = episodeNumberOf(v);
+                        const fillerKind = fillerKindFor(fillerEpisodes, epNumber);
+                        const fillerRun = fillerKind ? fillerRunFrom(fillerEpisodes, epNumber) : null;
+                        // Only the first card of a run carries the "N episodes ahead"
+                        // note; the rest just wear the badge.
+                        const fillerNote = fillerRun && fillerRun.count > 1 && isFillerRunStart(fillerEpisodes, epNumber)
+                          ? `${fillerRun.count} filler episodes ahead${fillerRun.nextCanon ? ` · story resumes at ${fillerRun.nextCanon}` : ''}`
+                          : null;
                         const absDistance = Math.abs(idx - focusIndex);
                         // Bucketed scales matching Videasy:
                         //   focus 1.15, 1 away 1.0, 2 away 0.9, 3 away
@@ -545,13 +559,15 @@ export function EpisodesDrawer(props: EpisodesDrawerProps) {
                                       Watching
                                     </span>
                                   ) : null}
+                                  {fillerKind ? <FillerBadge kind={fillerKind} /> : null}
                                   <div className="text-sm font-semibold leading-snug text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.7)] md:text-base">
                                     {ep}. {v.title ?? `Episode ${ep}`}
                                   </div>
                                 </div>
-                                {epRuntimeStr ? (
-                                  <div className="mt-0.5 text-xs text-white/80 drop-shadow-[0_2px_4px_rgba(0,0,0,0.7)]">
-                                    {epRuntimeStr}
+                                {epRuntimeStr || fillerNote ? (
+                                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-white/80 drop-shadow-[0_2px_4px_rgba(0,0,0,0.7)]">
+                                    {epRuntimeStr ? <span>{epRuntimeStr}</span> : null}
+                                    {fillerNote ? <span className="text-orange-300">{fillerNote}</span> : null}
                                   </div>
                                 ) : null}
                                 {isFocused && epDescription ? (

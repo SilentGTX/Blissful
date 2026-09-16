@@ -1,4 +1,5 @@
-// Floating "this episode is filler" card in the web player. Bottom-left,
+// Floating "this episode is filler" card, shared by both players (web
+// BlissfulPlayer and the desktop NativeMpvPlayer). Bottom-left,
 // above the controls bar — the mirror image of SkipChapterButton (bottom-
 // right), so the two never collide when an intro skip and a filler notice
 // are on screen together.
@@ -9,8 +10,8 @@
 // episodes (watch-party guests are not).
 
 import React, { useEffect, useState } from 'react';
-import { describeFillerRun, type FillerKind, type FillerRun } from '../../lib/animeFiller';
-import { FillerBadge } from '../FillerBadge';
+import { describeFillerRun, type FillerKind, type FillerRun } from '../lib/animeFiller';
+import { FillerBadge } from './FillerBadge';
 
 export type FillerNoticeProps = {
   kind: FillerKind;

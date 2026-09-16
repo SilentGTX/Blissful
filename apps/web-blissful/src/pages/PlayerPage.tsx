@@ -300,7 +300,11 @@ export default function PlayerPage() {
   // PersistentPlayerHost. The guard is defense-in-depth only.
   if (!isNativeShell()) return null;
   {
-    if (!type || !id || (type !== 'movie' && type !== 'series')) return null;
+    // `anime` is a first-class route type here: Anime Kitsu catalogs are typed
+    // `anime` end to end (/detail/anime/kitsu:244 and every player link built
+    // from it), and refusing it rendered NOTHING — the shell opened a blank
+    // player for every Kitsu title. The player treats it as series-like.
+    if (!type || !id || (type !== 'movie' && type !== 'series' && type !== 'anime')) return null;
     return (
       <NativeMpvPlayer
         url={url}

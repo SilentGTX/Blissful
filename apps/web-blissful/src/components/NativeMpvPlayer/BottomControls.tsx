@@ -17,6 +17,8 @@ import {
   type StremioIconName,
 } from '../PlayerControlIcons';
 import type { NextEpisodeInfo } from '../../pages/PlayerPage';
+import type { FillerKind, FillerRun } from '../../lib/animeFiller';
+import { FillerDot, fillerKindLabel } from '../FillerBadge';
 import type { SettingsTab } from './SettingsPanel';
 import { volumeFillColor } from '../../lib/colorUtils';
 
@@ -64,6 +66,9 @@ export type BottomControlsProps = {
   onToggleFullscreen: () => void;
   nextEpisodeInfo?: NextEpisodeInfo | null;
   advanceToNextEpisode: () => void;
+  /** The next episode is filler / a recap (Anime Kitsu + MyAnimeList): the
+   *  button grows a corner dot and the tooltip says how long the run is. */
+  nextEpisodeFiller?: { kind: FillerKind; run: FillerRun } | null;
 
   // Settings + Episodes drawer triggers
   openSettings: (tab: SettingsTab) => void;
@@ -94,6 +99,7 @@ export function BottomControls(props: BottomControlsProps) {
     onToggleFullscreen,
     nextEpisodeInfo,
     advanceToNextEpisode,
+    nextEpisodeFiller,
     openSettings,
     isSeriesLike,
     toggleEpisodes,
@@ -273,21 +279,26 @@ export function BottomControls(props: BottomControlsProps) {
               ? releaseDateLabel
                 ? `Next episode airs ${releaseDateLabel}`
                 : 'Next episode hasn\'t aired yet'
-              : 'Next episode';
+              : nextEpisodeFiller
+                ? nextEpisodeFiller.run.count > 1
+                  ? `Next episode is ${fillerKindLabel(nextEpisodeFiller.kind).toLowerCase()} — ${nextEpisodeFiller.run.count} skippable episodes ahead`
+                  : `Next episode is ${nextEpisodeFiller.kind === 'recap' ? 'a recap' : 'filler'}`
+                : 'Next episode';
             return (
               <BlissTooltip content={tooltipText} placement="top">
                 <button
                   type="button"
                   className={
-                    'bliss-player-icon-btn flex h-10 w-10 items-center justify-center rounded-full' +
+                    'bliss-player-icon-btn relative flex h-10 w-10 items-center justify-center rounded-full' +
                     (isDisabled ? ' cursor-not-allowed opacity-40' : '')
                   }
                   onClick={isDisabled ? undefined : advanceToNextEpisode}
-                  aria-label="Next episode"
+                  aria-label={nextEpisodeFiller ? `Next episode (${fillerKindLabel(nextEpisodeFiller.kind).toLowerCase()})` : 'Next episode'}
                   aria-disabled={isDisabled || undefined}
                   disabled={isDisabled}
                 >
                   <StremioIcon name="skip-forward" className="h-5 w-5" />
+                  {nextEpisodeFiller && !isDisabled ? <FillerDot kind={nextEpisodeFiller.kind} /> : null}
                 </button>
               </BlissTooltip>
             );

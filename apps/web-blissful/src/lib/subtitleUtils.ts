@@ -366,3 +366,91 @@ export function scoreSubtitleTrack(
   score += subtitleSyncScore(t.runtimeSec, ctx?.videoDurationSec);
   return score;
 }
+
+// ── Track metadata that the container lies about ───────────────────────
+
+// Language named in a subtitle track's TITLE. Fansub batch muxes routinely
+// tag every text track `eng` (or leave it `und`) in the container and put the
+// real language in the title ("Bulgarian", "Português (Brasil)", "Signs &
+// Songs") — one Bleach release arrives as ten "English" tracks that way, nine
+// of them not English, and the picker groups them all under English while the
+// auto-pick takes whichever came first. Ordered most-specific first (Brazilian
+// Portuguese before Portuguese, Malayalam before Malay) and matched by
+// substring rather than \b, which JS regex doesn't honour for Cyrillic/CJK.
+// Ported from the Android app's lib/subtitles.ts — same table, one behaviour.
+const TITLE_LANGUAGES: Array<[string[], string]> = [
+  [['malayalam'], 'mal'],
+  [['pob', 'brasil', 'brazil', 'pt-br', 'português (br', 'portuguese (br', 'portuguese-br'], 'pob'],
+  [['portuguese', 'português'], 'por'],
+  [['english', 'eng '], 'eng'],
+  [['bulgarian', 'български'], 'bul'],
+  [['japanese', '日本語'], 'jpn'],
+  [['korean', '한국어'], 'kor'],
+  [['turkish', 'türkçe'], 'tur'],
+  [['vietnamese', 'tiếng việt'], 'vie'],
+  [['spanish', 'español', 'castellano', 'latino', 'latin american'], 'spa'],
+  [['french', 'français'], 'fra'],
+  [['german', 'deutsch'], 'deu'],
+  [['italian', 'italiano'], 'ita'],
+  [['russian', 'русский'], 'rus'],
+  [['polish', 'polski'], 'pol'],
+  [['arabic', 'العربية'], 'ara'],
+  [['chinese', '中文', '简体', '繁體', '繁体'], 'zho'],
+  [['dutch', 'nederlands'], 'nld'],
+  [['hindi'], 'hin'],
+  [['indonesian', 'bahasa'], 'ind'],
+  [['thai'], 'tha'],
+  [['malay'], 'msa'],
+  [['filipino', 'tagalog'], 'fil'],
+];
+
+export function languageFromTitle(title: string | null | undefined): string | null {
+  const t = ` ${(title ?? '').toLowerCase().trim()} `;
+  if (t.trim() === '') return null;
+  for (const [needles, code] of TITLE_LANGUAGES) {
+    if (needles.some((n) => t.includes(n))) return code;
+  }
+  return null;
+}
+
+/** The language a subtitle track should be filed under: its container tag,
+ *  unless that tag is a generic `eng` / `en` / `und` and the title names a
+ *  different language — then the title wins. A specific tag is always
+ *  trusted over the title ("French" tagged `fra` with title "Signs"). */
+export function effectiveTrackLanguage(
+  tagged: string | null | undefined,
+  title: string | null | undefined,
+): string {
+  const tag = (tagged ?? '').trim().toLowerCase() || 'und';
+  const generic = tag === 'eng' || tag === 'en' || tag === 'und' || tag === 'unknown';
+  if (!generic) return tag;
+  return languageFromTitle(title) ?? tag;
+}
+
+/** A track's row label: the language, plus the title when the title says
+ *  more than the language does ("English – Signs & Songs"). Ten identical
+ *  "English" rows are unpickable; that is the whole point. */
+export function subtitleTrackLabel(lang: string, title: string | null | undefined): string {
+  const base = subtitleLangLabel(lang);
+  const t = (title ?? '').trim();
+  if (!t) return base;
+  if (t.toLowerCase() === base.toLowerCase()) return base;
+  if (t.toLowerCase().includes(base.toLowerCase())) return t;
+  return `${base} – ${t}`;
+}
+
+// Bitmap subtitle codecs: BluRay PGS, DVD VobSub, DVB and friends. They are
+// pictures, not text, so NOTHING in the subtitle appearance settings reaches
+// them — mpv draws the release's own bitmap, which is why a viewer who picked
+// green text still gets white. There is no OCR anywhere in the app, so the
+// honest handling is to say so and to prefer a text track when one exists.
+const IMAGE_SUB_CODECS = [
+  'hdmv_pgs_subtitle', 'pgs', 'dvd_subtitle', 'dvdsub', 'vobsub',
+  'dvb_subtitle', 'dvbsub', 'dvb_teletext', 'xsub', 'arib_caption',
+];
+
+export function isImageSubtitleCodec(codec: string | null | undefined): boolean {
+  const c = (codec ?? '').trim().toLowerCase();
+  if (!c) return false;
+  return IMAGE_SUB_CODECS.some((needle) => c.includes(needle));
+}

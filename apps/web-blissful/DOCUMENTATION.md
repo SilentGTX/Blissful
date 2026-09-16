@@ -246,6 +246,36 @@ slider subscribes via `useSyncExternalStore`), memoised `ScrubBar` / `PlayerCont
 `AudioMenuPopover` / `SubtitleMenuPopover` / `PlayerHdrBadges` / `SkipChapterButton`,
 `useChapterSkip.ts`, `subtitleHelpers.ts`.
 
+### Subtitle tracks in the mpv player
+
+mpv reports each track's `lang`, `title` and `codec`; two of those routinely lie, so
+`subTracks` (in `NativeMpvPlayer.tsx`) resolves them ONCE and every downstream reader — the
+language list, the variant rows, the counts, the auto-pick, the watch-party language match —
+uses that instead of the raw list:
+
+- **Language.** Batch muxes tag every text track `eng` (or leave it `und`) and put the real
+  language in the title ("Bulgarian", "Português (Brasil)"). `effectiveTrackLanguage()` lets the
+  title win over a GENERIC tag only (`eng` / `en` / `und`); a specific tag is always trusted.
+  `subtitleTrackLabel()` then keeps the title on the row when it says more than the language, so
+  ten same-language tracks are pickable instead of ten identical "English" rows. Both live in
+  `lib/subtitleUtils.ts` (unit-tested, shared with the web player's probe) and are the desktop
+  half of the same fix the Android app got.
+- **Bitmap tracks.** PGS / VobSub / DVB subtitles are pictures: `sub-color`, `sub-font-size` and
+  the ASS force-style reach none of them, which is what "I picked green and the subtitles are
+  white" is. `isImageSubtitleCodec()` flags them, the picker tags the row **Image**, the
+  auto-pick sorts text variants ahead of bitmap ones so a styleable track wins when the release
+  ships both, and Customize Appearance says so outright when the playing track is one. There is
+  no OCR anywhere in the app; this is a labelling problem, not a rendering one.
+- **Late tracks.** On a remote file mpv announces the tracks it has parsed so far, so a big MKV
+  over HTTP can report the rest a second or three after `FileLoaded`. The list is re-read at
+  200 ms, 1.2 s, 3 s and 6 s (timers cancelled and re-armed per load), instead of once — that is
+  the "some subtitles show up late / never appear" case.
+
+Styling itself is pushed from the renderer: `sub-ass-override=force` + `sub-ass-force-style`
+(colour/size into the ASS style table) + `sub-ass-force-margins`, with the destructive
+re-apply (`sub-reload` + sid off→on) gated on an actual STYLE change so it never deactivates a
+freshly auto-selected embedded track.
+
 ### Skip Intro / Recap / Credits
 
 Driven by **mpv chapter markers**, no addon dependency: the shell reads `chapter-list` via the
@@ -284,8 +314,18 @@ compares MAL's episode count with the addon's list and the feature stays invisib
   (episode changes are host-driven).
 - **Off switch:** `playerSettings.fillerWarnings` (default on, `fillerWarningsEnabled()`), shown in
   Settings → Anime while the Anime Kitsu addon is installed; like the Kitsu audio default it is
-  applied by content id. The desktop `NativeMpvPlayer` does not have the in-player pieces yet;
-  it gets the detail page badges + prompt for free.
+  applied by content id.
+- **Both players.** The desktop `NativeMpvPlayer` carries the same surfaces as the web player —
+  notice, drawer badges, title-pill badge, next-button dot, the watch-or-skip modal, and the Up
+  Next question that holds auto-advance — off the same hook, cache and acknowledgements.
+  `FillerNotice` lives in `components/` (not under either player) because both render it.
+  Covered by `filler.web` and `filler.desktop` (the latter drives the real shell).
+- **Anime is its own route type.** Kitsu catalogs are typed `anime` end to end
+  (`/detail/anime/kitsu:244`, and every `/player?...&type=anime` link built from it).
+  `PlayerPage` used to accept only `movie` / `series` and returned `null` for anything else, so
+  the shell opened a BLANK player for every Kitsu title — fixed by accepting `anime` and treating
+  it as series-like inside the player (`props.type !== 'movie'`), while keeping the string
+  verbatim, since progress, last-stream and the back link are all keyed by it elsewhere.
 
 ### Testing
 

@@ -37,6 +37,11 @@ type SubtitleVariant = {
   label: string;
   origin: string;
   embedded: boolean;
+  /** Bitmap subtitle (PGS / VobSub): mpv draws the release's own picture, so
+   *  none of the appearance settings below reach it. Labelled in the list and
+   *  called out in Customize Appearance, because otherwise picking green and
+   *  getting white reads as a broken colour picker. */
+  image?: boolean;
 };
 
 export type SettingsPanelProps = {
@@ -62,6 +67,15 @@ export type SettingsPanelProps = {
   setSelectedSubLang: (lang: string | null) => void;
   combinedSubLanguages: string[];
   variantsForLanguage: SubtitleVariant[];
+  /** Languages the FILE itself carries, after title-derived corrections
+   *  (`embeddedSubLanguages`), used for the "Built-in" tag. Reading the raw
+   *  mpv tags here instead would tag the wrong rows on a mux that calls every
+   *  track `eng`. */
+  embeddedSubLanguages?: string[];
+  /** The subtitle actually playing is a bitmap track. Computed by the player
+   *  from the active sid rather than from the drilled-into language list,
+   *  which can be showing a different language than the one on screen. */
+  activeSubIsImage?: boolean;
   /** Per-canonical-lang variant count (embedded + addon). Computed by the
    *  parent so the language list can show "N VARIANTS" before drilling. */
   variantCountByLang?: Record<string, number>;
@@ -113,6 +127,8 @@ export function SettingsPanel(props: SettingsPanelProps) {
     setSelectedSubLang,
     combinedSubLanguages,
     variantsForLanguage,
+    embeddedSubLanguages,
+    activeSubIsImage,
     variantCountByLang,
     applySubtitleSelection,
     subtitleSizePx,
@@ -281,11 +297,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
                       {combinedSubLanguages.map((lang) => {
                         const rowCanon = subtitleLangLabel(lang);
                         const sameCanon = (l: string) => subtitleLangLabel(l) === rowCanon;
-                        const hasEmbedded = tracks.some(
-                          (t) =>
-                            t.kind === 'sub' &&
-                            sameCanon((t.lang ?? 'unknown').toLowerCase()),
-                        );
+                        const hasEmbedded = (embeddedSubLanguages ?? []).some((l) => sameCanon(l));
                         // Total variant count from the parent's precomputed map
                         const totalVariants = variantCountByLang?.[rowCanon] ?? 0;
                         // Highlight the language whose track is actually
@@ -372,8 +384,18 @@ export function SettingsPanel(props: SettingsPanelProps) {
                                   <span className="truncate">
                                     {v.label || v.origin || 'Subtitle'}
                                   </span>
-                                  <span className={`shrink-0 rounded px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${tagClass}`}>
-                                    {isEmbedded ? 'Built-in' : v.origin}
+                                  <span className="flex shrink-0 items-center gap-1.5">
+                                    {v.image ? (
+                                      <span
+                                        className="rounded bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/60"
+                                        title="Picture-based subtitles (PGS / VobSub) — colour and size come from the release"
+                                      >
+                                        Image
+                                      </span>
+                                    ) : null}
+                                    <span className={`rounded px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${tagClass}`}>
+                                      {isEmbedded ? 'Built-in' : v.origin}
+                                    </span>
                                   </span>
                                 </span>
                               </button>
@@ -414,6 +436,17 @@ export function SettingsPanel(props: SettingsPanelProps) {
                       <span>&lsaquo;</span>
                       <span>Back to Subtitles</span>
                     </button>
+
+                    {/* Bitmap tracks ignore everything on this screen — mpv
+                        draws the release's own picture. Saying so here is the
+                        answer to "I picked green and the subtitles are white". */}
+                    {activeSubIsImage ? (
+                      <div className="rounded-2xl border border-orange-300/25 bg-orange-400/10 px-4 py-3 text-[12px] leading-snug text-orange-100/90">
+                        The subtitle playing is picture-based (PGS / VobSub). It is drawn from the
+                        release exactly as it was authored, so the colour and size below do not
+                        change it. Pick a text variant — or a subtitle from an addon — to style it.
+                      </div>
+                    ) : null}
 
                     {/* Font Size */}
                     <div className="rounded-2xl bg-white/[0.04] p-4">
