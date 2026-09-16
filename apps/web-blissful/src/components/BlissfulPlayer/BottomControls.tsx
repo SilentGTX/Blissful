@@ -15,6 +15,8 @@ import { useState, type Ref } from 'react';
 import { BlissTooltip } from '../base/BlissTooltip';
 import { StremioIcon } from '../PlayerControlIcons';
 import type { NextEpisodeInfo } from '../../pages/PlayerPage';
+import type { FillerKind, FillerRun } from '../../lib/animeFiller';
+import { FillerDot, fillerKindLabel } from '../FillerBadge';
 import type { SettingsTab } from './SettingsPanel';
 import { volumeFillColor } from '../../lib/colorUtils';
 import { MiniControls } from './MiniControls';
@@ -59,6 +61,9 @@ export type BottomControlsProps = {
   onClosePlayer?: () => void;
   nextEpisodeInfo?: NextEpisodeInfo | null;
   advanceToNextEpisode: () => void;
+  /** The next episode is filler / a recap (Anime Kitsu + MyAnimeList): the
+   *  button grows a corner dot and the tooltip says how long the run is. */
+  nextEpisodeFiller?: { kind: FillerKind; run: FillerRun } | null;
   /** Watch-party gate — when true (= guest in a room), the
    *  next-episode button is rendered disabled with a tooltip
    *  explaining only the host can change episodes. */
@@ -114,6 +119,7 @@ export function BottomControls(props: BottomControlsProps) {
     onClosePlayer,
     nextEpisodeInfo,
     advanceToNextEpisode,
+    nextEpisodeFiller,
     episodeChangeDisabled,
     type,
     hasVideos,
@@ -328,25 +334,31 @@ export function BottomControls(props: BottomControlsProps) {
               : releaseDateLabel
                 ? `Next episode airs ${releaseDateLabel}`
                 : 'Next episode hasn’t aired yet';
+            const fillerTooltip = nextEpisodeFiller
+              ? nextEpisodeFiller.run.count > 1
+                ? `Next episode is ${fillerKindLabel(nextEpisodeFiller.kind).toLowerCase()} — ${nextEpisodeFiller.run.count} skippable episodes ahead`
+                : `Next episode is ${nextEpisodeFiller.kind === 'recap' ? 'a recap' : 'filler'}`
+              : 'Next episode';
             const button = (
               <button
                 type="button"
                 className={
-                  'bliss-player-icon-btn flex h-10 w-10 items-center justify-center rounded-full' +
+                  'bliss-player-icon-btn relative flex h-10 w-10 items-center justify-center rounded-full' +
                   (isDisabled ? ' cursor-not-allowed opacity-40' : '')
                 }
                 onClick={isDisabled ? undefined : advanceToNextEpisode}
-                aria-label="Next episode"
+                aria-label={nextEpisodeFiller ? `Next episode (${fillerKindLabel(nextEpisodeFiller.kind).toLowerCase()})` : 'Next episode'}
                 aria-disabled={isDisabled || undefined}
                 disabled={isDisabled}
               >
                 <StremioIcon name="skip-forward" className="h-5 w-5" />
+                {nextEpisodeFiller && !isDisabled ? <FillerDot kind={nextEpisodeFiller.kind} /> : null}
               </button>
             );
             // Tooltip on both states: the action label when enabled, the
             // reason it's blocked when disabled (unreleased / party guest).
             return (
-              <BlissTooltip content={isDisabled ? tooltipText : 'Next episode'} placement="top">
+              <BlissTooltip content={isDisabled ? tooltipText : fillerTooltip} placement="top">
                 {button}
               </BlissTooltip>
             );

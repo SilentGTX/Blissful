@@ -5,7 +5,7 @@ import Hls from 'hls.js';
 // HeroUI overlays are handled by the caller on iOS.
 import type { AddonDescriptor } from '../../lib/mediaTypes';
 import type { PlayerSettings } from '../../lib/playerSettings';
-import { effectiveAudioLanguage, writeStoredPlayerSettings } from '../../lib/playerSettings';
+import { effectiveAudioLanguage, fillerWarningsEnabled, writeStoredPlayerSettings } from '../../lib/playerSettings';
 import type { NextEpisodeInfo } from '../../pages/PlayerPage';
 import { usePlayerReady } from '../../context/PlayerReadyProvider';
 import { useActiveParties } from '../../context/ActivePartiesProvider';
@@ -14,6 +14,21 @@ import { getDocPiP } from '../../lib/documentPip';
 import { DEFAULT_SERVER_ID } from '../../lib/playerServers';
 import { useChapterSkipWeb, hasClassifiableChapter, type Chapter } from '../useChapterSkipWeb';
 import { SkipChapterButton } from './SkipChapterButton';
+import { FillerNotice } from './FillerNotice';
+import { FillerBadge } from '../FillerBadge';
+import { FillerEpisodeModal } from '../FillerEpisodeModal';
+import { useAnimeFiller } from '../../hooks/useAnimeFiller';
+import {
+  acknowledgeFillerRun,
+  episodeNumberOf,
+  fillerKindFor,
+  fillerRunFrom,
+  isFillerAcknowledged,
+  readFillerAcks,
+  type FillerAck,
+  type FillerKind,
+  type FillerRun,
+} from '../../lib/animeFiller';
 import { getProgress, setProgress, flushNow } from '../../lib/progressStore';
 import { updateBlissfulLibraryProgress } from '../../lib/blissfulAuthApi';
 import { isStremioLinked, syncStremioItem, triggerStremioItemSync } from '../../lib/stremioLinkApi';
@@ -3647,6 +3662,82 @@ export default function BlissfulPlayer(props: {
   const partyNonHost = !!props.roomCode && !watchParty.isHost;
   partyNonHostRef.current = partyNonHost;
 
+  // ── Anime filler (Anime Kitsu + MyAnimeList) ──────────────────────────
+  // Which episodes of this show are filler / recaps — only for Kitsu content
+  // with the warnings left on in Settings. Null otherwise, and everything
+  // below degrades to "no badge, no prompt".
+  const fillerEpisodes = useAnimeFiller({
+    metaId: props.id,
+    episodeCount: (props.videos ?? []).filter((v) => v.season !== 0).length,
+    enabled:
+      (props.type === 'series' || props.type === 'anime')
+      && fillerWarningsEnabled(props.playerSettings),
+  });
+  const currentEpisodeNumber = useMemo(() => {
+    const v = (props.videos ?? []).find((x) => x.id === props.videoId);
+    if (v) return episodeNumberOf(v);
+    return props.videoId ? episodeNumberOf({ id: props.videoId }) : null;
+  }, [props.videos, props.videoId]);
+  const currentFillerKind = fillerKindFor(fillerEpisodes, currentEpisodeNumber);
+  const currentFillerRun = useMemo(
+    () => (currentFillerKind ? fillerRunFrom(fillerEpisodes, currentEpisodeNumber) : null),
+    [currentFillerKind, fillerEpisodes, currentEpisodeNumber],
+  );
+  const nextEpisodeNumber = useMemo(() => {
+    const next = props.nextEpisodeInfo;
+    if (!next) return null;
+    const v = (props.videos ?? []).find((x) => x.id === next.nextVideoId);
+    return v ? episodeNumberOf(v) : episodeNumberOf({ id: next.nextVideoId, episode: next.nextEpisode });
+  }, [props.nextEpisodeInfo, props.videos]);
+  const nextFillerKind = fillerKindFor(fillerEpisodes, nextEpisodeNumber);
+  const nextFillerRun = useMemo(
+    () => (nextFillerKind ? fillerRunFrom(fillerEpisodes, nextEpisodeNumber) : null),
+    [nextFillerKind, fillerEpisodes, nextEpisodeNumber],
+  );
+  // "Watch anyway" acknowledgements for this show (per tab): a run the viewer
+  // already chose to watch plays through without asking at every episode.
+  const [fillerAckState, setFillerAckState] = useState<{ id: string | null; acks: FillerAck[] }>(
+    () => ({ id: props.id, acks: readFillerAcks(props.id) }),
+  );
+  const fillerAcks = fillerAckState.id === props.id ? fillerAckState.acks : readFillerAcks(props.id);
+  const acknowledgeFiller = useCallback((run: FillerRun) => {
+    setFillerAckState({ id: props.id, acks: acknowledgeFillerRun(props.id, run) });
+  }, [props.id]);
+  /** The addon video of the canon episode a run skips to — null when the run
+   *  reaches the end of the list or the addon doesn't carry that episode. */
+  const fillerCanonVideo = useCallback((run: FillerRun | null): EpisodesDrawerVideo | null => {
+    if (!run || run.nextCanon == null) return null;
+    return (props.videos ?? []).find((v) => episodeNumberOf(v) === run.nextCanon) ?? null;
+  }, [props.videos]);
+  const fillerSkipLabel = useCallback((run: FillerRun | null): string | null => {
+    const target = fillerCanonVideo(run);
+    return target && run && !partyNonHost ? `Skip to episode ${run.nextCanon}` : null;
+  }, [fillerCanonVideo, partyNonHost]);
+  // The next episode opens a filler run the viewer hasn't waved through: the
+  // Up Next card turns into a watch-or-skip question and auto-advance holds.
+  const nextFillerPrompt = useMemo(() => {
+    if (!nextFillerKind || !nextFillerRun || nextEpisodeNumber == null) return null;
+    if (isFillerAcknowledged(fillerAcks, nextEpisodeNumber)) return null;
+    return { kind: nextFillerKind, run: nextFillerRun, skipLabel: fillerSkipLabel(nextFillerRun) };
+  }, [nextFillerKind, nextFillerRun, nextEpisodeNumber, fillerAcks, fillerSkipLabel]);
+  const nextFillerPromptRef = useRef(nextFillerPrompt);
+  nextFillerPromptRef.current = nextFillerPrompt;
+  // Watch-or-skip prompt for an episode the viewer picked (drawer / next
+  // button). Stamped with the episode it was raised on: if anything else
+  // changes the episode meanwhile (the notice's Skip, a party host, Up Next),
+  // the stale prompt is dropped instead of lingering over the new episode.
+  const [fillerPromptState, setFillerPrompt] = useState<{
+    forVideoId: string | null;
+    video: EpisodesDrawerVideo;
+    kind: FillerKind;
+    run: FillerRun;
+  } | null>(null);
+  const fillerPrompt = fillerPromptState && fillerPromptState.forVideoId === props.videoId
+    ? fillerPromptState
+    : null;
+  // The floating notice about the CURRENT episode — dismissable per episode.
+  const [fillerNoticeDismissedFor, setFillerNoticeDismissedFor] = useState<string | null>(null);
+
   const advanceToNextEpisode = useCallback(() => {
     if (partyNonHost) return;
     const next = props.nextEpisodeInfo;
@@ -3818,7 +3909,7 @@ export default function BlissfulPlayer(props: {
     }
   }, [props.fallbackActive, props.rdMode, props.releases, partyNonHost]);
 
-  const handleSelectEpisode = useCallback((v: EpisodesDrawerVideo) => {
+  const selectEpisodeUngated = useCallback((v: EpisodesDrawerVideo) => {
     // Watch-party guests are read-only on the episode picker — host
     // drives the room's episode and broadcasts. Closing the drawer
     // would feel like the click registered, so leave it open too.
@@ -3863,6 +3954,35 @@ export default function BlissfulPlayer(props: {
     }
     navigateToEpisode(v.id);
   }, [navigateToEpisode, props.type, props.id, props.videoId, props.roomCode, partyNonHost]);
+
+  // Filler gate in front of the plain selection: an episode inside a filler /
+  // recap run the viewer hasn't waved through gets the watch-or-skip prompt
+  // first. Canon episodes, acknowledged runs and unreleased episodes (which
+  // have their own modal) fall straight through.
+  const handleSelectEpisode = useCallback((v: EpisodesDrawerVideo) => {
+    const unreleased =
+      !!v.released && Number.isFinite(Date.parse(v.released)) && Date.parse(v.released) > Date.now();
+    if (!partyNonHost && v.id !== props.videoId && !unreleased) {
+      const epNum = episodeNumberOf(v);
+      const kind = fillerKindFor(fillerEpisodes, epNum);
+      const run = kind ? fillerRunFrom(fillerEpisodes, epNum) : null;
+      if (kind && run && epNum != null && !isFillerAcknowledged(fillerAcks, epNum)) {
+        setEpisodesOpen(false);
+        setFillerPrompt({ forVideoId: props.videoId, video: v, kind, run });
+        return;
+      }
+    }
+    selectEpisodeUngated(v);
+  }, [selectEpisodeUngated, partyNonHost, props.videoId, fillerEpisodes, fillerAcks]);
+
+  // Jump past a filler run to its first canon episode (the notice, the prompt
+  // and the Up Next "Skip" all land here). Goes through the ungated path —
+  // the target is canon by construction — so the resume prompt still applies.
+  const skipFillerRun = useCallback((run: FillerRun | null) => {
+    const target = fillerCanonVideo(run);
+    if (!target) return;
+    selectEpisodeUngated(target);
+  }, [fillerCanonVideo, selectEpisodeUngated]);
 
   // Manual "play next" from the bottom controls. Goes through the
   // same resume-or-start-over prompt that the episode drawer uses
@@ -3944,6 +4064,9 @@ export default function BlissfulPlayer(props: {
       if (!showUpNextRef.current && !upNextCancelledRef.current) {
         setShowUpNext(true);
       } else if (!upNextCancelledRef.current) {
+        // A filler run ahead that hasn't been waved through never auto-plays:
+        // the Up Next card stays up with its watch-or-skip buttons instead.
+        if (nextFillerPromptRef.current) return;
         advanceRef.current();
       }
     };
@@ -3960,6 +4083,8 @@ export default function BlissfulPlayer(props: {
   useEffect(() => {
     if (!showUpNext || upNextCancelledRef.current || upNextFiredRef.current) return;
     if (!props.playerSettings.bingeWatching) return; // master auto-play toggle
+    // Filler ahead and not yet acknowledged: the card asks instead of counting down.
+    if (nextFillerPrompt) return;
 
     setUpNextCountdown(10);
     const interval = window.setInterval(() => {
@@ -3977,7 +4102,7 @@ export default function BlissfulPlayer(props: {
     return () => {
       window.clearInterval(interval);
     };
-  }, [showUpNext, advanceToNextEpisode, props.playerSettings.bingeWatching]);
+  }, [showUpNext, advanceToNextEpisode, props.playerSettings.bingeWatching, nextFillerPrompt]);
 
   // Reset auto-advance state when stream URL changes (new episode loaded)
   useEffect(() => {
@@ -3991,6 +4116,18 @@ export default function BlissfulPlayer(props: {
     upNextCancelledRef.current = true;
     setShowUpNext(false);
   }, []);
+
+  // Up Next "Play Now" / "Watch": watching into a filler run acknowledges it,
+  // so the rest of the run auto-advances like any other episodes.
+  const handleUpNextAdvance = useCallback(() => {
+    if (nextFillerPromptRef.current) acknowledgeFiller(nextFillerPromptRef.current.run);
+    advanceToNextEpisode();
+  }, [acknowledgeFiller, advanceToNextEpisode]);
+  const handleUpNextSkipFiller = useCallback(() => {
+    const prompt = nextFillerPromptRef.current;
+    handleCancelUpNext();
+    if (prompt) skipFillerRun(prompt.run);
+  }, [handleCancelUpNext, skipFillerRun]);
 
   const formattedTime = (value: number) => {
     // Stream metadata not loaded yet → both current and total render
@@ -4100,6 +4237,7 @@ export default function BlissfulPlayer(props: {
           streamUrl={props.url}
           error={error}
           rightSlot={watchPartySlot}
+          titleBadge={currentFillerKind ? <FillerBadge kind={currentFillerKind} /> : null}
         />
       )}
 
@@ -4198,6 +4336,7 @@ export default function BlissfulPlayer(props: {
         onClosePlayer={props.onClosePlayer}
         nextEpisodeInfo={props.nextEpisodeInfo}
         advanceToNextEpisode={handlePlayNextManual}
+        nextEpisodeFiller={nextFillerKind && nextFillerRun ? { kind: nextFillerKind, run: nextFillerRun } : null}
         episodeChangeDisabled={partyNonHost}
         type={props.type}
         hasVideos={(props.videos?.length ?? 0) > 0}
@@ -4228,8 +4367,22 @@ export default function BlissfulPlayer(props: {
         />
       ) : null}
 
-
-
+      {/* Filler notice for the episode being watched: the first seconds of
+          the episode, then again whenever the controls are up, until the
+          viewer dismisses it. Bottom-left so it never collides with the
+          Skip Intro button or the Up Next card on the right. */}
+      {currentFillerKind && currentFillerRun && !props.compact
+        && fillerNoticeDismissedFor !== props.videoId
+        && (currentTime < 20 || showControls)
+        && !showUpNext && !episodesOpen && !settingsOpen ? (
+        <FillerNotice
+          kind={currentFillerKind}
+          run={currentFillerRun}
+          skipLabel={fillerSkipLabel(currentFillerRun)}
+          onSkip={() => skipFillerRun(currentFillerRun)}
+          onDismiss={() => setFillerNoticeDismissedFor(props.videoId)}
+        />
+      ) : null}
 
       <UpNextOverlay
         visible={showUpNext && !upNextCancelledRef.current && !upNextFiredRef.current}
@@ -4237,7 +4390,9 @@ export default function BlissfulPlayer(props: {
         countdown={upNextCountdown}
         playerSettings={props.playerSettings}
         onCancel={handleCancelUpNext}
-        onAdvance={advanceToNextEpisode}
+        onAdvance={handleUpNextAdvance}
+        fillerPrompt={nextFillerPrompt}
+        onSkipFiller={handleUpNextSkipFiller}
       />
 
 
@@ -4313,6 +4468,7 @@ export default function BlissfulPlayer(props: {
         progressLookupType={props.type ?? ''}
         onSelectEpisode={handleSelectEpisode}
         disableSelection={partyNonHost}
+        fillerEpisodes={fillerEpisodes}
       />
 
       {/* Resume-or-start-over modal — shown when the user picks an
@@ -4373,6 +4529,36 @@ export default function BlissfulPlayer(props: {
         }
         onClose={() => setUnreleasedPrompt(null)}
       />
+
+      {/* Filler watch-or-skip prompt — an episode inside a filler / recap run
+          picked from the drawer or via the next-episode button. */}
+      {fillerPrompt ? (
+        <FillerEpisodeModal
+          isOpen
+          title={props.metaTitle ?? props.title ?? ''}
+          episodeLabel={
+            `Episode ${episodeNumberOf(fillerPrompt.video) ?? '?'}`
+            + (fillerPrompt.video.title ? ` · ${fillerPrompt.video.title}` : '')
+          }
+          poster={fillerPrompt.video.thumbnail ?? props.background ?? props.poster ?? null}
+          kind={fillerPrompt.kind}
+          run={fillerPrompt.run}
+          position="this"
+          skipTarget={(() => {
+            const target = fillerCanonVideo(fillerPrompt.run);
+            return target && fillerPrompt.run.nextCanon != null
+              ? { episode: fillerPrompt.run.nextCanon, title: target.title }
+              : null;
+          })()}
+          onWatch={() => {
+            const { video, run } = fillerPrompt;
+            acknowledgeFiller(run);
+            selectEpisodeUngated(video);
+          }}
+          onSkip={() => skipFillerRun(fillerPrompt.run)}
+          onClose={() => setFillerPrompt(null)}
+        />
+      ) : null}
 
       {/* ── Pause overlay: bottom-left info card ─────────────── */}
       {/* In the mini window only the CARD is scaled down (cardScale) — the

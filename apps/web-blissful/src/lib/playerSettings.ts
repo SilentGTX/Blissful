@@ -56,6 +56,11 @@ export type PlayerSettings = {
    *  Renamed from the legacy `autoShareHostStream` (old default `true` pre-dated
    *  the consent prompt) so a stale stored value can't silently auto-share. */
   alwaysShareHostStream?: boolean;
+  /** Anime Kitsu filler warnings: badge filler / recap episodes (MyAnimeList
+   *  data via Jikan) on every episode list, and ask before playing into a
+   *  filler run. A profile saved before this existed has no key: read as ON
+   *  (`fillerWarningsEnabled()`), never as off. */
+  fillerWarnings?: boolean;
 };
 
 export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
@@ -89,6 +94,7 @@ export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
   accentColor: '#95a2ff',
   realDebridApiKey: '',
   alwaysShareHostStream: false,
+  fillerWarnings: true,
 };
 
 /** The Anime Kitsu audio preference: an ISO 639-2 code, or `null` for "same
@@ -101,6 +107,11 @@ export function kitsuAudioPreference(
   const value = settings.kitsuAudioLanguage;
   if (value === undefined) return DEFAULT_PLAYER_SETTINGS.kitsuAudioLanguage ?? null;
   return value && value.trim() !== '' ? value : null;
+}
+
+/** Filler badges + prompts are on unless the profile explicitly turned them off. */
+export function fillerWarningsEnabled(settings: Pick<PlayerSettings, 'fillerWarnings'>): boolean {
+  return settings.fillerWarnings !== false;
 }
 
 /** The audio language a player should prefer for the content `id`: the Anime

@@ -36,10 +36,26 @@ import { getResumeSeconds } from '../layout/app-shell/utils';
 import { scoreReleaseForAutoPick } from '../lib/rdCache';
 import { expectedEpisodeFor, scoreEpisodeMatch } from '../lib/episodeMatch';
 import { isNativeShell } from '../lib/desktop';
+import { useStorage } from '../context/StorageProvider';
+import { fillerWarningsEnabled } from '../lib/playerSettings';
+import { useAnimeFiller } from '../hooks/useAnimeFiller';
+import {
+  acknowledgeFillerRun,
+  episodeNumberOf,
+  fillerKindFor,
+  fillerRunFrom,
+  isFillerAcknowledged,
+  readFillerAcks,
+  type FillerAck,
+  type FillerKind,
+  type FillerRun,
+} from '../lib/animeFiller';
+import { FillerEpisodeModal } from '../components/FillerEpisodeModal';
 
 export default function DetailPage() {
   const { addons } = useAddons();
   const { authKey } = useAuth();
+  const { playerSettings } = useStorage();
   const { setQuery, uiStyle } = useUI();
   const params = useParams();
   const navigate = useNavigate();
@@ -190,6 +206,41 @@ export default function DetailPage() {
       );
     } catch { /* sessionStorage may be unavailable */ }
   }, [isSeriesLike, id, type, nextEpisode]);
+
+  // ── Anime filler (Anime Kitsu + MyAnimeList) ──────────────────────────
+  // Badges the episode cards and gates a click on a filler / recap run with
+  // the watch-or-skip prompt. Null for anything that isn't Kitsu content or
+  // when the profile turned the warnings off.
+  const fillerEpisodes = useAnimeFiller({
+    metaId: id,
+    episodeCount: videos.filter((v) => v.season !== 0).length,
+    enabled: isSeriesLike && fillerWarningsEnabled(playerSettings),
+  });
+  const nextEpisodeFiller: FillerKind | null = fillerKindFor(
+    fillerEpisodes,
+    nextEpisode ? episodeNumberOf(nextEpisode) : null,
+  );
+  // "Watch anyway" acknowledgements for this show (per tab), shared with the
+  // player through sessionStorage so a run waved through here doesn't ask
+  // again at the next episode in there.
+  const [fillerAckState, setFillerAckState] = useState<{ id: string; acks: FillerAck[] }>(
+    () => ({ id, acks: readFillerAcks(id) }),
+  );
+  const fillerAcks = fillerAckState.id === id ? fillerAckState.acks : readFillerAcks(id);
+  const [fillerPrompt, setFillerPrompt] = useState<{ videoId: string; kind: FillerKind; run: FillerRun } | null>(null);
+  /** Raise the prompt for a filler episode; true when it did (caller stops). */
+  const fillerGate = useCallback((vid: string): boolean => {
+    const video = videos.find((v) => v.id === vid);
+    if (!video) return false;
+    const epNum = episodeNumberOf(video);
+    const kind = fillerKindFor(fillerEpisodes, epNum);
+    const run = kind ? fillerRunFrom(fillerEpisodes, epNum) : null;
+    if (!kind || !run || epNum == null || isFillerAcknowledged(fillerAcks, epNum)) return false;
+    setFillerPrompt({ videoId: vid, kind, run });
+    return true;
+  }, [videos, fillerEpisodes, fillerAcks]);
+  const fillerCanonVideoId = (run: FillerRun): string | null =>
+    run.nextCanon == null ? null : videos.find((v) => episodeNumberOf(v) === run.nextCanon)?.id ?? null;
 
   const {
     inLibrary,
@@ -928,6 +979,20 @@ export default function DetailPage() {
     id,
   ]);
 
+  // WEB series: set the selected episode AND immediately navigate to /player
+  // (Vidking iframe) — the user never sees a stream picker. The desktop shell
+  // falls through to onSelectEpisode instead, which selects the episode and
+  // shows its torrent list (mpv can't play Vidking), so picking an episode no
+  // longer pops the resume modal.
+  const proceedSelectEpisode = useCallback((vid: string) => {
+    if (isSeriesLike && !isNativeShell()) {
+      setSelectedVideoId(vid);
+      handlePlayWithVidking(vid);
+      return;
+    }
+    onSelectEpisode(vid);
+  }, [isSeriesLike, handlePlayWithVidking, onSelectEpisode]);
+
   const sharedStreamsPanelProps = {
     isSeriesLike,
     // Web series: force the panel to stay on the episode-list view so
@@ -967,18 +1032,15 @@ export default function DetailPage() {
     episodeStillsPending,
     allVideos: videos,
     tmdbId: tmdbLookup?.tmdbId ?? null,
-    onSelectEpisode:
-      isSeriesLike && !isNativeShell()
-        ? (vid: string) => {
-            // WEB series: set the selected episode AND immediately navigate to
-            // /player (Vidking iframe) — the user never sees a stream picker.
-            // The desktop shell falls through to onSelectEpisode instead, which
-            // selects the episode and shows its torrent list (mpv can't play
-            // Vidking), so picking an episode no longer pops the resume modal.
-            setSelectedVideoId(vid);
-            handlePlayWithVidking(vid);
-          }
-        : onSelectEpisode,
+    fillerEpisodes,
+    nextEpisodeFiller,
+    onSelectEpisode: (vid: string) => {
+      // Filler gate first: an episode inside a filler / recap run the viewer
+      // hasn't waved through gets the watch-or-skip prompt; canon episodes
+      // and acknowledged runs go straight to the normal path.
+      if (fillerGate(vid)) return;
+      proceedSelectEpisode(vid);
+    },
     onDownloadEpisode: offlineAvailable && isSeriesLike ? handleDownloadEpisode : null,
     episodeSelectionMode,
     selectedEpisodeIds,
@@ -1343,6 +1405,39 @@ export default function DetailPage() {
           }
           onClose={() => setUnreleasedEpisode(null)}
         />
+
+        {/* Filler watch-or-skip prompt (Anime Kitsu shows): raised by the episode
+            list when the picked episode sits inside a filler / recap run. */}
+        {fillerPrompt ? (() => {
+          const video = videos.find((v) => v.id === fillerPrompt.videoId);
+          const epNum = video ? episodeNumberOf(video) : null;
+          const canonId = fillerCanonVideoId(fillerPrompt.run);
+          const canonVideo = canonId ? videos.find((v) => v.id === canonId) : undefined;
+          return (
+            <FillerEpisodeModal
+              isOpen
+              title={meta?.meta?.name ?? ''}
+              episodeLabel={video ? `Episode ${epNum ?? '?'} · ${getEpisodeTitle(video)}` : null}
+              poster={normalizeStremioImage(video?.thumbnail ?? null) ?? poster ?? null}
+              kind={fillerPrompt.kind}
+              run={fillerPrompt.run}
+              position="this"
+              skipTarget={
+                canonId && fillerPrompt.run.nextCanon != null
+                  ? { episode: fillerPrompt.run.nextCanon, title: canonVideo ? getEpisodeTitle(canonVideo) : null }
+                  : null
+              }
+              onWatch={() => {
+                setFillerAckState({ id, acks: acknowledgeFillerRun(id, fillerPrompt.run) });
+                proceedSelectEpisode(fillerPrompt.videoId);
+              }}
+              onSkip={() => {
+                if (canonId) proceedSelectEpisode(canonId);
+              }}
+              onClose={() => setFillerPrompt(null)}
+            />
+          );
+        })() : null}
 
         {/* Download picker (web only): hands the release file to the browser or
             to VLC. Mounted lazily so it costs nothing on a normal page view. */}

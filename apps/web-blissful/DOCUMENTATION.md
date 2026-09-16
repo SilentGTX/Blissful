@@ -254,6 +254,39 @@ classifies chapter titles against intro/recap/outro regexes (catalogue derived f
 intro-skipper plugin), `<SkipChapterButton>` floats above the controls and seeks to the next
 chapter. For files without chapters the planned fallback is the AniSkip v2 API (MAL-keyed).
 
+### Filler episodes (Anime Kitsu)
+
+Filler / recap badges and a "skip the filler run" flow for `kitsu:` shows, from MyAnimeList's
+per-episode flags read through **Jikan** (`api.jikan.moe/v4/anime/<mal>/episodes`, public, CORS
+`*`, 100 episodes per page). The Kitsu id becomes a MAL id through ani.zip (`resolveMalId`, the
+AniSkip lookup). Kitsu and MAL both number episodes absolutely within an entry, so the MAL number
+is matched straight against the Kitsu video's `episode` / id tail; `fillerEpisodesCompatible`
+compares MAL's episode count with the addon's list and the feature stays invisible on a mismatch
+(a wrong mapping must not badge the wrong episodes). Cached in localStorage a day per show
+(`bliss:animeFiller:<kitsu>`), de-duplicated in flight.
+
+- `lib/animeFiller.ts` (fetch, cache, pure helpers — unit-tested) + `hooks/useAnimeFiller.ts`
+  (cache-first, background refresh). `FillerBadge` / `FillerDot` are the shared chips,
+  `FillerEpisodeModal` the shared watch-or-skip prompt.
+- **Where it shows:** the detail page episode list and the player's Episodes drawer badge every
+  filler / recap card and note where a run starts ("45 filler episodes ahead · story resumes at
+  109"); the player's title pill carries the badge for the episode playing; the next-episode
+  button (player controls and the detail page season header) gets a corner dot with a tooltip.
+- **Where it asks:** `FillerNotice` (bottom-left, mirror of the Skip Intro button) tells you the
+  current episode is filler with a "Skip to episode N" button, for the first 20 s and whenever the
+  controls are up, until dismissed. Picking a filler episode (detail list, drawer, next button)
+  raises `FillerEpisodeModal`: "The next N episodes are filler. Are you sure you want to watch?"
+  with Skip-to-canon and Watch-anyway. When the NEXT episode opens a filler run, `UpNextOverlay`
+  becomes that question and the binge countdown / `ended` auto-advance hold until answered.
+- **Watch anyway** acknowledges the whole run for this tab (`bliss:fillerAck:<metaId>` in
+  sessionStorage, shared by the detail page and the player), so the rest of the run plays and
+  auto-advances without asking again; badges stay. Watch-party guests never get skip buttons
+  (episode changes are host-driven).
+- **Off switch:** `playerSettings.fillerWarnings` (default on, `fillerWarningsEnabled()`), shown in
+  Settings → Anime while the Anime Kitsu addon is installed; like the Kitsu audio default it is
+  applied by content id. The desktop `NativeMpvPlayer` does not have the in-player pieces yet;
+  it gets the detail page badges + prompt for free.
+
 ### Testing
 
 `vitest` runs `*.test.ts` (currently `lib/stremioAddon.normalizeAddonBaseUrl`; run `npm test`).

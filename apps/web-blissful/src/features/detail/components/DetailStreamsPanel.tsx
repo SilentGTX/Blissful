@@ -6,6 +6,7 @@ import { BananasPicker, type BananaOption } from '../../../components/BananasPic
 import { EpisodePanel } from './EpisodePanel';
 import { SeasonHeader } from './SeasonHeader';
 import { StreamFilters } from './StreamFilters';
+import type { FillerEpisodes, FillerKind } from '../../../lib/animeFiller';
 
 type DetailStreamsPanelProps = {
   variant: 'mobile' | 'desktop';
@@ -69,6 +70,10 @@ type DetailStreamsPanelProps = {
   }>;
   /** Optional TMDB id for per-season metadata enrichment. */
   tmdbId?: number | null;
+  /** Anime Kitsu filler map — badges the episode cards. */
+  fillerEpisodes?: FillerEpisodes | null;
+  /** The next episode (streams view header arrow) is filler / a recap. */
+  nextEpisodeFiller?: FillerKind | null;
   onSelectEpisode: (id: string) => void;
   /** Per-episode offline download (web). See EpisodePanel.onDownloadVideo. */
   onDownloadEpisode?: ((id: string) => void) | null;
@@ -139,6 +144,8 @@ export function DetailStreamsPanel({
   episodeRatings,
   episodeStills,
   episodeStillsPending,
+  fillerEpisodes,
+  nextEpisodeFiller,
   onSelectEpisode,
   onDownloadEpisode,
   episodeSelectionMode,
@@ -260,6 +267,7 @@ export function DetailStreamsPanel({
         selectedVideoId={selectedVideoId}
         selectedEpisodeLabel={selectedEpisodeLabel}
         nextEpisode={nextEpisode}
+        nextEpisodeFiller={nextEpisodeFiller}
         onBackToEpisodes={onBackToEpisodes}
         onNextEpisode={onNextEpisode}
         season={season}
@@ -297,6 +305,7 @@ export function DetailStreamsPanel({
           episodeRatings={episodeRatings}
           episodeStills={episodeStills}
           episodeStillsPending={episodeStillsPending}
+          fillerEpisodes={fillerEpisodes}
         />
       ) : (
         <>

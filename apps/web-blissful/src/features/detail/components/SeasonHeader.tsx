@@ -4,6 +4,8 @@ import { ArrowRightIcon } from '../../../icons/ArrowRightIcon';
 import { ChevronLeftIcon } from '../../../icons/ChevronLeftIcon';
 import { ChevronRightIcon } from '../../../icons/ChevronRightIcon';
 import { SearchIcon } from '../../../icons/SearchIcon';
+import type { FillerKind } from '../../../lib/animeFiller';
+import { FillerDot } from '../../../components/FillerBadge';
 
 type SeasonHeaderProps = {
   isSeriesLike: boolean;
@@ -11,6 +13,8 @@ type SeasonHeaderProps = {
   selectedVideoId: string | null;
   selectedEpisodeLabel: string | null;
   nextEpisode: { id: string } | null;
+  /** The next episode is filler / a recap — the arrow gets a corner dot. */
+  nextEpisodeFiller?: FillerKind | null;
   onBackToEpisodes: () => void;
   onNextEpisode: () => void;
   season: number | null;
@@ -32,6 +36,7 @@ export function SeasonHeader({
   selectedVideoId,
   selectedEpisodeLabel,
   nextEpisode,
+  nextEpisodeFiller,
   onBackToEpisodes,
   onNextEpisode,
   season,
@@ -66,12 +71,14 @@ export function SeasonHeader({
           </div>
           <button
             type="button"
-            className="grid h-10 w-10 place-items-center rounded-full bg-white/10 text-white hover:bg-white/15 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="relative grid h-10 w-10 place-items-center rounded-full bg-white/10 text-white hover:bg-white/15 disabled:opacity-40 disabled:cursor-not-allowed"
             onClick={onNextEpisode}
             disabled={!nextEpisode}
             aria-label="Next episode"
+            title={nextEpisodeFiller ? `Next episode is ${nextEpisodeFiller === 'recap' ? 'a recap' : 'filler'}` : undefined}
           >
             <ArrowRightIcon className="h-6 w-6" />
+            {nextEpisode && nextEpisodeFiller ? <FillerDot kind={nextEpisodeFiller} /> : null}
           </button>
         </div>
       ) : (

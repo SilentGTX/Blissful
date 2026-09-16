@@ -18,6 +18,7 @@ import {
   SEEK_TIME_DURATION_OPTIONS_MS,
   STREAMING_CACHE_SIZE_OPTIONS,
   SUBTITLE_SIZE_OPTIONS_PX,
+  fillerWarningsEnabled,
   kitsuAudioPreference,
   type PlayerSettings,
 } from '../lib/playerSettings';
@@ -417,6 +418,50 @@ export default function SettingsPage() {
 
                   </div>
                 </div>
+
+                {/* Anime-only card — like the Kitsu audio default, offered while the
+                    Anime Kitsu addon is installed (the flag is applied by content id,
+                    so it still governs Kitsu shows already in Continue Watching). */}
+                {kitsuInstalled ? (
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <div className="text-sm font-semibold mb-3">Anime</div>
+                    <label className="flex cursor-pointer select-none items-center justify-between gap-3 py-1">
+                      <span className="flex flex-col">
+                        <span className="text-sm text-foreground/85">Filler episode warnings</span>
+                        <span className="text-xs text-foreground/55">
+                          Mark filler and recap episodes of Anime Kitsu shows on every episode list, and ask before playing into a filler run. Data from MyAnimeList.
+                        </span>
+                      </span>
+                      <span
+                        role="switch"
+                        aria-checked={fillerWarningsEnabled(playerSettings)}
+                        tabIndex={0}
+                        className={
+                          'relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition ' +
+                          (fillerWarningsEnabled(playerSettings)
+                            ? 'bg-[var(--bliss-accent)]'
+                            : 'bg-white/15')
+                        }
+                        onClick={() =>
+                          updateSettings({ fillerWarnings: !fillerWarningsEnabled(playerSettings) })
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === ' ' || e.key === 'Enter') {
+                            e.preventDefault();
+                            updateSettings({ fillerWarnings: !fillerWarningsEnabled(playerSettings) });
+                          }
+                        }}
+                      >
+                        <span
+                          className={
+                            'absolute top-0.5 h-5 w-5 rounded-full bg-white transition ' +
+                            (fillerWarningsEnabled(playerSettings) ? 'left-5' : 'left-0.5')
+                          }
+                        />
+                      </span>
+                    </label>
+                  </div>
+                ) : null}
 
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                   <div className="text-sm font-semibold mb-3">Controls</div>

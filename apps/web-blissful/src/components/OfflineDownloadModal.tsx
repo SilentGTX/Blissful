@@ -103,6 +103,18 @@ export function OfflineDownloadModal({
   const [quality, setQuality] = useState<OfflineQuality>('1080p');
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  /** An explicit choice from the release list, which overrides the ranking.
+   *  Null — the normal case — means "whatever the ranking picked". */
+  const [chosen, setChosen] = useState<BananaOption | null>(null);
+  const [listOpen, setListOpen] = useState(false);
+
+  /** The modal stays mounted between openings (it renders null when closed), so
+   *  without this a release pinned for one episode would still be pinned when
+   *  the next one opens — pointing at a completely different file. */
+  useEffect(() => {
+    setChosen(null);
+    setListOpen(false);
+  }, [isOpen, metaId, videoId]);
 
   if (!isOpen) return null;
 
@@ -126,6 +138,17 @@ export function OfflineDownloadModal({
     return 1080; // unlabelled: assume 1080p, the common case
   };
 
+  /** Real-Debrid cache state, read from the release name — the addons write it
+   *  there as `[RD+]`/`[RD⚡]` (ready now) or `[RD download]` (RD has to fetch
+   *  the torrent first, so the link 404s until it has). Shared by the ranking
+   *  and the list's badge so the two can't disagree. */
+  const cacheStateOf = (rel: BananaOption): 'cached' | 'uncached' | 'unknown' => {
+    const hay = `${rel.name} ${rel.torrentName ?? ''}`;
+    if (/\[\s*RD\s*(?:download|↓|⬇)/iu.test(hay)) return 'uncached';
+    if (/\[\s*RD\s*[+⚡]/iu.test(hay) || /cached/i.test(hay)) return 'cached';
+    return 'unknown';
+  };
+
   /** Candidates for the chosen rung, best first: Real-Debrid CACHED first (an
    *  uncached torrent 404s/409s until RD fetches it), then tall enough for the
    *  rung, then the smallest file. Rows that are too short stay in the list —
@@ -135,12 +158,10 @@ export function OfflineDownloadModal({
     return releases
       .filter((r) => !isPlaceholderUrl(r.url))
       .map((r) => {
-        const hay = `${r.name} ${r.torrentName ?? ''}`;
-        const cached = /\[\s*RD\s*[+⚡]/iu.test(hay) || /cached/i.test(hay);
-        const uncached = /\[\s*RD\s*(?:download|↓|⬇)/iu.test(hay);
+        const state = cacheStateOf(r);
         return {
           r,
-          rank: uncached ? 2 : cached ? 0 : 1,
+          rank: state === 'uncached' ? 2 : state === 'cached' ? 0 : 1,
           short: sourceHeightOf(r) < minHeight ? 1 : 0,
           bytes: sizeBytesOf(r.size) ?? Number.MAX_SAFE_INTEGER,
         };
@@ -149,7 +170,10 @@ export function OfflineDownloadModal({
       .map((s) => s.r);
   };
 
-  const picked = isBatch ? null : rankedFor(quality)[0] ?? null;
+  const ranked = isBatch ? [] : rankedFor(quality);
+  const picked = isBatch ? null : chosen ?? ranked[0] ?? null;
+  /** Nothing to pick from when the rung has a single candidate. */
+  const canChoose = ranked.length > 1;
 
   /** English full-dialogue track, text preferred (it becomes a real WebVTT track
    *  during playback; a bitmap one can't be shown at all for a copied file). */
@@ -300,7 +324,10 @@ export function OfflineDownloadModal({
       setStatus('Checking releases…');
       const { probeReleases, bestProbed, rankReleasesForDownload, qualityForHeight } =
         await import('../lib/offlineBatch');
-      let candidates = rankedFor(quality).map((r) => r.url);
+      // An explicit choice is the whole list: the probe below still runs on it
+      // (it reads the real audio/subtitle tracks and video properties) but has
+      // nothing to switch to, so what was chosen is what gets downloaded.
+      let candidates = chosen ? [chosen.url] : ranked.map((r) => r.url);
       if (candidates.length === 0) {
         const { fetchFallbackReleases } = await import('../lib/fallbackReleases');
         const found = await fetchFallbackReleases({
@@ -471,7 +498,10 @@ export function OfflineDownloadModal({
                 <button
                   key={q}
                   type="button"
-                  onClick={() => setQuality(q)}
+                  onClick={() => {
+                    setQuality(q);
+                    setChosen(null);
+                  }}
                   className={`min-w-0 cursor-pointer rounded-xl px-3 py-2 text-left transition ${
                     quality === q
                       ? 'bg-[var(--bliss-accent)] text-black'
@@ -490,17 +520,94 @@ export function OfflineDownloadModal({
           </div>
         </div>
 
-        {/* What was picked, so the size isn't a surprise. */}
+        {/* What was picked, so the size isn't a surprise — and a way out of it.
+            The ranking is right most of the time, but "most" is not "always": a
+            release can be mislabelled, carry the wrong audio, or just be the one
+            that stalled. Tapping the card opens the same ranked list the pick
+            came from, and choosing a row pins it. Contents are phrasing-only
+            (`span`, not `div`) because the header is a `button`. */}
         {picked ? (
-          <div className="mt-3 rounded-xl bg-white/5 px-3 py-2.5 ring-1 ring-white/10">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/40">
-              Picked automatically
-            </div>
-            <div className="mt-0.5 break-words text-[12px] leading-snug text-white/75">
-              {picked.name}
-            </div>
-            {picked.size ? (
-              <div className="mt-0.5 text-[11px] text-white/45">{picked.size}</div>
+          <div className="mt-3 overflow-hidden rounded-xl bg-white/5 ring-1 ring-white/10">
+            <button
+              type="button"
+              onClick={() => setListOpen((open) => !open)}
+              disabled={!canChoose}
+              aria-expanded={listOpen}
+              className={`flex w-full items-start gap-3 px-3 py-2.5 text-left transition ${
+                canChoose ? 'cursor-pointer hover:bg-white/[0.07]' : 'cursor-default'
+              }`}
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block text-[10px] font-semibold uppercase tracking-[0.12em] text-white/40">
+                  {chosen ? 'Your pick' : 'Picked automatically'}
+                </span>
+                <span className="mt-0.5 block break-words text-[12px] leading-snug text-white/75">
+                  {picked.name}
+                </span>
+                {picked.size ? (
+                  <span className="mt-0.5 block text-[11px] text-white/45">{picked.size}</span>
+                ) : null}
+              </span>
+              {canChoose ? (
+                <span className="flex shrink-0 items-center gap-1 pt-0.5 text-[11px] font-semibold text-[var(--bliss-accent)]">
+                  {listOpen ? 'Close' : `${ranked.length} options`}
+                  <svg
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className={`h-3.5 w-3.5 transition-transform ${listOpen ? 'rotate-180' : ''}`}
+                  >
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </span>
+              ) : null}
+            </button>
+
+            {listOpen ? (
+              <div className="max-h-64 overflow-y-auto border-t border-white/10">
+                {ranked.map((rel) => {
+                  const state = cacheStateOf(rel);
+                  const active = rel.url === picked.url;
+                  return (
+                    <button
+                      key={rel.url}
+                      type="button"
+                      onClick={() => {
+                        setChosen(rel);
+                        setListOpen(false);
+                      }}
+                      className={`flex w-full cursor-pointer items-start gap-2.5 px-3 py-2 text-left transition ${
+                        active ? 'bg-[var(--bliss-accent)]/15' : 'hover:bg-white/[0.07]'
+                      }`}
+                    >
+                      <span
+                        className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${
+                          active ? 'bg-[var(--bliss-accent)]' : 'bg-white/25'
+                        }`}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block break-words text-[12px] leading-snug text-white/80">
+                          {rel.name}
+                        </span>
+                        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-white/45">
+                          {rel.size ? <span>{rel.size}</span> : null}
+                          {rel.seeders ? <span>{rel.seeders} seeders</span> : null}
+                          {state === 'cached' ? (
+                            <span className="text-[var(--bliss-accent)]">Ready now</span>
+                          ) : null}
+                          {state === 'uncached' ? (
+                            <span className="text-amber-300/80">RD must fetch it first</span>
+                          ) : null}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             ) : null}
           </div>
         ) : null}

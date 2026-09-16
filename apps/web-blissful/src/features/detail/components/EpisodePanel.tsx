@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Rating } from '../../../components/Rating';
 import { SkeletonBox } from '../../../components/Skeleton';
 import { proxiedImage } from '../../../lib/imageProxy';
+import { episodeNumberOf, fillerKindFor, fillerRunFrom, isFillerRunStart, type FillerEpisodes } from '../../../lib/animeFiller';
+import { FillerBadge } from '../../../components/FillerBadge';
 
 // Episode-card artwork with a graceful loading state. Tries the real
 // episode images in order — metahub thumbnail, then the TMDB still — and
@@ -135,6 +137,9 @@ type EpisodePanelProps = {
   /** Show poster (or background) used as fallback when an
    *  episode's metahub thumbnail 404s. */
   fallbackPoster?: string | null;
+  /** Anime Kitsu filler map (MyAnimeList via Jikan): badges filler / recap
+   *  cards and warns where a run starts. Null = not anime / unknown. */
+  fillerEpisodes?: FillerEpisodes | null;
 };
 
 export function EpisodePanel({
@@ -160,6 +165,7 @@ export function EpisodePanel({
   episodeRatings,
   episodeStills,
   episodeStillsPending,
+  fillerEpisodes,
 }: EpisodePanelProps) {
   return (
     <>
@@ -233,6 +239,14 @@ export function EpisodePanel({
               (episodeNumber != null ? episodeRatings?.[episodeNumber] ?? null : null);
 
             const isWatched = info.hasProgress || info.watched;
+            const epNumber = episodeNumberOf({ id: v.id, episode: episodeNumber });
+            const fillerKind = fillerKindFor(fillerEpisodes, epNumber);
+            const fillerRun = fillerKind ? fillerRunFrom(fillerEpisodes, epNumber) : null;
+            // The first card of a run says how long it is and where the story
+            // picks up again; the cards inside it just wear the badge.
+            const fillerNote = fillerRun && fillerRun.count > 1 && isFillerRunStart(fillerEpisodes, epNumber)
+              ? `${fillerRun.count} filler episodes ahead${fillerRun.nextCanon ? ` · story resumes at episode ${fillerRun.nextCanon}` : ''}`
+              : null;
             return (
               // The download control is a SIBLING of the card button, not a
               // child: nesting a button inside a button is invalid HTML and
@@ -297,12 +311,14 @@ export function EpisodePanel({
                   {/* Bottom gradient + text. */}
                   <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/65 to-transparent px-3 pb-3 pt-6">
                     <div className="line-clamp-2 text-sm font-semibold leading-snug text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.7)]">
+                      {fillerKind ? <FillerBadge kind={fillerKind} className="mr-1.5 inline-block align-middle" /> : null}
                       {episodeNumber ? `${episodeNumber}. ` : ''}
                       {episodeTitle}
                     </div>
                     <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-white/80 drop-shadow-[0_2px_4px_rgba(0,0,0,0.7)]">
                       {runtime ? <span>{runtime}</span> : null}
                       {released ? <span>{released}</span> : null}
+                      {fillerNote ? <span className="font-medium text-orange-300">{fillerNote}</span> : null}
                     </div>
                     {description ? (
                       <div className="mt-1 line-clamp-2 text-[11px] leading-snug text-white/75 drop-shadow-[0_2px_4px_rgba(0,0,0,0.7)]">
