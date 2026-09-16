@@ -56,6 +56,12 @@ const AREAS = {
     paths: [/Friends\//, /useSocial/, /usePresence/, /PartyInviteListener/, /friendsApi/],
     filter: 'social.',
   },
+  filler: {
+    // Anime filler awareness: the map lib, the player hook/banner/prompt, the
+    // detail chip, and the proxy's Jikan endpoint (which lives in server.js).
+    paths: [/lib\/fillerList/, /useFillerInfo/, /FillerBanner/, /FillerRunPrompt/, /EpisodePanel/, /addon-proxy\/server\.js/],
+    filter: 'filler',
+  },
   subtitles: {
     // The proxy's extract/probe endpoints and every subtitle path that feeds off
     // them. addon-proxy also appears under watch-party; both areas running is fine.

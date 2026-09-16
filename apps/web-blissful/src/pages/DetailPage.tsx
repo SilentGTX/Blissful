@@ -5,6 +5,7 @@ import { useAddons } from '../context/AddonsProvider';
 import { useAuth } from '../context/AuthProvider';
 import { useUI } from '../context/UIProvider';
 import { normalizeStremioImage } from '../lib/mediaTypes';
+import { fetchFillerMap, type FillerKind } from '../lib/fillerList';
 import { proxiedImage, preloadImage } from '../lib/imageProxy';
 import { getLibraryEntry } from '../lib/libraryStore';
 import { useContinueWatchingContext } from '../context/ContinueWatchingProvider';
@@ -504,6 +505,22 @@ export default function DetailPage() {
   const [episodeRatingsBySeason, setEpisodeRatingsBySeason] = useState<
     Record<number, Record<number, number>>
   >({});
+  // Filler / recap flags per absolute episode number — anime only (MyAnimeList
+  // via lib/fillerList; null for everything else). Powers the FILLER chip on
+  // episode cards so a run is visible before it is entered.
+  const [fillerByEpisode, setFillerByEpisode] = useState<Record<number, FillerKind> | null>(null);
+  useEffect(() => {
+    setFillerByEpisode(null);
+    if (!isSeriesLike || !id) return;
+    let cancelled = false;
+    fetchFillerMap(id).then((m) => {
+      if (cancelled || !m || m.size === 0) return;
+      const rec: Record<number, FillerKind> = {};
+      m.forEach((kind, ep) => { rec[ep] = kind; });
+      setFillerByEpisode(rec);
+    });
+    return () => { cancelled = true; };
+  }, [id, isSeriesLike]);
   // Per-season TMDB still URLs: { [season]: { [episodeNumber]: url } }.
   // Fallback episode-card artwork when metahub's thumbnail 404s (newer
   // seasons metahub hasn't generated stills for). Populated alongside the
@@ -963,6 +980,7 @@ export default function DetailPage() {
     showRating: meta?.meta?.imdbRating ?? null,
     showImdbId: /^tt\d{5,}$/.test(id) ? id : null,
     episodeRatings: currentSeasonRatings,
+    fillerByEpisode: fillerByEpisode ?? undefined,
     episodeStills: currentSeasonStills,
     episodeStillsPending,
     allVideos: videos,

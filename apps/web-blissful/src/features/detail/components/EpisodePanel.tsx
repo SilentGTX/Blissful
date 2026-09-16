@@ -104,6 +104,9 @@ type EpisodePanelProps = {
    *  `{ [episodeNumber]: vote_average }`. Used as a fallback when
    *  Cinemeta's per-episode `rating` field is "0" / missing. */
   episodeRatings?: Record<number, number> | undefined;
+  /** Filler / recap flag per absolute episode number (anime, from MyAnimeList).
+   *  Absent for canon episodes and non-anime titles. */
+  fillerByEpisode?: Record<number, 'filler' | 'recap'> | undefined;
   /** Per-episode TMDB still URLs for the current season:
    *  `{ [episodeNumber]: url }`. Used as the thumbnail fallback (before
    *  the show poster) when the metahub episode thumbnail 404s. */
@@ -155,6 +158,7 @@ export function EpisodePanel({
   emptyState,
   fallbackPoster,
   showRuntime,
+  fillerByEpisode,
   showRating: _showRating,
   showImdbId: _showImdbId,
   episodeRatings,
@@ -272,6 +276,13 @@ export function EpisodePanel({
 
                   {/* Solid yellow "Watched" chip in the top-right
                       corner of the poster. */}
+                  {/* FILLER / RECAP chip, bottom-left over the thumbnail. */}
+                  {episodeNumber != null && fillerByEpisode?.[episodeNumber] ? (
+                    <span className="absolute bottom-2 left-2 z-20 rounded-md border border-amber-300/40 bg-black/70 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-300 backdrop-blur">
+                      {fillerByEpisode[episodeNumber]}
+                    </span>
+                  ) : null}
+
                   {isWatched ? (
                     <span
                       className={

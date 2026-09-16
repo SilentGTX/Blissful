@@ -43,6 +43,10 @@ import { notifyError, notifyInfo, notifySuccess } from '../../lib/toastQueues';
 import { useStorage } from '../../context/StorageProvider';
 import { PauseOverlay } from './PauseOverlay';
 import { UpNextOverlay } from './UpNextOverlay';
+import { useFillerInfo, isFillerRunAccepted, acceptFillerRun } from './useFillerInfo';
+import { FillerBanner } from './FillerBanner';
+import { FillerRunPrompt } from './FillerRunPrompt';
+import type { FillerRun } from '../../lib/fillerList';
 import { SettingsPanel, type SettingsTab, type ReleaseOption, type TranscodeAudioTrack } from './SettingsPanel';
 import { BottomControls } from './BottomControls';
 import { EpisodesDrawer, type EpisodeVideo as EpisodesDrawerVideo } from './EpisodesDrawer';
@@ -1802,6 +1806,23 @@ export default function BlissfulPlayer(props: {
     [chapters, skipChapters],
   );
   const chapterSkip = useChapterSkipWeb(videoRef, effectiveChapters, duration);
+
+  // Filler awareness (anime, via MyAnimeList flags): the run the CURRENT
+  // episode sits in drives the FillerBanner; the run the NEXT episode would
+  // enter drives the advance gate below ("the next N episodes are filler").
+  const filler = useFillerInfo(
+    props.id,
+    props.videoId,
+    props.videos,
+    props.nextEpisodeInfo?.nextEpisode ?? null,
+  );
+  // Banner dismissal is per episode (keyed by videoId) so it comes back for the
+  // next filler episode; the prompt is per RUN via sessionStorage (see hook).
+  const [fillerBannerDismissedFor, setFillerBannerDismissedFor] = useState<string | null>(null);
+  // The run Next would enter, plus the move to make if the viewer says "Watch
+  // anyway": the manual Next button and the seamless advance reach the next
+  // episode by different routes (resume prompt vs. straight navigation).
+  const [pendingFiller, setPendingFiller] = useState<{ run: FillerRun; proceed: () => void } | null>(null);
 
   const togglePlay = useCallback(() => {
     const video = videoRef.current;
@@ -3647,7 +3668,7 @@ export default function BlissfulPlayer(props: {
   const partyNonHost = !!props.roomCode && !watchParty.isHost;
   partyNonHostRef.current = partyNonHost;
 
-  const advanceToNextEpisode = useCallback(() => {
+  const performAdvance = useCallback(() => {
     if (partyNonHost) return;
     const next = props.nextEpisodeInfo;
     if (!next || !props.type || !props.id) return;
@@ -3678,6 +3699,24 @@ export default function BlissfulPlayer(props: {
       { replace: true }
     );
   }, [props.nextEpisodeInfo, props.type, props.id, props.metaTitle, props.roomCode, navigate, partyNonHost]);
+
+  // Every Next path (the button, the Up-Next card, auto-advance) comes through
+  // here. When the next episode would take the viewer from a canon episode INTO
+  // a filler run they haven't already said yes to, ask first instead of moving.
+  // Watch-party guests never advance themselves, so they are never asked.
+  // Returns true when it has raised the prompt (the caller must NOT move);
+  // `proceed` is what "Watch anyway" then runs.
+  const gateFillerRun = useCallback((proceed: () => void): boolean => {
+    const run = filler.nextRun;
+    if (!run || partyNonHost || isFillerRunAccepted(props.id, run)) return false;
+    setPendingFiller({ run, proceed });
+    return true;
+  }, [filler.nextRun, props.id, partyNonHost]);
+
+  const advanceToNextEpisode = useCallback(() => {
+    if (gateFillerRun(performAdvance)) return;
+    performAdvance();
+  }, [gateFillerRun, performAdvance]);
 
   // Jump to an arbitrary episode by videoId — same URL pattern as
   // DetailPage's handlePlayWithVidking. PlayerPage detects the
@@ -3868,20 +3907,24 @@ export default function BlissfulPlayer(props: {
   // same resume-or-start-over prompt that the episode drawer uses
   // when the next episode has saved progress. Distinct from
   // `advanceToNextEpisode` (UpNext + auto-advance), which is meant
-  // to feel like a seamless continuation and never prompts.
+  // to feel like a seamless continuation and never prompts about
+  // progress. Both paths stop at the filler gate first: stepping from a
+  // canon episode into a filler run asks before anything else moves.
   const handlePlayNextManual = useCallback(() => {
     const next = props.nextEpisodeInfo;
     if (!next) return;
     const nextVideo = (props.videos ?? []).find((v) => v.id === next.nextVideoId);
     if (nextVideo) {
-      handleSelectEpisode(nextVideo);
+      const proceed = () => handleSelectEpisode(nextVideo);
+      if (gateFillerRun(proceed)) return;
+      proceed();
       return;
     }
     // Fall back to seamless advance when the next-episode meta isn't
     // in our `videos` list (shouldn't happen for series but the
     // auto-advance path is the safe default).
     advanceToNextEpisode();
-  }, [props.nextEpisodeInfo, props.videos, handleSelectEpisode, advanceToNextEpisode]);
+  }, [props.nextEpisodeInfo, props.videos, handleSelectEpisode, advanceToNextEpisode, gateFillerRun]);
 
   // Auto-advance: configurable trigger (Stremio-style).
   // Shows "Up Next" overlay when remaining time <= nextVideoNotificationDurationMs.
@@ -4230,6 +4273,38 @@ export default function BlissfulPlayer(props: {
 
 
 
+
+      {/* Filler episode pill (bottom-left, opposite the Skip-Intro button). */}
+      {filler.currentRun && fillerBannerDismissedFor !== (props.videoId ?? null) ? (
+        <FillerBanner
+          run={filler.currentRun}
+          onSkip={() => {
+            const target = filler.currentRun?.resumeVideoId;
+            if (target) navigateToEpisode(target);
+          }}
+          onDismiss={() => setFillerBannerDismissedFor(props.videoId ?? null)}
+        />
+      ) : null}
+
+      {/* "The next N episodes are filler" — raised by the advance gate. */}
+      {pendingFiller ? (
+        <FillerRunPrompt
+          run={pendingFiller.run}
+          showTitle={props.metaTitle ?? null}
+          onStay={() => setPendingFiller(null)}
+          onWatch={() => {
+            acceptFillerRun(props.id, pendingFiller.run);
+            setPendingFiller(null);
+            pendingFiller.proceed();
+          }}
+          onSkip={() => {
+            const target = pendingFiller.run.resumeVideoId;
+            setPendingFiller(null);
+            if (target) navigateToEpisode(target);
+            else pendingFiller.proceed();
+          }}
+        />
+      ) : null}
 
       <UpNextOverlay
         visible={showUpNext && !upNextCancelledRef.current && !upNextFiredRef.current}

@@ -50,6 +50,9 @@ type DetailStreamsPanelProps = {
    *  Populated by DetailPage when the user picks a season (lazy
    *  /tmdb-season-info fetch). */
   episodeRatings?: Record<number, number> | undefined;
+  /** Filler / recap flag per absolute episode number (anime, MyAnimeList via
+   *  DetailPage). Absent for canon episodes and for non-anime titles. */
+  fillerByEpisode?: Record<number, 'filler' | 'recap'> | undefined;
   /** Per-episode TMDB still URLs for the current season: `{ [episode]: url }`.
    *  Used as the episode-card thumbnail fallback when metahub 404s. */
   episodeStills?: Record<number, string> | undefined;
@@ -137,6 +140,7 @@ export function DetailStreamsPanel({
   showRating,
   showImdbId,
   episodeRatings,
+  fillerByEpisode,
   episodeStills,
   episodeStillsPending,
   onSelectEpisode,
@@ -295,6 +299,7 @@ export function DetailStreamsPanel({
           showRating={showRating ?? null}
           showImdbId={showImdbId ?? null}
           episodeRatings={episodeRatings}
+          fillerByEpisode={fillerByEpisode}
           episodeStills={episodeStills}
           episodeStillsPending={episodeStillsPending}
         />

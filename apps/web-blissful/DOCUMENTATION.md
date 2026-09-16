@@ -254,6 +254,33 @@ classifies chapter titles against intro/recap/outro regexes (catalogue derived f
 intro-skipper plugin), `<SkipChapterButton>` floats above the controls and seeks to the next
 chapter. For files without chapters the planned fallback is the AniSkip v2 API (MAL-keyed).
 
+### Filler episodes (anime)
+
+MyAnimeList's per-episode `filler` / `recap` flags, read through Jikan by the addon-proxy
+(`GET /skip-times?filler=1&mal=<id>` — pages the whole list once, caches it 30 days; the route
+hides under `/skip-times` because only fixed path prefixes reach the proxy at the edge). The MAL
+id comes from the same Kitsu -> MAL mapping the skip-intro feature uses (`lib/aniskip
+resolveMalId`, ani.zip), so it covers `kitsu:` / `mal:` / `anilist:` / `anidb:` ids; imdb ids are
+excluded because Cinemeta numbers episodes per season while the map is absolute.
+
+Pieces: `lib/fillerList.ts` (the map fetch — ONE shared, deliberately non-abortable promise per
+title, since a detail-page unmount aborting it would hand the player a null — and
+`fillerRunContaining`, which turns a flagged episode into its whole consecutive run plus the
+episode canon resumes on), `BlissfulPlayer/useFillerInfo.ts` (`currentRun` / `nextRun` for the
+playing episode), `FillerBanner.tsx` (the FILLER pill with "Skip to Ep N" while a filler episode
+plays; dismiss is per episode), `FillerRunPrompt.tsx` ("The next N episodes are filler — Stay
+here / Watch anyway / Skip to Ep N"), and the FILLER / RECAP chip on the detail page's episode
+cards (`DetailPage` -> `DetailStreamsPanel` -> `EpisodePanel`, prop `fillerByEpisode` — the
+middle hop must forward it, it is not spread through).
+
+The prompt comes from a gate BOTH next paths go through — the bottom-bar Next button
+(`handlePlayNextManual`, which otherwise runs the resume-or-start-over prompt) and the seamless
+advance (Up Next card + auto-advance) — and only when stepping from a canon episode INTO a run.
+"Watch anyway" is remembered per run in sessionStorage (`bliss:fillerOk:<id>:<firstEp>`), so an
+arc the viewer committed to isn't re-asked at every episode; moving along inside a run never
+prompts. Watch-party guests are never asked (they don't advance themselves). E2E:
+`e2e/suites/filler.web.spec.ts` (real Kitsu install, Bleach, MAL's public flags as the oracle).
+
 ### Testing
 
 `vitest` runs `*.test.ts` (currently `lib/stremioAddon.normalizeAddonBaseUrl`; run `npm test`).

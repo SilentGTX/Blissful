@@ -79,6 +79,14 @@ e2e/
   to spawn its own ffmpeg over the same remote file, which is what made cues take
   ~9s instead of ~2s). Asserts the run COUNT, not a stopwatch. Verified to FAIL on
   the pre-fix server (4 runs) — a guard that can't catch its own bug is worthless.
+- **Filler episodes (anime)** `filler.web`: a throwaway account installs the Anime Kitsu
+  addon through the real Add-addon flow, Bleach (kitsu:244) loads through it, and the
+  filler map comes from the proxy's Jikan endpoint (`/skip-times?filler=1&mal=269`). The
+  oracle is MyAnimeList's public flags (33 and 50 filler, 1 and 34 canon): FILLER chip on
+  the detail cards, the in-player banner with "Skip to Ep 34" + dismiss, and the
+  "next episode is filler" prompt when Next would step 32 -> 33 (Skip lands on 34; "Watch
+  anyway" enters 33 and the banner marks it). Chromium has no H.264 and nothing under test
+  needs the video to decode. Runner area: `filler`.
 - **Social (real, two accounts)** `social.protocol`: friend request → accept →
   both friends, + friend-gated presence lookup. Over the live backend, no mocks.
 - **Social over `/ws/user`** `social-ws.protocol`: two authed accounts on the
