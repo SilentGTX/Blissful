@@ -56,6 +56,12 @@ const AREAS = {
     paths: [/Friends\//, /useSocial/, /usePresence/, /PartyInviteListener/, /friendsApi/],
     filter: 'social.',
   },
+  filler: {
+    // Anime filler awareness: the map lib, its hook, the shared chip/modal, the
+    // in-player notice, and every surface that badges or gates on it.
+    paths: [/lib\/animeFiller/, /useAnimeFiller/, /FillerBadge/, /FillerEpisodeModal/, /FillerNotice/, /EpisodePanel/, /EpisodesDrawer/, /UpNextOverlay/],
+    filter: 'filler',
+  },
   subtitles: {
     // The proxy's extract/probe endpoints and every subtitle path that feeds off
     // them. addon-proxy also appears under watch-party; both areas running is fine.
