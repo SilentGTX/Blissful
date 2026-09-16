@@ -22,14 +22,27 @@ async function installKitsu(page: Page) {
   await page.getByRole('button', { name: 'Add addon' }).first().click();
   await page.getByPlaceholder(/manifest\.json/i).first().fill(KITSU_MANIFEST);
   await page.getByRole('button', { name: 'Install', exact: true }).click();
-  await expect(page.getByText(/kitsu/i).first()).toBeVisible({ timeout: 25_000 });
+  // Wait on the installed CARD and the dialog closing — a bare /kitsu/i also
+  // matches the manifest URL still sitting in the open dialog, which let a
+  // failed install pass for an installed one and blamed the failure on
+  // whatever ran next.
+  await expect(page.getByText(/Anime Kitsu/).first()).toBeVisible({ timeout: 25_000 });
+  await expect(page.getByRole('dialog', { name: 'Add addon' })).toHaveCount(0);
 }
 
 /** The VISIBLE episode card whose title line starts with "<n>. ". The detail
  *  page mounts the episode list twice (phone and desktop layouts, one hidden by
- *  CSS), so an unfiltered first() can land on the hidden copy. */
+ *  CSS), so an unfiltered first() can land on the hidden copy.
+ *
+ *  The badge renders INSIDE that same line, so a filler card's text reads
+ *  "Filler33. Miracle! ..." — anchoring on the bare number left this helper
+ *  unable to find exactly the cards the suite is about. */
 function episodeCard(page: Page, n: number) {
-  return page.getByText(new RegExp(`^${n}\\.\\s`)).filter({ visible: true }).first().locator('xpath=ancestor::button[1]');
+  return page
+    .getByText(new RegExp(`^(Filler|Recap)?\\s*${n}\\.\\s`))
+    .filter({ visible: true })
+    .first()
+    .locator('xpath=ancestor::button[1]');
 }
 
 /** The floating in-player card (FillerNotice) — role="status", bottom-left. */
@@ -51,8 +64,11 @@ test.describe('Filler episodes (web, Anime Kitsu)', () => {
     // ---- Detail page: chips on the filler episodes of the first range -------
     await page.goto(`/detail/anime/${encodeURIComponent(BLEACH)}`);
     await expect(episodeCard(page, 1)).toBeVisible({ timeout: 30_000 });
-    // The map arrives after the meta; give the chip a moment.
-    await expect(episodeCard(page, 33).getByText(/^filler$/i)).toBeVisible({ timeout: 20_000 });
+    // The map arrives after the meta, over a chain of public APIs: ani.zip for
+    // the MAL id, then up to four Jikan pages 400 ms apart, each of which can
+    // eat a 429 + retry. 20 s was not enough of a budget for that on a cold
+    // cache and made this assertion the suite's flakiest line.
+    await expect(episodeCard(page, 33).getByText(/^filler$/i)).toBeVisible({ timeout: 60_000 });
     await expect(episodeCard(page, 50).getByText(/^filler$/i)).toBeVisible();
     await expect(episodeCard(page, 1).getByText(/^filler$/i)).toHaveCount(0);
     await expect(episodeCard(page, 34).getByText(/^filler$/i)).toHaveCount(0);
@@ -76,6 +92,11 @@ test.describe('Filler episodes (web, Anime Kitsu)', () => {
     await expect(notice).toHaveCount(0);
 
     // ---- Next from a canon episode into a run: the prompt, then Skip ----------
+    // Drop the acknowledgement the "Watch anyway" above left behind: it covers
+    // the whole run for this tab BY DESIGN (that is what test 2 asserts), so
+    // without clearing it the prompt this section is about would never be
+    // raised again.
+    await page.evaluate((id) => sessionStorage.removeItem(`bliss:fillerAck:${id}`), BLEACH);
     await page.goto(`/detail/anime/${encodeURIComponent(BLEACH)}`);
     await episodeCard(page, 32).click();
     await expect(page).toHaveURL(/kitsu(%3A|:)244(%3A|:)32/, { timeout: 30_000 });
