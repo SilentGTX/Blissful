@@ -810,6 +810,41 @@ async function buildAniTvChain(startAnilistId) {
   return chain;
 }
 
+/** Filler / recap flags for every episode of a MAL entry, from Jikan (the
+ *  MyAnimeList API): `{ mal, total, source, episodes: { "<ep>": "filler"|"recap" } }`,
+ *  canon episodes omitted. Jikan pages 100 episodes at a time at 3 req/s, so a
+ *  366-episode show is four requests -- fetched ONCE here and cached for 30
+ *  days; flags on an aired episode don't change. An empty result (unknown id,
+ *  Jikan down, rate-limited) is cached for six hours only. Pages are walked
+ *  with a pause so the proxy itself never trips the rate limit. */
+async function fillerEpisodes(mal) {
+  const ckey = String(mal);
+  const disk = await jsonCacheGet('filler', ckey);
+  if (disk !== undefined && disk !== null) return disk;
+  const episodes = {};
+  let total = 0;
+  let page = 1;
+  for (;;) {
+    const r = await requestJson(`https://api.jikan.moe/v4/anime/${mal}/episodes?page=${page}`, { timeoutMs: 10000 }).catch(() => null);
+    const data = r && r.json && Array.isArray(r.json.data) ? r.json.data : null;
+    if (!data) break;
+    for (const e of data) {
+      const n = Number(e && e.mal_id);
+      if (!Number.isFinite(n) || n < 1) continue;
+      total += 1;
+      if (e.filler) episodes[n] = 'filler';
+      else if (e.recap) episodes[n] = 'recap';
+    }
+    const more = r.json.pagination && r.json.pagination.has_next_page;
+    if (!more || page >= 50) break;
+    page += 1;
+    await new Promise((res) => setTimeout(res, 400)); // Jikan: 3 req/s
+  }
+  const payload = { mal, total, source: 'jikan', episodes };
+  jsonCacheSet('filler', ckey, payload, total > 0 ? 30 * 24 * 60 * 60 * 1000 : 6 * 60 * 60 * 1000);
+  return payload;
+}
+
 /** AniSkip op/ed/recap intervals (seconds) for a MAL id + episode. Cached. */
 async function aniskipIntervals(mal, episode, episodeLength) {
   const ckey = `${mal}:${episode}:${Math.round(episodeLength)}`;
@@ -2660,6 +2695,29 @@ const server = http.createServer((req, res) => {
   // Returns { found, source, intervals:[{type:'intro'|'recap'|'outro',start,end}] }.
   if (req.url === '/skip-times' || req.url.startsWith('/skip-times?')) {
     const parsed = url.parse(req.url, true);
+    // `/skip-times?filler=1&mal=<id>` -> the title's filler/recap episode map.
+    // Under this prefix rather than its own path because only a fixed set of
+    // prefixes reaches this proxy at the edge; a new top-level path is
+    // swallowed by the SPA's index.html (the same reason `/opensubs?src=`
+    // exists). Filler is a skip decision, so the neighbourhood fits.
+    if (parsed.query.filler != null) {
+      const mal = parseInt(String(parsed.query.mal || ''), 10);
+      if (!Number.isFinite(mal) || mal < 1) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'invalid mal id' }));
+        return;
+      }
+      fillerEpisodes(mal)
+        .then((payload) => {
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=86400' });
+          res.end(JSON.stringify(payload));
+        })
+        .catch((e) => {
+          res.writeHead(502, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: String((e && e.message) || e) }));
+        });
+      return;
+    }
     const imdbId = String(parsed.query.imdbId || '').trim();
     const tmdbId = String(parsed.query.tmdbId || '').trim();
     const season = Math.max(1, parseInt(String(parsed.query.season || '1'), 10) || 1);
