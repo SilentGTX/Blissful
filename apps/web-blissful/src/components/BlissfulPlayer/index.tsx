@@ -2588,7 +2588,18 @@ export default function BlissfulPlayer(props: {
     // exactly where Chromium stalls.
     const tStart = performance.now();
     const logEv = (ev: string) => {
-      playerLog(`[player] +${(performance.now() - tStart).toFixed(0)}ms <video> ${ev} readyState=${video.readyState} networkState=${video.networkState}`);
+      // currentTime + buffered ranges on every load event. A seek that
+      // emits `seeking` and never `seeked` is either waiting on a range that
+      // never arrives, or sitting at a position no range covers — and the raw
+      // readyState alone cannot tell those apart.
+      let buf = '?';
+      try {
+        const b = video.buffered;
+        const parts: string[] = [];
+        for (let i = 0; i < b.length; i += 1) parts.push(`${b.start(i).toFixed(1)}-${b.end(i).toFixed(1)}`);
+        buf = `[${parts.join(',')}]`;
+      } catch { /* buffered can throw on a torn-down element */ }
+      playerLog(`[player] +${(performance.now() - tStart).toFixed(0)}ms <video> ${ev} readyState=${video.readyState} networkState=${video.networkState} t=${video.currentTime.toFixed(1)} buf=${buf}`);
     };
     const diag = ['loadstart', 'loadedmetadata', 'loadeddata', 'canplay', 'canplaythrough', 'playing', 'waiting', 'stalled', 'suspend', 'progress', 'error', 'abort', 'emptied', 'seeking', 'seeked'];
     const diagListeners = diag.map((name) => {
@@ -2748,6 +2759,53 @@ export default function BlissfulPlayer(props: {
         },
       });
       hlsRef.current = hls;
+      // Fragment activity feeds the seek watchdog below: `lastFragLoadingAt`
+      // distinguishes "hls.js stopped asking" from "the encode is just slow",
+      // and a completed load resets the kick budget so every seek starts fresh.
+      let lastFragLoadingAt = 0;
+      let seekKickCount = 0;
+      hls.on(Hls.Events.FRAG_LOADING, () => { lastFragLoadingAt = performance.now(); });
+      hls.on(Hls.Events.FRAG_LOADED, () => { seekKickCount = 0; });
+
+      // Seek recovery. hls.js can stop its loading loop entirely after a seek to
+      // an unbuffered position: it emits NO FRAG_LOADING at all, so the seek
+      // never completes and the buffer stays frozen while the user waits
+      // (observed 2026-09-22 on hls.js 1.6.15 — seeks to 108s and then 184s with
+      // buf=[0.0-6.0,12.0-48.0] and not one fragment request between them; the
+      // proxy and encoder were idle because nothing ever asked them). Re-seeding
+      // the loading position is hls.js's own remedy for this.
+      //
+      // Deliberately narrow, so a healthy seek never trips it: it fires only when
+      // the landing position is outside every buffered range AND no fragment load
+      // has started since the seek began. Capped, because if a kick doesn't take,
+      // more won't either — and a loop here would churn the element.
+      const isBufferedAt = (t: number): boolean => {
+        try {
+          const b = video.buffered;
+          for (let i = 0; i < b.length; i += 1) {
+            if (t >= b.start(i) - 0.5 && t <= b.end(i)) return true;
+          }
+        } catch { /* torn down */ }
+        return false;
+      };
+      let seekKickTimer: number | undefined;
+      const onSeekWatchdog = () => {
+        const seekStartedAt = performance.now();
+        window.clearTimeout(seekKickTimer);
+        seekKickTimer = window.setTimeout(() => {
+          // A stale timer from a previous effect run — this hls is already gone.
+          if (hlsRef.current !== hls) return;
+          const t = video.currentTime;
+          if (isBufferedAt(t)) return; // landed inside the buffer; nothing to fix
+          if (lastFragLoadingAt > seekStartedAt) return; // already fetching
+          if (seekKickCount >= 5) return;
+          seekKickCount += 1;
+          playerLog(`[player] seek stalled t=${t.toFixed(1)} — no frag requested, startLoad kick #${seekKickCount}`);
+          try { hls.startLoad(t); } catch { /* torn down */ }
+        }, 1200);
+      };
+      video.addEventListener('seeking', onSeekWatchdog);
+      diagListeners.push(['seeking', onSeekWatchdog] as const);
       // Watch-party relay: count manifest reloads triggered by transient tunnel
       // 404s so a genuinely dead relay can't loop forever (reset on success).
       let relayReloadCount = 0;
@@ -2764,6 +2822,10 @@ export default function BlissfulPlayer(props: {
       // timeout counter above never sees them). Two of these hand the
       // source to the page's fallback instead of retrying forever.
       let videasyFatalNetCount = 0;
+      // Proxy 409s ("not cached on RD yet"). Real-Debrid is often still minting
+      // the link when the page fast-commits it, and that clears in seconds — so
+      // retry a few times before calling the release dead (reset on success).
+      let notCachedRetryCount = 0;
 
         const selectAudioTrack = (trackIndex: number) => {
           if (!Number.isFinite(trackIndex) || trackIndex < 0) return;
@@ -2804,6 +2866,7 @@ export default function BlissfulPlayer(props: {
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         relayReloadCount = 0;
+        notCachedRetryCount = 0;
         updateTracks();
         playWithAutoplayFallback(video);
       });
@@ -2924,6 +2987,22 @@ export default function BlissfulPlayer(props: {
         // transcoding the ElfHosted "not ready" slate. Tell the user + open the
         // Releases picker so they can choose another (cached) torrent.
         if (d.response?.code === 409) {
+          // RD lag, not a dead release: torrentio serves its "not ready" relay
+          // while the link is still being minted and the proxy turns that into a
+          // 409. It clears on its own within seconds, so retry before sending the
+          // user to the picker — treating the first 409 as terminal stranded them
+          // on a progressive, non-seekable source for the rest of the episode.
+          if (notCachedRetryCount < 3) {
+            notCachedRetryCount += 1;
+            playerLog(`[player] transcode 409 — not ready on RD, retry ${notCachedRetryCount}/3 in 10s`);
+            if (notCachedRetryCount === 1) {
+              notifyInfo('Still preparing on Real-Debrid', 'Waiting for the link to be ready…');
+            }
+            window.setTimeout(() => {
+              try { hls.loadSource(src); hls.startLoad(); } catch { /* torn down */ }
+            }, 10000);
+            return;
+          }
           playerLog('[player] transcode 409 — torrent not cached on RD');
           notifyError('Not cached on Real-Debrid yet', 'This torrent isn’t ready on debrid — pick another release.');
           setError('Not cached — pick another release');
