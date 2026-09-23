@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { decryptVideasyResponse } = require('./videasy-decrypt');
 const { decryptVideasyV2 } = require('./videasy-decrypt-v2');
+const { isResolvedOffHost } = require('./transcodeSrcResolution');
 
 // ── JSON disk cache (NAS-backed) ───────────────────────────────────────
 // Small, immutable-ish JSON — TMDB id maps, season info, skip-times, ratings
@@ -498,13 +499,23 @@ function resolveTranscodeSrcUncoalesced(src) {
       const resolved = sc >= 300 && sc < 400 && !!loc;
       const direct = resolved ? new URL(loc, src).toString() : src;
       r.destroy(); // headers only — don't download the body
-      // ONLY cache a real resolution. A 5xx (torrentio throttling) or a 2xx
-      // "not cached yet" slate carries no Location, so `direct` falls back to
-      // the torrentio /resolve/ URL — caching THAT poisoned the entry for the
-      // full 25-min TTL, so every later segment reopened the slow torrentio
-      // URL (10-25s re-mint each) and the stream stuttered for ~25 min after a
-      // single transient blip. Leave the entry unset so the next segment retries.
-      if (resolved) transcodeSrcCache.set(src, { direct, exp: Date.now() + TRANSCODE_SRC_TTL });
+      // ONLY cache a real resolution. Two things look like one and aren't:
+      //   * No Location at all. A 5xx (torrentio throttling) or a 2xx "not
+      //     cached yet" slate carries none, so `direct` falls back to the
+      //     torrentio /resolve/ URL — caching THAT poisoned the entry for the
+      //     full TTL, so every later segment reopened the slow torrentio URL
+      //     (10-25s re-mint each) and the stream stuttered after a single blip.
+      //   * A 302 back onto torrentio's OWN host — its "not ready" relay, served
+      //     while RD is still minting the link. It IS a redirect, so the check
+      //     above passed and it got cached; /transcode.m3u8 then answered 409
+      //     MEDIA_NOT_CACHED_YET for the whole TTL, long after RD was ready. The
+      //     player reads a 409 as "release unavailable" and drops to a
+      //     progressive, non-seekable stream — so one moment of RD lag cost the
+      //     viewer seeking for a whole episode. See isResolvedOffHost.
+      // Either way, leave the entry unset so the next request retries.
+      if (resolved && isResolvedOffHost(src, direct)) {
+        transcodeSrcCache.set(src, { direct, exp: Date.now() + TRANSCODE_SRC_TTL });
+      }
       resolve(direct);
     });
     req.on('timeout', () => { req.destroy(); resolve(src); });
