@@ -315,6 +315,29 @@ export function isEmbeddedOrigin(origin: string): boolean {
   return o === 'embedded' || o === 'built-in';
 }
 
+/**
+ * Does this track's label mark it as covering only PART of the dialogue?
+ *
+ * Signs-and-songs tracks (on-screen text and song lyrics, for viewers watching
+ * the dub) and forced tracks (only foreign-language lines) are not a worse
+ * translation of the whole episode — they are a different job, and most of the
+ * runtime is deliberately empty.
+ *
+ * Observed 2026-09-22 on a Bleach release: a 31-cue "Signs & Songs" track with
+ * a 14-minute hole between 7.0m and 21.4m sat next to a 252-cue "English Subs".
+ * Both scored identically (same origin, same URL shape, neither carrying a
+ * runtime), so the pick fell through to the alphabetical tiebreak — which the
+ * COMPOSED label "English - Signs & Songs" won, because the en dash sorts ahead
+ * of "S". Skipping the intro then landed the viewer inside the hole with no
+ * subtitles and no indication why.
+ *
+ * Matching a bare "signs" is deliberate: a full track is never titled that,
+ * while partial ones are titled "Signs & Songs", "Signs/Songs" or just "Signs".
+ */
+export function isPartialSubtitleTrack(label: string | null | undefined): boolean {
+  return /\bforced\b|\bsigns?\b|\bs\s*&\s*s\b/i.test(label ?? '');
+}
+
 // Auto-pick scoring. Embedded/built-in tracks ship with the stream so
 // they're always perfectly synced and add no extra fetch — they win
 // over any addon-fetched variant. After that, OpenSubtitles and
@@ -349,7 +372,7 @@ export function subtitleSyncScore(
 }
 
 export function scoreSubtitleTrack(
-  t: { origin: string; url: string; runtimeSec?: number | null },
+  t: { origin: string; url: string; label?: string; runtimeSec?: number | null },
   ctx?: { videoDurationSec?: number | null },
 ): number {
   const origin = t.origin.toLowerCase();
@@ -364,6 +387,13 @@ export function scoreSubtitleTrack(
   // is useless, and a viewer who doesn't speak the audio language cannot tell
   // the difference by ear — which is exactly who auto-pick is for.
   score += subtitleSyncScore(t.runtimeSec, ctx?.videoDurationSec);
+  // A signs/songs or forced track must never win auto-pick over a full one for
+  // the same language: it is mostly empty by design. The penalty has to outrank
+  // the embedded bonus AND a perfect sync score, because a signs track is
+  // PERFECTLY synced — its few cues sit exactly where they belong, it just has
+  // almost nothing in it, so every other signal says "ideal". Still chosen when
+  // it is the only track in the language, and still selectable by hand.
+  if (isPartialSubtitleTrack(t.label)) score -= 600;
   return score;
 }
 

@@ -14,6 +14,7 @@ import {
   langPriority,
   languageFromTitle,
   languageMatch,
+  isPartialSubtitleTrack,
   scoreSubtitleTrack,
   subtitleLangLabel,
   subtitleSyncScore,
@@ -206,5 +207,87 @@ describe('isImageSubtitleCodec', () => {
     expect(isImageSubtitleCodec('subrip')).toBe(false);
     expect(isImageSubtitleCodec('mov_text')).toBe(false);
     expect(isImageSubtitleCodec(null)).toBe(false);
+  });
+});
+
+// Regression: the 2026-09-22 Bleach 120 report — subtitles over the opening,
+// then nothing for 14 minutes after pressing skip-intro. The release embedded
+// BOTH an "English Subs" dialogue track (252 cues) and a "Signs & Songs" track
+// (31 cues, empty from 7.0m to 21.4m), and auto-pick took the signs one.
+describe('isPartialSubtitleTrack', () => {
+  it('flags signs/songs and forced tracks', () => {
+    for (const label of [
+      'English – Signs & Songs',
+      'English - Signs/Songs',
+      'Signs and Songs',
+      'Signs',
+      'English (forced)',
+      'French (forced)',
+      'S&S',
+    ]) {
+      expect(isPartialSubtitleTrack(label), label).toBe(true);
+    }
+  });
+
+  it('leaves full dialogue tracks alone', () => {
+    for (const label of [
+      'English Subs',
+      'English',
+      'English (hearingimpaired)',
+      'Spanish',
+      'Portuguese',
+      'Bulgarian Subs',
+    ]) {
+      expect(isPartialSubtitleTrack(label), label).toBe(false);
+    }
+  });
+
+  it('does not match "signs" inside another word', () => {
+    expect(isPartialSubtitleTrack('Designs')).toBe(false);
+  });
+
+  it('treats a missing label as full', () => {
+    expect(isPartialSubtitleTrack(null)).toBe(false);
+    expect(isPartialSubtitleTrack(undefined)).toBe(false);
+  });
+});
+
+describe('scoreSubtitleTrack demotes partial tracks', () => {
+  const embedded = (label: string, track: number) => ({
+    origin: 'Embedded',
+    url: `/extract-subtitle.vtt?url=https%3A%2F%2Frd%2Ffile.mkv&track=${track}`,
+    label,
+  });
+  // The two real tracks, exactly as the player builds them.
+  const signs = embedded('English – Signs & Songs', 3);
+  const dialogue = embedded('English Subs', 4);
+
+  it('ranks the dialogue track above the signs track', () => {
+    expect(scoreSubtitleTrack(dialogue)).toBeGreaterThan(scoreSubtitleTrack(signs));
+  });
+
+  it('still loses to dialogue even when the signs track syncs perfectly', () => {
+    // A signs track IS perfectly synced — its last cue lands near the end of
+    // the episode — so without the penalty every signal rates it ideal.
+    const EP = 1464;
+    const syncedSigns = { ...signs, runtimeSec: 1419 };
+    const unmeasuredDialogue = { ...dialogue, runtimeSec: null };
+    expect(
+      scoreSubtitleTrack(unmeasuredDialogue, { videoDurationSec: EP })
+    ).toBeGreaterThan(scoreSubtitleTrack(syncedSigns, { videoDurationSec: EP }));
+  });
+
+  it('survives the alphabetical tiebreak that caused the bug', () => {
+    // Same sort the player uses. The composed en-dash label sorts FIRST, so a
+    // score tie hands the viewer the signs track.
+    expect('English Subs'.localeCompare('English – Signs & Songs')).toBeGreaterThan(0);
+    const picked = [signs, dialogue]
+      .slice()
+      .sort((a, b) => {
+        const d = scoreSubtitleTrack(b) - scoreSubtitleTrack(a);
+        if (d !== 0) return d;
+        return a.origin.localeCompare(b.origin) || a.label.localeCompare(b.label);
+      })[0];
+    expect(picked.label).toBe('English Subs');
   });
 });
