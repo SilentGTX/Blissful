@@ -3,17 +3,18 @@
 //
 // Lexicographic, so nothing lower can ever cross a higher rule:
 //   1. cache tier         cached > unknown > uncached
-//   2. remembered pack    the series' remembered infohash, cached, and its own text
+//   2. remembered pack    the series' hand-picked infohash, cached, and its own text
 //                         does not contradict the episode
-//   2b. resolution band   releases whose text names a DIFFERENT episode sink, then
+//   3. filter             releases whose text names a DIFFERENT episode sink, then
 //                         releases explicitly tagged 480p / 360p / SD sink below
 //                         everything else (so an SD batch with more episode markers
-//                         never beats a cached 1080p)
-//   3. episode match      scoreEpisodeMatch
+//                         never beats a cached 1080p). The episode text only
+//                         FILTERS here; it never ranks above the probe.
 //   4. same release       the release last played for THIS episode
 //   5. first-time probe   what is actually inside the file (scoreProbedRelease)
-//   6. codec              non-HEVC first (tiebreak only)
-//   7. quality            1080p > 720p > 2160p > 480p > other, .avi sunk
+//   6. episode match      scoreEpisodeMatch (tiebreak only)
+//   7. codec              non-HEVC first (tiebreak only)
+//   8. quality            1080p > 720p > 2160p > 480p > other, .avi sunk
 //
 // The old summed weights let a 1,000-point codec bonus outrank quality and
 // preference, and dropped every HEVC candidate from the fallback pick outright.
@@ -39,12 +40,15 @@ export type ProbeScore = readonly number[];
 
 export type RankContext = {
   expected?: ExpectedEpisode | null;
-  /** Infohash remembered for this series (see seriesReleaseMemory). */
+  /** Infohash the user picked by hand for this series (see seriesReleaseMemory). */
   rememberedInfohash?: string | null;
   /** Infohash of the release last played for this exact episode. */
   savedInfohash?: string | null;
   /** First-time probe results, keyed by candidate url. Absent = unprobed. */
   probeScores?: ReadonlyMap<string, ProbeScore>;
+  /** Infohashes confirmed cached out of band (a live Real-Debrid check). Lifts an
+   *  'unknown' name-tier release to cached; never touches an explicit tier. */
+  cachedInfohashes?: ReadonlySet<string>;
 };
 
 export type RankInfo = {
@@ -94,7 +98,16 @@ export function computeRankInfos<T>(
   ctx: RankContext,
 ): RankInfo[] {
   const cands = items.map(describe);
-  const tiers = cands.map((c) => tierIndex(c.cacheTier ?? releaseCacheTier(c.name)));
+  const hashes = cands.map(candidateInfohash);
+  // The same torrent listed cached by one addon (Torrentio [RD+]) and only claimed
+  // by another (Comet [RD⚡]) is cached: the infohash is the torrent's identity.
+  const nameTiers = cands.map((c) => c.cacheTier ?? releaseCacheTier(c.name));
+  const cachedHashes = new Set<string>(ctx.cachedInfohashes ?? []);
+  nameTiers.forEach((t, i) => { const h = hashes[i]; if (t === 'cached' && h) cachedHashes.add(h); });
+  const tiers = nameTiers.map((t, i) => {
+    const h = hashes[i];
+    return tierIndex(t === 'unknown' && h && cachedHashes.has(h) ? 'cached' : t);
+  });
   const texts = cands.map((c) => `${c.name ?? ''} ${c.title ?? ''} ${c.filename ?? ''}`);
   const episodes = texts.map((t) => scoreEpisodeMatch(t, ctx.expected));
   const remembered = ctx.rememberedInfohash ?? null;
@@ -102,7 +115,7 @@ export function computeRankInfos<T>(
   return cands.map((c, i) => {
     const hay = texts[i];
     const contradicts = episodeContradicts(hay, ctx.expected);
-    const hash = candidateInfohash(c);
+    const hash = hashes[i];
     // The remembered pack wins as long as it is cached and its own text does not
     // name another episode. A complete-series pack whose file names carry no
     // markers must not lose just because some other release does carry them.
@@ -136,13 +149,12 @@ export function compareProbeScores(a: ProbeScore | null, b: ProbeScore | null): 
   return 0;
 }
 
-/** Rules 1-3. Negative = `a` first. */
+/** Rules 1-3 (cache tier, remembered pack, contradicts / low-res filter). Negative = `a` first. */
 export function compareRankHead(a: RankInfo, b: RankInfo): number {
   if (a.tier !== b.tier) return a.tier - b.tier;
   if (a.remembered !== b.remembered) return a.remembered ? -1 : 1;
   if (a.contradicts !== b.contradicts) return a.contradicts ? 1 : -1;
-  if (a.lowRes !== b.lowRes) return a.lowRes ? 1 : -1;
-  return b.episode - a.episode;
+  return a.lowRes === b.lowRes ? 0 : a.lowRes ? 1 : -1;
 }
 
 /** All rules. Negative = `a` first. */
@@ -152,6 +164,7 @@ export function compareRankInfo(a: RankInfo, b: RankInfo): number {
   if (a.saved !== b.saved) return a.saved ? -1 : 1;
   const probe = compareProbeScores(a.probe, b.probe);
   if (probe !== 0) return probe;
+  if (a.episode !== b.episode) return b.episode - a.episode;
   if (a.hevc !== b.hevc) return a.hevc ? 1 : -1;
   return b.quality - a.quality;
 }
@@ -186,6 +199,12 @@ export type ProbePrefs = {
 };
 
 const PACK_MARKERS_RE = /\b(?:BD|Blu-?ray|BDRip|Complete|Batch)\b/i;
+const PACK_NAME_RE = /\b(?:BD|Blu-?ray|BDRip|Complete|Batch)\b|Disney\+/i;
+
+/** Release names that mark a full-series pack; always worth a probe. */
+export function isPackName(text: string): boolean {
+  return PACK_NAME_RE.test(text);
+}
 const MAX_PREF_SUBS = 3;
 
 function trackIsLanguage(pref: string | null, t: { lang: string | null; title?: string | null }): boolean {

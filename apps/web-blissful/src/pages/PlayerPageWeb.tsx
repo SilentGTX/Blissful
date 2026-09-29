@@ -54,7 +54,7 @@ import {
   type RankContext,
   type ReleaseCandidate,
 } from '../lib/releaseRanking';
-import { probeFirstTimePick } from '../lib/releaseProbe';
+import { probeFirstTimePick, type FirstPickResult } from '../lib/releaseProbe';
 import { getRememberedPack, seriesKeyFor } from '../lib/seriesReleaseMemory';
 import { getLastStreamSelection } from '../lib/streamHistory';
 import { parseStreamDescription } from '../features/detail/utils';
@@ -1428,8 +1428,10 @@ export default function PlayerPage() {
       rememberedInfohash: type && id ? getRememberedPack(seriesKeyFor(type, id))?.infohash ?? null : null,
       savedInfohash: extractInfohash(savedStreamUrlRef.current),
     });
-    const probeFirstTimePickFor = (items: Array<{ stream: StremioStream }>, ctx: RankContext) => {
-      if (type !== 'series') return Promise.resolve({ scores: new Map(), probed: [] as Array<{ name: string; score: readonly number[] | null }> });
+    const probeFirstTimePickFor = (items: Array<{ stream: StremioStream }>, ctx: RankContext): Promise<FirstPickResult> => {
+      if (type !== 'series') {
+        return Promise.resolve({ scores: new Map(), probed: [], cachedInfohashes: new Set<string>(), skipped: 'not-series' });
+      }
       const settings = readStoredPlayerSettings();
       const prefs: ProbePrefs = {
         audioLanguage: effectiveAudioLanguage(settings, id),
@@ -1441,8 +1443,9 @@ export default function PlayerPage() {
       where: string,
       ordered: Array<{ stream: StremioStream }>,
       ctx: RankContext,
-      probed: Array<{ name: string; score: readonly number[] | null }>,
+      first: FirstPickResult | { probed: []; skipped: string },
     ) => {
+      const { probed, skipped } = first;
       const top = ordered[0];
       if (!top) return;
       const info = computeRankInfos([top], describeStream, ctx)[0];
@@ -1454,7 +1457,7 @@ export default function PlayerPage() {
       const keyLine = ` key=${type && id ? seriesKeyFor(type, id) : 'n/a'}`;
       const probeLine = probed.length
         ? ` probed=[${probed.map((p) => `${p.name.replace(/\s+/g, ' ').slice(0, 48)}:${p.score ? p.score.join('') : 'n/a'}`).join(' | ')}]`
-        : '';
+        : ` probed=skipped:${skipped ?? 'none-probed'}`;
       sendPlayerLog(`[player-page] release pick (${where}) ${why}${packLine}${keyLine}${probeLine} -> ${(top.stream.name ?? '').replace(/\s+/g, ' ').slice(0, 80)} url=…${(top.stream.url ?? '').slice(-60)}`);
     };
     // Map raw addon streams → the structured picker entries the mobile picker
@@ -1574,8 +1577,9 @@ export default function PlayerPage() {
         const rankCtx = buildRankContext();
         const first = await probeFirstTimePickFor(usable, rankCtx);
         if (cancelled || committed) return;
-        const ordered = rankReleases(usable, describeStream, { ...rankCtx, probeScores: first.scores });
-        logReleasePick('fast path', ordered, { ...rankCtx, probeScores: first.scores }, first.probed);
+        const pickCtx = { ...rankCtx, probeScores: first.scores, cachedInfohashes: first.cachedInfohashes };
+        const ordered = rankReleases(usable, describeStream, pickCtx);
+        logReleasePick('fast path', ordered, pickCtx, first);
         for (const { stream } of ordered.slice(0, 4)) {
           if (cancelled || committed) return;
           try {
@@ -1719,12 +1723,13 @@ export default function PlayerPage() {
         if (labeledHttps.length > 1) {
           const first = await probeFirstTimePickFor(labeledHttps, rankCtx);
           if (cancelled) return;
-          if (first.scores.size) {
-            labeledHttps = rankReleases(allLabeled, describeStream, { ...rankCtx, probeScores: first.scores });
+          const pickCtx = { ...rankCtx, probeScores: first.scores, cachedInfohashes: first.cachedInfohashes };
+          if (first.scores.size || first.cachedInfohashes.size) {
+            labeledHttps = rankReleases(allLabeled, describeStream, pickCtx);
           }
-          logReleasePick('fallback', labeledHttps, { ...rankCtx, probeScores: first.scores }, first.probed);
+          logReleasePick('fallback', labeledHttps, pickCtx, first);
         } else {
-          logReleasePick('fallback', labeledHttps, rankCtx, []);
+          logReleasePick('fallback', labeledHttps, rankCtx, { probed: [], skipped: 'single-candidate' });
         }
         // Probe each candidate before committing — Torrentio's
         // /resolve/realdebrid/… 302-redirects DMCA'd files to a

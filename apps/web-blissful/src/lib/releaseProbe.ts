@@ -4,9 +4,10 @@
 
 import { fetchAudioTracks, type EmbeddedSubtitle } from './offlineDownloader';
 import type { ProbedVideo } from './offlineBatch';
+import { extractInfohash } from './rdCache';
 import {
-  compareRankHead,
   computeRankInfos,
+  isPackName,
   scoreProbedRelease,
   type ProbePrefs,
   type ProbeScore,
@@ -89,50 +90,120 @@ export async function probeReleasesBatch(
 }
 
 export const FIRST_PICK_PROBE_COUNT = 4;
+/** Pack-named and best-HD releases join the top four; this bounds the parallel ffprobes. */
+export const FIRST_PICK_PROBE_MAX = 8;
 // HEVC 10-bit on RD is slow to ffprobe; 4 s left the 1080p BD unprobed while a
 // 480p was scored, and an unprobed candidate scores as all zeros.
 export const FIRST_PICK_BUDGET_MS = 8000;
+const CACHE_CHECK_BUDGET_MS = 3000;
+const CACHE_CHECK_MAX = 4;
+
+export type FirstPickResult = {
+  scores: Map<string, ProbeScore>;
+  probed: Array<{ name: string; score: ProbeScore | null }>;
+  /** Infohashes a live Real-Debrid check confirmed cached; pass on in RankContext. */
+  cachedInfohashes: Set<string>;
+  /** Why no probe ran, or null when it did. */
+  skipped: string | null;
+};
+
+/** Live-check unknown-tier releases (Comet's "[RD⚡]" is only a claim) against
+ *  Real-Debrid. Resolves to the hashes RD confirms cached; never throws. */
+async function confirmCachedHashes(hashes: string[], budgetMs: number): Promise<Set<string>> {
+  const out = new Set<string>();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), budgetMs);
+  try {
+    await Promise.all(
+      hashes.map(async (ih) => {
+        try {
+          const res = await fetch(`/rd-by-hash?infoHash=${encodeURIComponent(ih)}`, { signal: controller.signal });
+          if (res.ok) out.add(ih);
+        } catch {
+          // unconfirmed
+        }
+      }),
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+  return out;
+}
 
 /**
- * First-time pick: when nothing is remembered for the series (and this exact
- * episode has no saved release), look inside the top cached candidates and score
- * what they contain. Returns probe scores by url for RankContext.probeScores;
- * empty when the pick is already decided by a remembered/saved release or there
- * is nothing to choose between.
+ * Which cached releases are worth a probe. The episode score plays no part: the
+ * candidates are the cached, non-contradicting, non-low-res releases by quality
+ * (then non-HEVC, then list order), the top FIRST_PICK_PROBE_COUNT, plus every
+ * pack-named release and the best 1080p+ one, up to FIRST_PICK_PROBE_MAX.
+ */
+export function selectProbeCandidates<T>(
+  items: readonly T[],
+  describe: (item: T) => ReleaseCandidate,
+  ctx: RankContext,
+): { picks: Array<{ item: T; cand: ReleaseCandidate }>; skipped: string | null } {
+  const infos = computeRankInfos(items, describe, ctx);
+  const cached = items
+    .map((item, i) => ({ item, info: infos[i], i, cand: describe(item) }))
+    .filter((x) => x.info.tier === 0 && !!x.cand.url && !x.info.contradicts && !x.info.lowRes);
+  if (cached.length < 2) return { picks: [], skipped: `fewer-than-2-cached(${cached.length})` };
+  if (cached.some((x) => x.info.remembered)) return { picks: [], skipped: 'hand-picked-pack' };
+  if (cached.some((x) => x.info.saved)) return { picks: [], skipped: 'saved-for-episode' };
+  const sorted = cached.sort((a, b) =>
+    b.info.quality - a.info.quality
+    || (a.info.hevc !== b.info.hevc ? (a.info.hevc ? 1 : -1) : 0)
+    || a.i - b.i,
+  );
+  const top = sorted.slice(0, FIRST_PICK_PROBE_COUNT);
+  const rest = sorted.slice(FIRST_PICK_PROBE_COUNT);
+  const extras = rest.filter((x) => isPackName(`${x.cand.name ?? ''} ${x.cand.title ?? ''}`));
+  const hd = top.some((x) => x.info.hd) ? null : rest.find((x) => x.info.hd);
+  if (hd && !extras.includes(hd)) extras.push(hd);
+  const picks = [...top, ...extras].slice(0, FIRST_PICK_PROBE_MAX);
+  return { picks: picks.map((x) => ({ item: x.item, cand: x.cand })), skipped: null };
+}
+
+function releaseLabel(c: ReleaseCandidate): string {
+  return (c.title ?? '').split('\n')[0].trim() || c.name || '';
+}
+
+/**
+ * First-time pick: when no pack was picked by hand for the series (and this exact
+ * episode has no saved release), look inside the candidate cached releases and
+ * score what they contain. Returns probe scores by url for RankContext.probeScores;
+ * `skipped` says why nothing was probed.
  */
 export async function probeFirstTimePick<T>(
   items: readonly T[],
   describe: (item: T) => ReleaseCandidate,
   ctx: RankContext,
   prefs: ProbePrefs,
-): Promise<{ scores: Map<string, ProbeScore>; probed: Array<{ name: string; score: ProbeScore | null }> }> {
-  const empty = { scores: new Map<string, ProbeScore>(), probed: [] };
+): Promise<FirstPickResult> {
+  let rankCtx = ctx;
+  let cachedInfohashes = new Set<string>();
+  // Unknown-tier releases (Comet [RD⚡]) with a known infohash: ask Real-Debrid, so a
+  // pack listed only by such an addon can still be probed and win on content.
   const infos = computeRankInfos(items, describe, ctx);
-  const cached = items
-    .map((item, i) => ({ item, info: infos[i], i, cand: describe(item) }))
-    .filter((x) => x.info.tier === 0 && !!x.cand.url);
-  if (cached.length < 2 || cached.some((x) => x.info.remembered || x.info.saved)) return empty;
-  // Rules 1, 2b, 3, 6 and 7 decide who is worth a probe; 2, 4 and 5 do not apply here.
-  const sorted = cached.sort((a, b) =>
-    compareRankHead(a.info, b.info)
-    || (a.info.hevc !== b.info.hevc ? (a.info.hevc ? 1 : -1) : 0)
-    || b.info.quality - a.info.quality
-    || a.i - b.i,
-  );
-  const top = sorted.slice(0, FIRST_PICK_PROBE_COUNT);
-  // The best 1080p+ release is always looked at, even when four others outrank it.
-  if (!top.some((x) => x.info.hd)) {
-    const hd = sorted.slice(FIRST_PICK_PROBE_COUNT).find((x) => x.info.hd);
-    if (hd) top.push(hd);
+  const unknownHashes: string[] = [];
+  items.forEach((item, i) => {
+    if (infos[i].tier !== 1 || unknownHashes.length >= CACHE_CHECK_MAX) return;
+    const c = describe(item);
+    const h = (c.infohash ?? '').trim().toLowerCase() || extractInfohash(c.url);
+    if (h && /^[a-f0-9]{40}$/.test(h) && !unknownHashes.includes(h)) unknownHashes.push(h);
+  });
+  if (unknownHashes.length) {
+    cachedInfohashes = await confirmCachedHashes(unknownHashes, CACHE_CHECK_BUDGET_MS);
+    rankCtx = { ...ctx, cachedInfohashes };
   }
-  const results = await probeReleasesBatch(top.map((x) => x.cand.url as string), FIRST_PICK_BUDGET_MS);
+  const { picks, skipped } = selectProbeCandidates(items, describe, rankCtx);
+  if (skipped) return { scores: new Map(), probed: [], cachedInfohashes, skipped };
+  const results = await probeReleasesBatch(picks.map((x) => x.cand.url as string), FIRST_PICK_BUDGET_MS);
   const scores = new Map<string, ProbeScore>();
-  const probed = top.map((x) => {
+  const probed = picks.map((x) => {
     const probe = results.get(x.cand.url as string);
-    if (!probe) return { name: x.cand.name ?? '', score: null };
+    if (!probe) return { name: releaseLabel(x.cand), score: null };
     const score = scoreProbedRelease({ ...probe, name: `${x.cand.name ?? ''} ${x.cand.title ?? ''}` }, prefs);
     scores.set(x.cand.url as string, score);
-    return { name: x.cand.name ?? '', score };
+    return { name: releaseLabel(x.cand), score };
   });
-  return { scores, probed };
+  return { scores, probed, cachedInfohashes, skipped: null };
 }

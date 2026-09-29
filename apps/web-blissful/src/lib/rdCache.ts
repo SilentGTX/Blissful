@@ -33,6 +33,15 @@ export function releaseCacheTier(name: string | null | undefined): CacheTier {
  *  local streaming-server path). Used to recognise "the release I was already
  *  watching" among a fresh set of candidates. */
 export function extractInfohash(url: string | null | undefined): string | null {
-  const m = /\b([a-f0-9]{40})\b/i.exec(url ?? '');
+  const raw = url ?? '';
+  const direct = /\b([a-f0-9]{40})\b/i.exec(raw);
+  if (direct) return direct[1].toLowerCase();
+  // A url wrapped as /transcode.m3u8?url=<encoded release url> has the hash behind
+  // a "%2F", where "F" is a word character and there is no \b in front of it.
+  let decoded = raw;
+  for (let i = 0; i < 2; i += 1) {
+    try { decoded = decodeURIComponent(decoded); } catch { break; }
+  }
+  const m = /\b([a-f0-9]{40})\b/i.exec(decoded);
   return m ? m[1].toLowerCase() : null;
 }

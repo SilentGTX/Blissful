@@ -208,6 +208,9 @@ export function BananasPicker({
     const sorted = relevant.slice().sort((a, b) => {
       const head = compareRankHead(infoOf.get(a)!, infoOf.get(b)!);
       if (head !== 0) return head;
+      // The picker has no probe, so the episode text ranks right after the filters.
+      const ep = infoOf.get(b)!.episode - infoOf.get(a)!.episode;
+      if (ep !== 0) return ep;
       // Subtitle tag next, DELIBERATELY below the cache tier and the remembered
       // pack: an uncached release must never outrank a cached one just for saying
       // "MULTISUB", because picking it makes you wait on RD.

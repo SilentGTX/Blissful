@@ -8,7 +8,9 @@ import { SeasonHeader } from './SeasonHeader';
 import { StreamFilters } from './StreamFilters';
 import type { FillerEpisodes, FillerKind } from '../../../lib/animeFiller';
 import { expectedEpisodeFor } from '../../../lib/episodeMatch';
-import { getRememberedPack, seriesKeyFor } from '../../../lib/seriesReleaseMemory';
+import { getRememberedPack, rememberManualPick, seriesKeyFor } from '../../../lib/seriesReleaseMemory';
+import { useStorage } from '../../../context/StorageProvider';
+import { playerLog } from '../../../lib/playerEnv';
 
 type DetailStreamsPanelProps = {
   variant: 'mobile' | 'desktop';
@@ -178,6 +180,7 @@ export function DetailStreamsPanel({
   streamsPending = 0,
 }: DetailStreamsPanelProps) {
   const isDesktop = variant === 'desktop';
+  const storage = useStorage();
   const seasonHeaderClassName = isDesktop ? 'p-4' : 'p-3';
   const episodeListClassName = isDesktop
     ? 'h-[calc(100%-7rem)] overflow-auto px-4 pb-4 pt-3 hide-scrollbar'
@@ -268,6 +271,15 @@ export function DetailStreamsPanel({
         });
         return;
       }
+    }
+    // A stream picked from this list is a hand pick: remember its pack for the series.
+    // (The synthetic resume pin has no row and is not a pick.)
+    if (row && isSeriesLike) {
+      rememberManualPick(
+        { type, id, releaseUrl: url, releases: releaseOptions },
+        (next) => storage.savePlayerSettings(next).catch(() => {}),
+        playerLog,
+      );
     }
     onNavigate(playerLink);
   };

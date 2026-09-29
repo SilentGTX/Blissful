@@ -36,8 +36,7 @@ import { isStremioLinked, syncStremioItem, triggerStremioItemSync } from '../../
 import { clearCurrentActivity, setCurrentActivity } from '../../lib/usePresenceHeartbeat';
 import { setLastStreamSelection } from '../../lib/streamHistory';
 import { expectedEpisodeFor } from '../../lib/episodeMatch';
-import { extractInfohash } from '../../lib/rdCache';
-import { rememberPack, seriesKeyFor } from '../../lib/seriesReleaseMemory';
+import { rememberedInfohashFrom, rememberManualPick, seriesKeyFor } from '../../lib/seriesReleaseMemory';
 import { OfflineHlsLoader } from '../../lib/offlineHlsLoader';
 import { offlineIdFromUrl, offlinePlaylistUrl } from '../../lib/offlineUrls';
 import { buildPlayerPath, defaultPlayerSource } from '../../lib/playerUrl';
@@ -3803,30 +3802,13 @@ export default function BlissfulPlayer(props: {
   const partyNonHost = !!props.roomCode && !watchParty.isHost;
   partyNonHostRef.current = partyNonHost;
 
-  // Series release memory: the first real playback of a release remembers its
-  // pack for the series, so the next episode starts from the same one. A manual
-  // pick of another release lands here too and overwrites it.
-  const rememberedInfohash = props.playerSettings.seriesReleasePacks?.[
-    seriesKeyFor(props.type ?? '', props.id ?? '')
-  ]?.infohash ?? null;
-  const playingUrl = props.url;
-  const playingRelease = useMemo(
-    () => props.releases?.find((r) => r.url === playingUrl) ?? null,
-    [props.releases, playingUrl],
+  // Series release memory: only a release the user picks BY HAND (a row in the
+  // Releases drawer, see handleSelectReleaseTracked) is remembered, so the next
+  // episode keeps it. An auto-pick never writes.
+  const rememberedInfohash = rememberedInfohashFrom(
+    props.playerSettings.seriesReleasePacks,
+    seriesKeyFor(props.type ?? '', props.id ?? ''),
   );
-  const playingReleaseName = playingRelease?.torrentName || playingRelease?.name || props.title || '';
-  const playingInfohash = extractInfohash(playingUrl) ?? extractInfohash(playingRelease?.infoHash);
-  useEffect(() => {
-    if (!firstFrameSeen || partyNonHost) return;
-    if (!props.type || props.type === 'movie' || !props.id || !playingUrl) return;
-    const hash = playingInfohash;
-    if (!hash) return;
-    rememberPack(
-      seriesKeyFor(props.type, props.id),
-      { infohash: hash, name: playingReleaseName },
-      (next) => storageCtx.savePlayerSettings(next).catch(() => {}),
-    );
-  }, [firstFrameSeen, partyNonHost, props.type, props.id, playingUrl, playingInfohash, playingReleaseName, storageCtx]);
   const pickerExpectedEpisode = useMemo(
     () => expectedEpisodeFor(props.videoId, props.videos),
     [props.videoId, props.videos],
@@ -4034,8 +4016,16 @@ export default function BlissfulPlayer(props: {
   const releasePickMadeRef = useRef(false);
   const handleSelectReleaseTracked = useCallback((u: string) => {
     releasePickMadeRef.current = true;
+    // `u` is the raw release url the drawer row carries (not the wrapped play url).
+    if (!partyNonHostRef.current) {
+      rememberManualPick(
+        { type: props.type, id: props.id, releaseUrl: u, releases: props.releases, fallbackName: props.title ?? undefined },
+        (next) => storageCtx.savePlayerSettings(next).catch(() => {}),
+        playerLog,
+      );
+    }
     props.onSelectRelease?.(u);
-  }, [props.onSelectRelease]);
+  }, [props.onSelectRelease, props.type, props.id, props.releases, props.title, storageCtx]);
   const handleSettingsClose = useCallback(() => {
     setSettingsOpen(false);
     // Pick-first: closed the auto-opened Releases picker without choosing →
