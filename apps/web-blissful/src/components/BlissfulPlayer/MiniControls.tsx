@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useScrubSeek } from './useScrubSeek';
 import { StremioIcon } from '../PlayerControlIcons';
 import { volumeFillColor } from '../../lib/colorUtils';
 
@@ -29,9 +29,9 @@ export function MiniControls(props: MiniControlsProps) {
     currentTime, duration, formattedTime, setCurrentTime, onUserSeek, onExpand, onClose,
   } = props;
 
-  const [scrubDragValue, setScrubDragValue] = useState<number | null>(null);
-  const isScrubbing = scrubDragValue !== null;
-  const displayedScrub = isScrubbing ? scrubDragValue : Math.min(currentTime, duration || 0);
+  const { isScrubbing, displayedValue: displayedScrub, onPointerDown: scrubPointerDown, onChange: scrubChange } = useScrubSeek({
+    videoRef, currentTime, duration, setCurrentTime, onUserSeek,
+  });
   const v = muted ? 0 : volume;
   const stopDrag = (e: React.PointerEvent) => e.stopPropagation();
   const setVol = (next: number) => {
@@ -80,7 +80,7 @@ export function MiniControls(props: MiniControlsProps) {
               onChange={(e) => setVol(Number.parseFloat(e.target.value))}
               aria-label="Volume"
             />
-            <span className="ml-auto truncate pl-1 text-[10px] tabular-nums text-white/70">{formattedTime(currentTime)}</span>
+            <span className="ml-auto truncate pl-1 text-[10px] tabular-nums text-white/70">{formattedTime(isScrubbing ? displayedScrub : currentTime)}</span>
           </div>
           <input
             className="bliss-player-range mt-1.5 block h-1.5 w-full cursor-pointer appearance-none rounded-full"
@@ -89,19 +89,8 @@ export function MiniControls(props: MiniControlsProps) {
               ['--bliss-track-fill' as string]:
                 duration > 0 ? `${Math.min(100, Math.max(0, (displayedScrub / duration) * 100))}%` : '0%',
             } as React.CSSProperties}
-            onPointerDown={(e) => { e.stopPropagation(); setScrubDragValue(Math.min(currentTime, duration || 0)); }}
-            onPointerUp={() => setScrubDragValue(null)}
-            onPointerCancel={() => setScrubDragValue(null)}
-            onChange={(e) => {
-              const next = Number.parseFloat(e.target.value);
-              if (!Number.isFinite(next)) return;
-              const video = videoRef.current;
-              if (!video) return;
-              video.currentTime = next;
-              setCurrentTime(next);
-              onUserSeek?.(next);
-              if (isScrubbing) setScrubDragValue(next);
-            }}
+            onPointerDown={(e) => { e.stopPropagation(); scrubPointerDown(e); }}
+            onChange={scrubChange}
             aria-label="Seek"
           />
         </div>
