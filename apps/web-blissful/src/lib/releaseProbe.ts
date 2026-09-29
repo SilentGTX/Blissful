@@ -89,7 +89,9 @@ export async function probeReleasesBatch(
 }
 
 export const FIRST_PICK_PROBE_COUNT = 4;
-export const FIRST_PICK_BUDGET_MS = 4000;
+// HEVC 10-bit on RD is slow to ffprobe; 4 s left the 1080p BD unprobed while a
+// 480p was scored, and an unprobed candidate scores as all zeros.
+export const FIRST_PICK_BUDGET_MS = 8000;
 
 /**
  * First-time pick: when nothing is remembered for the series (and this exact
@@ -110,15 +112,19 @@ export async function probeFirstTimePick<T>(
     .map((item, i) => ({ item, info: infos[i], i, cand: describe(item) }))
     .filter((x) => x.info.tier === 0 && !!x.cand.url);
   if (cached.length < 2 || cached.some((x) => x.info.remembered || x.info.saved)) return empty;
-  // Rules 1, 3, 6 and 7 decide who is worth a probe; 2, 4 and 5 do not apply here.
-  const top = cached
-    .sort((a, b) =>
-      compareRankHead(a.info, b.info)
-      || (a.info.hevc !== b.info.hevc ? (a.info.hevc ? 1 : -1) : 0)
-      || b.info.quality - a.info.quality
-      || a.i - b.i,
-    )
-    .slice(0, FIRST_PICK_PROBE_COUNT);
+  // Rules 1, 2b, 3, 6 and 7 decide who is worth a probe; 2, 4 and 5 do not apply here.
+  const sorted = cached.sort((a, b) =>
+    compareRankHead(a.info, b.info)
+    || (a.info.hevc !== b.info.hevc ? (a.info.hevc ? 1 : -1) : 0)
+    || b.info.quality - a.info.quality
+    || a.i - b.i,
+  );
+  const top = sorted.slice(0, FIRST_PICK_PROBE_COUNT);
+  // The best 1080p+ release is always looked at, even when four others outrank it.
+  if (!top.some((x) => x.info.hd)) {
+    const hd = sorted.slice(FIRST_PICK_PROBE_COUNT).find((x) => x.info.hd);
+    if (hd) top.push(hd);
+  }
   const results = await probeReleasesBatch(top.map((x) => x.cand.url as string), FIRST_PICK_BUDGET_MS);
   const scores = new Map<string, ProbeScore>();
   const probed = top.map((x) => {

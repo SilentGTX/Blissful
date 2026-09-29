@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   compareProbeScores,
+  computeRankInfos,
   rankReleases,
   scoreProbedRelease,
   type ReleaseCandidate,
@@ -90,7 +91,7 @@ describe('rankReleases', () => {
     );
   });
 
-  it('orders quality 1080p > 720p > 2160p > 480p > other and sinks .avi', () => {
+  it('orders quality 1080p > 720p > 2160p > untagged > 480p and sinks .avi', () => {
     const out = rank([
       rel('[RD+] other', HASH_A),
       rel('[RD+] 480p', HASH_B),
@@ -98,7 +99,8 @@ describe('rankReleases', () => {
       rel('[RD+] 720p', 'd'.repeat(40)),
       rel('[RD+] 1080p', 'e'.repeat(40)),
     ]);
-    expect(out).toEqual(['[RD+] 1080p', '[RD+] 720p', '[RD+] 2160p', '[RD+] 480p', '[RD+] other']);
+    // an explicit 480p sinks below a release with no resolution tag at all
+    expect(out).toEqual(['[RD+] 1080p', '[RD+] 720p', '[RD+] 2160p', '[RD+] other', '[RD+] 480p']);
     const avi: Rel = { name: '[RD+] 1080p', url: 'https://x/f.avi' };
     const withAvi = rankReleases([avi, rel('[RD+] 2160p', HASH_A)], describeRel, {});
     expect(withAvi[0].name).toBe('[RD+] 2160p');
@@ -159,5 +161,69 @@ describe('scoreProbedRelease', () => {
       { audioLanguage: null, subtitlesLanguage: null },
     );
     expect(s.slice(0, 2)).toEqual([0, 0]);
+  });
+});
+
+// The BUD-37 report: Bleach episode 45 (kitsu:244:45), Anime Time Disney+ BD pack
+// remembered, both releases cached and x265. The AnimeRG batch names the episode
+// in its filename (" - 045 - "), the Anime Time pack's filenames carry no marker.
+describe('Bleach remembered pack vs AnimeRG 480p batch', () => {
+  const A_NAME = '[RD+] Torrentio 1080p';
+  const A_TITLE = '[Anime Time] Bleach Complete Series + Movies [Disney+ BD][1080p][HEVC 10bit x265][AAC AC3]';
+  const B_NAME = '[RD+] Torrentio 480p';
+  const B_TITLE = '[AnimeRG] Bleach (Complete Series) EP 001-366 [480p] [Dual-Audio] [Batch] [x265] [10-bit] [pseudo]';
+  const EP_TITLE = 'The Fight to the Death Begins';
+  const a: Rel = { name: A_NAME, title: A_TITLE, url: `https://x/${HASH_A}/pack.mkv` };
+  const b: Rel = { name: B_NAME, title: B_TITLE, url: `https://x/${HASH_B}/pack.mkv` };
+  const filenames = new Map<string, string>([
+    [b.url, `Bleach - 045 - ${EP_TITLE}.mkv`],
+  ]);
+  const describeWithFile = (r: Rel): ReleaseCandidate => ({ ...describeRel(r), filename: filenames.get(r.url) ?? null });
+  const withTitle: ExpectedEpisode = { season: 1, episode: 45, absolute: 45, title: EP_TITLE };
+  const withoutTitle: ExpectedEpisode = { season: 1, episode: 45, absolute: 45, title: null };
+  const order = (items: Rel[], ctx: RankContext) => rankReleases(items, describeWithFile, ctx).map((r) => r.name);
+
+  for (const [label, expected] of [['with', withTitle], ['without', withoutTitle]] as const) {
+    it(`keeps the remembered Anime Time pack first, ${label} the episode title`, () => {
+      expect(order([b, a], { rememberedInfohash: HASH_A, expected })).toEqual([A_NAME, B_NAME]);
+      expect(order([a, b], { rememberedInfohash: HASH_A, expected })).toEqual([A_NAME, B_NAME]);
+      const [info] = computeRankInfos([a], describeWithFile, { rememberedInfohash: HASH_A, expected });
+      expect(info.remembered).toBe(true);
+    });
+
+    it(`ranks the 1080p release over the 480p batch with nothing remembered, ${label} the episode title`, () => {
+      expect(order([b, a], { expected })).toEqual([A_NAME, B_NAME]);
+    });
+
+    it(`still ranks the 1080p release first when only the 480p batch was probed, ${label} the episode title`, () => {
+      const probeScores = new Map([[b.url, [1, 3, 1, 0, 9, 1] as const]]);
+      expect(order([b, a], { expected, probeScores })).toEqual([A_NAME, B_NAME]);
+    });
+  }
+
+  it('does not remember a pack whose own text names another episode', () => {
+    const wrong: Rel = { name: '[RD+] Show 1080p', title: 'Show S01E07 pack', url: `https://x/${HASH_C}/f.mkv` };
+    const right: Rel = { name: '[RD+] Show 1080p', title: 'Show S01E45', url: `https://x/${HASH_B}/f.mkv` };
+    const [info] = computeRankInfos([wrong], describeRel, { rememberedInfohash: HASH_C, expected: withoutTitle });
+    expect(info.remembered).toBe(false);
+    expect(info.contradicts).toBe(true);
+    expect(rankReleases([wrong, right], describeRel, { rememberedInfohash: HASH_C, expected: withoutTitle })[0]).toBe(right);
+  });
+
+  it('uses the infohash a source carries when the url does not', () => {
+    const house: ReleaseCandidate = {
+      name: '[RD+] Show 720p',
+      url: 'https://45-4.download.real-debrid.com/d/ABC/Show.mkv',
+      infohash: HASH_B.toUpperCase(),
+    };
+    const other: ReleaseCandidate = { name: '[RD+] Show 1080p', url: `https://x/${HASH_A}/f.mkv` };
+    const out = rankReleases([other, house], (x) => x, { rememberedInfohash: HASH_B });
+    expect(out[0]).toBe(house);
+  });
+
+  it('sinks a wrong-episode 1080p below a right-episode 480p', () => {
+    const wrong: Rel = { name: '[RD+] Show 1080p', title: 'Show S02E01', url: `https://x/${HASH_A}/f.mkv` };
+    const right: Rel = { name: '[RD+] Show 480p', title: 'Show S01E45', url: `https://x/${HASH_B}/f.mkv` };
+    expect(rankReleases([wrong, right], describeRel, { expected: withoutTitle })[0]).toBe(right);
   });
 });

@@ -53,4 +53,22 @@ describe('pickPreferredAudioTrack', () => {
     expect(pickPreferredAudioTrack(frenchRelease, '')).toBeNull();
     expect(pickPreferredAudioTrack([], 'eng')).toBeNull();
   });
+
+  it('picks Japanese when English is the first track', () => {
+    const dual = [t(0, 'eng', 'English', 2), t(1, 'jpn', 'Japanese', 2)];
+    expect(pickPreferredAudioTrack(dual, 'jpn')).toBe(1);
+  });
+
+  it('finds an untagged Japanese track by its title', () => {
+    expect(pickPreferredAudioTrack([t(0, 'eng', 'English'), t(1, null, 'Japanese')], 'jpn')).toBe(1);
+    expect(pickPreferredAudioTrack([t(0, 'eng', 'English'), t(1, 'und', 'Japanese 2.0')], 'jpn')).toBe(1);
+  });
+
+  it('prefers a tag match over a title match', () => {
+    expect(pickPreferredAudioTrack([t(0, null, 'Japanese'), t(1, 'jpn', 'Main')], 'jpn')).toBe(1);
+  });
+
+  it('does not re-file a specifically tagged track by its title', () => {
+    expect(pickPreferredAudioTrack([t(0, 'fra', 'Japanese commentary')], 'jpn')).toBeNull();
+  });
 });

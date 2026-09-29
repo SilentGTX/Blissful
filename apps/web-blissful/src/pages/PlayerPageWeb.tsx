@@ -71,6 +71,8 @@ type AddonStreamEntry = {
   /** Final URL handed to VLC: either an HTTPS stream URL (RD) or a
    *  `magnet:?xt=urn:btih:…` URI built from infoHash + trackers. */
   url: string;
+  /** Torrent infohash when the source reports one (the house RD list does). */
+  infoHash?: string | null;
   /** Detected resolution token: 2160p / 1080p / 720p / 480p / 360p / null. */
   quality: string | null;
   /** Seeders count as a string (e.g. "430") or null. */
@@ -436,6 +438,7 @@ const describeStream = ({ stream }: { stream: StremioStream }): ReleaseCandidate
   title: stream.title,
   filename: (stream.behaviorHints as { filename?: string } | undefined)?.filename ?? null,
   url: stream.url,
+  infohash: stream.infoHash ?? null,
 });
 
 export default function PlayerPage() {
@@ -1443,11 +1446,16 @@ export default function PlayerPage() {
       const top = ordered[0];
       if (!top) return;
       const info = computeRankInfos([top], describeStream, ctx)[0];
-      const why = `tier=${info.tier} remembered=${info.remembered} episode=${info.episode} saved=${info.saved}`;
+      const why = `tier=${info.tier} remembered=${info.remembered} contradicts=${info.contradicts} lowRes=${info.lowRes} episode=${info.episode} saved=${info.saved}`;
+      const pack = type && id ? getRememberedPack(seriesKeyFor(type, id)) : null;
+      const packLine = pack
+        ? ` pack=…${pack.infohash.slice(-8)}:${pack.name.replace(/\s+/g, ' ').slice(0, 48)}`
+        : ' pack=none';
+      const keyLine = ` key=${type && id ? seriesKeyFor(type, id) : 'n/a'}`;
       const probeLine = probed.length
         ? ` probed=[${probed.map((p) => `${p.name.replace(/\s+/g, ' ').slice(0, 48)}:${p.score ? p.score.join('') : 'n/a'}`).join(' | ')}]`
         : '';
-      sendPlayerLog(`[player-page] release pick (${where}) ${why}${probeLine} -> ${(top.stream.name ?? '').replace(/\s+/g, ' ').slice(0, 80)} url=…${(top.stream.url ?? '').slice(-60)}`);
+      sendPlayerLog(`[player-page] release pick (${where}) ${why}${packLine}${keyLine}${probeLine} -> ${(top.stream.name ?? '').replace(/\s+/g, ' ').slice(0, 80)} url=…${(top.stream.url ?? '').slice(-60)}`);
     };
     // Map raw addon streams → the structured picker entries the mobile picker
     // and in-player Releases drawer render. Shared by the fast path (RD-only
@@ -1467,6 +1475,7 @@ export default function PlayerPage() {
           torrentName: parsed.torrentName,
           description,
           url: stream.url ?? '',
+          infoHash: stream.infoHash ?? null,
           quality: qualMatch ? qualMatch[1].toLowerCase() : null,
           seeders: parsed.seeders,
           size: parsed.size,
@@ -1998,8 +2007,17 @@ export default function PlayerPage() {
   // played track, the picker, and the host's broadcast all consistent.
   const playUrl = (() => {
     if (!basePlayUrl.startsWith('/transcode.m3u8')) return basePlayUrl;
-    const stripped = basePlayUrl.replace(/&a=\d+/g, '');
-    return audioTrackIdx > 0 ? `${stripped}&a=${audioTrackIdx}` : stripped;
+    const stripped = basePlayUrl.replace(/&a=\d+/g, '').replace(/&alang=[A-Za-z0-9-]+/g, '');
+    // An index wins when there is one to honor: a track picked by hand (even
+    // track 0), one baked into the URL (a watch-party guest inherits the host's),
+    // or any non-default track.
+    if (audioTrackIdx > 0 || urlPinnedAudio || userPickedAudioRef.current) {
+      return `${stripped}&a=${audioTrackIdx}`;
+    }
+    // Otherwise let the proxy choose by language on the FIRST request, so the
+    // stream starts on the preferred audio even when the client-side probe below
+    // fails or the file's default (track 0) is another language.
+    return audioLanguagePref ? `${stripped}&alang=${encodeURIComponent(audioLanguagePref)}` : stripped;
   })();
   if (!playUrl) return null;
   if (playUrl && !/^(vidking|videasy):/i.test(playUrl)) {

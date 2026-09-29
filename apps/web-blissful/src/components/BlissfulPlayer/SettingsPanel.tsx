@@ -49,6 +49,8 @@ export type ReleaseOption = {
   size: string | null;
   seeders: string | null;
   url: string;
+  /** Torrent infohash when the source reports one but the url does not carry it. */
+  infoHash?: string | null;
 };
 export type SubtitlesView = 'list' | 'appearance';
 

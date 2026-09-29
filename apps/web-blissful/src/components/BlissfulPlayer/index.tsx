@@ -102,12 +102,20 @@ import {
   subtitleLangLabel,
   langPriority,
   languageMatch,
-  findMatchingLanguage,
+  pickInitialSubtitle,
   isEmbeddedOrigin,
   scoreSubtitleTrack,
   effectiveTrackLanguage,
   subtitleTrackLabel,
 } from '../../lib/subtitleUtils';
+
+function readSavedSubtitleLang(): string | null {
+  try {
+    return window.localStorage.getItem('blissful.subtitleLang');
+  } catch {
+    return null;
+  }
+}
 
 export type StremioIconName =
   | 'play'
@@ -702,6 +710,9 @@ export default function BlissfulPlayer(props: {
   }, [props.fallbackActive, props.rdMode, fallbackBannerDismissed]);
   const [subtitleTracks, setSubtitleTracks] = useState<SubtitleTrack[]>([]);
   const [embeddedSubtitleTracks, setEmbeddedSubtitleTracks] = useState<SubtitleTrack[]>([]);
+  // Languages that exist only as picture-based tracks (PGS / VobSub): the web cannot draw them.
+  const [bitmapSubtitleLangs, setBitmapSubtitleLangs] = useState<string[]>([]);
+  const bitmapLoggedRef = useRef<string | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const scrubBarSliderRef = useRef<HTMLInputElement | null>(null);
   const [scrubHoverPx, setScrubHoverPx] = useState<number | null>(null);
@@ -1980,32 +1991,14 @@ export default function BlissfulPlayer(props: {
         const cached = ((globalThis as any).__bliss_subtitles_cache as Map<string, SubtitleTrack[]>).get(subtitlesKey);
         if (cached && cached.length > 0) {
           setSubtitleTracks(cached);
-          const savedLang = (() => {
-            try {
-              return window.localStorage.getItem('blissful.subtitleLang');
-            } catch {
-              return null;
-            }
-          })();
-          const preferredLang =
-            findMatchingLanguage(cached, props.playerSettings.subtitlesLanguage) ??
-            (savedLang ? findMatchingLanguage(cached, savedLang) : null) ??
-            cached.find((t) => /^(en|eng|english)$/i.test(t.lang))?.lang ??
-            cached[0].lang;
-          setSelectedLanguage(preferredLang);
-          const sortedCached = cached
-            .filter((t) => t.lang === preferredLang)
-            .slice()
-            .sort((a, b) => {
-              const sa = scoreSubtitleTrack(a);
-              const sb = scoreSubtitleTrack(b);
-              if (sb !== sa) return sb - sa;
-              return a.origin.localeCompare(b.origin) || a.label.localeCompare(b.label);
-            });
-          const preferredTrack = sortedCached[0];
-          if (preferredTrack) {
-            autoPickedSubtitleKeyRef.current = preferredTrack.key;
-            setSelectedSubtitleKey(preferredTrack.key);
+          const picked = pickInitialSubtitle(cached, {
+            language: props.playerSettings.subtitlesLanguage,
+            savedLanguage: readSavedSubtitleLang(),
+          });
+          if (picked.track) {
+            setSelectedLanguage(picked.language);
+            autoPickedSubtitleKeyRef.current = picked.track.key;
+            setSelectedSubtitleKey(picked.track.key);
           }
         }
       } catch {
@@ -2020,20 +2013,6 @@ export default function BlissfulPlayer(props: {
         if (name.includes('subtitles') || url.includes('subtitles')) return 3;
         if (name.includes('opensubtitles') || url.includes('opensubtitles')) return 3;
         return 0;
-      };
-
-      const savedLang = (() => {
-        try {
-          return window.localStorage.getItem('blissful.subtitleLang');
-        } catch {
-          return null;
-        }
-      })();
-
-      const getPreferredLang = (list: SubtitleTrack[]): string => {
-        const settingsHit = findMatchingLanguage(list, props.playerSettings.subtitlesLanguage);
-        const savedHit = savedLang ? findMatchingLanguage(list, savedLang) : null;
-        return settingsHit ?? savedHit ?? list.find((t) => /^(en|eng|english)$/i.test(t.lang))?.lang ?? list[0].lang;
       };
 
       const uniq = new Map<string, SubtitleTrack>();
@@ -2054,21 +2033,14 @@ export default function BlissfulPlayer(props: {
         if (list.length === 0) return;
         if (userPickedSubtitleRef.current) return;
 
-        const preferredLang = getPreferredLang(list);
-        setSelectedLanguage(preferredLang);
-        const sortedList = list
-          .filter((t) => t.lang === preferredLang)
-          .slice()
-          .sort((a, b) => {
-            const sa = scoreSubtitleTrack(a);
-            const sb = scoreSubtitleTrack(b);
-            if (sb !== sa) return sb - sa;
-            return a.origin.localeCompare(b.origin) || a.label.localeCompare(b.label);
-          });
-        const preferredTrack = sortedList[0];
-        if (preferredTrack) {
-          autoPickedSubtitleKeyRef.current = preferredTrack.key;
-          setSelectedSubtitleKey(preferredTrack.key);
+        const picked = pickInitialSubtitle(list, {
+          language: props.playerSettings.subtitlesLanguage,
+          savedLanguage: readSavedSubtitleLang(),
+        });
+        if (picked.track) {
+          setSelectedLanguage(picked.language);
+          autoPickedSubtitleKeyRef.current = picked.track.key;
+          setSelectedSubtitleKey(picked.track.key);
         }
       };
 
@@ -2301,6 +2273,7 @@ export default function BlissfulPlayer(props: {
     let cancelled = false;
     const ac = new AbortController();
     setEmbeddedSubtitleTracks([]);
+    setBitmapSubtitleLangs([]);
     setChapters([]);
     setVideoInfo(null);
     void (async () => {
@@ -2350,6 +2323,11 @@ export default function BlissfulPlayer(props: {
             };
           });
         setEmbeddedSubtitleTracks(tracks);
+        setBitmapSubtitleLangs(
+          (data.subtitles ?? [])
+            .filter((s) => !s.textBased)
+            .map((s) => effectiveTrackLanguage(s.language, s.title)),
+        );
         setChapters(data.chapters ?? []);
         if (data.video) {
           setVideoInfo({
@@ -2380,36 +2358,26 @@ export default function BlissfulPlayer(props: {
   useEffect(() => {
     if (userPickedSubtitleRef.current) return;
     if (allSubtitleTracks.length === 0) return;
-    const savedLang = (() => {
-      try { return window.localStorage.getItem('blissful.subtitleLang'); } catch { return null; }
-    })();
-    // Try preferred language first (from settings → saved → English
-    // pattern). If nothing matches AND we have an embedded text sub,
-    // fall back to it — pirate-source MKVs almost always embed an
-    // English/forced sub tagged `und` (undetermined), which our
-    // exact language match would otherwise filter out, leaving the
-    // user with no subs at all on the Real-Debrid stream.
-    const preferredLang =
-      findMatchingLanguage(allSubtitleTracks, props.playerSettings.subtitlesLanguage) ??
-      (savedLang ? findMatchingLanguage(allSubtitleTracks, savedLang) : null) ??
-      allSubtitleTracks.find((t) => /^(en|eng|english)$/i.test(t.lang))?.lang ??
-      allSubtitleTracks.find((t) => isEmbeddedOrigin(t.origin))?.lang ??
-      allSubtitleTracks[0].lang;
-    const targetCanon = subtitleLangLabel(preferredLang);
-    // Pass the video's real duration so the pick prefers a subtitle actually
-    // timed for THIS cut. A provider can offer a dozen files for one title
-    // (different cuts, wrong episode, PAL-speed transfers) and a viewer who
-    // doesn't speak the audio language has no way to judge which is right —
-    // matching runtimes is the language-independent way to decide.
-    const best = allSubtitleTracks
-      .filter((t) => subtitleLangLabel(t.lang) === targetCanon)
-      .slice()
-      .sort((a, b) => {
-        const sa = scoreSubtitleTrack(a, { videoDurationSec: duration });
-        const sb = scoreSubtitleTrack(b, { videoDurationSec: duration });
-        if (sb !== sa) return sb - sa;
-        return a.origin.localeCompare(b.origin) || a.label.localeCompare(b.label);
-      })[0];
+    // Only ever the preferred language: a viewer who asked for English is not
+    // handed the first embedded track just because it is the only text one. Pass
+    // the video's real duration so the pick prefers a subtitle actually timed for
+    // THIS cut (a provider can offer a dozen files for one title, and a viewer who
+    // doesn't speak the audio language cannot judge which is right).
+    const picked = pickInitialSubtitle(allSubtitleTracks, {
+      language: props.playerSettings.subtitlesLanguage,
+      savedLanguage: readSavedSubtitleLang(),
+      videoDurationSec: duration,
+      bitmapLanguages: bitmapSubtitleLangs,
+    });
+    if (!picked.track) {
+      if (picked.bitmapOnly && bitmapLoggedRef.current !== props.url) {
+        bitmapLoggedRef.current = props.url;
+        playerLog(`[subs] preferred language only as bitmap (${picked.language})`);
+      }
+      return;
+    }
+    const best = picked.track;
+    const preferredLang = picked.language;
     if (!best) return;
     if (best.key === selectedSubtitleKey) return;
     setSelectedLanguage(preferredLang);
@@ -2418,7 +2386,7 @@ export default function BlissfulPlayer(props: {
     // `duration` is a dep: it arrives AFTER the track list (metadata loads
     // later), and re-running with it is what upgrades an initial provenance-only
     // pick to the correctly-timed file.
-  }, [allSubtitleTracks, props.playerSettings.subtitlesLanguage, selectedSubtitleKey, duration]);
+  }, [allSubtitleTracks, props.playerSettings.subtitlesLanguage, selectedSubtitleKey, duration, bitmapSubtitleLangs, props.url]);
 
   // Load src + apply start time
   // Reset the retry counter whenever the caller hands us a genuinely
@@ -3842,21 +3810,23 @@ export default function BlissfulPlayer(props: {
     seriesKeyFor(props.type ?? '', props.id ?? '')
   ]?.infohash ?? null;
   const playingUrl = props.url;
-  const playingReleaseName = useMemo(() => {
-    const hit = props.releases?.find((r) => r.url === playingUrl);
-    return hit?.torrentName || hit?.name || props.title || '';
-  }, [props.releases, playingUrl, props.title]);
+  const playingRelease = useMemo(
+    () => props.releases?.find((r) => r.url === playingUrl) ?? null,
+    [props.releases, playingUrl],
+  );
+  const playingReleaseName = playingRelease?.torrentName || playingRelease?.name || props.title || '';
+  const playingInfohash = extractInfohash(playingUrl) ?? extractInfohash(playingRelease?.infoHash);
   useEffect(() => {
     if (!firstFrameSeen || partyNonHost) return;
     if (!props.type || props.type === 'movie' || !props.id || !playingUrl) return;
-    const hash = extractInfohash(playingUrl);
+    const hash = playingInfohash;
     if (!hash) return;
     rememberPack(
       seriesKeyFor(props.type, props.id),
       { infohash: hash, name: playingReleaseName },
       (next) => storageCtx.savePlayerSettings(next).catch(() => {}),
     );
-  }, [firstFrameSeen, partyNonHost, props.type, props.id, playingUrl, playingReleaseName, storageCtx]);
+  }, [firstFrameSeen, partyNonHost, props.type, props.id, playingUrl, playingInfohash, playingReleaseName, storageCtx]);
   const pickerExpectedEpisode = useMemo(
     () => expectedEpisodeFor(props.videoId, props.videos),
     [props.videoId, props.videos],

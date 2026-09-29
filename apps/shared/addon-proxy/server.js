@@ -8,6 +8,7 @@ const { spawn } = require('child_process');
 const { decryptVideasyResponse } = require('./videasy-decrypt');
 const { decryptVideasyV2 } = require('./videasy-decrypt-v2');
 const { isResolvedOffHost } = require('./transcodeSrcResolution');
+const { pickAudioByLanguage, readStreamTag } = require('./audioLangPick');
 
 // ── JSON disk cache (NAS-backed) ───────────────────────────────────────
 // Small, immutable-ish JSON — TMDB id maps, season info, skip-times, ratings
@@ -393,8 +394,8 @@ async function probeAudioTracks(src) {
         const streams = (JSON.parse(out).streams) || [];
         resolve(streams.map((s, i) => ({
           i,
-          lang: (s.tags && (s.tags.language || s.tags.lang)) || null,
-          title: (s.tags && s.tags.title) || null,
+          lang: readStreamTag(s.tags, 'language', 'lang'),
+          title: readStreamTag(s.tags, 'title'),
           codec: s.codec_name || null,
           channels: s.channels || null,
         })));
@@ -404,9 +405,10 @@ async function probeAudioTracks(src) {
     setTimeout(() => { try { p.kill('SIGKILL'); } catch { /* noop */ } resolve([]); }, 25000);
   });
   const payload = { tracks };
-  // Permanent for a real result (immutable per file); short for empty (a cold
-  // RD link can make the probe race and return nothing).
-  await jsonCacheSet('transcode-audio', src, payload, tracks.length ? 0 : 10 * 60 * 1000);
+  // Permanent for a real result (immutable per file). An empty one is a failed
+  // probe (a cold RD link, a 429), so it is kept only briefly: cached for minutes
+  // it pinned the Japanese-audio pick to track 0 for the whole retry window.
+  await jsonCacheSet('transcode-audio', src, payload, tracks.length ? 0 : 30 * 1000);
   return payload;
 }
 
@@ -3186,7 +3188,16 @@ const server = http.createServer((req, res) => {
           if (!p || typeof p.status !== 'number' || p.status >= 400) continue;
           if (!p.finalUrl || !/^https?:\/\//i.test(p.finalUrl)) continue;
           if (/failed_infringement/i.test(p.finalUrl)) continue; // DMCA placeholder
-          out.push({ name: c.s.name || 'Real-Debrid', title: c.s.title || '', url: p.finalUrl });
+          // The resolved real-debrid.com/d/ url no longer carries the torrent's
+          // infohash, so hand it over from the Torrentio url it was resolved from —
+          // the web player remembers a series' release pack by infohash.
+          const hashMatch = /\b([a-f0-9]{40})\b/i.exec(c.s.url);
+          out.push({
+            name: c.s.name || 'Real-Debrid',
+            title: c.s.title || '',
+            url: p.finalUrl,
+            ...(hashMatch ? { infoHash: hashMatch[1].toLowerCase() } : {}),
+          });
           if (out.length >= 4) break;
         }
         finish(out);
@@ -3347,7 +3358,11 @@ const server = http.createServer((req, res) => {
     const tq = url.parse(req.url, true).query;
     const src = String(tq.url || '');
     const aRaw = parseInt(tq.a, 10);
-    const audioIdx = Number.isInteger(aRaw) && aRaw >= 0 ? aRaw : 0; // which audio track to mux
+    let audioIdx = Number.isInteger(aRaw) && aRaw >= 0 ? aRaw : 0; // which audio track to mux
+    // `&alang=jpn` (no explicit `&a=`): the client wants a language, not an index.
+    const audioLang = !Number.isInteger(aRaw) && /^[a-z]{2,3}(?:-[a-z0-9]{2,8})?$/i.test(String(tq.alang || ''))
+      ? String(tq.alang).toLowerCase()
+      : null;
     if (!/^https?:\/\//i.test(src)) {
       res.writeHead(400, { 'Content-Type': 'text/plain' });
       res.end('bad url');
@@ -3367,6 +3382,15 @@ const server = http.createServer((req, res) => {
       res.end('MEDIA_NOT_CACHED_YET');
       return;
     }
+    // Language pick runs alongside the duration probe (both ffprobe the same file).
+    // Capped: a slow probe must not push the manifest past HLS.js's load timeout;
+    // it keeps running and caches its result for the next request.
+    const audioPick = audioLang
+      ? Promise.race([
+        probeAudioTracks(src).then(({ tracks }) => ({ tracks })).catch(() => null),
+        new Promise((resolve) => setTimeout(() => resolve(null), 8000)),
+      ])
+      : Promise.resolve(null);
     // Duration is immutable per file → cache permanently (keyed on the stable
     // torrentio url) so the playlist is instant on every later load.
     let dur = await jsonCacheGet('transcode-dur', src);
@@ -3395,6 +3419,14 @@ const server = http.createServer((req, res) => {
     let pl = '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:' + SEG + '\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n';
     // Clamp here too, so the playlist itself never advertises an audio track the
     // file doesn't have (a stale &a from a previous, multi-track release).
+    if (audioLang) {
+      const probed = await audioPick;
+      const picked = probed ? pickAudioByLanguage(probed.tracks, audioLang) : null;
+      if (picked != null) audioIdx = picked;
+      appendPlayerLog(
+        `transcode.m3u8 alang=${audioLang} ${probed ? `tracks=${probed.tracks.length}` : 'probe-timeout'} -> audio ${audioIdx}`,
+      );
+    }
     const safeAudioIdx = await clampAudioIdx(src, audioIdx);
     const aParam = safeAudioIdx ? '&a=' + safeAudioIdx : '';
     // Offline downloads request a ladder rung (&q=720p etc.) so the stored

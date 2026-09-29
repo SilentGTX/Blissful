@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { expectedEpisodeFor, scoreEpisodeMatch, type ExpectedEpisode } from './episodeMatch';
+import { episodeContradicts, expectedEpisodeFor, scoreEpisodeMatch, type ExpectedEpisode } from './episodeMatch';
 
 // Regression guard for the "asked for Bleach episode 2, got Thousand-Year Blood
 // War" class of bug: the addon's absolute episode numbering vs a release packed
@@ -97,5 +97,45 @@ describe('expectedEpisodeFor', () => {
   it('returns null for a movie id', () => {
     expect(expectedEpisodeFor('tt0137523', [])).toBeNull();
     expect(expectedEpisodeFor(null, [])).toBeNull();
+  });
+});
+
+describe('episode ranges and contradiction', () => {
+  const RANGE_PACK =
+    '[AnimeRG] Bleach (Complete Series) EP 001-366 [480p] [Dual-Audio] [Batch] [x265] [10-bit] [pseudo]';
+  const ep = (n: number): ExpectedEpisode => ({ season: 1, episode: n, absolute: n, title: null });
+
+  it('does not read "EP 001" inside "EP 001-366" as a marker for episode 1', () => {
+    expect(scoreEpisodeMatch(RANGE_PACK, ep(1))).toBe(0);
+    expect(scoreEpisodeMatch(RANGE_PACK, ep(366))).toBe(0);
+  });
+  it('does not treat a range that contains the episode as a contradiction', () => {
+    expect(episodeContradicts(RANGE_PACK, ep(45))).toBe(false);
+    expect(episodeContradicts(RANGE_PACK, ep(1))).toBe(false);
+    expect(episodeContradicts('Show [Episodes 1-111] BD', ep(50))).toBe(false);
+  });
+  it('contradicts a range that does not contain the episode', () => {
+    expect(episodeContradicts('Bleach EP 001-100 batch', ep(245))).toBe(true);
+  });
+  it('is silent for a release with no episode markers', () => {
+    expect(episodeContradicts('[Anime Time] Bleach Complete Series + Movies [Disney+ BD][1080p]', ep(45))).toBe(false);
+  });
+  it('contradicts a different SxxEyy, and a wrong-season one', () => {
+    expect(episodeContradicts('Bleach.S01E07.1080p.mkv', ep(45))).toBe(true);
+    expect(episodeContradicts('Bleach.S17E45.1080p.mkv', ep(45))).toBe(true);
+    expect(episodeContradicts('Bleach.S01E45.1080p.mkv', ep(45))).toBe(false);
+  });
+  it('contradicts a lone different absolute marker, and accepts the right one', () => {
+    expect(episodeContradicts('Bleach - 044 - Something.mkv', ep(45))).toBe(true);
+    expect(episodeContradicts('Bleach - 045 - Something.mkv', ep(45))).toBe(false);
+    expect(episodeContradicts('Bleach.E045.mkv', ep(45))).toBe(false);
+  });
+  it('keeps a season run that contains the episode', () => {
+    const s17: ExpectedEpisode = { season: 17, episode: 5, absolute: null, title: null };
+    expect(episodeContradicts('Bleach S17E01-E13 BD', s17)).toBe(false);
+    expect(episodeContradicts('Bleach S17E01-E03 BD', s17)).toBe(true);
+  });
+  it('is inert without an expectation', () => {
+    expect(episodeContradicts('Bleach.S01E07.mkv', null)).toBe(false);
   });
 });
