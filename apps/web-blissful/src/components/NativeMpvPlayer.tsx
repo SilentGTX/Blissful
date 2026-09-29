@@ -110,7 +110,7 @@ import {
 import { desktopPlayingUrlToSource, resolveSourceForDesktop } from '../lib/watchPartySource';
 import { useStorage } from '../context/StorageProvider';
 import { expectedEpisodeFor } from '../lib/episodeMatch';
-import { seriesKeyFor } from '../lib/seriesReleaseMemory';
+import { rememberedInfohashFrom, seriesKeyFor } from '../lib/seriesReleaseMemory';
 import type { NextEpisodeInfo } from '../pages/PlayerPage';
 
 // ── Color helpers (mirrors SimplePlayer 1:1) ───────────────────────────
@@ -3891,7 +3891,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         selectedReleaseUrl={props.url}
         onSelectRelease={onSelectRelease}
         rememberedInfohash={
-          props.playerSettings.seriesReleasePacks?.[seriesKeyFor(props.type ?? '', props.id ?? '')]?.infohash ?? null
+          rememberedInfohashFrom(props.playerSettings.seriesReleasePacks, seriesKeyFor(props.type ?? '', props.id ?? ''))
         }
         expectedEpisode={expectedEpisodeFor(props.videoId, props.videos)}
         playerSettings={props.playerSettings}

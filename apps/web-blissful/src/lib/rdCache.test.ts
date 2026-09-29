@@ -25,6 +25,13 @@ describe('cache markers', () => {
 });
 
 describe('extractInfohash', () => {
+  it('finds the hash inside the wrapped /transcode.m3u8?url= web play url', () => {
+    const raw = `https://torrentio.strem.fun/resolve/realdebrid/KEY/${HASH_A}/null/0/f.mkv`;
+    expect(extractInfohash(`/transcode.m3u8?url=${encodeURIComponent(raw)}&alang=eng`)).toBe(HASH_A);
+    expect(extractInfohash(`/transcode.m3u8?url=${encodeURIComponent(encodeURIComponent(raw))}`)).toBe(HASH_A);
+    expect(extractInfohash('/transcode.m3u8?url=%E0%A4%A')).toBeNull();
+  });
+
   it('finds the hash in any url shape, case-insensitively', () => {
     expect(extractInfohash(`https://torrentio.strem.fun/resolve/realdebrid/KEY/${HASH_A}/null/0/f.mkv`)).toBe(HASH_A);
     expect(extractInfohash(`magnet:?xt=urn:btih:${HASH_A.toUpperCase()}&dn=x`)).toBe(HASH_A);
