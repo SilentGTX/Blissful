@@ -18,6 +18,7 @@ import { useState, type MutableRefObject } from 'react';
 import { StremioIcon, type StremioIconName } from '../PlayerControlIcons';
 import { PLAYER_SERVERS } from '../../lib/playerServers';
 import { BananasPicker } from '../BananasPicker';
+import type { ExpectedEpisode } from '../../lib/episodeMatch';
 import {
   type SubtitleTrack,
   isEmbeddedOrigin,
@@ -102,6 +103,8 @@ export type SettingsPanelProps = {
   releases?: ReleaseOption[];
   selectedReleaseUrl?: string | null;
   onSelectRelease?: (url: string) => void;
+  rememberedInfohash?: string | null;
+  expectedEpisode?: ExpectedEpisode | null;
 
   // Save-to-account button needs both the current settings + sync fn
   playerSettings: PlayerSettings;
@@ -177,6 +180,8 @@ export function SettingsPanel(props: SettingsPanelProps) {
     onSetFavoriteServer,
     releases,
     selectedReleaseUrl,
+    rememberedInfohash,
+    expectedEpisode,
     onSelectRelease,
     playerSettings,
     savePlayerSettingsToAccount,
@@ -722,6 +727,8 @@ export function SettingsPanel(props: SettingsPanelProps) {
                     releases={releases ?? []}
                     selectedReleaseUrl={selectedReleaseUrl}
                     onSelectRelease={onSelectRelease}
+                    rememberedInfohash={rememberedInfohash}
+                    expectedEpisode={expectedEpisode}
                     onClose={onClose}
                   />
                 ) : null}

@@ -6,6 +6,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { filterRelevantBananas } from '../lib/bananaRelevance';
 import { detectSubtitleHint, subtitleHintRank, type SubtitleHint } from '../lib/subtitleHints';
+import { compareRankHead, computeRankInfos } from '../lib/releaseRanking';
+import type { CacheTier } from '../lib/rdCache';
+import type { ExpectedEpisode } from '../lib/episodeMatch';
 
 export type BananaOption = {
   name: string;
@@ -121,6 +124,8 @@ export function BananasPicker({
   verifyCache = false,
   relevanceTitle = null,
   hideUncached = true,
+  rememberedInfohash = null,
+  expectedEpisode = null,
 }: {
   releases: BananaOption[];
   selectedReleaseUrl?: string | null;
@@ -147,6 +152,13 @@ export function BananasPicker({
    *  bucket has nothing cached/unknown, its uncached releases are shown anyway
    *  (so it's never empty). The now-playing release is always kept. Default on. */
   hideUncached?: boolean;
+  /** Infohash of the pack this series was last played from (see
+   *  lib/seriesReleaseMemory). When it is cached and has the episode it sorts
+   *  first — in its bucket and in Top picks — with no badge of its own. */
+  rememberedInfohash?: string | null;
+  /** The episode being picked for, so the remembered pack yields to a cached
+   *  release that provably matches a different episode. Optional. */
+  expectedEpisode?: ExpectedEpisode | null;
 }) {
   // Bumped when a live RD cache check lands, so the buckets re-rank and Top
   // picks recompute with the confirmed cache status.
@@ -164,7 +176,7 @@ export function BananasPicker({
   // the list matches the desktop app — cached play instantly, uncached are shown
   // (marked + sorted last) and start caching on RD when picked. Sort by score,
   // bucket by resolution, dedup.
-  const bananaBuckets = useMemo(() => {
+  const ranked = useMemo(() => {
     if (!releases || releases.length === 0) return null;
     // Drop torrents that don't belong to the requested title (Comet leaks
     // unrelated results for short/common titles). Safe: empties → full list.
@@ -176,14 +188,29 @@ export function BananasPicker({
       const sel = releases.find((r) => sameBanana(r.url, selectedReleaseUrl));
       if (sel) relevant = [sel, ...relevant];
     }
+    // Shared ranking head (lib/releaseRanking): cache tier, then the remembered
+    // pack, then episode match. What follows is picker-specific: the resolution
+    // buckets already stand in for quality, so the subtitle tag and the
+    // seeders/size score decide within a bucket.
+    const CACHE_TIERS: CacheTier[] = ['cached', 'unknown', 'uncached'];
+    const infos = computeRankInfos(
+      relevant,
+      (r) => ({
+        name: r.name,
+        title: r.torrentName,
+        url: r.url,
+        cacheTier: CACHE_TIERS[bananaCacheRank(r)],
+      }),
+      { expected: expectedEpisode, rememberedInfohash },
+    );
+    const infoOf = new Map(relevant.map((r, i) => [r, infos[i]] as const));
+    const rememberedUrls = new Set(relevant.filter((r) => infoOf.get(r)?.remembered).map((r) => r.url));
     const sorted = relevant.slice().sort((a, b) => {
-      const ra = bananaCacheRank(a);
-      const rb = bananaCacheRank(b);
-      if (ra !== rb) return ra - rb; // cached → unknown → uncached
-      // Subtitle tag second, DELIBERATELY below the cache rank: an uncached
-      // release must never outrank a cached one just for saying "MULTISUB",
-      // because picking it makes you wait on RD. Within one cache tier, though,
-      // a tagged release is the better pick.
+      const head = compareRankHead(infoOf.get(a)!, infoOf.get(b)!);
+      if (head !== 0) return head;
+      // Subtitle tag next, DELIBERATELY below the cache tier and the remembered
+      // pack: an uncached release must never outrank a cached one just for saying
+      // "MULTISUB", because picking it makes you wait on RD.
       const sa = subtitleHintRank(bananaSubtitleHint(a));
       const sb = subtitleHintRank(bananaSubtitleHint(b));
       if (sa !== sb) return sa - sb; // subs → multi-audio → unknown
@@ -222,8 +249,10 @@ export function BananasPicker({
         if (kept.length > 0) buckets[b] = kept;
       }
     }
-    return buckets;
-  }, [releases, relevanceTitle, hideUncached, rdMode, selectedReleaseUrl, verifyVersion]);
+    return { buckets, rememberedUrls };
+  }, [releases, relevanceTitle, hideUncached, rdMode, selectedReleaseUrl, verifyVersion, rememberedInfohash, expectedEpisode]);
+  const bananaBuckets = ranked?.buckets ?? null;
+  const rememberedUrls = ranked?.rememberedUrls;
 
   // Live-verify Top-pick candidates against Real-Debrid. Comet's "[RD⚡]" is an
   // unreliable cache hint, so for the releases that could win a Top-pick slot
@@ -281,6 +310,10 @@ export function BananasPicker({
     // green "Cached" badge marks which picks truly play instantly.
     const pick = (b: BananaBucket) => {
       const rows = bananaBuckets[b].filter((r) => !sameBanana(r.url, selectedReleaseUrl));
+      // The remembered pack (cached, has the episode) beats the subtitle-tag
+      // preference below.
+      const remembered = rows.find((r) => rememberedUrls?.has(r.url) && bananaCacheRank(r) === 0);
+      if (remembered) return remembered;
       // Cached first, as before; among cached, prefer one whose name advertises
       // subtitles. rows is already sorted, so "first match" is also "best score".
       const cached = rows.filter((r) => bananaCacheRank(r) === 0);
@@ -291,8 +324,12 @@ export function BananasPicker({
         rows[0]
       );
     };
-    return [pick('4K'), pick('1080p')].filter(Boolean) as BananaOption[];
-  }, [bananaBuckets, selectedReleaseUrl]);
+    const picks = [pick('4K'), pick('1080p')].filter(Boolean) as BananaOption[];
+    // Remembered pack leads Top picks whichever bucket it sits in (stable sort).
+    return picks.sort(
+      (a, b) => Number(rememberedUrls?.has(b.url) ?? false) - Number(rememberedUrls?.has(a.url) ?? false),
+    );
+  }, [bananaBuckets, rememberedUrls, selectedReleaseUrl]);
 
   const [openBananaBuckets, setOpenBananaBuckets] = useState<Set<BananaBucket>>(new Set());
   const toggleBananaBucket = (b: BananaBucket) =>

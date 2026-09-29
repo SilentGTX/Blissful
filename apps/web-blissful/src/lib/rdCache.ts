@@ -36,29 +36,3 @@ export function extractInfohash(url: string | null | undefined): string | null {
   const m = /\b([a-f0-9]{40})\b/i.exec(url ?? '');
   return m ? m[1].toLowerCase() : null;
 }
-
-/**
- * Auto-pick score. Cache state dominates everything, then continuity with the
- * release the user already has progress on, then transcode cost, then quality.
- *
- * The tier gap (50k) is deliberately larger than the continuity bonus (20k):
- * resuming the same release is nice, but not at the price of waiting for RD to
- * download it when a cached alternative exists.
- */
-export function scoreReleaseForAutoPick(args: {
-  name: string | null | undefined;
-  title?: string | null;
-  url?: string | null;
-  /** Infohash of the release the user last played for this exact episode. */
-  savedInfohash?: string | null;
-}): number {
-  const tier = releaseCacheTier(args.name);
-  const cacheScore = tier === 'cached' ? 100_000 : tier === 'unknown' ? 50_000 : 0;
-  const continuity =
-    args.savedInfohash && extractInfohash(args.url) === args.savedInfohash ? 20_000 : 0;
-  const hay = `${args.name ?? ''} ${args.title ?? ''}`;
-  // HEVC/x265 transcodes far more expensively than H.264 on the Mac.
-  const codec = /(^|[^a-z])(x265|h\.?265|hevc)([^a-z]|$)/i.test(hay) ? 0 : 1_000;
-  const quality = /1080p/i.test(hay) ? 30 : /720p/i.test(hay) ? 25 : /2160p|4k/i.test(hay) ? 15 : 10;
-  return cacheScore + continuity + codec + quality;
-}

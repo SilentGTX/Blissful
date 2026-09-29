@@ -7,6 +7,8 @@ import { EpisodePanel } from './EpisodePanel';
 import { SeasonHeader } from './SeasonHeader';
 import { StreamFilters } from './StreamFilters';
 import type { FillerEpisodes, FillerKind } from '../../../lib/animeFiller';
+import { expectedEpisodeFor } from '../../../lib/episodeMatch';
+import { getRememberedPack, seriesKeyFor } from '../../../lib/seriesReleaseMemory';
 
 type DetailStreamsPanelProps = {
   variant: 'mobile' | 'desktop';
@@ -165,6 +167,9 @@ export function DetailStreamsPanel({
   onToggleWebReady,
   streamsLoading,
   streamRows,
+  type,
+  id,
+  allVideos,
   metaName,
   metaPoster,
   onNavigate,
@@ -193,6 +198,14 @@ export function DetailStreamsPanel({
   // drawer + unreleased modal use). Keep a url→row map so onSelect can run the
   // detail's play logic. `url` is the raw stream URL (carries the infohash for
   // BananasPicker's dedup); we navigate via the row's /player deep link.
+  const rememberedInfohash = useMemo(
+    () => getRememberedPack(seriesKeyFor(type, id))?.infohash ?? null,
+    [type, id],
+  );
+  const expectedEpisode = useMemo(
+    () => (isSeriesLike ? expectedEpisodeFor(selectedVideoId, allVideos) : null),
+    [isSeriesLike, selectedVideoId, allVideos],
+  );
   const releaseOptions = useMemo<BananaOption[]>(() => {
     const opts: BananaOption[] = streamRows
       .map((row) => ({
@@ -335,6 +348,8 @@ export function DetailStreamsPanel({
                   releases={releaseOptions}
                   selectedReleaseUrl={lastPlayed?.url ?? lastPlayedUrl}
                   onSelectRelease={handleSelectRelease}
+                  rememberedInfohash={rememberedInfohash}
+                  expectedEpisode={expectedEpisode}
                   reselectable
                   verifyCache
                   relevanceTitle={metaName}

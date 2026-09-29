@@ -33,8 +33,10 @@ import { OfflineDownloadModal } from '../components/OfflineDownloadModal';
 import { offlineSupported } from '../lib/offlineCapabilities';
 import { fetchFallbackReleases } from '../lib/fallbackReleases';
 import { getResumeSeconds } from '../layout/app-shell/utils';
-import { scoreReleaseForAutoPick } from '../lib/rdCache';
-import { expectedEpisodeFor, scoreEpisodeMatch } from '../lib/episodeMatch';
+import { extractInfohash } from '../lib/rdCache';
+import { expectedEpisodeFor } from '../lib/episodeMatch';
+import { rankReleases } from '../lib/releaseRanking';
+import { getRememberedPack, seriesKeyFor } from '../lib/seriesReleaseMemory';
 import { isNativeShell } from '../lib/desktop';
 import { useStorage } from '../context/StorageProvider';
 import { fillerWarningsEnabled } from '../lib/playerSettings';
@@ -892,16 +894,18 @@ export default function DetailPage() {
       selectedVideoId ?? searchParams.get('videoId'),
       videos,
     );
-    const top = playableRows
-      .slice()
-      .sort((a, b) => {
-        const s = (row: typeof a) => {
-          const st = row.stream as { name?: string | null; title?: string | null; url?: string | null };
-          return scoreReleaseForAutoPick({ name: st.name, title: st.title, url: st.url })
-            + scoreEpisodeMatch(`${st.name ?? ''} ${st.title ?? ''}`, expectedEpisode);
-        };
-        return s(b) - s(a);
-      })[0];
+    const top = rankReleases(
+      playableRows,
+      (row) => {
+        const st = row.stream as { name?: string | null; title?: string | null; url?: string | null };
+        return { name: st.name, title: st.title, url: st.url };
+      },
+      {
+        expected: expectedEpisode,
+        rememberedInfohash: getRememberedPack(seriesKeyFor(type, id))?.infohash ?? null,
+        savedInfohash: extractInfohash(lastStream?.url),
+      },
+    )[0];
     if (!top) {
       autoplayConsumedRef.current = true;
       // Every ranked stream was already proven dead. Strip the autoplay /
@@ -975,6 +979,7 @@ export default function DetailPage() {
     searchParams,
     selectedVideoId,
     videos,
+    lastStream,
     type,
     id,
   ]);

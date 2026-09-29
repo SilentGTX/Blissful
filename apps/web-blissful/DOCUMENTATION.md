@@ -327,9 +327,34 @@ compares MAL's episode count with the addon's list and the feature stays invisib
   it as series-like inside the player (`props.type !== 'movie'`), while keeping the string
   verbatim, since progress, last-stream and the back link are all keyed by it elsewhere.
 
+### Release ranking and series release memory
+
+Which release plays is decided by ONE lexicographic comparator, `lib/releaseRanking.ts`, used by the
+RD fast path and the full fallback (`PlayerPageWeb`), the detail-page autoplay (`DetailPage`) and the
+Releases picker (`BananasPicker`, which uses the shared head: rules 1-3, then its own resolution
+buckets). Order, highest first: cache tier (cached > unknown > uncached) > the series' remembered pack
+(cached, and not contradicted by the episode) > episode match > the release last played for this
+episode > first-time probe score > codec (non-HEVC first, tiebreak only) > quality
+(1080p > 720p > 2160p > 480p > other, `.avi` sunk). A lower rule can never cross a higher one, so an
+uncached release never beats a cached one. HEVC is ranked, not filtered: every web RD stream goes
+through `/transcode.m3u8`, so the old HEVC purge in `streamHistory` and the fallback's HEVC exclusion
+are gone.
+
+- **Series release memory** (`lib/seriesReleaseMemory.ts`): `playerSettings.seriesReleasePacks`,
+  keyed `<type>:<id>`, value `{ infohash, name, updatedAt }`, capped at 200 series. The player writes
+  it on the first real frame of a release (a manual pick of another release overwrites it). There is
+  no UI. It rides `playerSettings`, which already syncs via `/state` (the storage server shallow-merges
+  it), so no backend change. Web only: the desktop shell reads it for ordering but does not write it.
+- **First-time pick** (`lib/releaseProbe.ts`): when nothing is remembered or saved for the episode and
+  at least two cached candidates exist, the top 4 are probed in parallel inside one 4 s budget
+  (`/probe-streams` + `/transcode-audio`) and scored by `scoreProbedRelease`: preferred-language audio,
+  preferred-language text subs (capped at 3), dual audio, height >= 1080, total text subs, then name
+  markers (`BD|Blu-ray|BDRip|Complete|Batch`). Unprobed releases score as zero. The pick is logged via
+  `sendPlayerLog`.
+
 ### Testing
 
-`vitest` runs `*.test.ts` (currently `lib/stremioAddon.normalizeAddonBaseUrl`; run `npm test`).
+`vitest` runs `*.test.ts` in `src/lib` (run `npm test`; ranking is in `releaseRanking.test.ts`, memory in `seriesReleaseMemory.test.ts`).
 When you add a behaviour that could be a regression magnet (security validation, semver
 comparison, URL normalisation), add a test next to the code.
 

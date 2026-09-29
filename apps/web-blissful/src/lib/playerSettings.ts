@@ -61,6 +61,10 @@ export type PlayerSettings = {
    *  filler run. A profile saved before this existed has no key: read as ON
    *  (`fillerWarningsEnabled()`), never as off. */
   fillerWarnings?: boolean;
+  /** Release pack last played per series, so the next episode keeps the same
+   *  pack. Keyed `${type}:${id}`; written implicitly by the player, synced with
+   *  the rest of playerSettings. See lib/seriesReleaseMemory. */
+  seriesReleasePacks?: Record<string, { infohash: string; name: string; updatedAt: number }>;
 };
 
 export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {

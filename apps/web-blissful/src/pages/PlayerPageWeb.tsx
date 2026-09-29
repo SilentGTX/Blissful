@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthProvider';
 import { useStorage } from '../context/StorageProvider';
 import BlissfulPlayer from '../components/BlissfulPlayer';
 import type { PlayerSettings } from '../lib/playerSettings';
-import { effectiveAudioLanguage } from '../lib/playerSettings';
+import { effectiveAudioLanguage, readStoredPlayerSettings } from '../lib/playerSettings';
 import { useMetaDetails } from '../models/useMetaDetails';
 import { fetchTmdbId, type TmdbLookup } from '../lib/tmdb';
 import { PLAYER_SERVERS, DEFAULT_SERVER_ID, VIDEASY_ENABLED } from '../lib/playerServers';
@@ -45,8 +45,17 @@ function clearVideasyCooldown(): void {
 }
 import { getResumeSeconds, openInVlc } from '../layout/app-shell/utils';
 import { pickPreferredAudioTrack } from '../lib/audioTracks';
-import { extractInfohash, releaseCacheTier, scoreReleaseForAutoPick } from '../lib/rdCache';
-import { expectedEpisodeFor, scoreEpisodeMatch } from '../lib/episodeMatch';
+import { extractInfohash } from '../lib/rdCache';
+import { expectedEpisodeFor } from '../lib/episodeMatch';
+import {
+  computeRankInfos,
+  rankReleases,
+  type ProbePrefs,
+  type RankContext,
+  type ReleaseCandidate,
+} from '../lib/releaseRanking';
+import { probeFirstTimePick } from '../lib/releaseProbe';
+import { getRememberedPack, seriesKeyFor } from '../lib/seriesReleaseMemory';
 import { getLastStreamSelection } from '../lib/streamHistory';
 import { parseStreamDescription } from '../features/detail/utils';
 import { releaseMatchesShow } from '../lib/fallbackReleases';
@@ -421,6 +430,13 @@ function formatNextInfo(v: MetaVideo): NextEpisodeInfo {
     nextReleased: typeof v.released === 'string' && v.released.length > 0 ? v.released : null,
   };
 }
+
+const describeStream = ({ stream }: { stream: StremioStream }): ReleaseCandidate => ({
+  name: stream.name,
+  title: stream.title,
+  filename: (stream.behaviorHints as { filename?: string } | undefined)?.filename ?? null,
+  url: stream.url,
+});
 
 export default function PlayerPage() {
   const { addons } = useAddons();
@@ -1402,6 +1418,37 @@ export default function PlayerPage() {
     // and every addon returns 404 → "no playable streams".
     const stripManifest = (transportUrl: string) =>
       transportUrl.replace(/\/manifest\.json$/, '').replace(/\/$/, '');
+    // Shared by the fast path and the full fallback: same ranking inputs, same
+    // first-time probe, same log line.
+    const buildRankContext = (): RankContext => ({
+      expected: expectedEpisodeRef.current,
+      rememberedInfohash: type && id ? getRememberedPack(seriesKeyFor(type, id))?.infohash ?? null : null,
+      savedInfohash: extractInfohash(savedStreamUrlRef.current),
+    });
+    const probeFirstTimePickFor = (items: Array<{ stream: StremioStream }>, ctx: RankContext) => {
+      if (type !== 'series') return Promise.resolve({ scores: new Map(), probed: [] as Array<{ name: string; score: readonly number[] | null }> });
+      const settings = readStoredPlayerSettings();
+      const prefs: ProbePrefs = {
+        audioLanguage: effectiveAudioLanguage(settings, id),
+        subtitlesLanguage: settings.subtitlesLanguage,
+      };
+      return probeFirstTimePick(items, describeStream, ctx, prefs);
+    };
+    const logReleasePick = (
+      where: string,
+      ordered: Array<{ stream: StremioStream }>,
+      ctx: RankContext,
+      probed: Array<{ name: string; score: readonly number[] | null }>,
+    ) => {
+      const top = ordered[0];
+      if (!top) return;
+      const info = computeRankInfos([top], describeStream, ctx)[0];
+      const why = `tier=${info.tier} remembered=${info.remembered} episode=${info.episode} saved=${info.saved}`;
+      const probeLine = probed.length
+        ? ` probed=[${probed.map((p) => `${p.name.replace(/\s+/g, ' ').slice(0, 48)}:${p.score ? p.score.join('') : 'n/a'}`).join(' | ')}]`
+        : '';
+      sendPlayerLog(`[player-page] release pick (${where}) ${why}${probeLine} -> ${(top.stream.name ?? '').replace(/\s+/g, ' ').slice(0, 80)} url=…${(top.stream.url ?? '').slice(-60)}`);
+    };
     // Map raw addon streams → the structured picker entries the mobile picker
     // and in-player Releases drawer render. Shared by the fast path (RD-only
     // list, populated instantly) and the full pipeline (every addon).
@@ -1510,27 +1557,16 @@ export default function PlayerPage() {
         // Populate the Releases picker with the RD streams NOW, so it isn't
         // empty after the commit cancels the (slower) full-pipeline run.
         if (!cancelled) setAddonStreams(toExposed(usable.map(({ stream, addonName }) => ({ stream, addonName }))));
-        // Rank for the auto-pick. Cache state DOMINATES: an uncached release
-        // makes RD download the torrent first, so the player just sits there —
-        // previously the codec weight (1000) outranked the cached bonus (100)
-        // and an uncached H.264 could win over a cached release. Within a tier,
-        // the release that actually CONTAINS this episode wins (see
-        // lib/episodeMatch — the addon's id→file mapping is often wrong for
-        // absolute-numbered anime), then the release the user already has
-        // progress on (resume continuity), then cheap-to-transcode codec, then
-        // quality. See lib/rdCache.
-        const savedInfohash = extractInfohash(savedStreamUrlRef.current);
-        const rank = ({ stream }: { stream: StremioStream }) =>
-          scoreReleaseForAutoPick({
-            name: stream.name,
-            title: stream.title,
-            url: stream.url,
-            savedInfohash,
-          }) + scoreEpisodeMatch(
-            `${stream.name ?? ''} ${stream.title ?? ''} ${(stream.behaviorHints as { filename?: string } | undefined)?.filename ?? ''}`,
-            expectedEpisodeRef.current,
-          );
-        const ordered = usable.slice().sort((a, b) => rank(b) - rank(a));
+        // Rank for the auto-pick with the shared comparator (lib/releaseRanking):
+        // cache tier, the series' remembered pack, episode match, the release
+        // last played for this episode, first-time probe, then codec and quality.
+        // With nothing remembered, the top cached candidates are probed (bounded)
+        // so the pick is based on what is inside the file.
+        const rankCtx = buildRankContext();
+        const first = await probeFirstTimePickFor(usable, rankCtx);
+        if (cancelled || committed) return;
+        const ordered = rankReleases(usable, describeStream, { ...rankCtx, probeScores: first.scores });
+        logReleasePick('fast path', ordered, { ...rankCtx, probeScores: first.scores }, first.probed);
         for (const { stream } of ordered.slice(0, 4)) {
           if (cancelled || committed) return;
           try {
@@ -1580,7 +1616,7 @@ export default function PlayerPage() {
       // the AUTO-pick can avoid it (H.264 transcodes ~free; 4K HEVC 10-bit →
       // H.264 is CPU-heavy and may not sustain realtime), only resorting to
       // HEVC if a title has nothing else.
-      const allLabeled: Array<{ stream: StremioStream; addonName: string; isHevc: boolean }> = [];
+      const allLabeled: Array<{ stream: StremioStream; addonName: string }> = [];
       for (const r of results) {
         if (r.status !== 'fulfilled') continue;
         const { res, addon } = r.value;
@@ -1595,45 +1631,14 @@ export default function PlayerPage() {
             const pn = parseStreamDescription(s.description ?? s.title ?? '').torrentName;
             if (!releaseMatchesShow(pn || s.name || '', metaTitle)) continue;
           }
-          const codecText = `${s.name ?? ''} ${s.title ?? ''} ${(s.behaviorHints as { filename?: string } | undefined)?.filename ?? ''}`;
-          const isHevc = /(^|[^a-z])(x265|h\.?265|hevc)([^a-z]|$)/i.test(codecText);
-          allLabeled.push({ stream: s, addonName, isHevc });
+          allLabeled.push({ stream: s, addonName });
         }
       }
-      // Quality preference for the AUTO-pick: 1080p > 720p > 2160p/4K > 480p.
-      const savedInfohashFull = extractInfohash(savedStreamUrlRef.current);
-      const scoreStream = (s: StremioStream) => {
-        const t = `${s.name ?? ''} ${s.title ?? ''}`;
-        // Cache state first, on the same scale the fast path uses: an uncached
-        // release means waiting on an RD download, which no quality advantage
-        // makes up for. Continuity with the release the user already has
-        // progress on breaks ties WITHIN a tier (never across).
-        const tier = releaseCacheTier(s.name);
-        const filenameHint = (s.behaviorHints as { filename?: string } | undefined)?.filename ?? '';
-        let base = (tier === 'cached' ? 100_000 : tier === 'unknown' ? 50_000 : 0)
-          + (savedInfohashFull && extractInfohash(s.url) === savedInfohashFull ? 20_000 : 0)
-          // Does this release actually contain the episode we asked for? Ranks
-          // inside a cache tier only — see lib/episodeMatch.
-          + scoreEpisodeMatch(`${t} ${filenameHint}`, expectedEpisodeRef.current);
-        if (/1080p/i.test(t)) base += 100;
-        else if (/720p/i.test(t)) base += 85;
-        else if (/2160p|4k/i.test(t)) base += 65;
-        else if (/480p/i.test(t)) base += 50;
-        else base += 60;
-        // Container preference: .avi (XviD / ancient fansub) is the lowest
-        // quality AND the flakiest source to transcode (mp3-in-avi seek glitches,
-        // cold-RD-link segment failures). Sink it well below mkv/mp4 of the same
-        // sub-tier — but don't exclude it, since some old anime episodes only
-        // have an .avi sub rip. Checks filename + url too (the resolution/codec
-        // tags live in the name/title, the extension often only in the file).
-        if (/\.avi(\b|$)/i.test(`${t} ${filenameHint} ${s.url ?? ''}`)) base -= 45;
-        return base;
-      };
-      // Auto-pick candidates: prefer non-HEVC (smooth transcode); if the title
-      // ONLY has HEVC, fall back to it so the user still gets a stream.
-      const nonHevc = allLabeled.filter((x) => !x.isHevc);
-      const labeledHttps = (nonHevc.length ? nonHevc : allLabeled).slice();
-      labeledHttps.sort((a, b) => scoreStream(b.stream) - scoreStream(a.stream));
+      // Auto-pick candidates ranked by the shared comparator (lib/releaseRanking).
+      // HEVC is only a tiebreak there — every release plays through /transcode,
+      // so it is no longer excluded outright.
+      const rankCtx = buildRankContext();
+      let labeledHttps = rankReleases(allLabeled, describeStream, rankCtx);
       // Picker list = ALL streams (incl 4K HEVC). Parse the Stremio description
       // into the structured fields the detail-page stream list / Releases
       // picker use (torrent name, seeders, size, site).
@@ -1699,36 +1704,18 @@ export default function PlayerPage() {
       }
       void (async () => {
         if (committed) return; // fast path won while we were building the list
-        // For series/anime, OpenSubtitles frequently has nothing — the only
-        // subtitles may be EMBEDDED in a specific release. Probe the top
-        // candidates (header read, ~fast) and float the ones that carry text
-        // subs to the front, still quality-ordered among themselves. Bounded
-        // + parallel so it adds only a few seconds, and only runs when the
-        // fallback is actually engaged (Videasy unavailable).
-        if (type === 'series' && labeledHttps.length > 1) {
-          const topN = labeledHttps.slice(0, 8);
-          const subResults = await Promise.all(
-            topN.map(async (c) => {
-              if (!c.stream.url) return [c, false] as const;
-              try {
-                const r = await fetch(`/probe-streams?url=${encodeURIComponent(c.stream.url)}`, { signal: AbortSignal.timeout(8000) });
-                if (!r.ok) return [c, false] as const;
-                const d = (await r.json()) as { subtitles?: Array<{ textBased?: boolean }> };
-                return [c, (d.subtitles ?? []).some((s) => s.textBased)] as const;
-              } catch { return [c, false] as const; }
-            })
-          );
+        // Nothing remembered for this series: look inside the top cached
+        // candidates (bounded, parallel) and rank by what they contain — the
+        // same first-time pick the RD fast path uses.
+        if (labeledHttps.length > 1) {
+          const first = await probeFirstTimePickFor(labeledHttps, rankCtx);
           if (cancelled) return;
-          const subSet = new Set(subResults.filter(([, has]) => has).map(([c]) => c));
-          if (subSet.size) {
-            labeledHttps.sort((a, b) => {
-              const diff = (subSet.has(b) ? 1 : 0) - (subSet.has(a) ? 1 : 0);
-              return diff !== 0 ? diff : scoreStream(b.stream) - scoreStream(a.stream);
-            });
-            sendPlayerLog(`[player-page] addon fallback: ${subSet.size}/${topN.length} top releases carry embedded subs — preferring them`);
-          } else {
-            sendPlayerLog('[player-page] addon fallback: no embedded subs in top releases — quality order');
+          if (first.scores.size) {
+            labeledHttps = rankReleases(allLabeled, describeStream, { ...rankCtx, probeScores: first.scores });
           }
+          logReleasePick('fallback', labeledHttps, { ...rankCtx, probeScores: first.scores }, first.probed);
+        } else {
+          logReleasePick('fallback', labeledHttps, rankCtx, []);
         }
         // Probe each candidate before committing — Torrentio's
         // /resolve/realdebrid/… 302-redirects DMCA'd files to a

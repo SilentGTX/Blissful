@@ -36,6 +36,8 @@ import { isStremioLinked, syncStremioItem, triggerStremioItemSync } from '../../
 import { clearCurrentActivity, setCurrentActivity } from '../../lib/usePresenceHeartbeat';
 import { setLastStreamSelection } from '../../lib/streamHistory';
 import { expectedEpisodeFor } from '../../lib/episodeMatch';
+import { extractInfohash } from '../../lib/rdCache';
+import { rememberPack, seriesKeyFor } from '../../lib/seriesReleaseMemory';
 import { OfflineHlsLoader } from '../../lib/offlineHlsLoader';
 import { offlineIdFromUrl, offlinePlaylistUrl } from '../../lib/offlineUrls';
 import { buildPlayerPath, defaultPlayerSource } from '../../lib/playerUrl';
@@ -3833,6 +3835,33 @@ export default function BlissfulPlayer(props: {
   const partyNonHost = !!props.roomCode && !watchParty.isHost;
   partyNonHostRef.current = partyNonHost;
 
+  // Series release memory: the first real playback of a release remembers its
+  // pack for the series, so the next episode starts from the same one. A manual
+  // pick of another release lands here too and overwrites it.
+  const rememberedInfohash = props.playerSettings.seriesReleasePacks?.[
+    seriesKeyFor(props.type ?? '', props.id ?? '')
+  ]?.infohash ?? null;
+  const playingUrl = props.url;
+  const playingReleaseName = useMemo(() => {
+    const hit = props.releases?.find((r) => r.url === playingUrl);
+    return hit?.torrentName || hit?.name || props.title || '';
+  }, [props.releases, playingUrl, props.title]);
+  useEffect(() => {
+    if (!firstFrameSeen || partyNonHost) return;
+    if (!props.type || props.type === 'movie' || !props.id || !playingUrl) return;
+    const hash = extractInfohash(playingUrl);
+    if (!hash) return;
+    rememberPack(
+      seriesKeyFor(props.type, props.id),
+      { infohash: hash, name: playingReleaseName },
+      (next) => storageCtx.savePlayerSettings(next).catch(() => {}),
+    );
+  }, [firstFrameSeen, partyNonHost, props.type, props.id, playingUrl, playingReleaseName, storageCtx]);
+  const pickerExpectedEpisode = useMemo(
+    () => expectedEpisodeFor(props.videoId, props.videos),
+    [props.videoId, props.videos],
+  );
+
   // ── Anime filler (Anime Kitsu + MyAnimeList) ──────────────────────────
   // Which episodes of this show are filler / recaps — only for Kitsu content
   // with the warnings left on in Settings. Null otherwise, and everything
@@ -4606,6 +4635,8 @@ export default function BlissfulPlayer(props: {
         releases={partyNonHost ? undefined : props.releases}
         selectedReleaseUrl={props.selectedReleaseUrl}
         onSelectRelease={handleSelectReleaseTracked}
+        rememberedInfohash={rememberedInfohash}
+        expectedEpisode={pickerExpectedEpisode}
         playerSettings={props.playerSettings}
         savePlayerSettingsToAccount={storageCtx.savePlayerSettings}
       />

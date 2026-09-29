@@ -1,5 +1,3 @@
-import { isNativeShell } from './desktop';
-
 type StreamHistoryKeyParams = {
   authKey?: string | null;
   type: string;
@@ -55,17 +53,6 @@ export function getLastStreamSelection(params: StreamHistoryKeyParams): StreamHi
     const parsed = JSON.parse(raw) as Partial<StreamHistoryEntry>;
     if (!parsed || typeof parsed.url !== 'string' || parsed.url.length === 0) return null;
     if (isEphemeralStreamingUrl(parsed.url)) {
-      localStorage.removeItem(keyFor(params));
-      localStorage.removeItem(legacyKeyFor(params));
-      return null;
-    }
-    // Purge entries pointing at codecs the browser can't decode
-    // (HEVC/x265 in the filename) — they would just show a black
-    // frame on play. Forces the fallback to re-resolve next time.
-    // The desktop shell plays through mpv, which decodes HEVC fine, so
-    // skip the purge there (otherwise every 4K/HEVC release loses its
-    // Continue-watching pin and resume point on desktop).
-    if (!isNativeShell() && /(^|[^a-z])(x265|h\.?265|hevc)([^a-z]|$)/i.test(decodeURIComponent(parsed.url))) {
       localStorage.removeItem(keyFor(params));
       localStorage.removeItem(legacyKeyFor(params));
       return null;
