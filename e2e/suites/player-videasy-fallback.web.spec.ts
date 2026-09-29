@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { VIDEASY_ENABLED } from '../../apps/web-blissful/src/lib/playerServers';
 
 // Videasy dead-CDN failover (web) — regression tests for the 2026-07-18 outage:
 // /videasy-sources resolves fine, but the CDN behind the returned URLs is dead.
@@ -15,6 +16,9 @@ import type { Page } from '@playwright/test';
 // page's failover logic, not videasy itself. The proof of failover is the
 // player requesting the transcode-wrapped RD URL; actually decoding it is
 // covered by the desktop transcode suites (Playwright's Chromium has no H.264).
+
+const VIDEASY_OFF =
+  'Videasy/Vidking source path is parked (VIDEASY_ENABLED=false in apps/web-blissful/src/lib/playerServers.ts, 4352b86); runs again when the switch is flipped back on';
 
 const RD_URL = 'https://e2e-rd.example/E2E.Fallback.1080p.mkv';
 const DEAD_MANIFEST = `/addon-proxy?url=${encodeURIComponent('https://e2e-dead.example/1080p/index.m3u8')}&vd=1`;
@@ -67,6 +71,7 @@ async function expectRdFallback(page: Page, logNeedle: string) {
 }
 
 test.describe('Player videasy failover (web)', () => {
+  test.skip(!VIDEASY_ENABLED, VIDEASY_OFF);
   test('dead manifest → addon fallback commits the RD stream', async ({ page }) => {
     await mockBackend(page, DEAD_MANIFEST);
     await expectRdFallback(page, 'videasy source dead (manifest/segment unreachable)');

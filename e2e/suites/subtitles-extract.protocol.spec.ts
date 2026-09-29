@@ -21,6 +21,10 @@ import path from 'node:path';
 // produce exactly one ffmpeg run and N identical complete responses. Latency
 // follows from that, and a count is not flaky the way a time threshold is.
 // Run counts are read from the proxy's own log lines (the only signal it exposes).
+// Every request after the first is served either by JOINING the in-flight run or,
+// when the run already finished (the generated file is tiny), from its cache —
+// never by a second ffmpeg. So the assertion is joins + cache hits = N - 1, not
+// joins alone, which depends on how fast this machine's ffmpeg is.
 
 const PROXY = path.join('apps', 'shared', 'addon-proxy', 'server.js');
 const CONCURRENT = 4;
@@ -93,9 +97,8 @@ test.describe('Embedded subtitle extraction (addon-proxy)', () => {
     const target = `${p.url}/extract-subtitle.vtt?url=${encodeURIComponent(multitrackLanUrl!)}&track=${textSubs[0].index}`;
     const t0 = Date.now();
     const results = await Promise.all(
-      Array.from({ length: CONCURRENT }, async (_, i) => {
-        // Stagger slightly, the way a re-attaching player does.
-        await new Promise((r) => setTimeout(r, i * 120));
+      Array.from({ length: CONCURRENT }, async () => {
+        // All at once, so the followers arrive while the leader's ffmpeg is running.
         const res = await fetch(target);
         const body = await res.text();
         return { status: res.status, body, finishedAt: Date.now() - t0 };
@@ -112,12 +115,14 @@ test.describe('Embedded subtitle extraction (addon-proxy)', () => {
     // rather than from separate ffmpeg invocations that merely agreed.
     expect(new Set(results.map((r) => r.body)).size, 'all responses identical').toBe(1);
 
-    // The invariant: ONE ffmpeg, the rest joined it.
+    // The invariant: ONE ffmpeg; the rest joined it or hit its cache.
     const log = p.log();
     const runs = (log.match(/Extracting embedded sub track/g) ?? []).length;
-    const joins = (log.match(/JOIN in-flight/g) ?? []).length;
+    const joins = (log.match(/Embedded sub JOIN in-flight/g) ?? []).length;
+    const hits = (log.match(/Embedded sub cache HIT/g) ?? []).length;
     expect(runs, `one ffmpeg run for ${CONCURRENT} concurrent requests`).toBe(1);
-    expect(joins, 'the other requests joined the in-flight run').toBe(CONCURRENT - 1);
+    expect(joins + hits, 'the other requests joined the run or hit its cache, none spawned ffmpeg').toBe(CONCURRENT - 1);
+    expect(joins, 'on a cold cache at least one request joins the in-flight run').toBeGreaterThan(0);
 
     // Joiners are served from the leader's stream, so they finish with it rather
     // than starting their own clock. Loose bound — this is corroboration, not the

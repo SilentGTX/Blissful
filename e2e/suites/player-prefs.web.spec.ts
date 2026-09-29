@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { VIDEASY_ENABLED } from '../../apps/web-blissful/src/lib/playerServers';
 
 // Profile preferences the WEB player must honour.
 //
@@ -13,6 +14,9 @@ import type { Page } from '@playwright/test';
 //     resolving Videasy first.
 //
 // Everything upstream is mocked, so these assert OUR decision logic.
+
+const VIDEASY_OFF =
+  'Videasy/Vidking source path is parked (VIDEASY_ENABLED=false in apps/web-blissful/src/lib/playerServers.ts, 4352b86); runs again when the switch is flipped back on';
 
 const RD_MKV = 'https://e2e-rd.example/E2E.French.Release.1080p.mkv';
 
@@ -197,6 +201,7 @@ test.describe('Player profile preferences (web)', () => {
   });
 
   test('a keyless profile still resolves Videasy first', async ({ page }) => {
+    test.skip(!VIDEASY_ENABLED, VIDEASY_OFF);
     // The inverse guard — RD-first must not leak into non-RD profiles.
     await seedSettings(page, { realDebridApiKey: '' });
 

@@ -41,6 +41,14 @@ Prereqs: `npm install` (root — pulls `@playwright/test`, `playwright`, `ws`) a
 
 Suites are named `*.<platform>.spec.ts` so `--project <platform>` selects them.
 
+### Running on the Mac (home lab)
+
+Only the `web` and `protocol` projects run on the Mac; `desktop` needs the Windows Rust shell
+with mpv and `android` needs a TV / Android device. `subtitles-extract.protocol` starts the
+branch's addon-proxy locally, which needs `crypto-js` (the proxy container installs it at boot):
+run `npm install --no-save crypto-js` at the repo root (`--no-save` keeps it out of
+`package.json`); without it that suite skips. It also needs `ffmpeg` on `PATH`.
+
 ## Layout
 
 ```
