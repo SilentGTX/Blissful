@@ -11,6 +11,7 @@ import { usePlayerReady } from '../../context/PlayerReadyProvider';
 import { useActiveParties } from '../../context/ActivePartiesProvider';
 import { fetchSubtitles, fetchOpenSubHash } from '../../lib/stremioAddon';
 import { getDocPiP } from '../../lib/documentPip';
+import { createSeekCoalescer, isBufferingState } from '../../lib/playerBuffering';
 import { DEFAULT_SERVER_ID } from '../../lib/playerServers';
 import { useChapterSkipWeb, hasClassifiableChapter, type Chapter } from '../useChapterSkipWeb';
 import { SkipChapterButton } from './SkipChapterButton';
@@ -393,6 +394,11 @@ export const STREMIO_ICONS: Record<StremioIconName, StremioIconDef> = {
 
 
 
+// Quiet time before coalesced keyboard seeks land as one seek.
+const SEEK_COALESCE_MS = 200;
+// A mid-playback stall must last this long before the buffering logo shows.
+const BUFFERING_SHOW_DELAY_MS = 280;
+
 export default function BlissfulPlayer(props: {
   url: string;
   /** A `blob:` URL for an offline FILE download — the release's own bytes,
@@ -607,6 +613,21 @@ export default function BlissfulPlayer(props: {
   const [hasPlayedOnce, setHasPlayedOnce] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  // Arrow-key / digit seeks pile up here and land as one real seek.
+  const broadcastSeekRef = useRef<(t: number) => void>(() => {});
+  const seekCoalescer = useMemo(
+    () =>
+      createSeekCoalescer({
+        delayMs: SEEK_COALESCE_MS,
+        apply: (t) => {
+          const el = videoRef.current;
+          if (!el) return;
+          el.currentTime = t;
+          broadcastSeekRef.current(t);
+        },
+      }),
+    []
+  );
   // Live mirror for callbacks that must NOT re-run when the duration lands
   // (the subtitle auto-retry reads it to rank candidates by sync).
   const durationRef = useRef(0);
@@ -2423,10 +2444,11 @@ export default function BlissfulPlayer(props: {
       loadedEpisodeKeyRef.current = episodeLoadKey;
       setCurrentTime(0);
       setDuration(0);
-      setIsBuffering(true);
       firstFrameSeenRef.current = false;
       setFirstFrameSeen(false);
     }
+    // Every load (episode change, quality switch, retry) starts out buffering.
+    setIsBuffering(true);
 
     if (hlsRef.current) {
       hlsRef.current.destroy();
@@ -2511,7 +2533,6 @@ export default function BlissfulPlayer(props: {
     const onPlay = () => {
       setIsPlaying(true);
       setHasPlayedOnce(true);
-      setIsBuffering(false);
       // Successful playback resets the transient-error budget so a
       // later blip gets the full retry allowance, not whatever's
       // left over from earlier in the session.
@@ -2523,7 +2544,8 @@ export default function BlissfulPlayer(props: {
     };
     const onTime = () => {
       const t = video.currentTime || 0;
-      setCurrentTime(t);
+      // A pending keyboard seek owns the clock until it lands.
+      if (!seekCoalescer.hasPending()) setCurrentTime(t);
       // First time the video advances past 0 → real frames are
       // painting. Hide BlissfulPlayer's internal buffer UI so the
       // video underneath becomes visible.
@@ -2539,8 +2561,38 @@ export default function BlissfulPlayer(props: {
     };
     // Stremio's exact buffering model: readyState < HAVE_FUTURE_DATA means buffering.
     // Checked on every event that might change the buffering state.
+    // Showing the logo is delayed for mid-playback stalls so a 50-150 ms
+    // `waiting` does not flash it; hiding is always immediate. The initial
+    // load (no first frame yet), seeks and reloads (readyState back to
+    // HAVE_NOTHING) show it right away.
+    let bufferingShowTimer: number | undefined;
+    const readBuffering = () =>
+      isBufferingState({
+        readyState: video.readyState,
+        paused: video.paused,
+        seeking: video.seeking,
+        ended: video.ended,
+      });
     const checkBuffering = () => {
-      setIsBuffering(video.readyState < video.HAVE_FUTURE_DATA);
+      if (!readBuffering()) {
+        window.clearTimeout(bufferingShowTimer);
+        bufferingShowTimer = undefined;
+        setIsBuffering(false);
+        return;
+      }
+      const midPlaybackStall =
+        firstFrameSeenRef.current && !video.seeking && video.readyState >= video.HAVE_METADATA;
+      if (!midPlaybackStall) {
+        window.clearTimeout(bufferingShowTimer);
+        bufferingShowTimer = undefined;
+        setIsBuffering(true);
+        return;
+      }
+      if (bufferingShowTimer !== undefined) return;
+      bufferingShowTimer = window.setTimeout(() => {
+        bufferingShowTimer = undefined;
+        if (readBuffering()) setIsBuffering(true);
+      }, BUFFERING_SHOW_DELAY_MS);
     };
 
     // `emptied` fires whenever the MediaSource is detached/reattached
@@ -2583,6 +2635,15 @@ export default function BlissfulPlayer(props: {
     video.addEventListener('loadeddata', checkBuffering);
     video.addEventListener('seeking', checkBuffering);
     video.addEventListener('seeked', checkBuffering);
+    // A source reload of the same episode (quality switch, stream retry,
+    // recoverMediaError) empties the element without any of the events above.
+    video.addEventListener('emptied', checkBuffering);
+    video.addEventListener('loadstart', checkBuffering);
+    video.addEventListener('abort', checkBuffering);
+    video.addEventListener('pause', checkBuffering);
+    // `play` fires before any data exists; re-evaluate instead of forcing false.
+    video.addEventListener('play', checkBuffering);
+    video.addEventListener('ended', checkBuffering);
 
     // Diagnostic: log every load-pipeline event with timing so we can see
     // exactly where Chromium stalls.
@@ -3183,6 +3244,13 @@ export default function BlissfulPlayer(props: {
       video.removeEventListener('loadeddata', checkBuffering);
       video.removeEventListener('seeking', checkBuffering);
       video.removeEventListener('seeked', checkBuffering);
+      video.removeEventListener('emptied', checkBuffering);
+      video.removeEventListener('loadstart', checkBuffering);
+      video.removeEventListener('abort', checkBuffering);
+      video.removeEventListener('pause', checkBuffering);
+      video.removeEventListener('play', checkBuffering);
+      video.removeEventListener('ended', checkBuffering);
+      window.clearTimeout(bufferingShowTimer);
       for (const [name, fn] of diagListeners) {
         video.removeEventListener(name, fn);
       }
@@ -3316,6 +3384,7 @@ export default function BlissfulPlayer(props: {
   }, []);
 
 
+  broadcastSeekRef.current = watchParty.broadcastSeek;
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -3356,25 +3425,43 @@ export default function BlissfulPlayer(props: {
       const seekStep = (event.shiftKey
         ? props.playerSettings.seekShortTimeDurationMs
         : props.playerSettings.seekTimeDurationMs) / 1000;
-      if (event.key === 'ArrowLeft') {
+      // Taps and key-repeat accumulate in the coalescer and become ONE real
+      // seek (and one watch-party broadcast) once input goes quiet; the clock
+      // and scrub bar follow the pending target immediately.
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
         event.preventDefault();
         event.stopImmediatePropagation();
-        const next = Math.max(0, video.currentTime - seekStep);
-        video.currentTime = next;
-        watchParty.broadcastSeek(next);
+        const target = seekCoalescer.seekBy(
+          event.key === 'ArrowLeft' ? -seekStep : seekStep,
+          video.currentTime,
+          video.duration
+        );
+        setCurrentTime(target);
+        return;
       }
-      if (event.key === 'ArrowRight') {
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
         event.preventDefault();
         event.stopImmediatePropagation();
-        const limit = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : Infinity;
-        const next = Math.min(limit, video.currentTime + seekStep);
-        video.currentTime = next;
-        watchParty.broadcastSeek(next);
+        const delta = event.key === 'ArrowUp' ? 0.05 : -0.05;
+        const next = Math.min(1, Math.max(0, (video.muted ? 0 : video.volume) + delta));
+        video.volume = next;
+        video.muted = next === 0;
+        return;
+      }
+      if (/^[0-9]$/.test(event.key) && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        if (!(Number.isFinite(video.duration) && video.duration > 0)) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        setCurrentTime(seekCoalescer.seekTo(video.duration * (Number(event.key) / 10), video.duration));
+        return;
       }
     };
     window.addEventListener('keydown', onKeyDown, { capture: true });
     return () => window.removeEventListener('keydown', onKeyDown, { capture: true });
-  }, [props.playerSettings.seekShortTimeDurationMs, props.playerSettings.seekTimeDurationMs, toggleFullscreen, toggleMute, onBack, watchParty.broadcastSeek]);
+  }, [props.playerSettings.seekShortTimeDurationMs, props.playerSettings.seekTimeDurationMs, toggleFullscreen, toggleMute, onBack]);
+
+  // Drop a pending keyboard seek when the player goes away.
+  useEffect(() => () => seekCoalescer.cancel(), []);
 
   useEffect(() => {
     if (selectedAudioTrackId === null) return;

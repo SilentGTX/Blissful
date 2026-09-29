@@ -11,7 +11,7 @@
 // button shows a tooltip with the air date when the episode hasn't
 // released yet (otherwise instant-advance).
 
-import { useState, type Ref } from 'react';
+import type { Ref } from 'react';
 import { BlissTooltip } from '../base/BlissTooltip';
 import { StremioIcon } from '../PlayerControlIcons';
 import type { NextEpisodeInfo } from '../../pages/PlayerPage';
@@ -20,6 +20,7 @@ import { FillerDot, fillerKindLabel } from '../FillerBadge';
 import type { SettingsTab } from './SettingsPanel';
 import { volumeFillColor } from '../../lib/colorUtils';
 import { MiniControls } from './MiniControls';
+import { useScrubSeek } from './useScrubSeek';
 
 export type BottomControlsProps = {
   showControls: boolean;
@@ -135,16 +136,14 @@ export function BottomControls(props: BottomControlsProps) {
     seekShortTimeDurationMs,
   } = props;
 
-  // While the user is actively dragging the scrub thumb, the
-  // controlled `value` prop fights `timeupdate` event firings (each
-  // one re-renders the slider and snaps its value back to the
-  // playhead). Track local drag state + drag value so the slider
-  // reads `dragValue` until pointer up.
-  const [scrubDragValue, setScrubDragValue] = useState<number | null>(null);
-  const isScrubbing = scrubDragValue !== null;
-  const displayedScrubValue = isScrubbing
-    ? scrubDragValue
-    : Math.min(currentTime, duration || 0);
+  // Dragging only previews; one real seek is committed on release.
+  const { isScrubbing, displayedValue: displayedScrubValue, onPointerDown, onChange } = useScrubSeek({
+    videoRef: videoRef as { current: HTMLVideoElement | null },
+    currentTime,
+    duration,
+    setCurrentTime,
+    onUserSeek,
+  });
 
   // Mini-player chrome lives in its own component.
   if (compact) {
@@ -176,7 +175,7 @@ export function BottomControls(props: BottomControlsProps) {
       }
     >
       <div className="pointer-events-auto flex items-center gap-4 bg-gradient-to-t from-black/85 via-black/55 to-transparent px-5 pb-1.5 pt-10 text-xs font-mono tabular-nums text-white">
-        <span className="min-w-[56px] text-left">{formattedTime(currentTime)}</span>
+        <span className="min-w-[56px] text-left">{formattedTime(isScrubbing ? displayedScrubValue : currentTime)}</span>
         <div className="relative flex-1">
           {scrubHoverTime != null && scrubHoverPx != null ? (
             <div
@@ -202,35 +201,8 @@ export function BottomControls(props: BottomControlsProps) {
                   ? `${Math.min(100, Math.max(0, (displayedScrubValue / duration) * 100))}%`
                   : '0%',
             } as React.CSSProperties}
-            onPointerDown={() => {
-              // Freeze the controlled value at the current playhead
-              // so the user can drag without `timeupdate` snap-back.
-              setScrubDragValue(Math.min(currentTime, duration || 0));
-            }}
-            onPointerUp={() => {
-              setScrubDragValue(null);
-            }}
-            onPointerCancel={() => {
-              setScrubDragValue(null);
-            }}
-            onChange={(event) => {
-              const next = Number.parseFloat(event.target.value);
-              if (!Number.isFinite(next)) return;
-              const video = (videoRef as { current: HTMLVideoElement | null }).current;
-              if (!video) return;
-              video.currentTime = next;
-              setCurrentTime(next);
-              // Watch-party broadcast — explicit UI signal so the
-              // hook doesn't have to guess from DOM `seeked` events
-              // whether this came from the user or from a remote
-              // apply / drift correction.
-              onUserSeek?.(next);
-              // Only mirror into the drag-frozen value while a drag is
-              // in progress (i.e. setScrubDragValue is non-null);
-              // otherwise the next click-to-seek would leave the
-              // local drag state stuck at the click position.
-              if (isScrubbing) setScrubDragValue(next);
-            }}
+            onPointerDown={onPointerDown}
+            onChange={onChange}
             onMouseMove={(e) => {
               // Account for the 18-px thumb so the tooltip's
               // timestamp matches the seek target (off by up to
