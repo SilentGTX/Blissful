@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { VIDEASY_ENABLED } from '../../apps/web-blissful/src/lib/playerServers';
 
 // Short player URLs (web). /player/vidking/<id>/<slug> and /player/rd/<id>/<slug>
 // are a cosmetic front door: the seeder (MiniPlayerProvider) expands them into
@@ -7,10 +8,14 @@ import { test, expect } from '@playwright/test';
 // in src/lib/playerUrl.test.ts). Backend is mocked at the network layer so the
 // test doesn't depend on vidking being up.
 
+const VIDEASY_OFF =
+  'Videasy/Vidking source path is parked (VIDEASY_ENABLED=false in apps/web-blissful/src/lib/playerServers.ts, 4352b86); runs again when the switch is flipped back on';
+
 const MANIFEST = `/addon-proxy?url=${encodeURIComponent('https://e2e-short.example/1080p/index.m3u8')}&vd=1`;
 
 test.describe('Short player URLs (web)', () => {
   test('vidking short path resolves vidking and keeps the URL short', async ({ page }) => {
+    test.skip(!VIDEASY_ENABLED, VIDEASY_OFF);
     await page.route(/\/tmdb-find\?/, (route) =>
       route.fulfill({ json: { tmdbId: 550, mediaType: 'movie' } }));
     // The seeder must translate the path → url=vidking:placeholder, which drives
@@ -38,6 +43,24 @@ test.describe('Short player URLs (web)', () => {
     // Translation drove a vidking resolve...
     await expect.poll(() => videasyResolved, { timeout: 20_000 }).toBe(true);
     // ...and the address bar stayed the short path (no rewrite to ?url=…).
+    expect(new URL(page.url()).pathname).toBe('/player/vidking/tt0137523/Fight.Club');
+    expect(page.url()).not.toContain('url=vidking');
+  });
+
+  // Runs with the Videasy path on or off: the seeder still translates the short
+  // path to url=vidking:placeholder and the address bar stays short. With Videasy
+  // parked the resolve is skipped, so the page goes straight to the RD fallback.
+  test('vidking short path is translated and keeps the URL short', async ({ page }) => {
+    await page.route(/\/tmdb-find\?/, (route) =>
+      route.fulfill({ json: { tmdbId: 550, mediaType: 'movie' } }));
+    await page.route(/\/videasy-sources\?/, (route) =>
+      route.fulfill({ json: { sources: [], subtitles: [] } }));
+    await page.route(/\/rd-fallback\?/, (route) => route.fulfill({ json: { streams: [] } }));
+    const rdFallback = page.waitForRequest(/\/rd-fallback\?/, { timeout: 30_000 });
+
+    await page.goto('/player/vidking/tt0137523/Fight.Club');
+
+    await rdFallback;
     expect(new URL(page.url()).pathname).toBe('/player/vidking/tt0137523/Fight.Club');
     expect(page.url()).not.toContain('url=vidking');
   });

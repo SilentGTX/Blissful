@@ -14,6 +14,30 @@ async function useTheme(page: Page, theme: 'classic' | 'tv') {
   await page.addInitScript((t) => localStorage.setItem('uiStyle', t), theme);
 }
 
+/**
+ * Every theme boots with the rail EXPANDED (354973f); collapsing is a per-session
+ * toggle. Layout invariants that describe the icon-only rail must click it first
+ * and wait for the ~340ms width animation to stop before measuring.
+ */
+async function collapseRail(page: Page) {
+  const rail = page.locator('.bliss-rail-panel');
+  await expect(rail).toBeVisible({ timeout: 20_000 });
+  await page.getByLabel('Collapse sidebar').click();
+  await expect(page.locator('.bliss-sidebar.closed')).toHaveCount(1, { timeout: 10_000 });
+  let last = -1;
+  await expect
+    .poll(
+      async () => {
+        const w = Math.round((await rail.boundingBox())!.width);
+        const settled = w === last;
+        last = w;
+        return settled;
+      },
+      { timeout: 5_000, intervals: [150], message: 'the rail width must stop animating' },
+    )
+    .toBe(true);
+}
+
 test.describe('Home + browse (web)', () => {
   for (const theme of ['classic', 'tv'] as const) {
     test(`${theme} home renders the hero, search bar, and media rails`, async ({ page }) => {
@@ -61,10 +85,12 @@ test.describe('Theme chrome is scoped', () => {
     expect(classic).toBe('rgb(255, 255, 255)');
   });
 
-  test('tv collapses the rail to icons; classic leaves it expanded', async ({ page }) => {
+  test('every theme starts with the rail expanded', async ({ page }) => {
     await useTheme(page, 'tv');
     await page.goto('/');
-    await expect(page.locator('.bliss-sidebar.closed')).toHaveCount(1, { timeout: 20_000 });
+    await expect(page.getByTestId('home-hero-card')).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('.bliss-rail-panel')).toBeVisible();
+    await expect(page.locator('.bliss-sidebar.closed')).toHaveCount(0);
 
     await useTheme(page, 'classic');
     await page.goto('/');
@@ -73,7 +99,8 @@ test.describe('Theme chrome is scoped', () => {
   });
 });
 
-// The TV theme widens the COLLAPSED rail. A first attempt pinned the width via
+// The TV theme widens the COLLAPSED rail (the rail starts expanded; the toggle
+// collapses it for the session). A first attempt pinned the width via
 // an !important custom property, which also applied while expanded — the labels
 // and the Friends / Continue Watching panels were then crushed into a 160px
 // column, i.e. "the sidebar is not working". Guard the round-trip.
@@ -84,19 +111,22 @@ test('tv rail expands and re-collapses', async ({ page }) => {
   await expect(rail).toBeVisible({ timeout: 20_000 });
   const widthOf = async () => Math.round((await rail.boundingBox())!.width);
 
+  await expect(page.getByText('Discover', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
+  const expanded = await widthOf();
+  await page.getByLabel('Collapse sidebar').click();
+  // The rail animates its width over ~340ms, so poll rather than sampling once.
+  // Assert "narrow" rather than an exact px baseline — the baseline can be
+  // sampled mid-animation and is scrollbar-sensitive.
+  await expect
+    .poll(widthOf, { timeout: 5_000, message: 'collapsing must actually narrow the rail' })
+    .toBeLessThan(expanded - 80);
+
   const collapsed = await widthOf();
   await page.getByLabel('Expand sidebar').click();
   await expect(page.getByText('Discover', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
-  // The rail animates its width over ~340ms, so poll rather than sampling once.
   await expect
     .poll(widthOf, { timeout: 5_000, message: 'expanding must actually widen the rail' })
     .toBeGreaterThan(collapsed + 80);
-
-  const expanded = await widthOf();
-  await page.getByLabel('Collapse sidebar').click();
-  // Assert it returns to "narrow" rather than to an exact px baseline — the
-  // baseline can be sampled mid-animation and is scrollbar-sensitive.
-  await expect.poll(widthOf, { timeout: 5_000 }).toBeLessThan(expanded - 80);
 });
 
 // Regressed three times by hand-tuning: icons drifted left of centre, and fixed
@@ -107,7 +137,7 @@ for (const [w, h] of [[1870, 1008], [1280, 720]] as const) {
     await page.setViewportSize({ width: w, height: h });
     await useTheme(page, 'tv');
     await page.goto('/');
-    await expect(page.locator('.bliss-rail-panel')).toBeVisible({ timeout: 20_000 });
+    await collapseRail(page);
     const r = await page.evaluate(() => {
       const p = document.querySelector('.bliss-rail-panel')!.getBoundingClientRect();
       const cx = p.left + p.width / 2;
@@ -130,7 +160,7 @@ for (const [w, h] of [[1870, 1008], [1280, 720]] as const) {
 test('tv rail: icons do not move while the rail animates', async ({ page }) => {
   await useTheme(page, 'tv');
   await page.goto('/');
-  await expect(page.locator('.bliss-rail-panel')).toBeVisible({ timeout: 20_000 });
+  await collapseRail(page);
   const iconCx = () =>
     page.evaluate(() => {
       const b = document.querySelector('.bliss-sidebar nav .nav-icon-slot svg')!.getBoundingClientRect();
@@ -173,7 +203,7 @@ test('tv rail: icons do not move while the rail animates', async ({ page }) => {
 test('tv rail: glyphs hold their vertical position across collapse', async ({ page }) => {
   await useTheme(page, 'tv');
   await page.goto('/');
-  await expect(page.locator('.bliss-rail-panel')).toBeVisible({ timeout: 20_000 });
+  await collapseRail(page);
   const ys = () =>
     page.evaluate(() =>
       [...document.querySelectorAll('.bliss-sidebar nav .nav-icon-slot svg')].map((el) => {
