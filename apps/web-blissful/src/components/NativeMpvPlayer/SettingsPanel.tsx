@@ -14,6 +14,7 @@ import { PlayerControlIcon as StremioIcon, type StremioIconName } from '../Playe
 import type { MpvTrack } from '../../lib/desktop';
 import { subtitleLangLabel } from './subtitleHelpers';
 import { BananasPicker } from '../BananasPicker';
+import type { ExpectedEpisode } from '../../lib/episodeMatch';
 import {
   writeStoredPlayerSettings,
   type PlayerSettings,
@@ -93,6 +94,8 @@ export type SettingsPanelProps = {
   releases?: ReleaseOption[];
   selectedReleaseUrl?: string | null;
   onSelectRelease?: (url: string) => void;
+  rememberedInfohash?: string | null;
+  expectedEpisode?: ExpectedEpisode | null;
 
   // Save-to-account
   playerSettings: PlayerSettings;
@@ -139,6 +142,8 @@ export function SettingsPanel(props: SettingsPanelProps) {
     onSubtitleDelayChange,
     releases,
     selectedReleaseUrl,
+    rememberedInfohash,
+    expectedEpisode,
     onSelectRelease,
     playerSettings,
   } = props;
@@ -421,6 +426,8 @@ export function SettingsPanel(props: SettingsPanelProps) {
                     releases={releases}
                     selectedReleaseUrl={selectedReleaseUrl}
                     onSelectRelease={onSelectRelease}
+                    rememberedInfohash={rememberedInfohash}
+                    expectedEpisode={expectedEpisode}
                     onClose={onClose}
                   />
                 ) : null}

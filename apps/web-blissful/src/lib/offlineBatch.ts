@@ -13,6 +13,7 @@
 import { fetchFallbackReleases, type FallbackRelease } from './fallbackReleases';
 import { isPlaceholderUrl } from './releaseUrls';
 import { languageMatch } from './subtitleUtils';
+import { fetchProbe } from './releaseProbe';
 import type { AddonDescriptor } from './mediaTypes';
 import type { OfflineQuality } from './offlineStore';
 import {
@@ -185,43 +186,6 @@ function hasEnglishText(subs: EmbeddedSubtitle[]): boolean {
   return subs.some(
     (s) => s.textBased && (/^en/i.test(s.lang ?? '') || /english/i.test(s.title ?? ''))
   );
-}
-
-/** Subtitles AND video info from ONE `/probe-streams` call — the same ffprobe the
- *  transcode path uses. Kept together because two calls would ffprobe the same
- *  remote file twice. */
-async function fetchProbe(
-  url: string
-): Promise<{ subs: EmbeddedSubtitle[]; video: ProbedVideo | null }> {
-  const res = await fetch(`/probe-streams?url=${encodeURIComponent(url)}`);
-  if (!res.ok) throw new Error(`probe failed: ${res.status}`);
-  const json = (await res.json()) as {
-    subtitles?: Array<{
-      index: number;
-      codec?: string | null;
-      language?: string | null;
-      title?: string | null;
-      textBased?: boolean;
-    }>;
-    video?: { width?: number; height?: number; codec?: string; bitDepth?: number } | null;
-  };
-  return {
-    subs: (json.subtitles ?? []).map((s) => ({
-      index: s.index,
-      lang: s.language ?? null,
-      title: s.title ?? null,
-      codec: s.codec ?? null,
-      textBased: s.textBased === true,
-    })),
-    video: json.video
-      ? {
-        width: json.video.width ?? null,
-        height: json.video.height ?? null,
-        codec: json.video.codec ?? null,
-        bitDepth: json.video.bitDepth ?? null,
-      }
-      : null,
-  };
 }
 
 /** Look INSIDE the candidates and pick one that actually contains what's wanted.

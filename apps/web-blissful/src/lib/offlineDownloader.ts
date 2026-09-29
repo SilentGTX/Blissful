@@ -90,9 +90,9 @@ export type EmbeddedAudio = {
 /** Audio tracks in a source, so a download can pick a language instead of
  *  blindly taking track 0 — which on a dual-audio anime release is usually the
  *  English dub. */
-export async function fetchAudioTracks(sourceUrl: string): Promise<EmbeddedAudio[]> {
+export async function fetchAudioTracks(sourceUrl: string, signal?: AbortSignal): Promise<EmbeddedAudio[]> {
   try {
-    const res = await fetch(`/transcode-audio?url=${encodeURIComponent(sourceUrl)}`);
+    const res = await fetch(`/transcode-audio?url=${encodeURIComponent(sourceUrl)}`, { signal });
     if (!res.ok) return [];
     const data = (await res.json()) as { tracks?: EmbeddedAudio[] };
     return Array.isArray(data.tracks) ? data.tracks : [];

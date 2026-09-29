@@ -16,6 +16,7 @@ import {
   languageMatch,
   isPartialSubtitleTrack,
   scoreSubtitleTrack,
+  stripVttStyling,
   subtitleLangLabel,
   subtitleSyncScore,
   subtitleTrackLabel,
@@ -289,5 +290,59 @@ describe('scoreSubtitleTrack demotes partial tracks', () => {
         return a.origin.localeCompare(b.origin) || a.label.localeCompare(b.label);
       })[0];
     expect(picked.label).toBe('English Subs');
+  });
+});
+
+// Chromium applies a VTT's own STYLE blocks to its cues and they beat the
+// player's ::cue rule, so a track carrying one ignored the subtitle colours the
+// account saved (white text on a black box). The styling must not survive the
+// fetch; plain tracks and their <i>/<b>/<u> markup must.
+describe('stripVttStyling', () => {
+  const styled = [
+    'WEBVTT',
+    '',
+    'STYLE',
+    '::cue {',
+    '  background-color: black;',
+    '  color: white;',
+    '}',
+    '::cue(.x) { color: red }',
+    '',
+    'REGION',
+    'id:r1',
+    'width:40%',
+    '',
+    '1',
+    '00:00:01.000 --> 00:00:03.000 region:r1 align:center',
+    '<c.x>Hello</c> <v.loud Bob>hi</v> <i>italic</i> <b.k>bold</b>',
+    'Second line',
+    '',
+    '00:00:04.000 --> 00:00:06.000',
+    '<c.y.z>classy</c>',
+    '',
+  ].join('\n');
+
+  it('drops STYLE and REGION blocks and class wrappers, keeps text and markup', () => {
+    const out = stripVttStyling(styled);
+    expect(out).not.toMatch(/STYLE|REGION|::cue|<c[\s.>]|<\/c>|region:/);
+    expect(out).toContain('00:00:01.000 --> 00:00:03.000 align:center');
+    expect(out).toContain('Hello <v Bob>hi</v> <i>italic</i> <b>bold</b>\nSecond line');
+    expect(out).toContain('00:00:04.000 --> 00:00:06.000\nclassy');
+    expect(out.startsWith('WEBVTT\n\n1\n')).toBe(true);
+  });
+
+  it('leaves a plain track untouched', () => {
+    const plain = 'WEBVTT\r\n\r\n00:00:01.000 --> 00:00:03.000\r\nHello <i>there</i>\r\nSecond line\r\n';
+    expect(stripVttStyling(plain)).toBe(plain);
+  });
+
+  it('never eats a cue whose text starts with the word STYLE', () => {
+    const vtt = 'WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nSTYLE\nis a word\n';
+    expect(stripVttStyling(vtt)).toBe(vtt);
+  });
+
+  it('ignores text that is not WebVTT', () => {
+    const srt = '1\n00:00:01,000 --> 00:00:03,000\n<c.x>hi</c>\n';
+    expect(stripVttStyling(srt)).toBe(srt);
   });
 });

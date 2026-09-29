@@ -52,11 +52,38 @@ export function shiftVtt(text: string, delaySeconds: number): string {
   });
 }
 
+// Chromium applies a WebVTT file's own `STYLE` blocks to its cues, and those
+// rules beat the player's `::cue` rule, so a track carrying one ignores the
+// account's subtitle colours (white text on a black box, whatever was saved).
+// Drop the file's styling and keep only the text and the <i>/<b>/<u> markup.
+export function stripVttStyling(text: string): string {
+  if (!/^\uFEFF?\s*WEBVTT/.test(text)) return text;
+  const styled =
+    /^(STYLE|REGION)[ \t]*$/m.test(text) ||
+    /region:\S/.test(text) ||
+    /<\/?c[\s.>]/.test(text) ||
+    /<(i|b|u|v|lang|ruby|rt)\./.test(text);
+  if (!styled) return text;
+  const blocks = text.replace(/\r\n?/g, '\n').split(/\n{2,}/);
+  const kept = blocks.filter((block) => {
+    const lines = block.split('\n');
+    if (lines.some((l) => l.includes('-->'))) return true;
+    const head = lines[0].trim();
+    return head !== 'STYLE' && head !== 'REGION';
+  });
+  return kept
+    .join('\n\n')
+    .replace(/^([^\n]*-->[^\n]*)$/gm, (line) => line.replace(/\s+region:\S+/g, ''))
+    .replace(/<\/?c(?=[\s.>])[^>]*>/g, '')
+    .replace(/<(i|b|u|v|lang|ruby|rt)((?:\.[^\s>./]+)+)/g, '<$1');
+}
+
 export async function fetchSubtitleVttBlobUrl(url: string, delaySeconds: number): Promise<string> {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`Subtitle fetch failed: ${resp.status}`);
   const text = await resp.text();
-  const base = text.trim().startsWith('WEBVTT') ? text : looksLikeSrt(text) ? srtToVtt(text) : text;
+  const raw = text.trim().startsWith('WEBVTT') ? text : looksLikeSrt(text) ? srtToVtt(text) : text;
+  const base = stripVttStyling(raw);
   const body = delaySeconds ? shiftVtt(base, delaySeconds) : base;
   const blob = new Blob([body], { type: 'text/vtt' });
   return URL.createObjectURL(blob);
