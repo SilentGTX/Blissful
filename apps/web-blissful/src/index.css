@@ -642,12 +642,13 @@ html:not(.dark) .bliss-sidebar-link:hover {
 
 
 .bliss-player-video::cue {
-  font-size: var(--bliss-subtitle-size, 1em);
-  color: var(--bliss-subtitle-color, #ffffff);
-  background: var(--bliss-subtitle-bg, transparent);
+  /* !important: a track's own ::cue rules must not override the account's subtitle style */
+  font-size: var(--bliss-subtitle-size, 1em) !important;
+  color: var(--bliss-subtitle-color, #ffffff) !important;
+  background: var(--bliss-subtitle-bg, transparent) !important;
   text-shadow:
     0 0 2px var(--bliss-subtitle-outline, rgba(0, 0, 0, 0.75)),
-    0 2px 6px var(--bliss-subtitle-outline, rgba(0, 0, 0, 0.75));
+    0 2px 6px var(--bliss-subtitle-outline, rgba(0, 0, 0, 0.75)) !important;
 }
 
 .bliss-buffering-panel {
