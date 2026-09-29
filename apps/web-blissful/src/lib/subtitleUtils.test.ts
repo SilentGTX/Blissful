@@ -15,6 +15,8 @@ import {
   languageFromTitle,
   languageMatch,
   isPartialSubtitleTrack,
+  pickInitialSubtitle,
+  type SubtitleTrack,
   scoreSubtitleTrack,
   stripVttStyling,
   subtitleLangLabel,
@@ -164,10 +166,15 @@ describe('languageFromTitle', () => {
 });
 
 describe('effectiveTrackLanguage', () => {
-  it('lets the title override a generic tag', () => {
-    expect(effectiveTrackLanguage('eng', 'Bulgarian')).toBe('bul');
+  it('lets the title name the language only when the tag is missing or und', () => {
     expect(effectiveTrackLanguage('und', 'Japanese')).toBe('jpn');
     expect(effectiveTrackLanguage(null, 'Français')).toBe('fra');
+    expect(effectiveTrackLanguage('unknown', 'Bulgarian')).toBe('bul');
+  });
+
+  it('does not re-file an eng track because its title mentions another language', () => {
+    expect(effectiveTrackLanguage('eng', 'Bulgarian')).toBe('eng');
+    expect(effectiveTrackLanguage('eng', 'Full (Japanese honorifics)')).toBe('eng');
   });
 
   it('trusts a specific tag over the title', () => {
@@ -344,5 +351,56 @@ describe('stripVttStyling', () => {
   it('ignores text that is not WebVTT', () => {
     const srt = '1\n00:00:01,000 --> 00:00:03,000\n<c.x>hi</c>\n';
     expect(stripVttStyling(srt)).toBe(srt);
+  });
+});
+
+describe('pickInitialSubtitle', () => {
+  const track = (key: string, lang: string, label: string, origin = 'Embedded'): SubtitleTrack => ({
+    key, lang, label, origin, url: `/extract-subtitle.vtt?track=${key}`,
+  });
+  const spa = track('embedded:2', 'spa', 'Spanish');
+  const eng = track('embedded:3', 'eng', 'English');
+
+  it('never picks another language when the preferred one has no text track', () => {
+    const r = pickInitialSubtitle([spa], { language: 'eng' });
+    expect(r.track).toBeNull();
+    expect(r.bitmapOnly).toBe(false);
+  });
+
+  it('reports a preferred language that only exists as a bitmap track', () => {
+    const r = pickInitialSubtitle([spa], { language: 'eng', bitmapLanguages: ['eng'] });
+    expect(r.track).toBeNull();
+    expect(r.bitmapOnly).toBe(true);
+  });
+
+  it('does not pick Spanish for [spa text, eng PGS] with pref eng', () => {
+    const r = pickInitialSubtitle([spa], { language: 'eng', bitmapLanguages: ['eng'] });
+    expect(r.track?.lang).not.toBe('spa');
+  });
+
+  it('picks the English track whose title mentions Japanese honorifics', () => {
+    const honorifics = track(
+      'embedded:4',
+      effectiveTrackLanguage('eng', 'Full (Japanese honorifics)'),
+      subtitleTrackLabel('eng', 'Full (Japanese honorifics)'),
+    );
+    const r = pickInitialSubtitle([spa, honorifics], { language: 'eng' });
+    expect(r.track?.key).toBe('embedded:4');
+  });
+
+  it('prefers a full track over a signs track in the same language', () => {
+    const signs = track('embedded:5', 'eng', 'English – Signs & Songs');
+    expect(pickInitialSubtitle([signs, eng], { language: 'eng' }).track?.key).toBe('embedded:3');
+  });
+
+  it('matches an addon track in the preferred language', () => {
+    const addon = track('addon:1', 'eng', 'English', 'OpenSubtitles');
+    expect(pickInitialSubtitle([spa, addon], { language: 'eng' }).track?.key).toBe('addon:1');
+  });
+
+  it('uses the saved language only when the settings have none', () => {
+    expect(pickInitialSubtitle([spa, eng], { language: null, savedLanguage: 'spa' }).track?.key).toBe('embedded:2');
+    expect(pickInitialSubtitle([spa], { language: 'eng', savedLanguage: 'spa' }).track).toBeNull();
+    expect(pickInitialSubtitle([spa, eng], { language: null }).track).toBeNull();
   });
 });

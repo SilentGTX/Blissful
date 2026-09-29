@@ -470,18 +470,60 @@ export function languageFromTitle(title: string | null | undefined): string | nu
   return null;
 }
 
-/** The language a subtitle track should be filed under: its container tag,
- *  unless that tag is a generic `eng` / `en` / `und` and the title names a
- *  different language — then the title wins. A specific tag is always
- *  trusted over the title ("French" tagged `fra` with title "Signs"). */
+/** The language a subtitle track should be filed under: its container tag. Only
+ *  a missing / `und` / `unknown` tag lets the title name the language. A real tag
+ *  (`eng` included) is trusted over the title: "Full (Japanese honorifics)" on an
+ *  `eng` track is English, and filing it under Japanese is what once made the
+ *  auto-pick skip the English subtitles. */
 export function effectiveTrackLanguage(
   tagged: string | null | undefined,
   title: string | null | undefined,
 ): string {
   const tag = (tagged ?? '').trim().toLowerCase() || 'und';
-  const generic = tag === 'eng' || tag === 'en' || tag === 'und' || tag === 'unknown';
-  if (!generic) return tag;
+  if (tag !== 'und' && tag !== 'unknown') return tag;
   return languageFromTitle(title) ?? tag;
+}
+
+export type InitialSubtitlePick = {
+  track: SubtitleTrack | null;
+  /** The language the pick was made for (null when no preference exists). */
+  language: string | null;
+  /** The preferred language exists only as bitmap tracks the web cannot render. */
+  bitmapOnly: boolean;
+};
+
+/**
+ * The auto-pick, in one place. Picks the best track IN the preferred language and
+ * nothing else: a viewer who asked for English must never be handed Spanish
+ * subtitles because Spanish happened to be the only text track. No match means no
+ * pick (subtitles stay off), with `bitmapOnly` telling the caller when the
+ * preferred language does exist as a picture-based track.
+ *
+ * `savedLanguage` is consulted only when the settings have no language at all.
+ */
+export function pickInitialSubtitle(
+  tracks: readonly SubtitleTrack[],
+  prefs: {
+    language: string | null | undefined;
+    savedLanguage?: string | null;
+    videoDurationSec?: number | null;
+    bitmapLanguages?: readonly string[];
+  },
+): InitialSubtitlePick {
+  const target = prefs.language?.trim() || prefs.savedLanguage?.trim() || null;
+  if (!target) return { track: null, language: null, bitmapOnly: false };
+  const matching = tracks.filter((t) => languageMatch(target, t.lang));
+  if (matching.length === 0) {
+    const bitmapOnly = (prefs.bitmapLanguages ?? []).some((l) => languageMatch(target, l));
+    return { track: null, language: target, bitmapOnly };
+  }
+  const best = matching.slice().sort((a, b) => {
+    const sa = scoreSubtitleTrack(a, { videoDurationSec: prefs.videoDurationSec });
+    const sb = scoreSubtitleTrack(b, { videoDurationSec: prefs.videoDurationSec });
+    if (sb !== sa) return sb - sa;
+    return a.origin.localeCompare(b.origin) || a.label.localeCompare(b.label);
+  })[0];
+  return { track: best, language: best.lang, bitmapOnly: false };
 }
 
 /** A track's row label: the language, plus the title when the title says

@@ -42,10 +42,42 @@ function parseSeasonEpisodeMarkers(text: string): Array<{ season: number; episod
   return out;
 }
 
+/** Episode ranges — "E01-E13", "EP 001-366", "Episodes 1-111", bare "001-366". A
+ *  range says the release CONTAINS episodes, not that it IS one, so it is parsed
+ *  apart from the standalone markers: "EP 001" inside "EP 001-366" used to read as
+ *  a positive marker for episode 1. */
+const RANGE_RES = [
+  /(?:\b|(?<=\d))ep?(?:isodes?)?[\s._-]*(\d{1,4})[\s._]*[-~][\s._]*(?:e|ep)?[\s._]*(\d{1,4})\b/gi,
+  /\b(\d{2,4})-(\d{2,4})\b/g,
+];
+
+function parseEpisodeRanges(text: string): Array<[number, number]> {
+  const out: Array<[number, number]> = [];
+  for (const re of RANGE_RES) {
+    for (const m of text.matchAll(re)) {
+      const a = Number.parseInt(m[1], 10);
+      const b = Number.parseInt(m[2], 10);
+      if (b <= a) continue;
+      // "2009-2010" is a year span, not episodes.
+      if (a >= 1900 && b <= 2100) continue;
+      out.push([a, b]);
+    }
+  }
+  return out;
+}
+
+function stripEpisodeRanges(text: string): string {
+  let out = text;
+  for (const re of RANGE_RES) out = out.replace(re, ' ');
+  return out;
+}
+
 /** Standalone episode numbers — "E002", "Episode 2", " - 002 - ". Never matches
  *  inside an SxxEyy marker (no word boundary between "S17" and "E02"), so a
- *  season-tagged release can't masquerade as absolute numbering. */
-function parseAbsoluteMarkers(text: string): number[] {
+ *  season-tagged release can't masquerade as absolute numbering. Ranges are
+ *  removed first (see parseEpisodeRanges). */
+function parseAbsoluteMarkers(raw: string): number[] {
+  const text = stripEpisodeRanges(raw);
   const out: number[] = [];
   for (const m of text.matchAll(/\be(\d{1,4})\b/gi)) out.push(Number.parseInt(m[1], 10));
   for (const m of text.matchAll(/\bep(?:isode)?[\s._-]*(\d{1,4})\b/gi)) out.push(Number.parseInt(m[1], 10));
@@ -94,6 +126,44 @@ export function scoreEpisodeMatch(
 
   if (absolute != null && parseAbsoluteMarkers(releaseText).includes(absolute)) score += 3_000;
   return score;
+}
+
+/**
+ * Does the release's OWN text say it is a different episode than `expected`?
+ * True when it carries SxxEyy markers and none is the expected (season, episode),
+ * or, with no SxxEyy at all, carries only standalone absolute markers and none is
+ * the expected absolute number. A range that contains the episode ("EP 001-366",
+ * "S17E01-E13" for S17E05) never contradicts, and a release that says nothing
+ * about episodes (a complete-series pack) never does either: it may still hold
+ * the episode.
+ */
+export function episodeContradicts(
+  releaseText: string,
+  expected: ExpectedEpisode | null | undefined,
+): boolean {
+  if (!expected || !releaseText) return false;
+  if (scoreEpisodeMatch(releaseText, expected) > 0) return false;
+  const { season, episode, absolute } = expected;
+  const ranges = parseEpisodeRanges(releaseText);
+
+  const markers = parseSeasonEpisodeMarkers(releaseText);
+  if (markers.length > 0) {
+    if (episode == null) return false;
+    const hit = markers.some((m) => m.episode === episode && (season == null || m.season === season));
+    if (hit) return false;
+    // "S17E01-E13": the SxxEyy scan reads only the first episode of the run.
+    const inRun = ranges.some(
+      ([a, b]) => episode >= a && episode <= b
+        && markers.some((m) => (season == null || m.season === season) && m.episode === a),
+    );
+    return !inRun;
+  }
+
+  if (absolute == null) return false;
+  if (ranges.some(([a, b]) => absolute >= a && absolute <= b)) return false;
+  const standalone = parseAbsoluteMarkers(releaseText);
+  if (standalone.includes(absolute)) return false;
+  return standalone.length > 0 || ranges.length > 0;
 }
 
 /**
