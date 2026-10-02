@@ -5,7 +5,17 @@ import Hls from 'hls.js';
 // HeroUI overlays are handled by the caller on iOS.
 import type { AddonDescriptor } from '../../lib/mediaTypes';
 import type { PlayerSettings } from '../../lib/playerSettings';
-import { effectiveAudioLanguage, fillerWarningsEnabled, writeStoredPlayerSettings } from '../../lib/playerSettings';
+import { effectiveAudioLanguage, fillerWarningsEnabled, stillWatchingLimit, writeStoredPlayerSettings } from '../../lib/playerSettings';
+import {
+  consumeStartKind,
+  episodeLabel,
+  lastManualEpisode,
+  markAutoAdvance,
+  readAutoAdvanceStreak,
+  rememberManualEpisode,
+  resetAutoAdvance,
+  shouldAskStillWatching,
+} from '../../lib/autoAdvanceGuard';
 import type { NextEpisodeInfo } from '../../pages/PlayerPage';
 import { usePlayerReady } from '../../context/PlayerReadyProvider';
 import { useActiveParties } from '../../context/ActivePartiesProvider';
@@ -3356,6 +3366,7 @@ export default function BlissfulPlayer(props: {
   broadcastSeekRef.current = watchParty.broadcastSeek;
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.isTrusted) resetAutoAdvance();
       const target = event.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
       const video = videoRef.current;
@@ -3890,7 +3901,9 @@ export default function BlissfulPlayer(props: {
   // The floating notice about the CURRENT episode — dismissable per episode.
   const [fillerNoticeDismissedFor, setFillerNoticeDismissedFor] = useState<string | null>(null);
 
-  const advanceToNextEpisode = useCallback(() => {
+  // `auto` = the Up Next countdown / end-of-file path (counts toward the
+  // "still watching" streak); every other caller is a user action.
+  const advanceToNextEpisode = useCallback((auto = false) => {
     if (partyNonHost) return;
     const next = props.nextEpisodeInfo;
     if (!next || !props.type || !props.id) return;
@@ -3900,6 +3913,7 @@ export default function BlissfulPlayer(props: {
     }
     upNextFiredRef.current = true;
     flushNow();
+    if (auto) markAutoAdvance({ type: props.type, id: props.id, videoId: next.nextVideoId });
 
     // Clear stale next-episode sessionStorage so the new player instance
     // doesn't show the same overlay again (DetailPage will write fresh data
@@ -3921,6 +3935,28 @@ export default function BlissfulPlayer(props: {
       { replace: true }
     );
   }, [props.nextEpisodeInfo, props.type, props.id, props.metaTitle, props.roomCode, navigate, partyNonHost]);
+
+  // "Are you still watching?" hold: raised instead of auto-advancing once the
+  // streak of auto-advanced episodes reaches the setting. Reset per episode.
+  const [stillWatchingPrompt, setStillWatchingPrompt] = useState(false);
+  const stillWatchingLimitRef = useRef(stillWatchingLimit(props.playerSettings));
+  stillWatchingLimitRef.current = stillWatchingLimit(props.playerSettings);
+  // The ONLY entry for the countdown-hits-0 and ended paths. Watch-party rooms
+  // skip the guard so a host advancing never stalls the guests.
+  const autoAdvance = useCallback(() => {
+    if (upNextFiredRef.current) return;
+    if (
+      !props.roomCode
+      && shouldAskStillWatching(readAutoAdvanceStreak(), stillWatchingLimitRef.current)
+    ) {
+      setStillWatchingPrompt(true);
+      videoRef.current?.pause();
+      return;
+    }
+    advanceToNextEpisode(true);
+  }, [props.roomCode, advanceToNextEpisode]);
+  const autoAdvanceRef = useRef(autoAdvance);
+  autoAdvanceRef.current = autoAdvance;
 
   // Jump to an arbitrary episode by videoId — same URL pattern as
   // DetailPage's handlePlayWithVidking. PlayerPage detects the
@@ -4180,9 +4216,6 @@ export default function BlissfulPlayer(props: {
   const showUpNextRef = useRef(showUpNext);
   showUpNextRef.current = showUpNext;
 
-  const advanceRef = useRef(advanceToNextEpisode);
-  advanceRef.current = advanceToNextEpisode;
-
   useEffect(() => {
     if (!props.nextEpisodeInfo) return;
 
@@ -4227,7 +4260,7 @@ export default function BlissfulPlayer(props: {
         // A filler run ahead that hasn't been waved through never auto-plays:
         // the Up Next card stays up with its watch-or-skip buttons instead.
         if (nextFillerPromptRef.current) return;
-        advanceRef.current();
+        autoAdvanceRef.current();
       }
     };
 
@@ -4246,28 +4279,28 @@ export default function BlissfulPlayer(props: {
     // Filler ahead and not yet acknowledged: the card asks instead of counting down.
     if (nextFillerPrompt) return;
 
+    if (stillWatchingPrompt) return; // held: the card asks, no countdown
     setUpNextCountdown(10);
+    let remaining = 10;
     const interval = window.setInterval(() => {
-      setUpNextCountdown((prev) => {
-        const next = prev - 1;
-        if (next <= 0) {
-          window.clearInterval(interval);
-          advanceToNextEpisode();
-          return 0;
-        }
-        return next;
-      });
+      remaining -= 1;
+      setUpNextCountdown(Math.max(remaining, 0));
+      if (remaining <= 0) {
+        window.clearInterval(interval);
+        autoAdvanceRef.current();
+      }
     }, 1000);
 
     return () => {
       window.clearInterval(interval);
     };
-  }, [showUpNext, advanceToNextEpisode, props.playerSettings.bingeWatching, nextFillerPrompt]);
+  }, [showUpNext, props.playerSettings.bingeWatching, nextFillerPrompt, stillWatchingPrompt]);
 
   // Reset auto-advance state when stream URL changes (new episode loaded)
   useEffect(() => {
     setShowUpNext(false);
     setUpNextCountdown(10);
+    setStillWatchingPrompt(false);
     upNextCancelledRef.current = false;
     upNextFiredRef.current = false;
   }, [props.url]);
@@ -4275,6 +4308,44 @@ export default function BlissfulPlayer(props: {
   const handleCancelUpNext = useCallback(() => {
     upNextCancelledRef.current = true;
     setShowUpNext(false);
+    setStillWatchingPrompt(false);
+  }, []);
+
+  // Classify each episode load once: one the auto path started keeps the
+  // streak, anything else (detail page, drawer, Next, Play Now, Continue
+  // watching, a reload) is a manual start that resets it. The label is
+  // remembered separately because `videos` can arrive after the load.
+  const startKindRef = useRef<{ key: string; kind: 'auto' | 'manual'; remembered: boolean } | null>(null);
+  useEffect(() => {
+    if (!props.type || !props.id || !props.videoId || props.type === 'movie') return;
+    const key = `${props.type}:${props.id}:${props.videoId}`;
+    if (startKindRef.current?.key === key) return;
+    const kind = consumeStartKind({ type: props.type, id: props.id, videoId: props.videoId });
+    if (kind === 'manual') resetAutoAdvance();
+    startKindRef.current = { key, kind, remembered: false };
+  }, [props.type, props.id, props.videoId]);
+  useEffect(() => {
+    const start = startKindRef.current;
+    if (!start || start.kind !== 'manual' || start.remembered) return;
+    if (!props.type || !props.id || !props.videoId) return;
+    const videos = props.videos ?? [];
+    const video = videos.find((v) => v.id === props.videoId);
+    rememberManualEpisode(props.type, props.id, {
+      videoId: props.videoId,
+      label: video ? episodeLabel(video) : null,
+    });
+    // An empty list means the episodes haven't loaded yet: write again once they do.
+    if (videos.length > 0) start.remembered = true;
+  }, [props.type, props.id, props.videoId, props.videos]);
+
+  // Real input while playing means someone is awake. Mouse movement does not
+  // count (a twitch while asleep); keyboard is reset in the key handler above.
+  useEffect(() => {
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.isTrusted) resetAutoAdvance();
+    };
+    window.addEventListener('pointerdown', onPointerDown, { capture: true });
+    return () => window.removeEventListener('pointerdown', onPointerDown, { capture: true });
   }, []);
 
   // Up Next "Play Now" / "Watch": watching into a filler run acknowledges it,
@@ -4283,6 +4354,20 @@ export default function BlissfulPlayer(props: {
     if (nextFillerPromptRef.current) acknowledgeFiller(nextFillerPromptRef.current.run);
     advanceToNextEpisode();
   }, [acknowledgeFiller, advanceToNextEpisode]);
+  // "Continue watching": the viewer is awake, so the streak starts over. The
+  // next load is a manual start (no auto flag), which also records it as the
+  // last hand-picked episode.
+  const handleStillWatchingContinue = useCallback(() => {
+    resetAutoAdvance();
+    setStillWatchingPrompt(false);
+    advanceToNextEpisode();
+  }, [advanceToNextEpisode]);
+  const stillWatchingLastPicked = useMemo(
+    () => (stillWatchingPrompt && props.type && props.id
+      ? lastManualEpisode(props.type, props.id)?.label ?? null
+      : null),
+    [stillWatchingPrompt, props.type, props.id],
+  );
   const handleUpNextSkipFiller = useCallback(() => {
     const prompt = nextFillerPromptRef.current;
     handleCancelUpNext();
@@ -4553,6 +4638,8 @@ export default function BlissfulPlayer(props: {
         onAdvance={handleUpNextAdvance}
         fillerPrompt={nextFillerPrompt}
         onSkipFiller={handleUpNextSkipFiller}
+        stillWatching={stillWatchingPrompt ? { lastPicked: stillWatchingLastPicked } : null}
+        onStillWatchingContinue={handleStillWatchingContinue}
       />
 
 
