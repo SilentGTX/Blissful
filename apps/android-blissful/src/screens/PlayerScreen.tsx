@@ -14,6 +14,7 @@ import { SettingsDrawer, type DrawerAudioTrack, type DrawerRelease, type DrawerS
 import { EpisodesDrawer, isUnaired, type DrawerEpisode } from '../components/player/EpisodesDrawer';
 import { WatchPartyDrawer } from '../components/player/WatchPartyDrawer';
 import { WatchPartyToast } from '../components/player/WatchPartyToast';
+import { StillWatchingPrompt } from '../components/player/StillWatchingPrompt';
 import { useWatchPartyRoom } from '../lib/useWatchPartyRoom';
 import { createWatchPartyRoom, getOrCreateGuestUserId, getStashedWatchPartyPassword, getStoredGuestName, getWatchPartyRoom, stashWatchPartyPassword, clearWatchPartyPassword, type WatchPartyRoomInfo } from '../lib/watchParty';
 import { AudioIcon, BackPill, EpisodesIcon, NextEpisodeIcon, PlayIcon, PlayerIconBtn, PlayerLabelBtn, ReleasesIcon, SourceBadges, SubsIcon, WatchPartyButton } from '../components/player/PlayerControls';
@@ -34,7 +35,15 @@ import { setCurrentActivity, clearCurrentActivity } from '../lib/presence';
 import { loadStreams, bucketOf, orderForPick, type PickerStream } from '../lib/streamPicker';
 import { resolveMeta } from '../lib/metaResolver';
 import { useAuth } from '../context/AuthContext';
-import { getStorageBaseUrl, normalizeStremioImage, saveStoredSettings, updateBlissfulLibraryProgress } from '@blissful/core';
+import { episodeLabel, getStorageBaseUrl, normalizeStremioImage, saveStoredSettings, updateBlissfulLibraryProgress } from '@blissful/core';
+import {
+  consumeEpisodeStartKind,
+  lastHandPickedEpisode,
+  markAutoAdvanced,
+  rememberHandPickedEpisode,
+  resetAutoAdvanceStreak,
+  shouldHoldAutoAdvance,
+} from '../lib/autoAdvanceGuard';
 import type { RootStackParamList } from '../navigation/types';
 
 type PlayerRoute = RouteProp<RootStackParamList, 'Player'>;
@@ -201,6 +210,44 @@ export function PlayerScreen() {
   const nextEpRef = useRef<DrawerEpisode | null>(null);
   nextEpRef.current = nextEp;
   const endFiredRef = useRef(false);
+
+  // "Are you still watching?" guard. The streak of auto-advanced episodes lives in
+  // lib/autoAdvanceGuard (module scope) because every episode switch remounts this
+  // screen. `stillWatching` = the EOF auto-advance was held and the prompt is up;
+  // the ref mirrors it for the 400ms tick, the key handler and Back.
+  const [stillWatching, setStillWatching] = useState(false);
+  const stillWatchingRef = useRef(false);
+  const roomCodeRef = useRef(params.roomCode);
+  roomCodeRef.current = params.roomCode;
+  // Series key shared with the Detail page: `detailId` can be absent on routes
+  // that started from a Continue Watching card, so fall back to the show id.
+  const guardShowId = params.detailId ?? params.streamTarget?.id.split(':')[0] ?? null;
+  const startKindRef = useRef<{ key: string; kind: 'auto' | 'manual'; remembered: boolean } | null>(null);
+  useEffect(() => {
+    const st = params.streamTarget;
+    if (!st || st.type !== 'series' || !guardShowId) return;
+    const key = `${guardShowId}:${st.id}`;
+    if (startKindRef.current?.key === key) return;
+    // Classify this episode load once: the auto path flagged it, or it is a
+    // manual start (Detail page, drawer, Next, Continue Watching) that resets.
+    const kind = consumeEpisodeStartKind({ type: 'series', id: guardShowId, videoId: st.id });
+    if (kind === 'manual') resetAutoAdvanceStreak();
+    startKindRef.current = { key, kind, remembered: false };
+  }, [params.streamTarget, guardShowId]);
+
+  // Remember the hand-started episode for the prompt's "Last episode you picked".
+  // The label needs the show's episode list, which can arrive after the load, so
+  // write again once it does.
+  useEffect(() => {
+    const start = startKindRef.current;
+    const st = params.streamTarget;
+    if (!start || start.kind !== 'manual' || start.remembered || !st || !guardShowId) return;
+    rememberHandPickedEpisode('series', guardShowId, {
+      videoId: st.id,
+      label: currentEp ? episodeLabel(currentEp) : null,
+    });
+    if (currentEp) start.remembered = true;
+  }, [currentEp, params.streamTarget, guardShowId]);
 
   const player = useVideoPlayer(current.url, (p) => {
     p.timeUpdateEventInterval = 0.5;
@@ -473,7 +520,7 @@ export function PlayerScreen() {
   // change so guests follow (guests don't re-announce).
   const announceEpisodeRef = useRef<(v: string | null) => void>(() => {});
   const isHostRef = useRef(false);
-  const switchToEpisode = (video: DrawerEpisode) => {
+  const switchToEpisode = (video: DrawerEpisode, opts?: { auto?: boolean }) => {
     if (video.id === params.streamTarget?.id) { if (drawerRef.current !== 'none') closeDrawer(); return; }
     if (isUnaired(video)) {
       const d = formatFullDate(video.released);
@@ -512,6 +559,9 @@ export function PlayerScreen() {
           });
           return;
         }
+        // Count the auto-advance only now that the navigation is certain, and flag
+        // the target so the next mount classifies it as auto, not manual.
+        if (opts?.auto && guardShowId) markAutoAdvanced({ type: 'series', id: guardShowId, videoId: video.id });
         navigation.replace('Player', {
           url: playable[0].url,
           title: params.title,
@@ -716,7 +766,18 @@ export function PlayerScreen() {
       ) {
         endFiredRef.current = true;
         const next = nextEpRef.current;
-        if (autoPlayRef.current && next && !isUnaired(next)) switchToEpisodeRef.current(next);
+        if (autoPlayRef.current && next && !isUnaired(next)) {
+          // Watch parties skip the guard so a host advancing never stalls guests.
+          if (!roomCodeRef.current && shouldHoldAutoAdvance(readTvSettings().stillWatchingAfter)) {
+            userPausedRef.current = true;
+            player.pause();
+            setPlaying(false);
+            stillWatchingRef.current = true;
+            setStillWatching(true);
+          } else {
+            switchToEpisodeRef.current(next, { auto: true });
+          }
+        }
       }
       // Idle auto-hide (the desktop's 3s mouse-idle hide, TV-shaped): once the
       // video is revealed, not user-paused, and no drawer is open, hide the chrome
@@ -1127,6 +1188,13 @@ export function PlayerScreen() {
   useTVEventHandler((evt) => {
     const type = evt?.eventType;
     if (!type) return;
+    // The prompt owns the remote while open (its own buttons + Back). Standing
+    // down BEFORE the reset below keeps the viewer's answer from being counted
+    // as "someone is awake" before the prompt decides.
+    if (stillWatchingRef.current) return;
+    // Real remote input means someone is awake: the auto-advance streak starts
+    // over. Focus moves are not input.
+    if (type !== 'focus' && type !== 'blur') resetAutoAdvanceStreak();
     const now = Date.now();
     if (lastEvt.current.type === type && now - lastEvt.current.at < 180) return;
     lastEvt.current = { type, at: now };
@@ -1213,6 +1281,8 @@ export function PlayerScreen() {
 
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      // The still-watching prompt: Back = Exit.
+      if (stillWatchingRef.current) { exitToDetail(); return true; }
       if (drawerRef.current !== 'none') { closeDrawer(); return true; }
       // Back always exits to the title's Detail page (incl. while buffering).
       exitToDetail();
@@ -1260,7 +1330,7 @@ export function PlayerScreen() {
       {revealed && skip ? <SkipButton m={m} label={skip.label} /> : null}
 
       <PauseOverlay
-        visible={!playing && revealed}
+        visible={!playing && revealed && !stillWatching}
         logo={params.logo}
         title={params.title}
         // Series: show the CURRENT EPISODE (Season·Episode + title + episode summary);
@@ -1277,7 +1347,7 @@ export function PlayerScreen() {
 
       {/* TOP OVERLAY — full chrome (Back + badges + watch-party), shown over the
           buffering logo too so Back stays reachable while the torrent loads. */}
-      {controlsVisible && !drawerOpen ? (
+      {controlsVisible && !drawerOpen && !stillWatching ? (
         <LinearGradient colors={['rgba(0,0,0,0.8)', 'rgba(0,0,0,0.5)', 'transparent']} style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 20, paddingHorizontal: m.s(24), paddingTop: m.s(24), paddingBottom: m.s(16) }} pointerEvents="none">
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: m.s(12) }}>
             <BackPill m={m} title={params.title} focused={tf('back')} />
@@ -1291,7 +1361,7 @@ export function PlayerScreen() {
 
       {/* BOTTOM CONTROLS — scrub strip + transport row (play / subtitles / audio).
           Shown during buffering too (scrub reads --:--), z above the logo overlay. */}
-      {controlsVisible && !drawerOpen ? (
+      {controlsVisible && !drawerOpen && !stillWatching ? (
         <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 20 }} pointerEvents="none">
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.85)']} style={{ flexDirection: 'row', alignItems: 'center', gap: m.s(16), paddingHorizontal: m.s(22), paddingTop: m.s(40), paddingBottom: m.s(6) }}>
             <Text style={timeStyle(m)}>{revealed ? fmt(time) : '--:--'}</Text>
@@ -1420,6 +1490,21 @@ export function PlayerScreen() {
 
       {/* Watch-party activity pills (join/leave/play/pause/seek by others). */}
       {watchParty.connected ? <WatchPartyToast activity={watchParty.activity} selfUserId={watchParty.selfUserId} /> : null}
+
+      {/* "Are you still watching?" - the held EOF auto-advance. No countdown. */}
+      {stillWatching ? (
+        <StillWatchingPrompt
+          lastPicked={guardShowId ? lastHandPickedEpisode('series', guardShowId)?.label ?? null : null}
+          onContinue={() => {
+            const next = nextEpRef.current;
+            resetAutoAdvanceStreak();
+            stillWatchingRef.current = false;
+            setStillWatching(false);
+            if (next) switchToEpisodeRef.current(next);
+          }}
+          onExit={exitToDetail}
+        />
+      ) : null}
 
       {/* Episode-switch veil — black + the title's logo while the next episode's
           streams resolve; merges into the replacing player's own buffering veil
