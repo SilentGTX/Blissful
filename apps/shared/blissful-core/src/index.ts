@@ -5,3 +5,4 @@ export * from './stremioAddon';
 export * from './blissfulAuthApi';
 export * from './blissfulStorageApi';
 export * from './friendsApi';
+export * from './autoAdvanceGuard';

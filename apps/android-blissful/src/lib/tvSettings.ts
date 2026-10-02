@@ -49,6 +49,10 @@ export type TvSettings = {
   seekShortTimeDurationMs: number;
   // Playback
   bingeWatching: boolean;
+  /** "Are you still watching?" guard: hold the auto-advance and ask once this
+   *  many episodes in a row were auto-advanced. 0 = off. Missing / invalid
+   *  reads as the default (2), never as off - see stillWatchingLimit(). */
+  stillWatchingAfter?: number;
   nextVideoNotificationDurationMs: number;
   // Streaming
   streamingServerCacheSizeBytes: number | null; // null = unlimited
@@ -71,6 +75,7 @@ export const DEFAULT_TV_SETTINGS: TvSettings = {
   seekTimeDurationMs: 10000,
   seekShortTimeDurationMs: 4000,
   bingeWatching: true,
+  stillWatchingAfter: 2,
   nextVideoNotificationDurationMs: 30000,
   streamingServerCacheSizeBytes: 5368709120, // 5 GB default (overridden by the account value when signed in)
   accentColor: '#95a2ff',
@@ -148,6 +153,9 @@ export async function hydrateTvSettingsFromCloud(token: string | null): Promise<
 export const SUBTITLE_SIZE_OPTIONS_PX = [16, 20, 24, 28, 32, 36, 40, 48, 56, 64, 72, 80, 96, 120];
 
 export const NEXT_VIDEO_POPUP_OPTIONS_MS = [0, 5000, 10000, 15000, 20000, 30000, 45000, 60000];
+
+// Mirrors STILL_WATCHING_AFTER_OPTIONS (0 = Off).
+export const STILL_WATCHING_AFTER_OPTIONS = [0, 1, 2, 3, 5];
 
 // Mirrors SEEK_TIME_DURATION_OPTIONS_MS / SEEK_SHORT_TIME_DURATION_OPTIONS_MS
 // from apps/web-blissful/src/lib/playerSettings.ts.

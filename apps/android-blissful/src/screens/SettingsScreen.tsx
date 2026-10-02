@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { findNodeHandle, Pressable, ScrollView, Text, TVFocusGuideView, View, type View as RNView } from 'react-native';
-import { updateCurrentBlissfulUser, saveStoredSettings } from '@blissful/core';
+import { updateCurrentBlissfulUser, saveStoredSettings, stillWatchingLimit } from '@blissful/core';
 import { colors, font } from '../theme/colors';
 import { useTheme } from '../theme/ThemeProvider';
 import { SettingsLeftTargetContext } from '../lib/settingsLeftTarget';
@@ -29,6 +29,7 @@ import {
   NEXT_VIDEO_POPUP_OPTIONS_MS,
   SEEK_SHORT_TIME_DURATION_OPTIONS_MS,
   SEEK_TIME_DURATION_OPTIONS_MS,
+  STILL_WATCHING_AFTER_OPTIONS,
   STREAMING_CACHE_SIZE_OPTIONS,
   SUBTITLE_SIZE_OPTIONS_PX,
   SURFACE_COLOR_PRESETS,
@@ -383,6 +384,14 @@ export function SettingsScreen() {
       })),
     [],
   );
+  const stillWatchingItems = useMemo<SelectOption[]>(
+    () =>
+      STILL_WATCHING_AFTER_OPTIONS.map((n) => ({
+        key: String(n),
+        label: n === 0 ? 'Off' : `After ${n} episode${n === 1 ? '' : 's'}`,
+      })),
+    [],
+  );
   const externalPlayerItems = useMemo<SelectOption[]>(
     () => EXTERNAL_PLAYER_OPTIONS.map((o) => ({ key: o.value, label: o.label })),
     [],
@@ -623,6 +632,19 @@ export function SettingsScreen() {
                       options={popupItems}
                       value={String(settings.nextVideoNotificationDurationMs)}
                       onChange={(k) => update({ nextVideoNotificationDurationMs: Number.parseInt(k, 10) })}
+                      m={m}
+                      minWidth={m.s(220)}
+                      atRowStart
+                      onOpen={setDropdown}
+                    />
+                  </View>
+                  <View style={{ opacity: settings.bingeWatching ? 1 : 0.5 }}>
+                    <FieldLabel label="Ask if I'm still watching" m={m} />
+                    <TvSelect
+                      iconName="eye-outline"
+                      options={stillWatchingItems}
+                      value={String(stillWatchingLimit(settings.stillWatchingAfter))}
+                      onChange={(k) => update({ stillWatchingAfter: Number.parseInt(k, 10) })}
                       m={m}
                       minWidth={m.s(220)}
                       atRowStart

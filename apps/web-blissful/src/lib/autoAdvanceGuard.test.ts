@@ -9,6 +9,7 @@ import {
   rememberManualEpisode,
   resetAutoAdvance,
   shouldAskStillWatching,
+  stillWatchingLimit as coreStillWatchingLimit,
   type StorageLike,
 } from './autoAdvanceGuard';
 import { DEFAULT_PLAYER_SETTINGS, stillWatchingLimit } from './playerSettings';
@@ -136,5 +137,17 @@ describe('episodeLabel', () => {
     expect(episodeLabel({ season: null, episode: 33, title: null })).toBe('Episode 33');
     expect(episodeLabel({ title: 'Special' })).toBe('Special');
     expect(episodeLabel({})).toBeNull();
+  });
+});
+
+describe('core stillWatchingLimit (shared with Android TV)', () => {
+  it('matches the web helper: missing / invalid = default 2, 0 = off', () => {
+    for (const v of [undefined, null, NaN, -1, '3', Infinity]) {
+      expect(coreStillWatchingLimit(v)).toBe(2);
+    }
+    expect(coreStillWatchingLimit(0)).toBe(0);
+    expect(coreStillWatchingLimit(1)).toBe(1);
+    expect(coreStillWatchingLimit(3.9)).toBe(3);
+    expect(coreStillWatchingLimit(undefined)).toBe(stillWatchingLimit(DEFAULT_PLAYER_SETTINGS));
   });
 });
