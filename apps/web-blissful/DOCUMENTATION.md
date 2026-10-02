@@ -327,6 +327,10 @@ compares MAL's episode count with the addon's list and the feature stays invisib
   it as series-like inside the player (`props.type !== 'movie'`), while keeping the string
   verbatim, since progress, last-stream and the back link are all keyed by it elsewhere.
 
+### "Are you still watching?" guard
+
+Both players (`BlissfulPlayer/index.tsx`, `NativeMpvPlayer.tsx`) stop chaining episodes after `playerSettings.stillWatchingAfter` auto-advances in a row (default 2, `0` = off; read it through `stillWatchingLimit()`, Settings > Player > "Ask if I'm still watching"). `advanceToNextEpisode(auto)` is the raw navigation; only the countdown-hits-0 and ended/EndFile paths call the `autoAdvance()` wrapper, which either holds (sets `stillWatchingPrompt`, pauses, no countdown, no timeout) or calls `advanceToNextEpisode(true)`, which counts. The streak is in `sessionStorage` (`lib/autoAdvanceGuard.ts`) so it survives the route change between episodes; the auto path also leaves a one-shot `bliss:lastStartWasAuto` flag so the next load can tell an auto start from a manual one (a manual start, reload included, resets the streak and records `bliss:lastManualEpisode:{type}:{id}` in `localStorage`, shown as "Last episode you picked"). Trusted `keydown` / `pointerdown` also reset it; mouse movement does not. Watch-party rooms skip the guard. The Up Next overlays (`stillWatching` prop) render the prompt: "I'm done" is Cancel, "Continue watching" resets and advances. Android TV is not covered.
+
 ### Release ranking and series release memory
 
 Which release plays is decided by ONE lexicographic comparator, `lib/releaseRanking.ts`, used by the

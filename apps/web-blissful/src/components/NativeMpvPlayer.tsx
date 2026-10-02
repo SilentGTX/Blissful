@@ -90,9 +90,20 @@ import { notifyError, notifyInfo, notifySuccess } from '../lib/toastQueues';
 import {
   effectiveAudioLanguage,
   fillerWarningsEnabled,
+  stillWatchingLimit,
   writeStoredPlayerSettings,
   type PlayerSettings,
 } from '../lib/playerSettings';
+import {
+  consumeStartKind,
+  episodeLabel,
+  lastManualEpisode,
+  markAutoAdvance,
+  readAutoAdvanceStreak,
+  rememberManualEpisode,
+  resetAutoAdvance,
+  shouldAskStillWatching,
+} from '../lib/autoAdvanceGuard';
 import { useWatchPartyMpv } from '../lib/useWatchPartyMpv';
 import {
   buildRoomPlayerUrl,
@@ -1871,10 +1882,13 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
 
   // Phase 4 iter 2: Up-next auto-advance — mirrors SimplePlayer's pattern
   // but driven by mpv property/event observation instead of <video> events.
-  const advanceToNextEpisode = useCallback(() => {
+  // `auto` = the Up Next countdown / EndFile path (counts toward the "still
+  // watching" streak); every other caller is a user action.
+  const advanceToNextEpisode = useCallback((auto = false) => {
     const next = props.nextEpisodeInfo;
     if (!next || !props.type || !props.id) return;
     upNextFiredRef.current = true;
+    if (auto) markAutoAdvance({ type: props.type, id: props.id, videoId: next.nextVideoId });
 
     try {
       sessionStorage.removeItem(`bliss:nextEpisode:${props.type}:${props.id}`);
@@ -1925,6 +1939,29 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     props.logo,
     navigate,
   ]);
+
+  // "Are you still watching?" hold: raised instead of auto-advancing once the
+  // streak of auto-advanced episodes reaches the setting.
+  const [stillWatchingPrompt, setStillWatchingPrompt] = useState(false);
+  const stillWatchingLimitRef = useRef(stillWatchingLimit(props.playerSettings));
+  stillWatchingLimitRef.current = stillWatchingLimit(props.playerSettings);
+  // The ONLY entry for the countdown-hits-0 and EndFile paths. Watch-party
+  // rooms skip the guard so a host advancing never stalls the guests.
+  const autoAdvance = useCallback(() => {
+    if (upNextFiredRef.current) return;
+    if (
+      !props.roomCode
+      && shouldAskStillWatching(readAutoAdvanceStreak(), stillWatchingLimitRef.current)
+    ) {
+      setStillWatchingPrompt(true);
+      userPausedRef.current = true;
+      desktop.pause().catch(() => {});
+      return;
+    }
+    advanceToNextEpisode(true);
+  }, [props.roomCode, advanceToNextEpisode]);
+  const autoAdvanceRef = useRef(autoAdvance);
+  autoAdvanceRef.current = autoAdvance;
 
   // Episode drawer: navigate to a different episode. Reuses the same
   // stream-history lookup pattern as advanceToNextEpisode. This is the
@@ -2094,7 +2131,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         // A filler run ahead that hasn't been waved through never auto-plays:
         // the Up Next card stays up with its watch-or-skip buttons instead.
         if (nextFillerPromptRef.current) return;
-        advanceToNextEpisode();
+        autoAdvanceRef.current();
       }
     });
     return unsub;
@@ -2102,7 +2139,6 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     props.nextEpisodeInfo,
     props.playerSettings.bingeWatching,
     showUpNext,
-    advanceToNextEpisode,
   ]);
 
   // Countdown when overlay is visible. Auto-advance on 0 unless cancelled.
@@ -2117,26 +2153,90 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       setUpNextCountdown(10);
       return;
     }
+    // bingeWatching is the master auto-play toggle (as on the web player):
+    // with it off the card never counts down and nothing auto-advances.
+    if (!props.playerSettings.bingeWatching) {
+      setUpNextCountdown(10);
+      return;
+    }
+    // Held by the "still watching" question: no countdown, no timeout.
+    if (stillWatchingPrompt) return;
     setUpNextCountdown(10);
+    let remaining = 10;
     const interval = window.setInterval(() => {
-      setUpNextCountdown((prev) => {
-        if (prev <= 1) {
-          window.clearInterval(interval);
-          if (!upNextCancelledRef.current && !upNextFiredRef.current) {
-            advanceToNextEpisode();
-          }
-          return 0;
+      remaining -= 1;
+      setUpNextCountdown(Math.max(remaining, 0));
+      if (remaining <= 0) {
+        window.clearInterval(interval);
+        if (!upNextCancelledRef.current && !upNextFiredRef.current) {
+          autoAdvanceRef.current();
         }
-        return prev - 1;
-      });
+      }
     }, 1000);
     return () => window.clearInterval(interval);
-  }, [showUpNext, advanceToNextEpisode, nextFillerPrompt]);
+  }, [showUpNext, props.playerSettings.bingeWatching, nextFillerPrompt, stillWatchingPrompt]);
 
   const cancelUpNext = useCallback(() => {
     upNextCancelledRef.current = true;
     setShowUpNext(false);
+    setStillWatchingPrompt(false);
   }, []);
+
+  // A new stream drops a hold left over from the previous episode.
+  useEffect(() => {
+    setStillWatchingPrompt(false);
+  }, [props.url]);
+
+  // Classify each episode load once: one the auto path started keeps the
+  // streak, anything else (detail page, drawer, Next, Play Now, Continue
+  // watching, a reload) is a manual start that resets it. The label is
+  // remembered separately because `videos` can arrive after the load.
+  const startKindRef = useRef<{ key: string; kind: 'auto' | 'manual'; remembered: boolean } | null>(null);
+  useEffect(() => {
+    if (!props.type || !props.id || !props.videoId || props.type === 'movie') return;
+    const key = `${props.type}:${props.id}:${props.videoId}`;
+    if (startKindRef.current?.key === key) return;
+    const kind = consumeStartKind({ type: props.type, id: props.id, videoId: props.videoId });
+    if (kind === 'manual') resetAutoAdvance();
+    startKindRef.current = { key, kind, remembered: false };
+  }, [props.type, props.id, props.videoId]);
+  useEffect(() => {
+    const start = startKindRef.current;
+    if (!start || start.kind !== 'manual' || start.remembered) return;
+    if (!props.type || !props.id || !props.videoId) return;
+    const video = drawerEpisodes.find((v) => v.id === props.videoId);
+    rememberManualEpisode(props.type, props.id, {
+      videoId: props.videoId,
+      label: video ? episodeLabel(video) : null,
+    });
+    // An empty list means the episodes haven't loaded yet: write again once they do.
+    if (drawerEpisodes.length > 0) start.remembered = true;
+  }, [props.type, props.id, props.videoId, drawerEpisodes]);
+
+  // Real input while playing means someone is awake. Mouse movement does not
+  // count (a twitch while asleep); keyboard is reset in the key handler.
+  useEffect(() => {
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.isTrusted) resetAutoAdvance();
+    };
+    window.addEventListener('pointerdown', onPointerDown, { capture: true });
+    return () => window.removeEventListener('pointerdown', onPointerDown, { capture: true });
+  }, []);
+
+  // "Continue watching": the viewer is awake, so the streak starts over. The
+  // next load is a manual start (no auto flag), which also records it as the
+  // last hand-picked episode.
+  const handleStillWatchingContinue = useCallback(() => {
+    resetAutoAdvance();
+    setStillWatchingPrompt(false);
+    advanceToNextEpisode();
+  }, [advanceToNextEpisode]);
+  const stillWatchingLastPicked = useMemo(
+    () => (stillWatchingPrompt && props.type && props.id
+      ? lastManualEpisode(props.type, props.id)?.label ?? null
+      : null),
+    [stillWatchingPrompt, props.type, props.id],
+  );
 
   // Up Next "Skip to episode N" — dismiss the card, then jump past the run.
   const handleUpNextSkipFiller = useCallback(() => {
@@ -3624,6 +3724,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       Math.round(props.playerSettings.seekTimeDurationMs / 1000),
     );
     const handler = (e: KeyboardEvent) => {
+      if (e.isTrusted) resetAutoAdvance();
       if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
       if (e.code === 'Space') {
         e.preventDefault();
@@ -3826,6 +3927,8 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         onAdvance={handleUpNextAdvance}
         controlsOpacity={controlsOpacity}
         fillerPrompt={nextFillerPrompt}
+        stillWatching={stillWatchingPrompt ? { lastPicked: stillWatchingLastPicked } : null}
+        onStillWatchingContinue={handleStillWatchingContinue}
         onSkipFiller={handleUpNextSkipFiller}
       />
 

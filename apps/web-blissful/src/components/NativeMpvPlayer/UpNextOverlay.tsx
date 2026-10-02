@@ -7,7 +7,11 @@
 // Filler mode (`fillerPrompt` set): the next episode opens a filler / recap
 // run the viewer hasn't waved through, so the card asks "are you sure?" with
 // Skip-to-canon and Watch buttons instead of counting down — the parent
-// holds the auto-advance while this is set. Mirrors the web player's card.
+// holds the auto-advance while this is set.
+//
+// Still-watching mode (`stillWatching` set): after N auto-advanced episodes in
+// a row the parent holds the advance; the card asks "Are you still watching?"
+// with no countdown and no timeout, and wins over the filler mode. Mirrors the web player's card.
 
 import type { NextEpisodeInfo } from '../../pages/PlayerPage';
 import type { PlayerSettings } from '../../lib/playerSettings';
@@ -21,6 +25,13 @@ export type UpNextFillerPrompt = {
   skipLabel: string | null;
 };
 
+/** "Are you still watching?" hold: the parent stopped auto-advancing after
+ *  several episodes in a row. `lastPicked` is the last episode the viewer chose
+ *  by hand, when known. */
+export type UpNextStillWatching = {
+  lastPicked: string | null;
+};
+
 export type UpNextOverlayProps = {
   visible: boolean;
   nextEpisodeInfo: NextEpisodeInfo | null;
@@ -31,6 +42,9 @@ export type UpNextOverlayProps = {
   controlsOpacity: string;
   fillerPrompt?: UpNextFillerPrompt | null;
   onSkipFiller?: () => void;
+  /** Wins over `fillerPrompt`. "I'm done" is `onCancel`. */
+  stillWatching?: UpNextStillWatching | null;
+  onStillWatchingContinue?: () => void;
 };
 
 export function UpNextOverlay({
@@ -43,6 +57,8 @@ export function UpNextOverlay({
   controlsOpacity,
   fillerPrompt,
   onSkipFiller,
+  stillWatching,
+  onStillWatchingContinue,
 }: UpNextOverlayProps) {
   if (!visible || !nextEpisodeInfo) return null;
   return (
@@ -73,10 +89,37 @@ export function UpNextOverlay({
       )}
       <div className="p-4 pt-2">
         <div className="mb-3 flex items-start gap-2 text-sm font-semibold leading-snug">
-          {fillerPrompt ? <FillerBadge kind={fillerPrompt.kind} className="mt-0.5" /> : null}
+          {fillerPrompt && !stillWatching ? <FillerBadge kind={fillerPrompt.kind} className="mt-0.5" /> : null}
           <span className="min-w-0">{nextEpisodeInfo.nextEpisodeTitle}</span>
         </div>
-        {fillerPrompt ? (
+        {stillWatching ? (
+          <>
+            <div className="mb-1 text-[13px] font-semibold text-white">Are you still watching?</div>
+            {stillWatching.lastPicked ? (
+              <div className="mb-3 text-[12px] leading-snug text-white/75">
+                Last episode you picked: <span className="font-medium text-white/90">{stillWatching.lastPicked}</span>
+              </div>
+            ) : (
+              <div className="mb-3" />
+            )}
+            <div className="flex items-center justify-between gap-2">
+              <button
+                type="button"
+                className="cursor-pointer rounded-full bg-white/10 px-4 py-2 text-xs font-medium text-white/70 transition-colors hover:bg-white/20 hover:text-white"
+                onClick={onCancel}
+              >
+                I&apos;m done
+              </button>
+              <button
+                type="button"
+                className="cursor-pointer rounded-full bg-[var(--bliss-accent)] px-4 py-2 text-xs font-semibold text-black transition-colors hover:brightness-90"
+                onClick={onStillWatchingContinue}
+              >
+                Continue watching
+              </button>
+            </div>
+          </>
+        ) : fillerPrompt ? (
           <>
             <div className="mb-3 text-[12px] leading-snug text-white/75">
               {describeFillerRun(fillerPrompt.run, fillerPrompt.kind, 'next')}

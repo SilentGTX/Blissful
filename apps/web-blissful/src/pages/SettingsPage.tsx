@@ -16,10 +16,12 @@ import {
   PLAYER_LANGUAGE_OPTIONS,
   SEEK_SHORT_TIME_DURATION_OPTIONS_MS,
   SEEK_TIME_DURATION_OPTIONS_MS,
+  STILL_WATCHING_AFTER_OPTIONS,
   STREAMING_CACHE_SIZE_OPTIONS,
   SUBTITLE_SIZE_OPTIONS_PX,
   fillerWarningsEnabled,
   kitsuAudioPreference,
+  stillWatchingLimit,
   type PlayerSettings,
 } from '../lib/playerSettings';
 
@@ -154,6 +156,15 @@ export default function SettingsPage() {
         label: value === 0 ? 'Disabled' : seekLabel(value),
       })),
     [seekLabel]
+  );
+
+  const stillWatchingItems = useMemo(
+    () =>
+      STILL_WATCHING_AFTER_OPTIONS.map((value) => ({
+        key: String(value),
+        label: value === 0 ? 'Off' : `After ${value} episode${value === 1 ? '' : 's'}`,
+      })),
+    []
   );
 
   const externalPlayerItems = useMemo(
@@ -555,6 +566,19 @@ export default function SettingsPage() {
                         });
                       }}
                       items={nextPopupItems}
+                      triggerClassName="h-9"
+                    />
+                    <div className="text-xs text-foreground/60 mb-2 mt-4">Ask if I&apos;m still watching</div>
+                    <BlissSelect
+                      ariaLabel="Ask if I'm still watching"
+                      isDisabled={!playerSettings.bingeWatching}
+                      selectedKey={String(stillWatchingLimit(playerSettings))}
+                      onSelectionChange={(key) => {
+                        updateSettings({
+                          stillWatchingAfter: Number.parseInt(String(key), 10),
+                        });
+                      }}
+                      items={stillWatchingItems}
                       triggerClassName="h-9"
                     />
                   </div>

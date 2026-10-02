@@ -23,6 +23,11 @@ export type PlayerSettings = {
   playInExternalPlayer: string;
   nextVideoNotificationDurationMs: number;
   bingeWatching: boolean;
+  /** "Are you still watching?" guard: ask instead of auto-advancing once this
+   *  many episodes in a row were auto-advanced. 0 = off. A profile saved before
+   *  this existed has no key: `stillWatchingLimit()` reads that as the default
+   *  (2), never as off. */
+  stillWatchingAfter?: number;
   playInBackground: boolean;
   pauseOnMinimize: boolean;
   /** Streaming-server torrent cache size in bytes. `null` = unlimited. */
@@ -86,6 +91,7 @@ export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
   playInExternalPlayer: 'none',
   nextVideoNotificationDurationMs: 30000,
   bingeWatching: true,
+  stillWatchingAfter: 2,
   playInBackground: false,
   pauseOnMinimize: true,
   // 100 GB default — high enough that the cache rarely trims on play.
@@ -117,6 +123,18 @@ export function kitsuAudioPreference(
 export function fillerWarningsEnabled(settings: Pick<PlayerSettings, 'fillerWarnings'>): boolean {
   return settings.fillerWarnings !== false;
 }
+
+/** Auto-advanced episodes in a row before the player asks "Are you still
+ *  watching?". 0 = never ask; missing / invalid = the default. */
+export function stillWatchingLimit(settings: Pick<PlayerSettings, 'stillWatchingAfter'>): number {
+  const value = settings.stillWatchingAfter;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    return DEFAULT_PLAYER_SETTINGS.stillWatchingAfter ?? 2;
+  }
+  return Math.floor(value);
+}
+
+export const STILL_WATCHING_AFTER_OPTIONS = [0, 1, 2, 3, 5];
 
 /** The audio language a player should prefer for the content `id`: the Anime
  *  Kitsu preference for `kitsu:` shows/episodes, the profile default otherwise.
