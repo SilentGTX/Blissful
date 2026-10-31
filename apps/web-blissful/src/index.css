@@ -154,8 +154,8 @@
     background-color: #2c2c2c;
     border: 0px;
     box-shadow: none;
-    backdrop-filter: none;
     -webkit-backdrop-filter: none;
+    backdrop-filter: none;
     transition: background-color 0.2s ease;
   }
 
@@ -464,8 +464,8 @@ html:not(.dark) .bliss-sidebar {
 
 .bliss-sidebar-link {
   color: rgba(255, 255, 255, 0.7);
-  backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  backdrop-filter: none;
   box-shadow: none;
   border: 1px solid #2c2c2c;
 }
@@ -726,8 +726,8 @@ html:not(.dark) .bliss-sidebar-link.is-active {
   /* Blur everything except the drawer (drawer sits above this) */
   z-index: 2147483646;
   background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
 }
 
 
@@ -1465,8 +1465,8 @@ html[data-ui="netflix"] body {
 }
 
 html[data-ui="netflix"] .solid-surface {
-  backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  backdrop-filter: none;
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: none;
   background: #111;
@@ -2668,8 +2668,8 @@ html[data-ui="tv"] .bliss-nav-input {
     linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05)),
     linear-gradient(135deg, rgba(124, 144, 176, 0.1), rgba(18, 24, 36, 0.18));
   border: 1px solid rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
 }
 
 /* ---- TV theme surfaces --------------------------------------------------
@@ -2740,8 +2740,8 @@ html[data-ui="tv"] .bliss-sidebar > .solid-surface {
   background:
     linear-gradient(160deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.02)),
     linear-gradient(165deg, var(--bliss-glass-top), var(--bliss-glass-bottom)) !important;
-  backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
   border: 1px solid rgba(255, 255, 255, 0.12) !important;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.32),
@@ -2778,8 +2778,8 @@ html[data-ui="tv"] .bliss-nav-input {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.35),
     0 12px 40px rgba(0, 0, 0, 0.35);
-  backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 html[data-ui="tv"] .bliss-nav-input input {
@@ -2883,6 +2883,14 @@ html[data-ui="apple"] {
   --apple-glass-blur: blur(12px);
   --apple-glass-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
   --apple-glass-edge: transparent; /* drawn only for increased contrast */
+  /* Big text-bearing panels (modals, sheets, menus) can open over bright
+     artwork, where the bare tint leaves white text near 2.5:1. Apple's answer
+     for glass over bright content is a 35% black dimming layer under it: the
+     worst case (a white poster behind a 40% modal backdrop) comes out ~4.7:1. */
+  --apple-glass-dim: rgba(0, 0, 0, 0.35);
+  /* A surface nested inside another one (chips, inputs, profile tiles) is a
+     fill, never a second layer of glass. tertiarySystemFill. */
+  --apple-fill: rgba(118, 118, 128, 0.24);
 
   /* Critically damped spring (damping ratio 1, response 0.35 s) sampled into
      linear(): 1 - (1 + wt)e^(-wt), w = 2pi / 0.35. Settles in ~515 ms with no
@@ -2906,6 +2914,8 @@ html[data-ui="apple"]:not(.dark) {
      the tooltip's blur and shadow over a stronger white. */
   --apple-glass: rgba(255, 255, 255, 0.6);
   --apple-glass-hover: rgba(255, 255, 255, 0.75);
+  --apple-glass-dim: transparent;
+  --apple-fill: rgba(118, 118, 128, 0.12);
 }
 
 html[data-ui="apple"] body {
@@ -3022,10 +3032,33 @@ html[data-ui="apple"] .bliss-sidebar-link.is-active .bliss-sidebar-label-text {
 }
 
 /* ---- Top bar: no surface; the search field is the glass ----------------
-   Same pass-through as the TV theme: the empty bar never blocks clicks. */
+   Same pass-through as the TV theme: the empty bar never blocks clicks. The
+   bar is only as tall as the field (AppShell sets --horizontal-nav-bar-size
+   to 40px for this theme), so the field's top edge meets the sidebar's. */
 html[data-ui="apple"] .bliss-nav-bar {
   background: transparent;
   box-shadow: none;
+  height: var(--horizontal-nav-bar-size);
+}
+
+/* The field is centred on the bar at a fixed width, independent of the
+   controls on the right. Flex-centred, it moved 26px between Home (which adds
+   an edit button there) and every other page. */
+@media (min-width: 768px) {
+  html[data-ui="apple"] .bliss-nav-bar {
+    position: relative;
+    justify-content: flex-end;
+  }
+
+  html[data-ui="apple"] .bliss-search-field {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    translate: -50% 0;
+    width: min(60rem, calc(100% - 16rem));
+    max-width: none;
+    margin: 0;
+  }
 }
 
 html[data-ui="apple"] .bliss-top-nav,
@@ -3084,13 +3117,33 @@ html[data-ui="apple"] .bliss-bottom-drawer {
   border: 1px solid var(--apple-hairline);
 }
 
-/* Menus float above everything, so they are functional layer: glass. */
-html[data-ui="apple"] .bliss-menu-panel {
-  background: var(--apple-glass);
+/* Everything that floats over the page is functional layer, so glass: the
+   tooltip tint over the dimming layer. Modal panels are the outermost
+   surface inside HeroUI's dialog; HeroUI menus, selects and toasts by their
+   own classes; the app's sheets, drawers, search results, account panel and
+   mobile tab bar carry .bliss-floating. */
+html[data-ui="apple"] :is(
+  [data-slot="modal-dialog"] .solid-surface:not(.solid-surface .solid-surface),
+  .bliss-floating,
+  .bliss-bottom-drawer,
+  .bliss-menu-panel,
+  .dropdown__popover,
+  .select__popover,
+  .combo-box__popover,
+  .autocomplete__popover,
+  .toast
+) {
+  background: linear-gradient(var(--apple-glass), var(--apple-glass)), var(--apple-glass-dim);
   -webkit-backdrop-filter: var(--apple-glass-blur);
   backdrop-filter: var(--apple-glass-blur);
   border: 1px solid var(--apple-glass-edge);
   box-shadow: var(--apple-glass-shadow);
+}
+
+html[data-ui="apple"] .solid-surface .solid-surface {
+  background-color: var(--apple-fill);
+  background-image: none;
+  border-color: var(--apple-hairline);
 }
 
 /* ---- Home hero ---------------------------------------------------------- */

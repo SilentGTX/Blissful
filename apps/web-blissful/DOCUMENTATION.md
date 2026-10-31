@@ -226,9 +226,17 @@ providers under `src/context/`, composed via `ProvidersGlue.tsx`:
   menus), opaque system colours for content, SF Pro / Inter type with SF tracking, a critically
   damped spring as a CSS `linear()` curve, and Home's featured artwork blurred behind the shell
   (`--apple-ambient`, set by NowPopular). The glass is the tooltip recipe (`BlissTooltip`:
-  `bg-white/10` + `backdrop-blur-md` + `shadow-lg`). Honours reduced motion and increased
-  contrast, but not `prefers-reduced-transparency`: Windows reports that whenever "Transparency
-  effects" is off, and the tooltips ignore it too.
+  `bg-white/10` + `backdrop-blur-md` + `shadow-lg`); floating panels (modal panels, sheets,
+  drawers, menus, selects, toasts, search results — `.bliss-floating` for the app's own) add a
+  35% black dimming layer under it so their text stays legible over bright artwork, and a
+  surface nested in another is a plain fill. The top bar is 40px (AppShell) so the search
+  field's top meets the sidebar's, and the field is centred at a fixed width. Honours reduced
+  motion and increased contrast, but not `prefers-reduced-transparency`: Windows reports that
+  whenever "Transparency effects" is off, and the tooltips ignore it too.
+- **`backdrop-filter` in hand-written CSS:** write `-webkit-backdrop-filter` FIRST, then
+  `backdrop-filter` (Tailwind's order). The production minifier keeps only the last of the
+  pair and Chromium ignores the prefixed one, so the other order ships with no blur — and the
+  dev server doesn't minify, so it looks fine locally.
 
 ### Desktop bridge (`lib/desktop.ts`)
 
