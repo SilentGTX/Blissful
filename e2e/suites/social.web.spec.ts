@@ -6,17 +6,21 @@ import { test, expect } from '../fixtures/auth';
 // live /ws/user push layer (online/activity signal + party-invite request→accept)
 // in social-ws.protocol.spec.ts.
 
+// The top-bar search, whichever theme is active (TV is the default; Classic
+// words it differently). Used as the "page loaded" signal.
+const SEARCH_PLACEHOLDER = /^Search (everything|movies, series, actors\.\.\.)$/;
+
 test.describe('Social / friends / presence (web)', () => {
   test('friends UI is gated — absent when logged out', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByPlaceholder('Search everything')).toBeVisible({ timeout: 20_000 }); // page loaded
+    await expect(page.getByPlaceholder(SEARCH_PLACEHOLDER)).toBeVisible({ timeout: 20_000 }); // page loaded
     // FriendsAccordion renders null without auth, so its toggle is not in the DOM.
     await expect(page.getByTestId('friends-accordion-toggle')).toHaveCount(0);
   });
 
   test('friends accordion is present when logged in (real account)', async ({ loggedInPage: page }) => {
     await page.goto('/');
-    await expect(page.getByPlaceholder('Search everything')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByPlaceholder(SEARCH_PLACEHOLDER)).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId('friends-accordion-toggle')).toBeVisible({ timeout: 20_000 });
   });
 
