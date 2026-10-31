@@ -168,7 +168,7 @@ export default function MediaRail({
       ) : (
         <ScrollShadow
           orientation="horizontal"
-          className="-mx-4"
+          className="bliss-poster-rail -mx-4"
           hideScrollBar
           size={80}
         >

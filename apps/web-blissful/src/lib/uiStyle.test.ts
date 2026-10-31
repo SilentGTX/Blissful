@@ -35,6 +35,11 @@ describe('normalizeUiStyle', () => {
     expect(normalizeUiStyle('modern', false)).toBe('tv');
   });
 
+  it('keeps Apple, including while the Classic migration is pending', () => {
+    expect(normalizeUiStyle('apple', true)).toBe('apple');
+    expect(normalizeUiStyle('apple', false)).toBe('apple');
+  });
+
   it('sends Kecflix to the default while it is hidden', () => {
     const expected = KECFLIX_ENABLED ? 'netflix' : 'tv';
     expect(normalizeUiStyle('netflix', false)).toBe(expected);

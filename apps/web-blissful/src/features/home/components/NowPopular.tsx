@@ -27,6 +27,7 @@ export function NowPopular({
 }: NowPopularProps) {
   const { uiStyle } = useUI();
   const isTvTheme = uiStyle === 'tv';
+  const isAppleTheme = uiStyle === 'apple';
   const [lockedBg, setLockedBg] = useState('');
 
   useEffect(() => {
@@ -43,6 +44,19 @@ export function NowPopular({
 
   const hasBg = Boolean(lockedBg);
 
+  // Apple theme: the featured artwork, heavily blurred, washes the whole
+  // window (body::before in index.css) so the glass sidebar and search field
+  // have real content to refract — Apple's "extend rich content beneath the
+  // sidebar". Cleared on leaving Home, so other pages sit on plain black.
+  useEffect(() => {
+    if (!isAppleTheme || !lockedBg) return;
+    const root = document.documentElement;
+    root.style.setProperty('--apple-ambient', `url(${JSON.stringify(proxiedImage(lockedBg))})`);
+    return () => {
+      root.style.removeProperty('--apple-ambient');
+    };
+  }, [isAppleTheme, lockedBg]);
+
   // Two button variants. The card uses a container query to swap
   // between them based on the CARD'S width (not viewport), so a
   // narrow column on a wide screen still gets the compact look:
@@ -57,24 +71,44 @@ export function NowPopular({
           Classic keeps it white. Swapped here rather than in CSS because the
           white comes from Tailwind `!bg-white`, and a layered !important beats
           an unlayered one no matter how specific the override. */}
+      {/* Apple: a white capsule over the artwork, like the system's prominent
+          Play button. It stays white on hover — the colour does not invert
+          the way Classic's does. */}
       <button
         type="button"
         className={
           'action-button-Pn4hZ group mb-0 cursor-pointer !border-0 ' +
           (isTvTheme
             ? '!h-14 !px-8 !text-base !bg-[var(--bliss-accent)] !text-[var(--bliss-ink)]'
-            : '!h-11 !px-4 !text-sm !bg-white !text-[#212121] hover:!bg-[#212121] hover:!text-white')
+            : isAppleTheme
+              ? 'bliss-hero-primary !h-11 !px-6 !text-[15px] !bg-white !text-black hover:!bg-white/85'
+              : '!h-11 !px-4 !text-sm !bg-white !text-[#212121] hover:!bg-[#212121] hover:!text-white')
         }
         onClick={onWatch}
       >
-        <span className={isTvTheme ? 'text !text-[var(--bliss-ink)]' : 'text !text-[#212121] group-hover:!text-white'}>
+        <span
+          className={
+            isTvTheme
+              ? 'text !text-[var(--bliss-ink)]'
+              : isAppleTheme
+                ? 'text !text-black'
+                : 'text !text-[#212121] group-hover:!text-white'
+          }
+        >
           Watch now
         </span>
       </button>
       <LibraryActionButton
         inLibrary={inLibrary}
         onToggleLibrary={onAddToList}
-        className={'mb-0 cursor-pointer ' + (isTvTheme ? '!h-14 !px-7 !text-base' : '!h-11 !px-4 !text-sm')}
+        className={
+          'mb-0 cursor-pointer ' +
+          (isTvTheme
+            ? '!h-14 !px-7 !text-base'
+            : isAppleTheme
+              ? 'bliss-hero-secondary !h-11 !px-5 !text-[15px]'
+              : '!h-11 !px-4 !text-sm')
+        }
       />
     </>
   );
@@ -114,7 +148,7 @@ export function NowPopular({
   );
 
   return (
-    <div data-testid="home-hero-card" className="@container solid-surface relative overflow-hidden rounded-[36px] bg-[#0f1115]/85">
+    <div data-testid="home-hero-card" className="bliss-hero @container solid-surface relative overflow-hidden rounded-[36px] bg-[#0f1115]/85">
       {/* Card grows with viewport at wide container widths, but at
           narrow card widths uses a flat min-height so chips+title+CTAs
           fit. Background image keeps `h-full w-full object-cover`,
@@ -133,7 +167,7 @@ export function NowPopular({
 
         <div className="absolute inset-0 p-4 @md:p-6">
           <div className="flex h-full flex-col min-h-0">
-            <div className="text-[10px] @md:text-sm font-semibold uppercase tracking-[0.35em] text-white/70 cursor-default">
+            <div className="bliss-hero-eyebrow text-[10px] @md:text-sm font-semibold uppercase tracking-[0.35em] text-white/70 cursor-default">
               🔥 Now Popular
             </div>
             <div className="mt-auto min-h-0 space-y-2 @md:space-y-3 cursor-default overflow-hidden">
@@ -144,7 +178,7 @@ export function NowPopular({
                 className="flex flex-wrap gap-2"
                 buttonClassName="glass-surface rounded-full bg-white/12 px-3 py-1 text-xs font-semibold text-white/90 backdrop-blur hover:bg-white/20 transition-colors cursor-pointer"
               />
-              <div className="text-xl @sm:text-2xl @md:text-3xl font-semibold text-white break-words max-w-full @md:max-w-[420px] line-clamp-2">
+              <div className="bliss-hero-title text-xl @sm:text-2xl @md:text-3xl font-semibold text-white break-words max-w-full @md:max-w-[420px] line-clamp-2">
                 {hero?.title ?? 'Pick something to watch'}
               </div>
               {hero?.blurb ? (

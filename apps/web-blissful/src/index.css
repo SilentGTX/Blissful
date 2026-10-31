@@ -2886,3 +2886,417 @@ html[data-ui="tv"] .bliss-top-nav-inner > * {
 [data-slot="dropdown-popover"] {
   z-index: 2147483647;
 }
+
+/* ===========================================================================
+   APPLE THEME (html[data-ui="apple"])
+   Apple's interface language applied to the same sidebar + top bar markup
+   Classic and TV use. Built from the Human Interface Guidelines (materials,
+   color, typography, sidebars, search fields) and Apple's fluid-interface
+   motion guidance (springs, instant press feedback, reduced motion).
+
+   Two layers, as in the HIG's Liquid Glass model:
+   - Functional layer (sidebar, search field, menus, the hero's secondary
+     button): glass — a real backdrop blur with a saturation boost, a
+     translucent fill and a hairline edge. Nothing else gets glass ("Don't use
+     Liquid Glass in the content layer").
+   - Content layer (hero, posters, panels): opaque system backgrounds.
+
+   Signature: the ambient artwork. Home's featured backdrop, heavily blurred,
+   washes the window behind the glass, so the sidebar has real colour to pick
+   up (HIG Sidebars: "Extend visually rich content beneath the sidebar").
+   NowPopular sets --apple-ambient; without it the window is plain black.
+
+   Colours are Apple's documented dynamic system colours (iOS values), dark
+   and light. The accent stays the user's --bliss-accent — macOS does the same
+   with the accent colour people pick in System Settings.
+   =========================================================================== */
+html[data-ui="apple"] {
+  /* SF Pro where the OS ships it (Apple devices); elsewhere Inter, loaded
+     with its optical-size axis so large text gets the tighter display cut. */
+  --apple-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
+  --bliss-display: var(--apple-font);
+
+  --apple-bg: #000000; /* systemBackground */
+  --apple-surface: #1c1c1e; /* secondarySystemBackground */
+  --apple-label: #ffffff;
+  --apple-label-2: rgba(235, 235, 245, 0.6); /* secondaryLabel: 6.4:1 on black */
+  --apple-hairline: rgba(255, 255, 255, 0.07);
+  --apple-fill: rgba(118, 118, 128, 0.24); /* tertiarySystemFill */
+  --apple-fill-hover: rgba(118, 118, 128, 0.32);
+  --apple-select: rgba(255, 255, 255, 0.1); /* sidebar selection */
+  --apple-hover: rgba(255, 255, 255, 0.05);
+
+  --apple-glass: rgba(28, 28, 30, 0.58);
+  --apple-glass-edge: rgba(255, 255, 255, 0.1);
+  --apple-glass-blur: blur(30px) saturate(1.6);
+  --apple-glass-lip: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+
+  /* Critically damped spring (damping ratio 1, response 0.35 s) sampled into
+     linear(): 1 - (1 + wt)e^(-wt), w = 2pi / 0.35. Settles in ~515 ms with no
+     overshoot — nothing here is driven by a flick, so nothing bounces. */
+  --apple-spring: linear(0, 0.079, 0.237, 0.404, 0.552, 0.672, 0.764, 0.833, 0.884, 0.919, 0.945, 0.962, 0.974, 0.983, 0.988, 0.992, 0.995, 0.997, 0.998, 0.999, 1);
+  --apple-spring-duration: 515ms;
+  /* Press and hover scale; reduced motion sets both to 1. */
+  --apple-press: 0.97;
+  --apple-lift: 1.04;
+}
+
+html[data-ui="apple"]:not(.dark) {
+  --apple-bg: #f2f2f7; /* systemGroupedBackground */
+  --apple-surface: #ffffff;
+  --apple-label: #000000;
+  --apple-label-2: rgba(60, 60, 67, 0.6);
+  --apple-hairline: rgba(0, 0, 0, 0.06);
+  --apple-fill: rgba(118, 118, 128, 0.12);
+  --apple-fill-hover: rgba(118, 118, 128, 0.2);
+  --apple-select: rgba(0, 0, 0, 0.07);
+  --apple-hover: rgba(0, 0, 0, 0.04);
+  --apple-glass: rgba(246, 246, 248, 0.66);
+  --apple-glass-edge: rgba(0, 0, 0, 0.08);
+  --apple-glass-lip: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+html[data-ui="apple"] body {
+  font-family: var(--apple-font);
+  font-optical-sizing: auto;
+  background-color: var(--apple-bg);
+}
+
+html[data-ui="apple"] ::selection {
+  background: color-mix(in srgb, var(--bliss-accent) 40%, transparent);
+}
+
+/* ---- Ambient artwork ---------------------------------------------------
+   Sits behind the transparent shell (useGradientBackdrop sets --dynamic-bg to
+   transparent for this theme). Overscanned past the edges so the blur has no
+   dark rim, strongest behind the top of the window and gone by the lower
+   rails, so text over the plain background keeps full contrast. */
+html[data-ui="apple"] body::before {
+  content: "";
+  position: fixed;
+  inset: -10vmax;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--apple-ambient, none) center / cover no-repeat;
+  /* Blurring a dark film still averages toward black, so the wash is pushed
+     brighter and more saturated than it looks on paper. */
+  filter: blur(64px) saturate(1.8) brightness(1.15);
+  opacity: 0.9;
+  -webkit-mask-image: linear-gradient(to bottom, #000 15%, rgba(0, 0, 0, 0.45) 45%, transparent 75%);
+  mask-image: linear-gradient(to bottom, #000 15%, rgba(0, 0, 0, 0.45) 45%, transparent 75%);
+}
+
+html[data-ui="apple"]:not(.dark) body::before {
+  opacity: 0.5;
+}
+
+/* ---- Type --------------------------------------------------------------
+   One family; hierarchy from weight + size, and tracking per size from
+   Apple's SF Pro table (13pt -6, 15pt -16, 22pt -12 thousandths of an em). */
+html[data-ui="apple"] .bliss-heading,
+html[data-ui="apple"] .font-\[Fraunces\],
+html[data-ui="apple"] .font-\[Instrument_Serif\] {
+  font-family: var(--apple-font);
+  font-weight: 700;
+  letter-spacing: -0.012em;
+}
+
+html[data-ui="apple"] section[data-testid="media-rail"] h2 {
+  font-size: 1.375rem;
+  line-height: 1.27;
+  font-weight: 700;
+  letter-spacing: -0.012em;
+  color: var(--apple-label);
+}
+
+/* ---- Sidebar: regular glass -------------------------------------------- */
+html[data-ui="apple"] .bliss-sidebar {
+  background: transparent;
+}
+
+html[data-ui="apple"] .bliss-sidebar > .solid-surface {
+  background: var(--apple-glass);
+  backdrop-filter: var(--apple-glass-blur);
+  -webkit-backdrop-filter: var(--apple-glass-blur);
+  border: 1px solid var(--apple-glass-edge);
+  box-shadow:
+    var(--apple-glass-lip),
+    0 16px 40px rgba(0, 0, 0, 0.35);
+}
+
+/* Rows: labels in the primary label colour, glyphs in the accent (HIG
+   Sidebars: "By default, sidebar icons use your app's accent color"). The
+   selection is a fill, not a colour change, so it reads without colour too. */
+html[data-ui="apple"] .bliss-sidebar-link {
+  border-color: transparent;
+  border-radius: 12px; /* concentric: 28px panel - 16px row inset */
+  color: var(--apple-label);
+  transition: background-color 120ms ease-out;
+}
+
+html[data-ui="apple"] .bliss-sidebar-link:hover {
+  color: var(--apple-label);
+  background: var(--apple-hover);
+}
+
+html[data-ui="apple"] .bliss-sidebar-link.is-active {
+  color: var(--apple-label);
+}
+
+html[data-ui="apple"] .bliss-sidebar-link:focus-visible {
+  outline: 2px solid var(--bliss-accent);
+  outline-offset: -2px;
+}
+
+html[data-ui="apple"] .bliss-sidebar-link .nav-icon-slot {
+  color: var(--bliss-accent);
+}
+
+/* The sliding selection pill (NavItem's layoutId spring, already critically
+   damped): a plain fill, no ring. */
+html[data-ui="apple"] .bliss-sidebar-link.is-active > .absolute {
+  border-radius: 12px;
+  background: var(--apple-select);
+  box-shadow: none;
+}
+
+html[data-ui="apple"] .bliss-sidebar-label-text {
+  font-family: var(--apple-font);
+  font-size: clamp(0.875rem, 0.85vw, 1.125rem);
+  font-weight: 500;
+  letter-spacing: -0.016em;
+}
+
+html[data-ui="apple"] .bliss-sidebar-link.is-active .bliss-sidebar-label-text {
+  font-weight: 600;
+}
+
+html[data-ui="apple"] .bliss-sidebar-link .bliss-sidebar-glitch-cursor {
+  display: none;
+}
+
+/* ---- Top bar: no surface; the search field is the glass ----------------
+   Same pass-through as the TV theme: the empty bar never blocks clicks. */
+html[data-ui="apple"] .bliss-nav-bar {
+  background: transparent;
+  box-shadow: none;
+}
+
+html[data-ui="apple"] .bliss-top-nav,
+html[data-ui="apple"] .bliss-top-nav-inner {
+  pointer-events: none;
+}
+
+html[data-ui="apple"] .bliss-top-nav-inner > * {
+  pointer-events: auto;
+}
+
+html[data-ui="apple"] .bliss-nav-input {
+  background: var(--apple-fill);
+  backdrop-filter: var(--apple-glass-blur);
+  -webkit-backdrop-filter: var(--apple-glass-blur);
+  border: 1px solid var(--apple-glass-edge);
+  box-shadow: var(--apple-glass-lip);
+  font-size: 0.9375rem;
+  letter-spacing: -0.016em;
+  transition: background-color 120ms ease-out, box-shadow 120ms ease-out;
+}
+
+html[data-ui="apple"] .bliss-nav-input:hover {
+  background: var(--apple-fill-hover);
+}
+
+html[data-ui="apple"] .bliss-nav-input::placeholder,
+html[data-ui="apple"] .bliss-nav-input input::placeholder {
+  color: var(--apple-label-2);
+}
+
+/* macOS focus ring: the accent, drawn outside the field. */
+html[data-ui="apple"] .bliss-top-nav .bliss-nav-input:focus-within,
+html[data-ui="apple"] .bliss-top-nav .bliss-nav-input:focus {
+  border-color: transparent;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--bliss-accent) 60%, transparent);
+}
+
+html[data-ui="apple"] .bliss-search-glyph {
+  color: var(--apple-label-2);
+}
+
+/* Account avatar: the system monogram — white initials on a gray gradient
+   disc, as in Contacts. A photo avatar covers it. */
+html[data-ui="apple"] .bliss-monogram {
+  background: linear-gradient(180deg, #a5abb8, #858994);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* ---- Content surfaces: opaque, no glass -------------------------------- */
+html[data-ui="apple"] .solid-surface,
+html[data-ui="apple"] .bliss-bottom-drawer {
+  background-color: var(--apple-surface);
+  background-image: none;
+  border: 1px solid var(--apple-hairline);
+}
+
+/* Menus float above everything, so they are functional layer: glass. */
+html[data-ui="apple"] .bliss-menu-panel {
+  background: var(--apple-glass);
+  backdrop-filter: var(--apple-glass-blur);
+  -webkit-backdrop-filter: var(--apple-glass-blur);
+  border: 1px solid var(--apple-glass-edge);
+}
+
+/* ---- Home hero ---------------------------------------------------------- */
+html[data-ui="apple"] .bliss-hero {
+  border: 0;
+  border-radius: 28px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+html[data-ui="apple"] .bliss-hero-eyebrow {
+  font-size: 0.8125rem;
+  text-transform: none;
+  letter-spacing: -0.006em;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+html[data-ui="apple"] .bliss-hero-title {
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.015em;
+}
+
+@container (min-width: 42rem) {
+  html[data-ui="apple"] .bliss-hero-title {
+    font-size: 2.5rem;
+  }
+}
+
+/* Primary: the white capsule. Secondary: clear glass, the one variant meant
+   for controls over photos and video. */
+html[data-ui="apple"] .bliss-hero-primary,
+html[data-ui="apple"] .bliss-hero-secondary {
+  font-weight: 600;
+  letter-spacing: -0.016em;
+  transition:
+    scale var(--apple-spring-duration) var(--apple-spring),
+    background-color 150ms ease-out;
+}
+
+html[data-ui="apple"] .bliss-hero-secondary {
+  border: 0;
+  background: rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  color: #fff;
+}
+
+html[data-ui="apple"] .bliss-hero-secondary:hover {
+  background: rgba(255, 255, 255, 0.26);
+}
+
+/* Feedback on pointer-down: the press lands in 90 ms, the release springs
+   back on the transition above. */
+html[data-ui="apple"] .bliss-hero-primary:active,
+html[data-ui="apple"] .bliss-hero-secondary:active {
+  transform: none;
+  scale: var(--apple-press);
+  transition: scale 90ms ease-out;
+}
+
+/* ---- Posters ------------------------------------------------------------
+   The artwork is the card: no frame. Hover lifts the whole card (the image
+   no longer zooms inside its clip); press sinks it. The rail gives the lift
+   room to grow without being clipped by its own scroller. */
+html[data-ui="apple"] .bliss-poster-rail {
+  margin-block: -14px;
+}
+
+html[data-ui="apple"] .bliss-poster-rail > div {
+  padding-block: 14px;
+}
+
+html[data-ui="apple"] .bliss-poster-frame {
+  border-radius: 14px;
+  background: transparent;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  transition:
+    scale var(--apple-spring-duration) var(--apple-spring),
+    box-shadow var(--apple-spring-duration) var(--apple-spring);
+}
+
+html[data-ui="apple"] .bliss-poster-art {
+  border-radius: 14px;
+  scale: none;
+}
+
+@media (hover: hover) {
+  html[data-ui="apple"] .bliss-poster:hover .bliss-poster-frame {
+    scale: var(--apple-lift);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5);
+  }
+}
+
+html[data-ui="apple"] .bliss-poster:active .bliss-poster-frame {
+  scale: var(--apple-press);
+  transition: scale 90ms ease-out;
+}
+
+/* Accent means selection here, so the title stays the label colour on hover. */
+html[data-ui="apple"] .bliss-poster-title {
+  color: var(--apple-label);
+  font-weight: 500;
+  letter-spacing: -0.006em;
+}
+
+/* ---- Accessibility -------------------------------------------------------
+   Reduced motion: no scale, the press and lift become nothing; colour and
+   shadow changes stay. Reduced transparency (also what Windows reports when
+   "Transparency effects" is off): glass goes opaque, but the ambient wash
+   stays — it is background artwork, not a material, and the opaque panels
+   no longer let it through anyway. Increased contrast: opaque glass, strong
+   edges, and no wash behind text. */
+@media (prefers-reduced-motion: reduce) {
+  html[data-ui="apple"] {
+    --apple-press: 1;
+    --apple-lift: 1;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  html[data-ui="apple"] {
+    --apple-glass: #1c1c1e;
+    --apple-fill: #2c2c2e;
+    --apple-fill-hover: #3a3a3c;
+    --apple-glass-blur: none;
+  }
+
+  html[data-ui="apple"]:not(.dark) {
+    --apple-glass: #f9f9f9;
+    --apple-fill: #e5e5ea;
+    --apple-fill-hover: #d1d1d6;
+  }
+}
+
+@media (prefers-contrast: more) {
+  html[data-ui="apple"] {
+    --apple-glass: #1c1c1e;
+    --apple-glass-blur: none;
+    --apple-glass-edge: rgba(255, 255, 255, 0.5);
+    --apple-hairline: rgba(255, 255, 255, 0.35);
+    --apple-label-2: rgba(235, 235, 245, 0.8);
+    --apple-select: rgba(255, 255, 255, 0.2);
+  }
+
+  html[data-ui="apple"]:not(.dark) {
+    --apple-glass: #ffffff;
+    --apple-glass-edge: rgba(0, 0, 0, 0.5);
+    --apple-hairline: rgba(0, 0, 0, 0.35);
+    --apple-label-2: rgba(60, 60, 67, 0.85);
+    --apple-select: rgba(0, 0, 0, 0.14);
+  }
+
+  html[data-ui="apple"] body::before {
+    display: none;
+  }
+}

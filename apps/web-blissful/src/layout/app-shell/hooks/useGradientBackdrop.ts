@@ -1,7 +1,9 @@
 // Drives the CSS custom property `--dynamic-bg` that paints the
-// `<html>` element's gradient backdrop. Two cases:
+// `<html>` element's gradient backdrop. Three cases:
 //   * Classic UI: dark/light gradient key looked up via `applyGradient`.
 //   * Netflix UI: a constant solid backdrop colour (`NETFLIX_BG`).
+//   * Apple UI: transparent, so the body's system background and the
+//     ambient artwork layer behind it (index.css) show through.
 // Lived as two near-identical `useEffect`s inside AppShell. The second
 // one was a "defensive" re-apply for the initial paint where the
 // stylesheet hadn't installed the property yet; collapsed here into a
@@ -21,6 +23,10 @@ export function useGradientBackdrop(
   useEffect(() => {
     if (uiStyle === 'netflix') {
       document.documentElement.style.setProperty('--dynamic-bg', NETFLIX_BG);
+      return;
+    }
+    if (uiStyle === 'apple') {
+      document.documentElement.style.setProperty('--dynamic-bg', 'transparent');
       return;
     }
     applyGradient(isDark ? darkGradientKey : lightGradientKey, isDark);
