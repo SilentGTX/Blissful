@@ -6,7 +6,6 @@ import { PlayIcon } from '../icons/PlayIcon';
 import { Rating } from './Rating';
 import { TruncatedText } from './TruncatedText';
 import { rememberClickedPoster } from '../lib/transitionPoster';
-import { useGlitchText } from '../lib/useGlitchText';
 import { proxiedImage } from '../lib/imageProxy';
 
 type MediaCardProps = {
@@ -111,11 +110,6 @@ export default function MediaCard({
     : null;
   const posterGaveUp = imgError && retryNonce >= POSTER_MAX_RETRIES;
 
-  // Glitch the card label on hover. Only the visible string is
-  // scrambled — `alt`, `aria-label`, etc keep the real title.
-  const [isHovering, setIsHovering] = useState(false);
-  const displayTitle = useGlitchText(item.title, isHovering);
-
   if (variant === 'poster') {
     const p = typeof progress === 'number' && Number.isFinite(progress) ? Math.min(100, Math.max(0, progress)) : null;
     const handlePosterClick = () => {
@@ -131,8 +125,6 @@ export default function MediaCard({
     return (
       <div
         className="bliss-poster group/poster w-full"
-        onMouseEnter={() => setIsHovering(true)}
-        onMouseLeave={() => setIsHovering(false)}
       >
         <div
           className={
@@ -237,11 +229,9 @@ export default function MediaCard({
             TV viewing distance. min-h tracks the font size so the
             card height still stays constant whether the title wraps
             to one line or two. Tooltip surfaces the full title when
-            it's clamped (the visible text is the hover-glitch render,
-            but the tooltip always shows the real title). */}
+            it's clamped. */}
         <TruncatedText
           content={item.title}
-          display={displayTitle}
           className="bliss-poster-title mt-3 min-h-[2.75em] text-center font-medium text-foreground/90 line-clamp-2 transition-colors duration-500 ease-out group-hover/poster:text-[var(--bliss-accent)] text-[clamp(0.8125rem,0.9vw,1.375rem)] leading-snug"
         />
       </div>
@@ -252,8 +242,6 @@ export default function MediaCard({
     <div
       className={onPress ? 'cursor-pointer' : ''}
       onClick={onPress}
-      onMouseEnter={() => setIsHovering(true)}
-      onMouseLeave={() => setIsHovering(false)}
       role="button"
       tabIndex={onPress ? 0 : undefined}
       onKeyDown={onPress ? (e) => { if (e.key === 'Enter' || e.key === ' ') onPress(); } : undefined}
@@ -296,7 +284,6 @@ export default function MediaCard({
             <div className="min-w-0">
               <TruncatedText
                 content={item.title}
-                display={displayTitle}
                 className="truncate text-sm font-semibold"
               />
               {subtitle ? <div className="mt-0.5 text-xs text-foreground/60">{subtitle}</div> : null}

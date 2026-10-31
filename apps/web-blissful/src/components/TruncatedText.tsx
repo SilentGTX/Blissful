@@ -1,14 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BlissTooltip } from './base/BlissTooltip';
 
 type TruncatedTextProps = {
-  /** The full text shown in the tooltip — always the real, unmodified
-   *  string (not a glitched / decorated render). */
+  /** The text, rendered in the clamped element and shown in full in the
+   *  tooltip when it is clamped. */
   content: string;
-  /** What to render inside the clamped element. Defaults to `content`.
-   *  Pass a different node when the visible text differs from the
-   *  tooltip text (e.g. MediaCard's hover-glitch effect). */
-  display?: ReactNode;
   /** Classes for the clamped element — include your `truncate` /
    *  `line-clamp-N` + sizing here exactly as before. */
   className?: string;
@@ -24,7 +20,7 @@ type TruncatedTextProps = {
 // trigger (a single stable node carrying both the measurement ref and
 // React Aria's hover binding), and `isDisabled` gates it so the node
 // never remounts.
-export function TruncatedText({ content, display, className, placement = 'top' }: TruncatedTextProps) {
+export function TruncatedText({ content, className, placement = 'top' }: TruncatedTextProps) {
   const ref = useRef<HTMLElement | null>(null);
   const [truncated, setTruncated] = useState(false);
 
@@ -51,7 +47,7 @@ export function TruncatedText({ content, display, className, placement = 'top' }
       triggerRef={ref}
       contentClassName="max-w-[min(20rem,80vw)] text-center whitespace-normal"
     >
-      {display ?? content}
+      {content}
     </BlissTooltip>
   );
 }

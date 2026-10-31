@@ -498,60 +498,9 @@ html:not(.dark) .bliss-sidebar-link:hover {
   border-color: transparent;
 }
 
-/* ── Retro "glitch" hover (port of hermes-agent.nousresearch.com) ────
-   The "glitch" feel is created by three pieces working together:
-   1. The dithered blinking terminal cursor that appears next to the
-      label on hover (see .bliss-sidebar-glitch-cursor below).
-   2. The pixel font (.bliss-sidebar-label-text uses VT323).
-   3. This asymmetric bg flash — slightly inset from the link edges (to
-      match hermes' `inset-1` = 0.25rem) and only ever at ~5% opacity.
-      Hover-in snaps to opacity instantly (`transition-duration: 0`);
-      hover-out fades over 250ms — the "instant on / slow phosphor
-      decay" timing is what reads as retro CRT rather than smooth
-      modern hover. */
-
-/* Dithered terminal cursor — exact port of the technique from
-   hermes-agent.nousresearch.com. The `repeating-conic-gradient(... 0 0 /
-   2px 2px)` is a 2×2 px checkerboard tile painted with the inherited
-   text color; `step-end` blink makes it cut on/off hard (no fade) like a
-   tty. Hidden by default, expands to its natural width inline on hover.
-   Suppressed for the active item — the active state has its own teal
-   color + sliding pill already. */
-/* Hermes' exact spec: `hidden group-hover:inline-block dither blink ml-1
-   w-[1.2ch] -mb-[0.15em] h-[1.1em]`. We mirror that 1:1: `display: none`
-   off-hover → `display: inline-block` on-hover (no width/opacity
-   transition — a hard pop, which is what reads as terminal). The
-   `repeating-conic-gradient` is the dither pattern straight from their
-   `.dither` rule. */
-.bliss-sidebar-glitch-cursor {
-  display: none;
-  width: 0.6em;
-  height: 0.9em;
-  margin-left: 0.35em;
-  margin-bottom: 0;
-  vertical-align: middle;
-  background: repeating-conic-gradient(currentColor 0% 25%, transparent 0% 50%) 0 0 / 3px 3px;
-  color: var(--bliss-accent);
-  animation: bliss-glitch-cursor-blink 1s step-end infinite;
-}
-.bliss-sidebar-link:hover .bliss-sidebar-glitch-cursor,
-.bliss-sidebar-link:focus-visible .bliss-sidebar-glitch-cursor {
-  display: inline-block;
-}
-.bliss-sidebar-link.is-active .bliss-sidebar-glitch-cursor {
-  display: none !important;
-}
-
-@keyframes bliss-glitch-cursor-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
-
-/* Scoped Mondwest for the sidebar labels — same role it plays in the
-   hermes-agent nav. Falls back to VT323, then Courier. Mondwest carries
-   most of the "retro/glitch" personality; without it the dither cursor
-   + flash alone don't read the same. Tracking matches hermes' nav links
-   (`tracking-[0.1875rem]` ≈ 0.1875rem = 3px). */
+/* Scoped Mondwest for the sidebar labels, the face the hermes-agent nav
+   uses. Falls back to VT323, then Courier. Tracking matches hermes' nav
+   links (`tracking-[0.1875rem]` ≈ 0.1875rem = 3px). */
 .bliss-sidebar-label-text {
   display: inline-block;
   white-space: nowrap;
@@ -2896,9 +2845,9 @@ html[data-ui="tv"] .bliss-top-nav-inner > * {
 
    Two layers, as in the HIG's Liquid Glass model:
    - Functional layer (sidebar, search field, menus, the hero's secondary
-     button): glass — a real backdrop blur with a saturation boost, a
-     translucent fill and a hairline edge. Nothing else gets glass ("Don't use
-     Liquid Glass in the content layer").
+     button): glass — the same recipe as the app's tooltips (BlissTooltip:
+     a 10% white tint, a 12px backdrop blur, a soft drop shadow, no edge).
+     Nothing else gets glass ("Don't use Liquid Glass in the content layer").
    - Content layer (hero, posters, panels): opaque system backgrounds.
 
    Signature: the ambient artwork. Home's featured backdrop, heavily blurred,
@@ -2921,15 +2870,15 @@ html[data-ui="apple"] {
   --apple-label: #ffffff;
   --apple-label-2: rgba(235, 235, 245, 0.6); /* secondaryLabel: 6.4:1 on black */
   --apple-hairline: rgba(255, 255, 255, 0.07);
-  --apple-fill: rgba(118, 118, 128, 0.24); /* tertiarySystemFill */
-  --apple-fill-hover: rgba(118, 118, 128, 0.32);
   --apple-select: rgba(255, 255, 255, 0.1); /* sidebar selection */
   --apple-hover: rgba(255, 255, 255, 0.05);
 
-  --apple-glass: rgba(28, 28, 30, 0.58);
-  --apple-glass-edge: rgba(255, 255, 255, 0.1);
-  --apple-glass-blur: blur(30px) saturate(1.6);
-  --apple-glass-lip: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  /* The tooltip glass: Tailwind's bg-white/10 + backdrop-blur-md + shadow-lg. */
+  --apple-glass: rgba(255, 255, 255, 0.1);
+  --apple-glass-hover: rgba(255, 255, 255, 0.14);
+  --apple-glass-blur: blur(12px);
+  --apple-glass-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  --apple-glass-edge: transparent; /* drawn only for increased contrast */
 
   /* Critically damped spring (damping ratio 1, response 0.35 s) sampled into
      linear(): 1 - (1 + wt)e^(-wt), w = 2pi / 0.35. Settles in ~515 ms with no
@@ -2947,13 +2896,12 @@ html[data-ui="apple"]:not(.dark) {
   --apple-label: #000000;
   --apple-label-2: rgba(60, 60, 67, 0.6);
   --apple-hairline: rgba(0, 0, 0, 0.06);
-  --apple-fill: rgba(118, 118, 128, 0.12);
-  --apple-fill-hover: rgba(118, 118, 128, 0.2);
   --apple-select: rgba(0, 0, 0, 0.07);
   --apple-hover: rgba(0, 0, 0, 0.04);
-  --apple-glass: rgba(246, 246, 248, 0.66);
-  --apple-glass-edge: rgba(0, 0, 0, 0.08);
-  --apple-glass-lip: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  /* A 10% white tint vanishes on the light background, so light mode keeps
+     the tooltip's blur and shadow over a stronger white. */
+  --apple-glass: rgba(255, 255, 255, 0.6);
+  --apple-glass-hover: rgba(255, 255, 255, 0.75);
 }
 
 html[data-ui="apple"] body {
@@ -3009,7 +2957,7 @@ html[data-ui="apple"] section[data-testid="media-rail"] h2 {
   color: var(--apple-label);
 }
 
-/* ---- Sidebar: regular glass -------------------------------------------- */
+/* ---- Sidebar: glass ----------------------------------------------------- */
 html[data-ui="apple"] .bliss-sidebar {
   background: transparent;
 }
@@ -3019,9 +2967,7 @@ html[data-ui="apple"] .bliss-sidebar > .solid-surface {
   backdrop-filter: var(--apple-glass-blur);
   -webkit-backdrop-filter: var(--apple-glass-blur);
   border: 1px solid var(--apple-glass-edge);
-  box-shadow:
-    var(--apple-glass-lip),
-    0 16px 40px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--apple-glass-shadow);
 }
 
 /* Rows: labels in the primary label colour, glyphs in the accent (HIG
@@ -3071,10 +3017,6 @@ html[data-ui="apple"] .bliss-sidebar-link.is-active .bliss-sidebar-label-text {
   font-weight: 600;
 }
 
-html[data-ui="apple"] .bliss-sidebar-link .bliss-sidebar-glitch-cursor {
-  display: none;
-}
-
 /* ---- Top bar: no surface; the search field is the glass ----------------
    Same pass-through as the TV theme: the empty bar never blocks clicks. */
 html[data-ui="apple"] .bliss-nav-bar {
@@ -3092,18 +3034,18 @@ html[data-ui="apple"] .bliss-top-nav-inner > * {
 }
 
 html[data-ui="apple"] .bliss-nav-input {
-  background: var(--apple-fill);
+  background: var(--apple-glass);
   backdrop-filter: var(--apple-glass-blur);
   -webkit-backdrop-filter: var(--apple-glass-blur);
   border: 1px solid var(--apple-glass-edge);
-  box-shadow: var(--apple-glass-lip);
+  box-shadow: var(--apple-glass-shadow);
   font-size: 0.9375rem;
   letter-spacing: -0.016em;
   transition: background-color 120ms ease-out, box-shadow 120ms ease-out;
 }
 
 html[data-ui="apple"] .bliss-nav-input:hover {
-  background: var(--apple-fill-hover);
+  background: var(--apple-glass-hover);
 }
 
 html[data-ui="apple"] .bliss-nav-input::placeholder,
@@ -3144,6 +3086,7 @@ html[data-ui="apple"] .bliss-menu-panel {
   backdrop-filter: var(--apple-glass-blur);
   -webkit-backdrop-filter: var(--apple-glass-blur);
   border: 1px solid var(--apple-glass-edge);
+  box-shadow: var(--apple-glass-shadow);
 }
 
 /* ---- Home hero ---------------------------------------------------------- */
@@ -3172,8 +3115,9 @@ html[data-ui="apple"] .bliss-hero-title {
   }
 }
 
-/* Primary: the white capsule. Secondary: clear glass, the one variant meant
-   for controls over photos and video. */
+/* Primary: the white capsule. Secondary: the tooltip glass, at its dark
+   values in both appearances — it always sits over the artwork with a white
+   label. */
 html[data-ui="apple"] .bliss-hero-primary,
 html[data-ui="apple"] .bliss-hero-secondary {
   font-weight: 600;
@@ -3185,14 +3129,15 @@ html[data-ui="apple"] .bliss-hero-secondary {
 
 html[data-ui="apple"] .bliss-hero-secondary {
   border: 0;
-  background: rgba(255, 255, 255, 0.18);
-  backdrop-filter: blur(16px) saturate(1.4);
-  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--apple-glass-shadow);
   color: #fff;
 }
 
 html[data-ui="apple"] .bliss-hero-secondary:hover {
-  background: rgba(255, 255, 255, 0.26);
+  background: rgba(255, 255, 255, 0.14);
 }
 
 /* Feedback on pointer-down: the press lands in 90 ms, the release springs
@@ -3251,11 +3196,12 @@ html[data-ui="apple"] .bliss-poster-title {
 
 /* ---- Accessibility -------------------------------------------------------
    Reduced motion: no scale, the press and lift become nothing; colour and
-   shadow changes stay. Reduced transparency (also what Windows reports when
-   "Transparency effects" is off): glass goes opaque, but the ambient wash
-   stays — it is background artwork, not a material, and the opaque panels
-   no longer let it through anyway. Increased contrast: opaque glass, strong
-   edges, and no wash behind text. */
+   shadow changes stay. Increased contrast: opaque glass, drawn edges, and no
+   wash behind text.
+   prefers-reduced-transparency is deliberately NOT honoured: Windows reports
+   it whenever "Transparency effects" is off, which made this theme's glass
+   opaque on desktops where every tooltip (which ignores the query) stayed
+   glassy. The glass matches the tooltips everywhere instead. */
 @media (prefers-reduced-motion: reduce) {
   html[data-ui="apple"] {
     --apple-press: 1;
@@ -3263,24 +3209,10 @@ html[data-ui="apple"] .bliss-poster-title {
   }
 }
 
-@media (prefers-reduced-transparency: reduce) {
-  html[data-ui="apple"] {
-    --apple-glass: #1c1c1e;
-    --apple-fill: #2c2c2e;
-    --apple-fill-hover: #3a3a3c;
-    --apple-glass-blur: none;
-  }
-
-  html[data-ui="apple"]:not(.dark) {
-    --apple-glass: #f9f9f9;
-    --apple-fill: #e5e5ea;
-    --apple-fill-hover: #d1d1d6;
-  }
-}
-
 @media (prefers-contrast: more) {
   html[data-ui="apple"] {
     --apple-glass: #1c1c1e;
+    --apple-glass-hover: #2c2c2e;
     --apple-glass-blur: none;
     --apple-glass-edge: rgba(255, 255, 255, 0.5);
     --apple-hairline: rgba(255, 255, 255, 0.35);
@@ -3290,6 +3222,7 @@ html[data-ui="apple"] .bliss-poster-title {
 
   html[data-ui="apple"]:not(.dark) {
     --apple-glass: #ffffff;
+    --apple-glass-hover: #f2f2f7;
     --apple-glass-edge: rgba(0, 0, 0, 0.5);
     --apple-hairline: rgba(0, 0, 0, 0.35);
     --apple-label-2: rgba(60, 60, 67, 0.85);
