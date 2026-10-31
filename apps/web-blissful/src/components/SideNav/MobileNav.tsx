@@ -191,7 +191,7 @@ export function MobileNav(props: MobileNavProps) {
   return (
     <>
       <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden [@media(max-height:370px)]:!block">
-        <div className="solid-surface flex h-[80px] items-center justify-around rounded-[28px] bg-white/6 px-2 shadow-lg backdrop-blur-xl border border-white/10">
+        <div className="bliss-floating solid-surface flex h-[80px] items-center justify-around rounded-[28px] bg-white/6 px-2 shadow-lg backdrop-blur-xl border border-white/10">
           <MobileNavItem
             label="Home"
             unavailable={props.offline}

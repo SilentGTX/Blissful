@@ -203,7 +203,7 @@ export function TopNav({
           <div
             ref={searchMenuRef}
             className={
-              'relative flex-1 md:justify-self-center md:mx-auto ' +
+              'bliss-search-field relative flex-1 md:justify-self-center md:mx-auto ' +
               // The old TV app's search is one wide pill spanning much of the bar.
               (isTvTheme ? 'md:w-[640px] md:max-w-[52vw]' : 'md:w-[360px] md:max-w-[60vw]')
             }
@@ -271,7 +271,7 @@ export function TopNav({
             </div>
 
             {isSearchMenuOpen && (searchHistory.length > 0 || searchSuggestions.length > 0 || (searchResults && searchResults.length > 0)) ? (
-              <div className="solid-surface absolute left-0 top-full z-50 mt-3 w-full rounded-[20px] border border-white/10 bg-white/10 p-4">
+              <div className="bliss-floating solid-surface absolute left-0 top-full z-50 mt-3 w-full rounded-[20px] border border-white/10 bg-white/10 p-4">
                 {searchHistory.length > 0 ? (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">

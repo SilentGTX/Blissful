@@ -686,7 +686,7 @@ export function OfflineDownloadModal({
           initial={{ y: 180, opacity: 0.94 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ type: 'spring', stiffness: 220, damping: 24, mass: 0.85 }}
-          className="solid-surface pointer-events-auto relative max-h-[92vh] w-full max-w-[560px] overflow-x-hidden overflow-y-auto rounded-t-[28px] bg-[#101116] text-white shadow-2xl"
+          className="bliss-floating solid-surface pointer-events-auto relative max-h-[92vh] w-full max-w-[560px] overflow-x-hidden overflow-y-auto rounded-t-[28px] bg-[#101116] text-white shadow-2xl"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="mx-auto mt-3 h-1.5 w-14 rounded-full bg-white/15" />

@@ -427,8 +427,10 @@ export default function AppShell() {
   // narrower collapsed width, which then needed a matching icon-slot
   // override in CSS to keep the glyphs centred — the two drifted apart
   // and the icons sat off-centre. One width, one slot calculation.
+  // The Apple top bar is only as tall as its 40px search field, so the field's
+  // top edge lines up with the sidebar's (both sit one nav margin down).
   const navSizeStyle = {
-    '--horizontal-nav-bar-size': '72px',
+    '--horizontal-nav-bar-size': uiStyle === 'apple' ? '40px' : '72px',
     '--vertical-nav-bar-size': sidebarCollapsed
       ? SIDEBAR_COLLAPSED_WIDTH
       : SIDEBAR_EXPANDED_WIDTH,
