@@ -197,7 +197,7 @@ The deprecated `AppContext` mega-facade has been **deleted**. Global state lives
 providers under `src/context/`, composed via `ProvidersGlue.tsx`:
 
 - `AuthProvider` — `authKey`, `user`, `savedAccounts`, login/logout/switchAccount/removeAccount.
-- `UIProvider` — `uiStyle` (classic vs netflix), `isDark`, gradient keys, `homeEditMode`, `query`.
+- `UIProvider` — `uiStyle` (classic / tv / apple / netflix), `isDark`, gradient keys, `homeEditMode`, `query`.
 - `StorageProvider` — `storageState`, `storageHydrated`, `homeRowPrefs`, `playerSettings`,
   `savePlayerSettings` (also forwards streaming-server cache-size changes), `userProfile`.
 - `AddonsProvider` — `addons`, `addonsLoading`, `addonsError`, `installAddon`, `uninstallAddon`.
@@ -217,8 +217,17 @@ providers under `src/context/`, composed via `ProvidersGlue.tsx`:
 - **Stream routing:** stream clicks build a player URL from `deepLinks.ts` and navigate to
   `/player?url={encoded}`. Local stremio-server URLs (`http://127.0.0.1:11470/...`) pass through;
   the shell's UI server allow-lists them at `/addon-proxy`.
-- **Two UI modes:** `classic` (sidebar + glass) and `netflix` (top bar + hero), toggled by
-  `uiStyle` in `UIProvider`.
+- **UI styles:** `uiStyle` in `UIProvider`, mapped by `lib/uiStyle.ts` and mirrored onto
+  `html[data-ui]`. `classic`, `tv` (the default) and `apple` share the sidebar + top bar layout
+  and differ only in a CSS layer at the end of `index.css` plus a few `uiStyle === …` branches
+  (TopNav search field, NowPopular buttons, DesktopNav logo). `netflix` (Kecflix: top bar +
+  hero) is its own layout and is hidden behind `KECFLIX_ENABLED`.
+- **Apple style:** HIG-derived — glass only on the functional layer (sidebar, search field,
+  menus), opaque system colours for content, SF Pro / Inter type with SF tracking, a critically
+  damped spring as a CSS `linear()` curve, and Home's featured artwork blurred behind the shell
+  (`--apple-ambient`, set by NowPopular). Honours reduced motion / transparency / increased
+  contrast; Windows with "Transparency effects" off reports reduced transparency, so the glass
+  renders opaque there. The glitch-scramble hover (`useGlitchText`) is off in this style.
 
 ### Desktop bridge (`lib/desktop.ts`)
 

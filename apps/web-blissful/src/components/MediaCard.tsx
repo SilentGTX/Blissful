@@ -130,7 +130,7 @@ export default function MediaCard({
     // but still occupied its grid slot.
     return (
       <div
-        className="group/poster w-full"
+        className="bliss-poster group/poster w-full"
         onMouseEnter={() => setIsHovering(true)}
         onMouseLeave={() => setIsHovering(false)}
       >
@@ -153,7 +153,7 @@ export default function MediaCard({
           <BlissCard
             surface="poster"
             className={
-              'group ' +
+              'bliss-poster-frame group ' +
               (showHoverActions ? ' netflix-card' : '') +
               (selected ? 'solid-surface bg-white/10' : '')
             }
@@ -172,7 +172,7 @@ export default function MediaCard({
                   <img
                     src={proxiedImage(posterSrc)}
                     alt={`${item.title} poster`}
-                    className="h-full w-full rounded-2xl object-cover transition-transform duration-300 group-hover:scale-110"
+                    className="bliss-poster-art h-full w-full rounded-2xl object-cover transition-transform duration-300 group-hover:scale-110"
                     loading="eager"
                     decoding="async"
                     onLoad={() => setImgLoaded(true)}
@@ -242,7 +242,7 @@ export default function MediaCard({
         <TruncatedText
           content={item.title}
           display={displayTitle}
-          className="mt-3 min-h-[2.75em] text-center font-medium text-foreground/90 line-clamp-2 transition-colors duration-500 ease-out group-hover/poster:text-[var(--bliss-accent)] text-[clamp(0.8125rem,0.9vw,1.375rem)] leading-snug"
+          className="bliss-poster-title mt-3 min-h-[2.75em] text-center font-medium text-foreground/90 line-clamp-2 transition-colors duration-500 ease-out group-hover/poster:text-[var(--bliss-accent)] text-[clamp(0.8125rem,0.9vw,1.375rem)] leading-snug"
         />
       </div>
     );

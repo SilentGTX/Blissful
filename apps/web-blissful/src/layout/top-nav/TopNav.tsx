@@ -72,6 +72,7 @@ export function TopNav({
   // The TV theme mirrors the Android app, down to its logo mark.
   const { uiStyle } = useUI();
   const isTvTheme = uiStyle === 'tv';
+  const isAppleTheme = uiStyle === 'apple';
   const [isDesktopAccountMenuOpen, setIsDesktopAccountMenuOpen] = useState(false);
   const [isMobileAccountMenuOpen, setIsMobileAccountMenuOpen] = useState(false);
   const fsLockedRef = useRef(false);
@@ -168,7 +169,7 @@ export function TopNav({
     >
       <BlissAvatar
         key={isLoggedIn ? `user-${safeDisplayName}` : 'guest'}
-        className={isTvTheme ? 'bliss-tv-avatar' : 'h-10 w-10'}
+        className={isTvTheme ? 'bliss-tv-avatar' : isAppleTheme ? 'bliss-monogram h-10 w-10' : 'h-10 w-10'}
       >
           {accountAvatarView.kind === 'image' ? (
             <BlissAvatar.Image alt={safeDisplayName} src={accountAvatarView.value} />
@@ -215,16 +216,28 @@ export function TopNav({
                   <SearchIcon size={22} />
                 </div>
               ) : null}
+              {/* Apple: the system search field's leading magnifier. */}
+              {isAppleTheme ? (
+                <div className="bliss-search-glyph pointer-events-none absolute left-3.5 top-1/2 z-10 -translate-y-1/2">
+                  <SearchIcon size={17} />
+                </div>
+              ) : null}
               <Input
                 value={query}
                 onChange={(e) => {
                   onQueryChange(e.target.value);
                   setSearchMenuOpen(true);
                 }}
-                placeholder={isTvTheme ? 'Search movies, series, actors...' : 'Search everything'}
+                placeholder={
+                  isTvTheme
+                    ? 'Search movies, series, actors...'
+                    : isAppleTheme
+                      ? 'Search movies, shows, and actors'
+                      : 'Search everything'
+                }
                 className={
                   'bliss-nav-input w-full rounded-full ' +
-                  (isTvTheme ? 'h-14 pl-14 pr-14 text-base' : 'h-11 px-4 pr-12')
+                  (isTvTheme ? 'h-14 pl-14 pr-14 text-base' : isAppleTheme ? 'h-10 pl-10 pr-12' : 'h-11 px-4 pr-12')
                 }
                 onFocus={() => setSearchMenuOpen(true)}
                 onKeyDown={(e) => {
@@ -249,7 +262,7 @@ export function TopNav({
                   >
                     <CloseIcon size={16} />
                   </button>
-                ) : isTvTheme ? null : (
+                ) : isTvTheme || isAppleTheme ? null : (
                   <div className="grid h-8 w-8 place-items-center text-foreground/50">
                     <SearchIcon size={16} />
                   </div>

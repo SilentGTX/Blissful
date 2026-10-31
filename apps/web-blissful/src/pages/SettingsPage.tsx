@@ -226,7 +226,7 @@ export default function SettingsPage() {
           <ScrollShadow className="mt-6 max-h-[calc(100vh-14rem)] space-y-6 pr-1" hideScrollBar>
             <div>
               <div className="text-lg font-semibold mb-3">Style</div>
-              <div className={'grid gap-3 ' + (KECFLIX_ENABLED ? 'sm:grid-cols-3' : 'sm:grid-cols-2')}>
+              <div className={'grid gap-3 ' + (KECFLIX_ENABLED ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3')}>
                 <button
                   type="button"
                   className={
@@ -273,6 +273,21 @@ export default function SettingsPage() {
                   <div className="text-sm font-semibold">TV</div>
                   <div className="mt-1 text-xs text-foreground/60">
                     The Android TV look: full-bleed backdrop that follows your pointer, landscape rails.
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  className={
+                    'rounded-2xl border px-4 py-4 text-left transition ' +
+                    (uiStyle === 'apple'
+                      ? 'border-white bg-white/15 text-white'
+                      : 'border-white/10 bg-white/5 text-foreground/70 hover:bg-white/10')
+                  }
+                  onClick={() => setUiStyle('apple')}
+                >
+                  <div className="text-sm font-semibold">Apple</div>
+                  <div className="mt-1 text-xs text-foreground/60">
+                    Glass sidebar over the featured artwork, system type, spring motion.
                   </div>
                 </button>
               </div>

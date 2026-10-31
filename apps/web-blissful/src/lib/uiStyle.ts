@@ -18,6 +18,7 @@ export const TV_DEFAULT_MIGRATION_KEY = 'uiStyleTvDefaultMigrated';
 export function normalizeUiStyle(raw: unknown, migrateClassic: boolean): UiStyle {
   // The old coverflow 'modern' theme was replaced in place by 'tv'.
   if (raw === 'tv' || raw === 'modern') return 'tv';
+  if (raw === 'apple') return 'apple';
   if (raw === 'netflix') return KECFLIX_ENABLED ? 'netflix' : DEFAULT_UI_STYLE;
   if (raw === 'classic') return migrateClassic ? DEFAULT_UI_STYLE : 'classic';
   return DEFAULT_UI_STYLE;

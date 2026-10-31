@@ -33,7 +33,11 @@ export function useGlitchText(
   const scheduleRef = useRef<Array<[number, number]>>([]);
 
   useEffect(() => {
-    if (!active) {
+    // The Apple theme has no scramble reveal. Read the theme off <html>
+    // (UIProvider sets data-ui) rather than from useUI(): every poster card
+    // calls this hook, and the UI context also carries the search query, so
+    // subscribing here would re-render every card on each keystroke.
+    if (!active || document.documentElement.dataset.ui === 'apple') {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       setOut(text);
       return;
