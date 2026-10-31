@@ -1,10 +1,8 @@
 import { motion } from 'framer-motion';
-import { useState } from 'react';
 import { BlissTooltip } from '../base/BlissTooltip';
 import { ContinueIcon } from '../../icons/ContinueIcon';
 import { FriendsIcon } from '../../icons/FriendsIcon';
 import { StrokeIcon } from '../../icons/StrokeIcon';
-import { useGlitchText } from '../../lib/useGlitchText';
 
 type NavItemProps = {
   label: string;
@@ -18,19 +16,12 @@ type NavItemProps = {
 };
 
 export function NavItem(props: NavItemProps) {
-  const [isHovering, setIsHovering] = useState(false);
-  const displayLabel = useGlitchText(props.label, isHovering && !props.active);
-
   const button = (
     <button
       type="button"
       onClick={props.unavailable ? undefined : props.onPress}
       disabled={props.unavailable}
       title={props.unavailable ? 'Needs a connection' : undefined}
-      onMouseEnter={() => setIsHovering(true)}
-      onMouseLeave={() => setIsHovering(false)}
-      onFocus={() => setIsHovering(true)}
-      onBlur={() => setIsHovering(false)}
       className={
         (props.unavailable ? 'pointer-events-none opacity-35 ' : '') +
         // Height clamps with the larger of viewport-height (3vh)
@@ -62,8 +53,7 @@ export function NavItem(props: NavItemProps) {
         <StrokeIcon path={props.icon} className="h-[clamp(1.25rem,1.1vw,2rem)] w-[clamp(1.25rem,1.1vw,2rem)]" />
       </div>
       <span className="bliss-sidebar-label relative z-10 font-semibold">
-        <span className="bliss-sidebar-label-text">{displayLabel}</span>
-        <span className="bliss-sidebar-glitch-cursor" aria-hidden="true" />
+        <span className="bliss-sidebar-label-text">{props.label}</span>
       </span>
     </button>
   );

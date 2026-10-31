@@ -225,9 +225,10 @@ providers under `src/context/`, composed via `ProvidersGlue.tsx`:
 - **Apple style:** HIG-derived — glass only on the functional layer (sidebar, search field,
   menus), opaque system colours for content, SF Pro / Inter type with SF tracking, a critically
   damped spring as a CSS `linear()` curve, and Home's featured artwork blurred behind the shell
-  (`--apple-ambient`, set by NowPopular). Honours reduced motion / transparency / increased
-  contrast; Windows with "Transparency effects" off reports reduced transparency, so the glass
-  renders opaque there. The glitch-scramble hover (`useGlitchText`) is off in this style.
+  (`--apple-ambient`, set by NowPopular). The glass is the tooltip recipe (`BlissTooltip`:
+  `bg-white/10` + `backdrop-blur-md` + `shadow-lg`). Honours reduced motion and increased
+  contrast, but not `prefers-reduced-transparency`: Windows reports that whenever "Transparency
+  effects" is off, and the tooltips ignore it too.
 
 ### Desktop bridge (`lib/desktop.ts`)
 
