@@ -9,10 +9,25 @@ import { test, expect, type Page } from '@playwright/test';
 // search, accent-filled primary action. So the body assertions run for both and
 // the theme-specific ones cover the chrome.
 
-/** Boot the app with a given uiStyle, the way the Settings page persists it. */
+/** Must match TV_DEFAULT_MIGRATION_KEY in apps/web-blissful/src/lib/uiStyle.ts. */
+const TV_DEFAULT_MIGRATION_KEY = 'uiStyleTvDefaultMigrated';
+
+/**
+ * Boot the app with a given uiStyle, the way the Settings page persists it.
+ * Also marks the device as past the one-time Classic -> TV move, so a Classic
+ * set here reads as a deliberate pick and is not moved to TV.
+ */
 async function useTheme(page: Page, theme: 'classic' | 'tv') {
-  await page.addInitScript((t) => localStorage.setItem('uiStyle', t), theme);
+  await page.addInitScript(
+    ([t, key]) => {
+      localStorage.setItem('uiStyle', t);
+      localStorage.setItem(key, '1');
+    },
+    [theme, TV_DEFAULT_MIGRATION_KEY] as const,
+  );
 }
+
+const dataUi = (page: Page) => page.evaluate(() => document.documentElement.getAttribute('data-ui'));
 
 /**
  * Every theme boots with the rail EXPANDED (354973f); collapsing is a per-session
@@ -53,7 +68,8 @@ test.describe('Home + browse (web)', () => {
 
   test('search submits and navigates to the search page with results', async ({ page }) => {
     await page.goto('/');
-    const search = page.getByPlaceholder('Search everything');
+    // No stored style: the TV default, with the TV search wording.
+    const search = page.getByPlaceholder('Search movies, series, actors...');
     await search.fill('Batman');
     await search.press('Enter');
     await page.waitForURL(/\/search/, { timeout: 15_000 });
@@ -64,6 +80,40 @@ test.describe('Home + browse (web)', () => {
     await page.goto('/discover');
     await expect(page.getByTestId('discover-grid')).toBeVisible({ timeout: 30_000 });
   });
+});
+
+// TV replaced Classic as the default (2026-10-31). Classic was saved to every
+// device whether or not anyone picked it, so each device moves a stored Classic
+// to TV once; Kecflix is hidden and lands on TV too.
+test.describe('Default theme', () => {
+  test('a fresh device boots into the TV theme', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByTestId('home-hero-card')).toBeVisible({ timeout: 30_000 });
+    expect(await dataUi(page)).toBe('tv');
+  });
+
+  for (const legacy of ['classic', 'netflix'] as const) {
+    test(`a device with ${legacy} saved before the switch moves to TV and keeps it`, async ({ page }) => {
+      // Set once, before the first load only — like a device carrying the old value.
+      await page.goto('/');
+      await page.evaluate((v) => {
+        localStorage.clear();
+        localStorage.setItem('uiStyle', v);
+      }, legacy);
+      await page.reload();
+      await expect(page.getByTestId('home-hero-card')).toBeVisible({ timeout: 30_000 });
+      expect(await dataUi(page)).toBe('tv');
+      const stored = await page.evaluate(
+        (key) => ({ style: localStorage.getItem('uiStyle'), marker: localStorage.getItem(key) }),
+        TV_DEFAULT_MIGRATION_KEY,
+      );
+      expect(stored).toEqual({ style: 'tv', marker: '1' });
+      // The move is written back, so the next load stays on TV.
+      await page.reload();
+      await expect(page.getByTestId('home-hero-card')).toBeVisible({ timeout: 30_000 });
+      expect(await dataUi(page)).toBe('tv');
+    });
+  }
 });
 
 // The two themes differ only in chrome, which makes them easy to cross-wire:

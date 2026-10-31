@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { useThemeToggle } from '../layout/app-shell/hooks/useThemeToggle';
 import type { UiStyle } from '../layout/app-shell/types';
+import { classicMigrationPending, normalizeUiStyle } from '../lib/uiStyle';
 
 type UIContextValue = {
   uiStyle: UiStyle;
@@ -38,10 +39,11 @@ export function UIProvider({ children }: { children: ReactNode }) {
 
   const [uiStyle, setUiStyleRaw] = useState<UiStyle>(() => {
     const stored = localStorage.getItem('uiStyle');
-    if (stored === 'netflix' || stored === 'tv') return stored;
-    // The old coverflow 'modern' theme was replaced in place by 'tv'.
-    if (stored === 'modern') return 'tv';
-    return 'classic';
+    const style = normalizeUiStyle(stored, classicMigrationPending);
+    // Write a migrated style back: the marker is already set, so the next load
+    // would otherwise read the old 'classic' / 'netflix' and keep it.
+    if (stored !== null && stored !== style) localStorage.setItem('uiStyle', style);
+    return style;
   });
   const [query, setQuery] = useState('');
   const [homeEditMode, setHomeEditMode] = useState(false);

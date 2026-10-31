@@ -18,6 +18,8 @@
 //      the on-Mac browser resolver all short-circuit (server-side flag is
 //      VIDEASY_ENABLED=1 in the proxy env, so the backend reverts without a
 //      code change)
+//   5. components/BlissfulPlayer/index.tsx — the "Vidking is unavailable"
+//      banner (added 2026-10-31; it was missed here and kept firing on RD plays)
 // Also parked on the Mac: launchd agent `com.budinoff.videasy-resolver`.
 //
 // Everything downstream of the resolve (quality picker, subtitle mapping,

@@ -240,7 +240,7 @@ function MobileStreamPicker({
         </button>
         <div className="min-w-0 flex-1">
           <div className="truncate text-base font-semibold">Pick a stream</div>
-          <div className="truncate text-[11px] text-white/60">Vidking is unavailable — tap a stream, open in VLC</div>
+          <div className="truncate text-[11px] text-white/60">Tap a stream to open it in VLC</div>
         </div>
       </div>
       <div className="flex-1 overflow-y-auto px-3 py-3">
@@ -1881,9 +1881,8 @@ export default function PlayerPage() {
         <div className="max-w-md space-y-4">
           <div className="text-2xl font-semibold">No playable stream</div>
           <div className="text-sm text-white/70">
-            Vidking is currently unavailable and every Real-Debrid
-            link for this title returned a takedown notice. Pick a
-            different stream from the detail page.
+            Every Real-Debrid link for this title returned a takedown
+            notice. Pick a different stream from the detail page.
           </div>
           <div className="flex flex-col gap-2 pt-2">
             <button

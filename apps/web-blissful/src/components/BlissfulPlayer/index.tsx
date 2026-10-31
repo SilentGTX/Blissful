@@ -22,7 +22,7 @@ import { useActiveParties } from '../../context/ActivePartiesProvider';
 import { fetchSubtitles, fetchOpenSubHash } from '../../lib/stremioAddon';
 import { getDocPiP } from '../../lib/documentPip';
 import { createSeekCoalescer, isBufferingState } from '../../lib/playerBuffering';
-import { DEFAULT_SERVER_ID } from '../../lib/playerServers';
+import { DEFAULT_SERVER_ID, VIDEASY_ENABLED } from '../../lib/playerServers';
 import { useChapterSkipWeb, hasClassifiableChapter, type Chapter } from '../useChapterSkipWeb';
 import { SkipChapterButton } from './SkipChapterButton';
 import { FillerNotice } from '../FillerNotice';
@@ -4423,8 +4423,12 @@ export default function BlissfulPlayer(props: {
           (Videasy) is unavailable and we've switched to a
           Real-Debrid stream. On mobile, also offers an
           "Open in VLC" button (native HEVC support, hardware
-          decode, better with big MKVs). Dismissible. */}
-      {props.fallbackActive && !fallbackBannerDismissed && !props.rdMode ? (
+          decode, better with big MKVs). Dismissible.
+          VIDEASY DISABLED: with Videasy off, every playback is Real-Debrid
+          and `fallbackActive` is true for most of them, so the banner would
+          claim Vidking failed when it was never tried. `fallbackActive` itself
+          stays as-is — the Releases auto-open below still keys on it. */}
+      {VIDEASY_ENABLED && props.fallbackActive && !fallbackBannerDismissed && !props.rdMode ? (
         <div className="pointer-events-auto absolute left-1/2 top-6 z-40 max-w-[92%] -translate-x-1/2">
           <div className="flex items-center gap-3 rounded-2xl border border-white/15 bg-black/70 px-4 py-3 text-sm text-white shadow-[0_8px_24px_-6px_rgba(0,0,0,0.6)] backdrop-blur-xl">
             <div className="flex-1 leading-snug">

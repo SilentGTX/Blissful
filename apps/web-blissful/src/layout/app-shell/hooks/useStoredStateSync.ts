@@ -7,6 +7,7 @@ import {
   type PlayerSettings,
 } from '../../../lib/playerSettings';
 import { fetchStoredState, saveStoredState, type BlissfulStorageState } from '../../../lib/storageApi';
+import { classicMigrationPending, normalizeUiStyle } from '../../../lib/uiStyle';
 import type { UiStyle } from '../types';
 import { applyGradient } from '../utils';
 import { HOME_PREFS_KEY } from '../constants';
@@ -80,14 +81,20 @@ export function useStoredStateSync({
         setIsDark(state.theme === 'dark');
       }
       if (state.uiStyle) {
-        // 'modern' was removed; anything unrecognised (including profiles
-        // still storing it) falls back to the default look.
-        // 'modern' was replaced IN PLACE by the TV design, so profiles that
-        // still have it stored land on the new theme, not back on Classic.
-        const raw = state.uiStyle === 'modern' ? 'tv' : state.uiStyle;
-        const normalized = raw === 'netflix' || raw === 'tv' ? raw : 'classic';
+        // Same mapping as the device's stored style (see lib/uiStyle.ts): the
+        // one-time Classic -> TV move, hidden Kecflix, retired 'modern'.
+        const normalized = normalizeUiStyle(state.uiStyle, classicMigrationPending);
         setUiStyle(normalized);
         localStorage.setItem('uiStyle', normalized);
+        // Save a mapped value back to the account. AppShell only persists
+        // uiStyle when it CHANGES, and the device usually already holds the
+        // mapped value, so without this the account keeps the old one and the
+        // next load (marker set) would bring Classic back.
+        if (normalized !== state.uiStyle) {
+          void saveStoredState(authKey, { uiStyle: normalized }).catch(() => {
+            // ignore
+          });
+        }
       }
       if (state.homeRowPrefs) {
         setHomeRowPrefs(state.homeRowPrefs);
