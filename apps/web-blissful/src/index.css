@@ -2873,7 +2873,11 @@ html[data-ui="apple"] {
   --apple-select: rgba(255, 255, 255, 0.1); /* sidebar selection */
   --apple-hover: rgba(255, 255, 255, 0.05);
 
-  /* The tooltip glass: Tailwind's bg-white/10 + backdrop-blur-md + shadow-lg. */
+  /* The tooltip glass: Tailwind's bg-white/10 + backdrop-blur-md + shadow-lg.
+     Wherever it is applied, -webkit-backdrop-filter comes BEFORE
+     backdrop-filter, the order Tailwind emits. The production minifier
+     keeps only the last of the pair, and Chromium ignores the prefixed
+     one, so the other order shipped with no blur at all. */
   --apple-glass: rgba(255, 255, 255, 0.1);
   --apple-glass-hover: rgba(255, 255, 255, 0.14);
   --apple-glass-blur: blur(12px);
@@ -2964,8 +2968,8 @@ html[data-ui="apple"] .bliss-sidebar {
 
 html[data-ui="apple"] .bliss-sidebar > .solid-surface {
   background: var(--apple-glass);
-  backdrop-filter: var(--apple-glass-blur);
   -webkit-backdrop-filter: var(--apple-glass-blur);
+  backdrop-filter: var(--apple-glass-blur);
   border: 1px solid var(--apple-glass-edge);
   box-shadow: var(--apple-glass-shadow);
 }
@@ -3035,8 +3039,8 @@ html[data-ui="apple"] .bliss-top-nav-inner > * {
 
 html[data-ui="apple"] .bliss-nav-input {
   background: var(--apple-glass);
-  backdrop-filter: var(--apple-glass-blur);
   -webkit-backdrop-filter: var(--apple-glass-blur);
+  backdrop-filter: var(--apple-glass-blur);
   border: 1px solid var(--apple-glass-edge);
   box-shadow: var(--apple-glass-shadow);
   font-size: 0.9375rem;
@@ -3083,8 +3087,8 @@ html[data-ui="apple"] .bliss-bottom-drawer {
 /* Menus float above everything, so they are functional layer: glass. */
 html[data-ui="apple"] .bliss-menu-panel {
   background: var(--apple-glass);
-  backdrop-filter: var(--apple-glass-blur);
   -webkit-backdrop-filter: var(--apple-glass-blur);
+  backdrop-filter: var(--apple-glass-blur);
   border: 1px solid var(--apple-glass-edge);
   box-shadow: var(--apple-glass-shadow);
 }
@@ -3130,8 +3134,8 @@ html[data-ui="apple"] .bliss-hero-secondary {
 html[data-ui="apple"] .bliss-hero-secondary {
   border: 0;
   background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   box-shadow: var(--apple-glass-shadow);
   color: #fff;
 }
