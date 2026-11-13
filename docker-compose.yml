@@ -5,7 +5,9 @@
 # Traefik routing (which still lives with the shared proxy in OpenCode)
 # keeps working unchanged. Secrets come from ./.env (not committed):
 # BLISSFUL_JWT_SECRET, TMDB_API_KEY, RD_FALLBACK_KEY, VIDEASY_TOKEN_SECRET,
-# ADDON_PROXY_EXTRA_DOMAINS, BLISSFUL_MONGO_DB (optional).
+# ADDON_PROXY_EXTRA_DOMAINS, BLISSFUL_MONGO_DB (optional),
+# BLISSFUL_MONGODB_URI (required in prod: mongod runs --auth),
+# MONGO_ROOT_USER / MONGO_ROOT_PASSWORD (used by the nightly backup script).
 #
 # Deploy: git pull && (UI only: npm run build in apps/web-blissful — live
 # instantly) || (services: docker compose up -d).
@@ -43,7 +45,7 @@ services:
       - PORT=8787
       - STORAGE_DIR=/data
       - BLISSFUL_NAS_ROOT=/nas
-      - MONGODB_URI=mongodb://blissful-mongodb:27017/${BLISSFUL_MONGO_DB:-blissful}
+      - MONGODB_URI=${BLISSFUL_MONGODB_URI:-mongodb://blissful-mongodb:27017/blissful}
       - MONGODB_DB=${BLISSFUL_MONGO_DB:-blissful}
       - STATE_DB_FILE=/data/blissful-storage.sqlite
       - BLISSFUL_JWT_SECRET=${BLISSFUL_JWT_SECRET}
@@ -68,9 +70,9 @@ services:
       - /Volumes/2TB/NAS/blissful/state/mongodb:/data/db
       - /Volumes/2TB/NAS/blissful/logs/mongodb:/var/log/mongodb
     command: >
-      bash -c "find /data/db -name '._*' -delete 2>/dev/null; exec mongod --bind_ip_all"
+      bash -c "find /data/db -name '._*' -delete 2>/dev/null; exec mongod --bind_ip_all --auth"
     ports:
-      - "0.0.0.0:27017:27017"
+      - "127.0.0.1:27017:27017"
 
   stremio-service:
     image: stremio/server:latest
