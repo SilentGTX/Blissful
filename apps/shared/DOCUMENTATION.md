@@ -156,3 +156,13 @@ scripts/launchd live in [`infra/`](../../infra/).
 - Service deploy: `git pull && docker compose up -d`. **After the 2026-06 repo restructure the
   compose bind-mount paths changed — the first deploy on the Mac must re-up the containers,
   not just pull.**
+- **Mongo is localhost-only and requires auth (since 2026-11-13).** `blissful-mongodb` publishes
+  `127.0.0.1:27017` and runs `mongod --auth`. An earlier `0.0.0.0:27017` no-auth binding let a
+  ransomware bot drop the `blissful` and `panini` databases on 2026-11-07. Never publish it on
+  `0.0.0.0`. Each client has its own user (authSource `admin`): `blissful_app`, `panini_app`,
+  `bot_ro`, plus `root_admin` for backups. Storage reads its URI from `BLISSFUL_MONGODB_URI` in
+  `.env`; a new app needs a new user and URI, a bare `mongodb://host.docker.internal:27017` gets
+  Unauthorized.
+- Mongo backup: launchd agent `com.budinoff.mongo-backup` runs `~/home-lab/scripts/mongo-backup.sh`
+  at 04:15 and writes `~/Backups/mongo/mongo-all-*.archive.gz` (14 days kept). Restore with
+  `docker exec -i blissful-mongodb mongorestore -u root_admin -p ... --authenticationDatabase admin --gzip --archive < FILE`.
