@@ -5,11 +5,13 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  debridResolveLinkToTorrent,
   desktopPlayingUrlToSource,
   looksLikeRdLink,
   parseVideoIdSeasonEpisode,
   resolveSourceForDesktop,
   resolveSourceForWeb,
+  splitRelayUrl,
   torrentToStreamingServerUrl,
   unwrapTranscodeUrl,
   webPlayingToSource,
@@ -60,6 +62,28 @@ describe('desktopPlayingUrlToSource', () => {
   it('parses a raw Real-Debrid link as rd', () => {
     const rd = 'https://42-7.download.real-debrid.com/d/ABC/Movie.mkv';
     expect(desktopPlayingUrlToSource(rd)).toEqual({ kind: 'rd', rdUrl: rd });
+  });
+
+  // 2026-11-19: a desktop host on a torrentio-RD release announced
+  // {kind:'rd', rdUrl:<torrentio link>}; the storage server rejects a non-RD
+  // host there, so the room had no source and the guest played the theatrical
+  // cut while the host watched the extended one. The link also embeds the
+  // host's debrid key, so it must never be announced at all.
+  it('turns a debrid resolve link into the torrent inside it, never the link', () => {
+    const link = `https://torrentio.strem.fun/resolve/realdebrid/HOSTAPIKEY/${HASH.toUpperCase()}/null/0/Some%20Movie%20EXTENDED%202160p.mkv`;
+    const src = desktopPlayingUrlToSource(link);
+    expect(src).toEqual({ kind: 'torrent', infoHash: HASH, fileIdx: 0 });
+    expect(JSON.stringify(src)).not.toContain('HOSTAPIKEY');
+  });
+
+  it('reads the file index from a debrid resolve link (null when unknown)', () => {
+    const base = `https://torrentio.strem.fun/resolve/alldebrid/KEY/${HASH}`;
+    expect(debridResolveLinkToTorrent(`${base}/null/7/Show.S01E08.mkv`)).toEqual({ kind: 'torrent', infoHash: HASH, fileIdx: 7 });
+    expect(debridResolveLinkToTorrent(`${base}/null/undefined/Movie.mkv`)).toEqual({ kind: 'torrent', infoHash: HASH, fileIdx: null });
+    expect(debridResolveLinkToTorrent(`${base}/null/2`)).toEqual({ kind: 'torrent', infoHash: HASH, fileIdx: 2 });
+    expect(debridResolveLinkToTorrent('https://torrentio.strem.fun/resolve/realdebrid/KEY/nothash/null/0/x.mkv')).toBeNull();
+    expect(debridResolveLinkToTorrent('https://42-7.download.real-debrid.com/d/ABC/Movie.mkv')).toBeNull();
+    expect(debridResolveLinkToTorrent('not a url')).toBeNull();
   });
 
   it('returns null for a Vidking placeholder / unknown URL', () => {
@@ -195,5 +219,37 @@ describe('relay sources (host streams to the room)', () => {
 
   it('desktop guest keeps its own pick for a relay without origin', async () => {
     expect(await resolveSourceForDesktop({ kind: 'relay', url: relayUrl })).toBeNull();
+  });
+});
+
+describe('splitRelayUrl (the room never receives the host media URL)', () => {
+  const media = 'https://torrentio.strem.fun/resolve/realdebrid/HOSTAPIKEY/abc/null/0/Some%20Movie.mkv';
+  const hostQuery = new URLSearchParams({ mediaURL: media, maxWidth: '3840' }).toString();
+  const relayUrl = `https://blissful.budinoff.com/party-relay/abc-def/hlsv2/blissful-party/master.m3u8?${hostQuery}&k=relaykey`;
+
+  it('keeps only the relay key in the public URL', () => {
+    const parts = splitRelayUrl(relayUrl);
+    expect(parts?.publicUrl).toBe('https://blissful.budinoff.com/party-relay/abc-def/hlsv2/blissful-party/master.m3u8?k=relaykey');
+    expect(parts?.publicUrl).not.toContain('HOSTAPIKEY');
+    expect(parts?.publicUrl).not.toContain('mediaURL');
+  });
+
+  it('hands the rest to the relay server, byte-for-byte what the shell was given', () => {
+    const parts = splitRelayUrl(relayUrl);
+    expect(parts?.hostQuery).toBe(hostQuery);
+    expect(parts?.configUrl).toBe('https://blissful.budinoff.com/party-relay/abc-def/__config?k=relaykey');
+  });
+
+  it('works against a local dev relay', () => {
+    const parts = splitRelayUrl(`http://localhost:13000/party-relay/r1/hlsv2/x/master.m3u8?${hostQuery}&k=K`);
+    expect(parts?.publicUrl).toBe('http://localhost:13000/party-relay/r1/hlsv2/x/master.m3u8?k=K');
+    expect(parts?.configUrl).toBe('http://localhost:13000/party-relay/r1/__config?k=K');
+  });
+
+  it('returns null when there is nothing to hide or it is not a relay URL', () => {
+    expect(splitRelayUrl('https://blissful.budinoff.com/party-relay/abc-def/index.m3u8?k=K')).toBeNull();
+    expect(splitRelayUrl(`https://blissful.budinoff.com/party-relay/abc-def/index.m3u8?${hostQuery}`)).toBeNull();
+    expect(splitRelayUrl(`https://example.com/other/master.m3u8?${hostQuery}&k=K`)).toBeNull();
+    expect(splitRelayUrl('nope')).toBeNull();
   });
 });

@@ -106,7 +106,54 @@ Web guest(s): https://blissful.budinoff.com/party-relay/{room}/index.m3u8
    fallback remains the safety net if the host declines/leaves/tunnel dies; the dead-room/leave
    teardown we shipped already covers it.
 
+### Since 2026-11-19: the relay is automatic ("host streams to the room")
+
+The request/consent flow above is now the fallback, not the default. A desktop host that is in
+a room and playing something relayable (torrent, magnet, debrid link) starts the relay **with
+the room** and announces it as the room's `source`; guests land on it from the join snapshot.
+
+- **Tied to room + content, not to who is present.** An idle relay costs nothing (the
+  transcode only runs when a guest pulls). Starting on "first guest" and stopping on "last
+  guest left" restarted the relay under a guest whose own switch onto the relay made it
+  reconnect (the double tunnel start). It stops on content change, host hand-over, or unmount.
+- **The relay carries `origin`** (`{kind:'relay', url, origin?: torrent|rd}`), so a desktop
+  guest resolves the file natively in mpv instead of the transcoded stream.
+- **A debrid resolve link is announced as the torrent inside it**
+  (`debridResolveLinkToTorrent`), never as the link: it embeds the host's API key, and the
+  storage sanitizer rejects a non-RD host in `rdUrl` anyway — which silently left such rooms with
+  no source at all (host on the extended cut, guest on the theatrical one).
+- **The room never receives the host's media URL.** The shell's relay URL is
+  `…/party-relay/{room}/hlsv2/…/master.m3u8?mediaURL=…&k=…`; the host registers everything but
+  `k` with `POST /party-relay/{room}/__config?k=` (accepted only while its tunnel is up with that
+  key) and announces `…master.m3u8?k=…`. The proxy re-attaches the pinned query when it pulls
+  and strips it from rewritten playlists, so guests can neither see nor override it. The pin is
+  in memory: the host re-pins on every tunnel `ready` (proxy restart). Hosts that pin nothing
+  (older bundle) keep the legacy full-URL behaviour.
+- **Fan-out is bounded and verified.** The segment cache is byte-budgeted (600 MB) with TTL
+  sweep — an entry cap alone reached ~1.9 GB on 4K. A non-2xx answer from the host fails that one
+  request and is never cached. `partyRelay.fanout.test.js` drives six guests through the real
+  server: one host pull per segment, identical bytes, nothing host-only guest-facing.
+
+- **HDR sources are colour-corrected on the guest.** stremio-service's `/hlsv2` transcode never
+  tone-maps: an HDR10 / Dolby Vision source reaches the browser as untagged 8-bit H.264 that is
+  still PQ / BT.2020, shown grey and desaturated. The host marks such a relay with a `#hdr=pq`
+  fragment (from mpv's `video-params/gamma`, re-announced when it changes — the URL guests load
+  is unchanged, so nothing reloads); the guest carries it as the `hdr` player param and puts an
+  SVG filter on the `<video>` (`lib/hdrToSdr.ts`, `components/HdrToSdrFilter.tsx`): decode-matrix
+  fix → one PQ→BT.2390→sRGB table → BT.2020→709 primaries, all in the encoded domain because
+  browser filter intermediates are 8-bit. Validated against a real host/guest frame pair and in
+  Chromium (browser output within 2/255 of the maths). Limits: ~half the tonal steps of true SDR
+  (8-bit PQ), a fixed 1000-nit assumed peak, and no off switch. The proper fix is tone-mapping
+  in the host transcode from the 10-bit source (bundled ffmpeg has `zscale`/`tonemap`/
+  `tonemap_opencl`) — that needs a desktop release.
+
+**Deploy hazard:** a web deploy auto-reloads every open desktop app (SW `controllerchange` →
+`reloadForUpdate`) and a `blissful-proxy` restart drops live tunnels — both interrupt a party
+in progress. Check `docker logs --since 60s blissful-proxy | grep party-relay` first.
+
 ### Cost / constraints
+- Measured 2026-11-19 on a 4K HEVC source: ~15–20 Mbit/s per guest out of the Mac, one copy
+  from the host. The host's cost does not grow with guests; the Mac's upload does.
 - Host upload ≈ 4–8 Mbps per 1080p transcode. One guest fine; the Mac fan-out means more guests
   don't multiply the host's cost.
 - The tunnel + `/party-relay` pull-through is the meaty part. A later optimization swaps the

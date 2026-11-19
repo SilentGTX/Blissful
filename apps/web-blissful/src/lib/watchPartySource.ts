@@ -18,6 +18,7 @@
 // /rd-by-hash fetch). Navigation stays in the player components.
 
 import type { WatchPartySource } from './watchParty';
+import { parseRelayHdr, type RelayHdrMode } from './hdrToSdr';
 
 const STREMIO_SERVER_URL = 'http://127.0.0.1:11470';
 
@@ -81,14 +82,45 @@ export function parseVideoIdSeasonEpisode(
 }
 
 /**
+ * A debrid "resolve" link as stremio addons (torrentio & co) hand them out:
+ *   `…/resolve/<service>/<apiKey>/<infoHash>/<cachedEntryInfo>/<fileIdx>/<name>`
+ * The link embeds the HOST's debrid API key, so the link itself must never
+ * leave the host — but the torrent identity inside it is exactly what a guest
+ * needs to land on the same file. Returns null for any other URL.
+ *
+ * Before this, a desktop host on such a link announced `{kind:'rd', rdUrl}`,
+ * which the storage server (correctly) rejects — rdUrl must be a real-debrid.com
+ * host — so the room had NO source and every guest picked its own release.
+ */
+export function debridResolveLinkToTorrent(
+  url: string,
+): Extract<WatchPartySource, { kind: 'torrent' }> | null {
+  try {
+    const { pathname } = new URL(url);
+    const m = pathname.match(/\/resolve\/[a-z0-9]+\/[^/]+\/([0-9a-fA-F]{40})\/[^/]*\/([^/]+)(?:\/|$)/i);
+    if (!m) return null;
+    return {
+      kind: 'torrent',
+      infoHash: m[1].toLowerCase(),
+      fileIdx: /^\d+$/.test(m[2]) ? Number.parseInt(m[2], 10) : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * DESKTOP host: turn the URL mpv is playing into a shareable source.
  *   - `http://127.0.0.1:11470/{40-hex}/{idx}?tr=…` → torrent
  *   - `magnet:?xt=urn:btih:{hash}&tr=…&fileIdx=N`   → torrent
+ *   - a debrid resolve link (torrentio & co)       → torrent (never the link)
  *   - a raw Real-Debrid https link                 → rd
  *   - anything else                                → null (unshareable)
  */
 export function desktopPlayingUrlToSource(url: string | null | undefined): WatchPartySource {
   if (!url) return null;
+  const viaDebrid = /^https?:\/\//i.test(url) ? debridResolveLinkToTorrent(url) : null;
+  if (viaDebrid) return viaDebrid;
   const m = url.match(/^https?:\/\/[^/]+\/([0-9a-fA-F]{40})\/(-?\d+)(?:\?(.*))?$/);
   if (m) {
     const infoHash = m[1].toLowerCase();
@@ -185,6 +217,69 @@ export async function rdByHash(
 }
 
 /**
+ * Split the relay URL the desktop shell hands back
+ * (`…/party-relay/{room}/<hls path>?mediaURL=…&maxWidth=…&k=<key>`) into:
+ *   - `publicUrl`  what the room gets — the same path with ONLY the relay key;
+ *   - `hostQuery`  everything else, which the relay server re-attaches when it
+ *                  pulls from the host (stremio's /hlsv2 needs `mediaURL` on
+ *                  every request);
+ *   - `configUrl`  where the host registers `hostQuery`.
+ * `mediaURL` is the URL the host is playing; for a debrid stream it embeds the
+ * host's API key, so it must not travel to guests. Returns null when there is
+ * nothing to hide or the URL isn't a relay URL.
+ */
+export function splitRelayUrl(
+  relayUrl: string,
+): { publicUrl: string; hostQuery: string; configUrl: string } | null {
+  try {
+    const u = new URL(relayUrl);
+    const key = u.searchParams.get('k');
+    const m = u.pathname.match(/^(.*\/party-relay\/[^/]+)\/.+$/);
+    if (!key || !m) return null;
+    const host = new URLSearchParams(u.search);
+    host.delete('k');
+    const hostQuery = host.toString();
+    if (!hostQuery) return null;
+    const k = encodeURIComponent(key);
+    return {
+      publicUrl: `${u.origin}${u.pathname}?k=${k}`,
+      hostQuery,
+      configUrl: `${u.origin}${m[1]}/__config?k=${k}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * DESKTOP host: register the relay's host-only query with the relay server and
+ * return the URL to announce. The server only accepts it once the shell's
+ * tunnel is connected (409 until then), which takes a moment after
+ * `startPartyRelay` returns — hence the short retry. If the server can't pin
+ * (an older relay server), fall back to the full URL so the party still works.
+ */
+export async function pinRelayHostQuery(relayUrl: string): Promise<string> {
+  const parts = splitRelayUrl(relayUrl);
+  if (!parts) return relayUrl;
+  for (let attempt = 0; attempt < 12; attempt++) {
+    try {
+      // text/plain keeps this a CORS "simple request" (no preflight).
+      const res = await fetch(parts.configUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ query: parts.hostQuery }),
+      });
+      if (res.status === 204) return parts.publicUrl;
+      if (res.status !== 409) break;
+    } catch {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+  return relayUrl;
+}
+
+/**
  * WEB guest: resolve a host source to a player `url` param (+ whether to set
  * `rdsel=1` so the page skips its own Vidking resolution and plays this exact
  * URL). Returns null when there's nothing to switch to (vidking / relay / miss
@@ -192,7 +287,7 @@ export async function rdByHash(
  */
 export async function resolveSourceForWeb(
   source: WatchPartySource,
-): Promise<{ url: string; rdsel: boolean } | null> {
+): Promise<{ url: string; rdsel: boolean; hdr?: RelayHdrMode } | null> {
   if (!source) return null;
   if (source.kind === 'rd') return { url: source.rdUrl, rdsel: true };
   if (source.kind === 'torrent') {
@@ -201,8 +296,14 @@ export async function resolveSourceForWeb(
   }
   // Layer B: the host relays its exact stream as HLS through the Mac. The URL is
   // already an `…/party-relay/{room}/index.m3u8?k=` playlist — hls.js plays it
-  // directly (no /transcode wrap), so pin it like an rd source.
-  if (source.kind === 'relay') return { url: source.url, rdsel: true };
+  // directly (no /transcode wrap), so pin it like an rd source. A `#hdr=pq`
+  // marker means the host's source is HDR10 and the relay did not convert its
+  // colours: the URL to load is the part before the marker, and the player
+  // corrects the picture itself (lib/hdrToSdr.ts).
+  if (source.kind === 'relay') {
+    const { url, hdr } = parseRelayHdr(source.url);
+    return hdr ? { url, rdsel: true, hdr } : { url, rdsel: true };
+  }
   // vidking → web guest keeps its own source (Vidking is unshareable).
   return null;
 }

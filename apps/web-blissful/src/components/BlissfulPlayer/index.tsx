@@ -100,6 +100,8 @@ import {
   type WatchPartySource,
 } from '../../lib/watchParty';
 import { resolveSourceForWeb, unwrapTranscodeUrl, webPlayingToSource } from '../../lib/watchPartySource';
+import { HDR_TO_SDR_FILTER_ID, type RelayHdrMode } from '../../lib/hdrToSdr';
+import { HdrToSdrFilter } from '../HdrToSdrFilter';
 import { StremioIcon } from '../PlayerControlIcons';
 
 import {
@@ -537,6 +539,10 @@ export default function BlissfulPlayer(props: {
   // address bar carries no query at all, so mutating location.search would
   // silently drop type/id/room and break the session.
   sessionSearch?: string;
+  // Watch-party guest on a host relay whose source is HDR10: the relayed
+  // H.264 still carries PQ / BT.2020 colours, so the <video> gets a correcting
+  // filter. null/undefined = play as-is.
+  hdrMode?: RelayHdrMode | null;
 }) {
   const navigate = useNavigate();
   // Two-phase buffering for /player:
@@ -897,11 +903,20 @@ export default function BlissfulPlayer(props: {
         const params = sessionParams();
         const cur = params.get('url') ?? '';
         if (resolved) {
+          // Whether the host's stream is uncorrected HDR travels as its own
+          // param, NOT in `url`: the host often learns it a moment after the
+          // relay starts, and a changed `url` would reload the stream.
+          const hdrChanged = (params.get('hdr') ?? '') !== (resolved.hdr ?? '');
+          if (resolved.hdr) params.set('hdr', resolved.hdr);
+          else params.delete('hdr');
           // Already on it — either verbatim, or our url is the /transcode.m3u8
           // wrapper around the same inner stream (an invite join pins the
           // host's WRAPPED streamUrl while host:source carries the RAW link;
           // reloading over that identical stream just flashes the veil).
-          if (cur === resolved.url || unwrapTranscodeUrl(cur) === resolved.url) return;
+          if (cur === resolved.url || unwrapTranscodeUrl(cur) === resolved.url) {
+            if (hdrChanged) navigate(`/player?${params.toString()}`, { replace: true });
+            return;
+          }
           params.set('url', resolved.url);
           if (resolved.rdsel) params.set('rdsel', '1');
           // Layer B relay: stremio-service transcodes from t=0, but we're already
@@ -929,6 +944,7 @@ export default function BlissfulPlayer(props: {
           // to our own Vidking (timeline-only sync from here).
           params.set('url', 'vidking:placeholder');
           params.delete('rdsel');
+          params.delete('hdr');
           params.delete('autoplay');
           navigate(`/player?${params.toString()}`, { replace: true });
         }
@@ -4401,12 +4417,16 @@ export default function BlissfulPlayer(props: {
     // the same black bg means the swap from placeholder to real player
     // is invisible.
     <div ref={playerRootRef} className={props.compact ? 'group/mini absolute inset-0 bg-black' : 'fixed inset-0 z-50 bg-black'}>
+      {props.hdrMode === 'pq' ? <HdrToSdrFilter /> : null}
       <video
         ref={videoRef}
         data-testid="player-video"
         className="bliss-player-video h-full w-full bg-black"
         style={{
           objectFit: 'contain',
+          // Host relay of an HDR10 source: correct the colours here (the
+          // relayed H.264 is still PQ / BT.2020 — see lib/hdrToSdr.ts).
+          filter: props.hdrMode === 'pq' ? `url(#${HDR_TO_SDR_FILTER_ID})` : undefined,
           ['--bliss-subtitle-size' as any]: `${effectiveSubtitleSizePx}px`,
           ['--bliss-subtitle-color' as any]: subtitleColor,
           ['--bliss-subtitle-bg' as any]: subtitleBackgroundColor,
