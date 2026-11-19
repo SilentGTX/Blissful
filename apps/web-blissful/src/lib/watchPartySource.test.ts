@@ -8,6 +8,7 @@ import {
   desktopPlayingUrlToSource,
   looksLikeRdLink,
   parseVideoIdSeasonEpisode,
+  resolveSourceForDesktop,
   resolveSourceForWeb,
   torrentToStreamingServerUrl,
   unwrapTranscodeUrl,
@@ -175,5 +176,24 @@ describe('resolveSourceForWeb (non-fetch cases)', () => {
   it('keeps own source for vidking and null (timeline-only)', async () => {
     expect(await resolveSourceForWeb({ kind: 'vidking', tmdbId: 1, mediaType: 'tv' })).toBeNull();
     expect(await resolveSourceForWeb(null)).toBeNull();
+  });
+});
+
+describe('relay sources (host streams to the room)', () => {
+  const relayUrl = 'https://blissful.budinoff.com/party-relay/abc-def/index.m3u8?k=x';
+
+  it('web guest plays the relay itself, never its own copy', async () => {
+    const origin = { kind: 'torrent' as const, infoHash: HASH, fileIdx: 0 };
+    expect(await resolveSourceForWeb({ kind: 'relay', url: relayUrl, origin })).toEqual({ url: relayUrl, rdsel: true });
+  });
+
+  it('desktop guest plays the relay origin natively in mpv', async () => {
+    const origin = { kind: 'torrent' as const, infoHash: HASH, fileIdx: 2 };
+    const url = await resolveSourceForDesktop({ kind: 'relay', url: relayUrl, origin });
+    expect(url?.startsWith(`http://127.0.0.1:11470/${HASH}/2?`)).toBe(true);
+  });
+
+  it('desktop guest keeps its own pick for a relay without origin', async () => {
+    expect(await resolveSourceForDesktop({ kind: 'relay', url: relayUrl })).toBeNull();
   });
 });

@@ -1082,28 +1082,55 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     clearRequest(userId);
   }, [clearRequest]);
 
-  // Accept: start the local relay and announce a `relay` source the room swaps to.
-  // `startPartyRelay` rejects on shells without the tunnel yet (pre-B3) — handled
-  // as a decline so the guest keeps its own fallback.
+  // Start (or reuse) the relay of what we're playing and announce it as the
+  // room's source. The announced relay carries the torrent/RD `origin`, so
+  // desktop guests still load the file natively; web guests watch the relay.
+  // Resolves true when the room is on our relay.
+  const relayStartingRef = useRef<Promise<boolean> | null>(null);
+  const lastRelaySourceRef = useRef<WatchPartySource>(null);
+  const startRelay = useCallback((): Promise<boolean> => {
+    const wp = watchPartyRef.current;
+    const room = props.roomCode;
+    if (!wp || !room) return Promise.resolve(false);
+    if (relayActiveRef.current && lastRelaySourceRef.current) {
+      wp.announceSource(lastRelaySourceRef.current);
+      return Promise.resolve(true);
+    }
+    if (relayStartingRef.current) return relayStartingRef.current;
+    const origin = desktopPlayingUrlToSource(props.url);
+    const p = (async () => {
+      try {
+        const { relayUrl } = await desktop.startPartyRelay(room, localStremioHlsPath(props.url));
+        const source: WatchPartySource =
+          origin && origin.kind !== 'relay' && origin.kind !== 'vidking'
+            ? { kind: 'relay', url: relayUrl, origin }
+            : { kind: 'relay', url: relayUrl };
+        lastRelaySourceRef.current = source;
+        relayActiveRef.current = true;
+        watchPartyRef.current?.announceSource(source);
+        return true;
+      } catch {
+        return false;
+      } finally {
+        relayStartingRef.current = null;
+      }
+    })();
+    relayStartingRef.current = p;
+    return p;
+  }, [props.roomCode, props.url]);
+
+  // Manual request from a guest (the drawer button) — kept for older clients and
+  // for re-requesting. Same consent rules as before.
   const shareHostStream = useCallback(
     (from: { userId: string; displayName: string }) => {
-      const wp = watchPartyRef.current;
-      const room = props.roomCode;
       clearRequest(from.userId);
-      if (!wp || !room) return;
-      void (async () => {
-        try {
-          notifyInfo('Watch party', `Sharing your stream with ${from.displayName}`);
-          const { relayUrl } = await desktop.startPartyRelay(room, localStremioHlsPath(props.url));
-          wp.announceSource({ kind: 'relay', url: relayUrl });
-          relayActiveRef.current = true;
-        } catch {
-          notifyError('Could not share stream', 'Update the desktop app to relay your stream to guests.');
-          wp.declineHostStream(from.userId);
-        }
-      })();
+      void startRelay().then((ok) => {
+        if (ok) return;
+        notifyError('Could not share stream', 'Update the desktop app to relay your stream to guests.');
+        watchPartyRef.current?.declineHostStream(from.userId);
+      });
     },
-    [props.roomCode, props.url, clearRequest]
+    [clearRequest, startRelay]
   );
 
   const handleHostStreamRequest = useCallback(
@@ -1131,6 +1158,7 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
       if (relayActiveRef.current) {
         desktop.stopPartyRelay().catch(() => {});
         relayActiveRef.current = false;
+        lastRelaySourceRef.current = null;
       }
     };
   }, [props.videoId, props.url]);
@@ -1213,6 +1241,32 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
     lastAnnouncedSourceRef.current = key;
     watchParty.announceSource(source);
   }, [watchParty.isHost, watchParty.announceSource, props.url]);
+
+  // Host: stream to guests like a screen share. As soon as anyone else is in the
+  // room, relay exactly what we're playing — guests don't resolve their own copy
+  // (no RD, no cache lookup, no chance of a different edition). When the last
+  // guest leaves, stop the relay (it costs CPU + upload) and go back to
+  // announcing the plain torrent/RD source.
+  const hasGuests = watchParty.participants.some((p) => p.userId !== watchParty.selfUserId);
+  const autoRelayFailedForRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!watchParty.isHost || !watchParty.connected || !props.roomCode) return;
+    const shareable = desktopPlayingUrlToSource(props.url);
+    if (hasGuests) {
+      if (!shareable || autoRelayFailedForRef.current === props.url) return;
+      void startRelay().then((ok) => {
+        if (ok) return;
+        autoRelayFailedForRef.current = props.url;
+        notifyError('Could not stream to the party', 'Guests will load the same release on their own instead.');
+      });
+    } else if (relayActiveRef.current) {
+      desktop.stopPartyRelay().catch(() => {});
+      relayActiveRef.current = false;
+      lastRelaySourceRef.current = null;
+      watchParty.announceSource(shareable);
+      lastAnnouncedSourceRef.current = JSON.stringify(shareable);
+    }
+  }, [watchParty.isHost, watchParty.connected, watchParty.announceSource, props.roomCode, props.url, hasGuests, startRelay]);
 
   const [creatingRoom, setCreatingRoom] = useState(false);
   const [watchPartyOpen, setWatchPartyOpen] = useState(false);
