@@ -9,6 +9,7 @@ const { decryptVideasyResponse } = require('./videasy-decrypt');
 const { decryptVideasyV2 } = require('./videasy-decrypt-v2');
 const { isResolvedOffHost } = require('./transcodeSrcResolution');
 const { pickAudioByLanguage, readStreamTag } = require('./audioLangPick');
+const { createRelayCache, queryParamNames, relayHostPath, rewriteRelayPlaylist } = require('./partyRelay');
 
 // ── JSON disk cache (NAS-backed) ───────────────────────────────────────
 // Small, immutable-ish JSON — TMDB id maps, season info, skip-times, ratings
@@ -95,7 +96,7 @@ function imgFetchFollow(target, hops, onResp, onErr) {
 // Client-side player diagnostics get POSTed here from the browser
 // and appended to a file on the host. Lets us debug iOS issues
 // where we don't have Web Inspector handy.
-const PLAYER_LOG_DIR = '/app/logs';
+const PLAYER_LOG_DIR = process.env.PLAYER_LOG_DIR || '/app/logs';
 const PLAYER_LOG_FILE = path.join(PLAYER_LOG_DIR, 'player.log');
 try { fs.mkdirSync(PLAYER_LOG_DIR, { recursive: true }); } catch { /* ignore */ }
 function appendPlayerLog(line) {
@@ -1844,14 +1845,32 @@ try {
 }
 // room -> { ws, key, pending: Map<id,{resolve,reject,timer}>, nextId }
 const partyRelayHosts = new Map();
-// `${room}\n${path}` -> { exp, contentType, body:Buffer }  (cached responses)
-const partyRelaySegCache = new Map();
+// `${room}\n${path}` -> cached response. Bounded by BYTES as well as entries:
+// 4K segments run ~8-11 MB, so an entry cap alone let this reach ~1.9 GB.
+const PARTY_RELAY_MAX_CACHE = 400;
+const PARTY_RELAY_MAX_CACHE_BYTES = 600 * 1024 * 1024;
+const partyRelaySegCache = createRelayCache({
+  maxBytes: PARTY_RELAY_MAX_CACHE_BYTES,
+  maxEntries: PARTY_RELAY_MAX_CACHE,
+});
+// Free expired segments even when nothing new is being cached (paused party).
+setInterval(() => partyRelaySegCache.sweep(), 30 * 1000).unref();
+// `${room}\n${key}` -> { query, at }: the query a host pinned for its relay
+// (the stremio `mediaURL`, which can embed the host's debrid key). Pulls from
+// the host get it re-attached here; guest-facing URLs never carry it.
+const partyRelayConfigs = new Map();
+const PARTY_RELAY_CONFIG_MAX = 200;
+const PARTY_RELAY_CONFIG_TTL = 24 * 60 * 60 * 1000;
+const PARTY_RELAY_CONFIG_MAX_BODY = 8192;
+function partyRelayHostQuery(room, key) {
+  const c = partyRelayConfigs.get(room + '\n' + key);
+  return c && Date.now() - c.at < PARTY_RELAY_CONFIG_TTL ? c.query : '';
+}
 // `${room}\n${path}` -> Promise  (coalesce concurrent identical pulls → 1 fetch)
 const partyRelayInflight = new Map();
 const PARTY_RELAY_PULL_TIMEOUT = 25000;
 const PARTY_RELAY_SEG_TTL = 120 * 1000; // segments live long enough to fan out
 const PARTY_RELAY_PLAYLIST_TTL = 4 * 1000; // playlists refresh fast (live-ish)
-const PARTY_RELAY_MAX_CACHE = 400;
 
 function partyRelayPull(room, reqPath) {
   const entry = partyRelayHosts.get(room);
@@ -1882,51 +1901,11 @@ function partyRelayPullCoalesced(room, reqPath) {
   return p;
 }
 
-// Append the relay key to a playlist URI so the guest's player carries it on the
-// follow-up segment/sub-playlist fetch (relative URIs otherwise drop the query).
-// Absolute loopback URLs (the host's 127.0.0.1:11470) collapse to their path so
-// they route back through the tunnel.
-function rewritePartyRelayUri(uri, key) {
-  let u = uri.trim();
-  const abs = u.match(/^https?:\/\/[^/]+\/(.*)$/i);
-  if (abs) u = abs[1];
-  const sep = u.includes('?') ? '&' : '?';
-  return `${u}${sep}k=${encodeURIComponent(key)}`;
-}
-function rewritePartyRelayPlaylist(text, key) {
-  return text
-    .split(/\r?\n/)
-    .map((line) => {
-      const trimmed = line.trim();
-      if (!trimmed) return line;
-      if (trimmed.startsWith('#')) {
-        // EXT-X-KEY / EXT-X-MAP carry URI="..." attributes that also need it.
-        return line.replace(/URI="([^"]+)"/g, (_m, uri) => `URI="${rewritePartyRelayUri(uri, key)}"`);
-      }
-      return rewritePartyRelayUri(trimmed, key);
-    })
-    .join('\n');
-}
-
-function partyRelayCachePut(cacheKey, contentType, body, ttl) {
-  if (partyRelaySegCache.size >= PARTY_RELAY_MAX_CACHE) {
-    let n = Math.ceil(PARTY_RELAY_MAX_CACHE * 0.1);
-    for (const k of partyRelaySegCache.keys()) {
-      partyRelaySegCache.delete(k);
-      if (--n <= 0) break;
-    }
-  }
-  partyRelaySegCache.set(cacheKey, { exp: Date.now() + ttl, contentType, body });
-}
-
 // Drop a room's cached segments/playlists immediately when its tunnel closes or
 // re-registers (a new HLS session) — otherwise stale bytes linger up to the TTL
 // and a re-used path could serve old-session content.
 function purgePartyRelayCache(room) {
-  const prefix = room + '\n';
-  for (const k of partyRelaySegCache.keys()) {
-    if (k.startsWith(prefix)) partyRelaySegCache.delete(k);
-  }
+  partyRelaySegCache.purgePrefix(room + '\n');
 }
 
 // /rd-by-hash abuse guard: each resolve burns several house-RD API calls
@@ -1958,51 +1937,95 @@ async function handlePartyRelay(req, res) {
   const room = decodeURIComponent(after.slice(0, slash));
   const pathOnly = after.slice(slash + 1);
   const key = (q.query.k || '').toString();
-  // Forward every query param EXCEPT our relay key to the host — stremio's
-  // /hlsv2 master playlist needs `?mediaURL=…`; segment requests carry none.
-  const fwd = new URLSearchParams();
-  for (const [pk, pv] of Object.entries(q.query)) {
-    if (pk === 'k') continue;
-    if (Array.isArray(pv)) pv.forEach((v) => fwd.append(pk, v));
-    else if (pv != null) fwd.append(pk, String(pv));
-  }
-  const fwdQs = fwd.toString();
-  const reqPath = fwdQs ? `${pathOnly}?${fwdQs}` : pathOnly;
+  // Logs carry the path only — the query can hold the host's debrid key.
   const entry = partyRelayHosts.get(room);
-  if (!entry) { console.log('[party-relay] GET room=%s path=%s -> 404 no host', room, reqPath); res.writeHead(404); res.end('no host for room'); return; }
-  if (!key || key !== entry.key) { console.log('[party-relay] GET room=%s path=%s -> 403 bad key', room, reqPath); res.writeHead(403); res.end('bad relay key'); return; }
-  console.log('[party-relay] GET room=%s path=%s', room, reqPath);
+  if (!entry) { console.log('[party-relay] GET room=%s path=%s -> 404 no host', room, pathOnly); res.writeHead(404); res.end('no host for room'); return; }
+  if (!key || key !== entry.key) { console.log('[party-relay] GET room=%s path=%s -> 403 bad key', room, pathOnly); res.writeHead(403); res.end('bad relay key'); return; }
+  console.log('[party-relay] GET room=%s path=%s', room, pathOnly);
 
-  const isPlaylist = /\.m3u8$/i.test(reqPath.split('?')[0]);
+  // What we ask the host for: its registered query (stremio's /hlsv2 needs
+  // `?mediaURL=…` on every request) plus any other guest param except our key.
+  // A host that registered nothing (older build) still gets the legacy
+  // behaviour — every guest param forwarded.
+  const hostQuery = partyRelayHostQuery(room, entry.key);
+  const reqPath = relayHostPath(pathOnly, q.query, hostQuery);
+  const stripParams = hostQuery ? queryParamNames(hostQuery) : null;
+
+  const isPlaylist = /\.m3u8$/i.test(pathOnly);
   const cacheKey = room + '\n' + reqPath;
-  if (!isPlaylist) {
-    const c = partyRelaySegCache.get(cacheKey);
-    if (c && c.exp > Date.now()) {
-      res.writeHead(200, { 'Content-Type': c.contentType, 'Cache-Control': 'public, max-age=60' });
-      res.end(c.body);
-      return;
-    }
+  const c = partyRelaySegCache.get(cacheKey);
+  if (c) {
+    res.writeHead(200, { 'Content-Type': c.contentType, 'Cache-Control': 'public, max-age=60' });
+    res.end(c.body);
+    return;
   }
   try {
     const r = await partyRelayPullCoalesced(room, reqPath);
-    if (!r || !r.ok) {
-      console.log('[party-relay] pull room=%s path=%s -> host returned not-ok', room, reqPath);
+    // The host reports `ok` for ANY response its local stremio-service gave,
+    // including a 4xx/5xx (e.g. the transcoder restarting after a seek). Those
+    // must fail this one request — never be cached and served to the whole room
+    // as if they were the segment.
+    const hostStatus = r && r.ok ? Number(r.status) || 200 : 0;
+    if (hostStatus < 200 || hostStatus >= 300) {
+      console.log('[party-relay] pull room=%s path=%s -> host failed status=%s', room, pathOnly, hostStatus || 'none');
       res.writeHead(502); res.end('host fetch failed'); return;
     }
-    console.log('[party-relay] pull room=%s path=%s -> ok status=%s type=%s bytes=%s', room, reqPath, r.status, r.contentType, r.body ? r.body.length : 0);
+    console.log('[party-relay] pull room=%s path=%s -> ok status=%s type=%s bytes=%s', room, pathOnly, r.status, r.contentType, r.body ? r.body.length : 0);
     let body = r.body;
     const contentType = r.contentType || (isPlaylist ? 'application/vnd.apple.mpegurl' : 'application/octet-stream');
     if (isPlaylist) {
-      body = Buffer.from(rewritePartyRelayPlaylist(body.toString('utf8'), key), 'utf8');
-      partyRelayCachePut(cacheKey, contentType, body, PARTY_RELAY_PLAYLIST_TTL);
+      body = Buffer.from(rewriteRelayPlaylist(body.toString('utf8'), key, stripParams), 'utf8');
+      partyRelaySegCache.put(cacheKey, contentType, body, PARTY_RELAY_PLAYLIST_TTL);
     } else {
-      partyRelayCachePut(cacheKey, contentType, body, PARTY_RELAY_SEG_TTL);
+      partyRelaySegCache.put(cacheKey, contentType, body, PARTY_RELAY_SEG_TTL);
     }
     res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'public, max-age=60' });
     res.end(body);
   } catch {
     res.writeHead(504); res.end('relay timeout');
   }
+}
+
+// POST /party-relay/{room}/__config?k=<relayKey>  body: {"query":"mediaURL=…&maxWidth=…"}
+// The HOST pins the query its relay needs, so the URL it announces to the room
+// carries only the relay key. Accepted only while that host's tunnel is up with
+// the same key — nobody else knows the key before the host announces it, so a
+// stranger can neither pin a query for a room nor flood this map.
+function handlePartyRelayConfig(req, res) {
+  const q = url.parse(req.url, true);
+  const m = q.pathname.match(/^\/party-relay\/([^/]+)\/__config$/);
+  const room = m ? decodeURIComponent(m[1]) : '';
+  const key = (q.query.k || '').toString();
+  const entry = partyRelayHosts.get(room);
+  if (!entry) { res.writeHead(409); res.end('tunnel not up'); return; }
+  if (!key || key !== entry.key) { res.writeHead(403); res.end('bad relay key'); return; }
+  let raw = '';
+  let tooBig = false;
+  req.setEncoding('utf8');
+  req.on('data', (chunk) => {
+    raw += chunk;
+    if (raw.length > PARTY_RELAY_CONFIG_MAX_BODY) { tooBig = true; req.destroy(); }
+  });
+  req.on('end', () => {
+    if (tooBig) return;
+    let query = null;
+    try { query = JSON.parse(raw).query; } catch { /* handled below */ }
+    if (typeof query !== 'string' || !query || query.length > PARTY_RELAY_CONFIG_MAX_BODY) {
+      res.writeHead(400); res.end('bad config'); return;
+    }
+    const now = Date.now();
+    for (const [ck, cv] of partyRelayConfigs) {
+      if (now - cv.at >= PARTY_RELAY_CONFIG_TTL) partyRelayConfigs.delete(ck);
+    }
+    while (partyRelayConfigs.size >= PARTY_RELAY_CONFIG_MAX) {
+      partyRelayConfigs.delete(partyRelayConfigs.keys().next().value);
+    }
+    partyRelayConfigs.set(room + '\n' + key, { query, at: now });
+    // Playlists cached before the pin still carry the full query — drop them.
+    purgePartyRelayCache(room);
+    console.log('[party-relay] host pinned query room=%s params=%s', room, Array.from(queryParamNames(query)).join(','));
+    res.writeHead(204); res.end();
+  });
 }
 
 // Attach the host-tunnel WebSocket endpoint (`/party-relay-tunnel?room&key`) to
@@ -2016,6 +2039,9 @@ function setupPartyRelayTunnel(httpServer) {
     const prev = partyRelayHosts.get(room);
     if (prev && prev.ws !== ws) { try { prev.ws.close(); } catch {} }
     purgePartyRelayCache(room); // new session/key → drop the prior session's cache
+    for (const ck of Array.from(partyRelayConfigs.keys())) {
+      if (ck.startsWith(room + '\n') && ck !== room + '\n' + key) partyRelayConfigs.delete(ck);
+    }
     const entry = { ws, key, pending: new Map(), nextId: 1 };
     partyRelayHosts.set(room, entry);
     console.log(`[party-relay] host tunnel up room=${room}`);
@@ -2071,6 +2097,10 @@ const server = http.createServer((req, res) => {
   }
 
   // Watch Party v2 Layer B — pull-through relay of a desktop host's HLS.
+  if (req.method === 'POST' && /^\/party-relay\/[^/]+\/__config(\?|$)/.test(req.url)) {
+    handlePartyRelayConfig(req, res);
+    return;
+  }
   if (req.method === 'GET' && req.url.startsWith('/party-relay/')) {
     handlePartyRelay(req, res);
     return;

@@ -9,6 +9,7 @@ import { effectiveAudioLanguage, readStoredPlayerSettings } from '../lib/playerS
 import { useMetaDetails } from '../models/useMetaDetails';
 import { fetchTmdbId, type TmdbLookup } from '../lib/tmdb';
 import { PLAYER_SERVERS, DEFAULT_SERVER_ID, VIDEASY_ENABLED } from '../lib/playerServers';
+import { relayHdrModeFromParam } from '../lib/hdrToSdr';
 import { getLibraryEntry } from '../lib/libraryStore';
 import { useContinueWatchingContext } from '../context/ContinueWatchingProvider';
 import { normalizeStremioImage } from '../lib/mediaTypes';
@@ -502,6 +503,12 @@ export default function PlayerPage() {
   // RD-selected mode: a torrent was already chosen in the unreleased selector
   // and passed as `url` — skip Videasy AND the auto-fallback, just play it.
   const rdSelected = searchParams.get('rdsel') === '1';
+  // Watch-party guest on a host relay of an HDR10 source: the relayed picture
+  // needs its colours corrected in the player (lib/hdrToSdr.ts). Only honoured
+  // for a relay URL, so a stale param can never tint ordinary playback.
+  const relayHdrMode = url && url.includes('/party-relay/')
+    ? relayHdrModeFromParam(searchParams.get('hdr'))
+    : null;
   // Offline download (`url=offline:<id>`): the stream is already on this device.
   // Same "play exactly this, resolve nothing" contract as rdSelected — and here
   // it's load-bearing rather than an optimisation: a Videasy source resolving in
@@ -2093,6 +2100,7 @@ export default function PlayerPage() {
       onExpand={expand}
       onClosePlayer={closeMiniPlayer}
       roomCode={roomCode}
+      hdrMode={relayHdrMode}
       description={meta?.meta?.description ?? null}
       imdbRating={
         meta?.meta?.imdbRating != null ? String(meta.meta.imdbRating) : null

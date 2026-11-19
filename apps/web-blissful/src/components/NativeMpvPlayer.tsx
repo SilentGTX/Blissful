@@ -118,7 +118,8 @@ import {
   type WatchPartyRoomInfo,
   type WatchPartySource,
 } from '../lib/watchParty';
-import { desktopPlayingUrlToSource, resolveSourceForDesktop } from '../lib/watchPartySource';
+import { desktopPlayingUrlToSource, pinRelayHostQuery, resolveSourceForDesktop } from '../lib/watchPartySource';
+import { relayHdrModeForGamma, withRelayHdr } from '../lib/hdrToSdr';
 import { useStorage } from '../context/StorageProvider';
 import { expectedEpisodeFor } from '../lib/episodeMatch';
 import { rememberedInfohashFrom, seriesKeyFor } from '../lib/seriesReleaseMemory';
@@ -1086,46 +1087,78 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   // room's source. The announced relay carries the torrent/RD `origin`, so
   // desktop guests still load the file natively; web guests watch the relay.
   // Resolves true when the room is on our relay.
-  const relayStartingRef = useRef<Promise<boolean> | null>(null);
+  //
+  // 'stale' = the content changed (or we unmounted) while the relay was coming
+  // up; that run must not announce anything. `relayGenRef` is bumped by the
+  // teardown below, so a run compares its own generation to detect it.
+  type RelayStart = 'ok' | 'failed' | 'stale';
+  const relayStartingRef = useRef<Promise<RelayStart> | null>(null);
+  const relayGenRef = useRef(0);
   const lastRelaySourceRef = useRef<WatchPartySource>(null);
-  const startRelay = useCallback((): Promise<boolean> => {
+  const lastAnnouncedSourceRef = useRef<string | null>(null);
+  // The shell's full relay URL (with the host-only query) for the active relay.
+  const relayFullUrlRef = useRef<string | null>(null);
+  // mpv's transfer characteristic for what we're playing ('pq' = HDR10/DV).
+  const videoGammaRef = useRef(videoGamma);
+  videoGammaRef.current = videoGamma;
+  const startRelay = useCallback((): Promise<RelayStart> => {
     const wp = watchPartyRef.current;
     const room = props.roomCode;
-    if (!wp || !room) return Promise.resolve(false);
+    if (!wp || !room) return Promise.resolve('failed');
     if (relayActiveRef.current && lastRelaySourceRef.current) {
+      // Already relaying this content — just make sure the room knows.
       wp.announceSource(lastRelaySourceRef.current);
-      return Promise.resolve(true);
+      lastAnnouncedSourceRef.current = JSON.stringify(lastRelaySourceRef.current);
+      return Promise.resolve('ok');
     }
     if (relayStartingRef.current) return relayStartingRef.current;
+    const gen = relayGenRef.current;
     const origin = desktopPlayingUrlToSource(props.url);
-    const p = (async () => {
+    const run = async (): Promise<RelayStart> => {
       try {
         const { relayUrl } = await desktop.startPartyRelay(room, localStremioHlsPath(props.url));
+        if (relayGenRef.current !== gen) {
+          // Superseded while starting. If nothing newer took the relay over,
+          // don't leave a tunnel up for content we're no longer playing.
+          if (!relayStartingRef.current && !relayActiveRef.current) desktop.stopPartyRelay().catch(() => {});
+          return 'stale';
+        }
+        relayActiveRef.current = true;
+        relayFullUrlRef.current = relayUrl;
+        // Keep the playing URL (it can embed our debrid key) out of what the
+        // room receives: the relay server re-attaches it on its side.
+        const pinned = await pinRelayHostQuery(relayUrl);
+        if (relayGenRef.current !== gen) return 'stale';
+        // An HDR10 source reaches guests as un-converted PQ video; the marker
+        // tells their player to correct the colours (lib/hdrToSdr.ts).
+        const url = withRelayHdr(pinned, relayHdrModeForGamma(videoGammaRef.current));
         const source: WatchPartySource =
           origin && origin.kind !== 'relay' && origin.kind !== 'vidking'
-            ? { kind: 'relay', url: relayUrl, origin }
-            : { kind: 'relay', url: relayUrl };
+            ? { kind: 'relay', url, origin }
+            : { kind: 'relay', url };
         lastRelaySourceRef.current = source;
-        relayActiveRef.current = true;
+        lastAnnouncedSourceRef.current = JSON.stringify(source);
         watchPartyRef.current?.announceSource(source);
-        return true;
+        return 'ok';
       } catch {
-        return false;
-      } finally {
-        relayStartingRef.current = null;
+        return relayGenRef.current === gen ? 'failed' : 'stale';
       }
-    })();
+    };
+    const p: Promise<RelayStart> = run().finally(() => {
+      if (relayStartingRef.current === p) relayStartingRef.current = null;
+    });
     relayStartingRef.current = p;
     return p;
   }, [props.roomCode, props.url]);
 
-  // Manual request from a guest (the drawer button) — kept for older clients and
-  // for re-requesting. Same consent rules as before.
+  // A guest pressed "watch host's stream". The relay normally runs already (it
+  // starts with the room — see the host-source effect below), so this is just a
+  // re-announce.
   const shareHostStream = useCallback(
     (from: { userId: string; displayName: string }) => {
       clearRequest(from.userId);
-      void startRelay().then((ok) => {
-        if (ok) return;
+      void startRelay().then((result) => {
+        if (result !== 'failed') return;
         notifyError('Could not share stream', 'Update the desktop app to relay your stream to guests.');
         watchPartyRef.current?.declineHostStream(from.userId);
       });
@@ -1141,8 +1174,11 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
         wp.declineHostStream(from.userId);
         return;
       }
-      if (props.playerSettings.alwaysShareHostStream === true) {
-        shareHostStream(from); // always-allow shortcut
+      // Already streaming (or about to) → nothing to consent to. The prompt only
+      // remains for the case where the automatic relay could not start.
+      const relaying = relayActiveRef.current || relayStartingRef.current != null;
+      if (relaying || props.playerSettings.alwaysShareHostStream === true) {
+        shareHostStream(from);
       } else {
         setHostStreamRequest(from); // ask the host
       }
@@ -1152,16 +1188,32 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
 
   // Tear down our relay tunnel when the content changes (new episode / stream) or
   // on unmount — otherwise the orphaned tunnel + local HLS transcode job leak and
-  // a guest could keep pulling the old content. Re-share starts a fresh relay.
-  useEffect(() => {
-    return () => {
-      if (relayActiveRef.current) {
-        desktop.stopPartyRelay().catch(() => {});
-        relayActiveRef.current = false;
-        lastRelaySourceRef.current = null;
-      }
-    };
-  }, [props.videoId, props.url]);
+  // a guest could keep pulling the old content. The host-source effect starts a
+  // fresh relay for the new content.
+  const stopRelay = useCallback(() => {
+    relayGenRef.current += 1; // any start still in flight is now stale
+    relayStartingRef.current = null;
+    lastRelaySourceRef.current = null;
+    relayFullUrlRef.current = null;
+    if (relayActiveRef.current) {
+      desktop.stopPartyRelay().catch(() => {});
+      relayActiveRef.current = false;
+    }
+  }, []);
+
+  // The relay server holds our pinned query in memory. If it restarts mid-party
+  // the shell's tunnel reconnects by itself (same key), but the pin is gone and
+  // every guest request would reach us without the media URL. The shell reports
+  // 'ready' on each (re)connect — pin again then. Idempotent.
+  useEffect(
+    () =>
+      desktop.onPartyRelayStatus((status) => {
+        const full = relayFullUrlRef.current;
+        if (status === 'ready' && full && relayActiveRef.current) void pinRelayHostQuery(full);
+      }),
+    []
+  );
+  useEffect(() => stopRelay, [props.videoId, props.url, stopRelay]);
 
   // Gate: only connect when room info loaded, password supplied if
   // needed, and display name chosen.
@@ -1228,45 +1280,65 @@ export default function NativeMpvPlayer(props: NativeMpvPlayerProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watchParty.isHost, watchParty.announceEpisode, props.videoId]);
 
-  // Host (WP v2): announce the room's content `source` so guests on any platform
-  // land on the SAME file. Parse what mpv is playing: a stremio-service / magnet
-  // torrent → {kind:'torrent', infoHash, fileIdx}; a raw RD link → {kind:'rd'}.
-  // Unshareable URLs announce null (guests keep their own pick, timeline-only).
-  const lastAnnouncedSourceRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!watchParty.isHost) return;
-    const source = desktopPlayingUrlToSource(props.url);
-    const key = JSON.stringify(source);
-    if (lastAnnouncedSourceRef.current === key) return;
-    lastAnnouncedSourceRef.current = key;
-    watchParty.announceSource(source);
-  }, [watchParty.isHost, watchParty.announceSource, props.url]);
-
-  // Host: stream to guests like a screen share. As soon as anyone else is in the
-  // room, relay exactly what we're playing — guests don't resolve their own copy
-  // (no RD, no cache lookup, no chance of a different edition). When the last
-  // guest leaves, stop the relay (it costs CPU + upload) and go back to
-  // announcing the plain torrent/RD source.
-  const hasGuests = watchParty.participants.some((p) => p.userId !== watchParty.selfUserId);
+  // Host: tell the room what to watch.
+  //
+  // While we host a room and play something relayable, we stream it — like a
+  // screen share: guests watch OUR playback instead of resolving their own copy
+  // (no debrid account, no cache lookup, no chance of a different edition).
+  //
+  // The relay is tied to the room + content, NOT to who is present:
+  //   - an idle relay costs nothing (the transcode only runs when a guest pulls),
+  //     so there is no reason to wait for the first guest or stop after the last;
+  //   - the room already carries the relay when a guest joins, so they land on
+  //     it directly instead of first resolving their own stream;
+  //   - a guest's reconnect — which the switch onto the relay itself causes —
+  //     used to look like "last guest left", stopping and restarting the relay
+  //     under them (the 2026-11-19 double start).
+  //
+  // The plain identity (torrent / RD link / null) is announced only when we
+  // can't relay; announcing it first would send guests off to resolve their own
+  // copy for the moment before the relay URL arrives.
   const autoRelayFailedForRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!watchParty.isHost || !watchParty.connected || !props.roomCode) return;
-    const shareable = desktopPlayingUrlToSource(props.url);
-    if (hasGuests) {
-      if (!shareable || autoRelayFailedForRef.current === props.url) return;
-      void startRelay().then((ok) => {
-        if (ok) return;
-        autoRelayFailedForRef.current = props.url;
-        notifyError('Could not stream to the party', 'Guests will load the same release on their own instead.');
-      });
-    } else if (relayActiveRef.current) {
-      desktop.stopPartyRelay().catch(() => {});
-      relayActiveRef.current = false;
-      lastRelaySourceRef.current = null;
-      watchParty.announceSource(shareable);
-      lastAnnouncedSourceRef.current = JSON.stringify(shareable);
+    if (!watchParty.isHost || !watchParty.connected) return;
+    const plain = desktopPlayingUrlToSource(props.url);
+    const announcePlain = () => {
+      const key = JSON.stringify(plain);
+      if (lastAnnouncedSourceRef.current === key) return;
+      lastAnnouncedSourceRef.current = key;
+      watchParty.announceSource(plain);
+    };
+    if (!props.roomCode || !plain || autoRelayFailedForRef.current === props.url) {
+      announcePlain();
+      return;
     }
-  }, [watchParty.isHost, watchParty.connected, watchParty.announceSource, props.roomCode, props.url, hasGuests, startRelay]);
+    const url = props.url;
+    void startRelay().then((result) => {
+      if (result !== 'failed') return;
+      autoRelayFailedForRef.current = url;
+      notifyError('Could not stream to the party', 'Guests will load the same release on their own instead.');
+      announcePlain();
+    });
+  }, [watchParty.isHost, watchParty.connected, watchParty.announceSource, props.roomCode, props.url, startRelay]);
+
+  // mpv usually reports whether the video is HDR a moment AFTER the relay is up
+  // (and again for each new file). Keep the room's marker in step — the URL
+  // guests load is unchanged, so this never reloads their stream.
+  useEffect(() => {
+    const cur = lastRelaySourceRef.current;
+    if (!relayActiveRef.current || !cur || cur.kind !== 'relay') return;
+    const url = withRelayHdr(cur.url, relayHdrModeForGamma(videoGamma));
+    if (url === cur.url) return;
+    const next: WatchPartySource = { ...cur, url };
+    lastRelaySourceRef.current = next;
+    lastAnnouncedSourceRef.current = JSON.stringify(next);
+    watchPartyRef.current?.announceSource(next);
+  }, [videoGamma]);
+
+  // Host handed over to someone else → our relay is no longer the room's source.
+  useEffect(() => {
+    if (watchParty.connected && !watchParty.isHost) stopRelay();
+  }, [watchParty.connected, watchParty.isHost, stopRelay]);
 
   const [creatingRoom, setCreatingRoom] = useState(false);
   const [watchPartyOpen, setWatchPartyOpen] = useState(false);
