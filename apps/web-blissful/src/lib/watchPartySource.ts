@@ -215,6 +215,9 @@ export async function resolveSourceForWeb(
  */
 export async function resolveSourceForDesktop(source: WatchPartySource): Promise<string | null> {
   if (!source) return null;
+  // A relay is for browsers; mpv plays the original file natively when the
+  // host told us what it is.
+  if (source.kind === 'relay') return source.origin ? resolveSourceForDesktop(source.origin) : null;
   if (source.kind === 'rd') return source.rdUrl;
   if (source.kind === 'torrent') {
     const direct = torrentToStreamingServerUrl(source);

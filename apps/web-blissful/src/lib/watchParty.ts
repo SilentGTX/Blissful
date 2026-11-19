@@ -42,7 +42,16 @@ export type WatchPartySource =
   | { kind: 'torrent'; infoHash: string; fileIdx: number | null; trackers?: string[] }
   | { kind: 'rd'; rdUrl: string; infoHash?: string | null }
   | { kind: 'vidking'; tmdbId: number; mediaType: 'movie' | 'tv'; season?: number; episode?: number }
-  | { kind: 'relay'; url: string }
+  /** Host-relayed HLS of the host's exact playback. `origin` is the torrent/RD
+   *  identity underneath, so a desktop guest (mpv) can still load the same file
+   *  natively instead of the transcoded relay. */
+  | {
+      kind: 'relay';
+      url: string;
+      origin?:
+        | { kind: 'torrent'; infoHash: string; fileIdx: number | null; trackers?: string[] }
+        | { kind: 'rd'; rdUrl: string; infoHash?: string | null };
+    }
   | null;
 
 export type WatchPartyRoomSnapshot = {

@@ -695,8 +695,17 @@ function sanitizeWatchPartySource(s) {
       if (Number.isInteger(s.episode)) out.episode = s.episode;
       return out;
     }
-    case 'relay':
-      return isHttp(s.url) && /\/party-relay\//.test(s.url) ? { kind: 'relay', url: s.url } : null;
+    case 'relay': {
+      if (!isHttp(s.url) || !/\/party-relay\//.test(s.url)) return null;
+      const out = { kind: 'relay', url: s.url };
+      // Underlying torrent/RD identity (desktop guests play it natively).
+      // Recurse through the same validation; never allow a nested relay.
+      if (s.origin && typeof s.origin === 'object' && (s.origin.kind === 'torrent' || s.origin.kind === 'rd')) {
+        const origin = sanitizeWatchPartySource(s.origin);
+        if (origin) out.origin = origin;
+      }
+      return out;
+    }
     default:
       return null;
   }
